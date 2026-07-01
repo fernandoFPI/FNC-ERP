@@ -1,0 +1,26 @@
+{
+  "name": "@fnc-erp/workflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reusable state machine for status-based workflows (PO, projects, manufacturing)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

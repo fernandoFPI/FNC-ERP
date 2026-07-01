@@ -1,0 +1,38 @@
+{
+  "name": "@fnc-erp/service-hr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HR service â€” employees, shifts, geofenced attendance, leave, payroll",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fnc-erp/audit": "workspace:*",
+    "@fnc-erp/permissions": "workspace:*",
+    "@fnc-erp/auth": "workspace:*",
+    "@fnc-erp/config": "workspace:*",
+    "@fnc-erp/db": "workspace:*",
+    "@fnc-erp/fx": "workspace:*",
+    "@fnc-erp/logger": "workspace:*",
+    "@fnc-erp/types": "workspace:*",
+    "express": "^4.19.2",
+    "zod": "^3.23.4"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "vitest": "^2.1.9"
+  }
+}
+
+

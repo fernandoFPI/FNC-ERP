@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "FNC ERP",
+    "slug": "fnc-erp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "fnc-erp",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      "expo-secure-store"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.fnc.erp"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1a3c5e"
+      },
+      "package": "com.fnc.erp"
+    },
+    "extra": {
+      "eas": { "projectId": "fnc-erp" }
+    }
+  }
+}

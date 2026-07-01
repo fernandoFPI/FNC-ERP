@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+allowBuilds:
+  '@apollo/protobufjs': true
+  bcrypt: true
+  esbuild: true
+  puppeteer: true

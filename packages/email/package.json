@@ -1,0 +1,61 @@
+{
+  "name": "@fnc-erp/email",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nodemailer SMTP client and HTML email templates for FNC ERP",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./templates/payslip": {
+      "import": "./dist/templates/payslip.js",
+      "types": "./dist/templates/payslip.d.ts"
+    },
+    "./templates/invoice": {
+      "import": "./dist/templates/invoice.js",
+      "types": "./dist/templates/invoice.d.ts"
+    },
+    "./templates/po-confirmation": {
+      "import": "./dist/templates/po-confirmation.js",
+      "types": "./dist/templates/po-confirmation.d.ts"
+    },
+    "./templates/password-reset": {
+      "import": "./dist/templates/password-reset.js",
+      "types": "./dist/templates/password-reset.d.ts"
+    },
+    "./templates/password-changed": {
+      "import": "./dist/templates/password-changed.js",
+      "types": "./dist/templates/password-changed.d.ts"
+    },
+    "./templates/mfa-setup": {
+      "import": "./dist/templates/mfa-setup.js",
+      "types": "./dist/templates/mfa-setup.d.ts"
+    },
+    "./templates/new-device-login": {
+      "import": "./dist/templates/new-device-login.js",
+      "types": "./dist/templates/new-device-login.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fnc-erp/config": "workspace:*",
+    "@fnc-erp/logger": "workspace:*",
+    "nodemailer": "^6.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/nodemailer": "^6.4.23",
+    "typescript": "^5.4.5"
+  }
+}

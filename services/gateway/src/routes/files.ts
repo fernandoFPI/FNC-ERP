@@ -1,0 +1,234 @@
+import express, { Router, type IRouter } from 'express'
+import { z } from 'zod'
+import { requireAuth } from '@fnc-erp/auth'
+import { query, withTransaction } from '@fnc-erp/db'
+import { logAudit } from '@fnc-erp/audit'
+import { env } from '@fnc-erp/config'
+import {
+  generateUploadUrl,
+  generateDownloadUrl,
+  deleteFile,
+  validateFile,
+  uploadBuffer,
+} from '@fnc-erp/storage'
+
+export const filesRouter: IRouter = Router()
+
+const uploadUrlSchema = z.object({
+  filename: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(100),
+  sizeBytes: z.number().int().positive(),
+  category: z.enum(['contract', 'identity', 'attachment', 'report', 'po_receipt_photo']),
+})
+
+// ── POST /api/v1/files/upload-url ─────────────────────────────
+filesRouter.post('/upload-url', requireAuth(), async (req, res) => {
+  const parsed = uploadUrlSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid input', details: parsed.error.flatten() } })
+    return
+  }
+  const { filename, mimeType, sizeBytes, category } = parsed.data
+
+  const validation = validateFile(filename, mimeType, sizeBytes, category, env.MAX_FILE_SIZE_BYTES)
+  if (!validation.valid) {
+    res.status(400).json({ success: false, error: { code: 'INVALID_FILE', message: validation.reason } })
+    return
+  }
+
+  try {
+    const upload = await generateUploadUrl({
+      filename, mimeType, sizeBytes, category,
+      companyId: req.auth!.companyId,
+      uploadedBy: req.auth!.userId,
+    })
+
+    await query(
+      `INSERT INTO files (id, company_id, uploaded_by, file_key, original_filename, mime_type, size_bytes, category, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`,
+      [upload.fileId, req.auth!.companyId, req.auth!.userId,
+       upload.fileKey, filename, mimeType, sizeBytes, category],
+    )
+
+    res.json({
+      success: true,
+      data: {
+        uploadUrl: upload.uploadUrl,
+        fileId: upload.fileId,
+        fileKey: upload.fileKey,
+        expiresInSeconds: upload.expiresInSeconds,
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to generate upload URL' } })
+  }
+})
+
+// ── POST /api/v1/files/confirm ─────────────────────────────────
+filesRouter.post('/confirm', requireAuth(), async (req, res) => {
+  const fileId = (req.body as { fileId?: string }).fileId
+  if (!fileId) {
+    res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'fileId is required' } })
+    return
+  }
+
+  const file = await query<{
+    id: string; status: string; original_filename: string; category: string; size_bytes: string
+  }>('SELECT * FROM files WHERE id=$1 AND company_id=$2', [fileId, req.auth!.companyId])
+
+  if (!file.rows[0]) {
+    res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found' } })
+    return
+  }
+  if (file.rows[0].status !== 'pending') {
+    res.status(400).json({ success: false, error: { code: 'ALREADY_CONFIRMED', message: 'File already confirmed' } })
+    return
+  }
+
+  try {
+    await query(`UPDATE files SET status='uploaded', uploaded_at=NOW() WHERE id=$1`, [fileId])
+
+    await logAudit({
+      userId: req.auth!.userId,
+      companyId: req.auth!.companyId,
+      action: 'CREATE',
+      tableName: 'files',
+      recordId: fileId,
+      newValues: {
+        filename: file.rows[0].original_filename,
+        category: file.rows[0].category,
+        sizeBytes: file.rows[0].size_bytes,
+      },
+    })
+
+    res.json({
+      success: true,
+      data: {
+        fileId,
+        filename: file.rows[0].original_filename,
+        category: file.rows[0].category,
+        sizeBytes: parseInt(file.rows[0].size_bytes),
+        uploadedAt: new Date().toISOString(),
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to confirm upload' } })
+  }
+})
+
+// ── GET /api/v1/files/:fileId/download-url ─────────────────────
+filesRouter.get('/:fileId/download-url', requireAuth(), async (req, res) => {
+  const fileId = req.params['fileId']!
+
+  const file = await query<{
+    id: string; file_key: string; original_filename: string; mime_type: string; size_bytes: string; status: string
+  }>(
+    `SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status != 'deleted'`,
+    [fileId, req.auth!.companyId],
+  )
+
+  if (!file.rows[0]) {
+    res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found or access denied' } })
+    return
+  }
+
+  try {
+    const { downloadUrl, expiresInSeconds } = await generateDownloadUrl(
+      file.rows[0].file_key,
+      file.rows[0].original_filename,
+    )
+
+    res.json({
+      success: true,
+      data: {
+        downloadUrl,
+        expiresInSeconds,
+        filename: file.rows[0].original_filename,
+        mimeType: file.rows[0].mime_type,
+        sizeBytes: parseInt(file.rows[0].size_bytes),
+      },
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to generate download URL' } })
+  }
+})
+
+// ── POST /api/v1/files/:fileId/content ────────────────────────
+// Proxy upload: browser posts raw binary; gateway streams to B2 server-side.
+// Avoids browser-to-B2 CORS issues entirely. Accepts raw body up to 50 MB.
+filesRouter.post(
+  '/:fileId/content',
+  requireAuth(),
+  express.raw({ type: '*/*', limit: '50mb' }),
+  async (req, res) => {
+    const fileId = req.params['fileId']!
+    const file = await query<{ id: string; file_key: string; mime_type: string; status: string }>(
+      `SELECT id, file_key, mime_type, status FROM files WHERE id=$1 AND company_id=$2`,
+      [fileId, req.auth!.companyId],
+    )
+    if (!file.rows[0]) {
+      res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found' } })
+      return
+    }
+    if (file.rows[0].status !== 'pending') {
+      res.status(400).json({ success: false, error: { code: 'ALREADY_UPLOADED', message: 'File already uploaded' } })
+      return
+    }
+    try {
+      const buffer = req.body as Buffer
+      await uploadBuffer(buffer, file.rows[0].file_key, file.rows[0].mime_type)
+      await query(`UPDATE files SET status='uploaded', uploaded_at=NOW() WHERE id=$1`, [fileId])
+      res.json({ success: true, data: { fileId } })
+    } catch (err) {
+      res.status(500).json({ success: false, error: { code: 'UPLOAD_FAILED', message: (err as Error).message } })
+    }
+  },
+)
+
+// ── DELETE /api/v1/files/:fileId ───────────────────────────────
+filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {
+  const fileId = req.params['fileId']!
+
+  const file = await query<{ id: string; file_key: string; original_filename: string; status: string }>(
+    `SELECT * FROM files WHERE id=$1 AND company_id=$2`,
+    [fileId, req.auth!.companyId],
+  )
+
+  if (!file.rows[0]) {
+    res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found' } })
+    return
+  }
+
+  const attachments = await query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM document_attachments WHERE file_id=$1`, [fileId],
+  )
+  if (parseInt(attachments.rows[0]?.count ?? '0') > 0) {
+    res.status(400).json({
+      success: false,
+      error: { code: 'FILE_IN_USE', message: 'Cannot delete a file that is attached to records. Remove attachments first.' },
+    })
+    return
+  }
+
+  try {
+    await withTransaction(
+      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      async (client) => {
+        await deleteFile(file.rows[0]!.file_key)
+        await client.query(`UPDATE files SET status='deleted', deleted_at=NOW() WHERE id=$1`, [fileId])
+        await logAudit({
+          userId: req.auth!.userId,
+          companyId: req.auth!.companyId,
+          action: 'DELETE',
+          tableName: 'files',
+          recordId: fileId,
+          oldValues: { filename: file.rows[0]!.original_filename },
+          client,
+        })
+      },
+    )
+    res.json({ success: true, data: { message: 'File deleted' } })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to delete file' } })
+  }
+})

@@ -1,0 +1,33 @@
+{
+  "name": "@fnc-erp/permissions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Permission registry, caching, and middleware for FNC ERP",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@fnc-erp/config": "workspace:*",
+    "@fnc-erp/db": "workspace:*",
+    "@fnc-erp/types": "workspace:*",
+    "redis": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "typescript": "^5.4.5"
+  }
+}

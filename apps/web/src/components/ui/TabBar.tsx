@@ -1,0 +1,71 @@
+import React from 'react'
+import { useTheme } from '../../theme/ThemeContext'
+
+interface Tab {
+  key: string
+  label: string
+  badge?: number
+}
+
+interface TabBarProps {
+  tabs: Tab[]
+  active: string
+  onChange: (key: string) => void
+}
+
+export function TabBar({ tabs, active, onChange }: TabBarProps) {
+  const { theme } = useTheme()
+
+  return (
+    <div style={{
+      display: 'flex',
+      gap: '0',
+      borderBottom: `1px solid ${theme.border}`,
+      overflowX: 'auto',
+    }}>
+      {tabs.map((tab) => {
+        const isActive = tab.key === active
+        return (
+          <button
+            key={tab.key}
+            onClick={() => onChange(tab.key)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: isActive ? 500 : 400,
+              color: isActive ? theme.accent : theme.textMuted,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'color 0.15s, border-color 0.15s',
+              fontFamily: 'inherit',
+              marginBottom: '-1px',
+            }}
+            onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = theme.textSecondary }}
+            onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = theme.textMuted }}
+          >
+            {tab.label}
+            {tab.badge !== undefined && tab.badge > 0 && (
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 600,
+                padding: '1px 5px',
+                borderRadius: '10px',
+                background: theme.accentBg,
+                color: theme.accent,
+                border: `1px solid ${theme.accentBorder}`,
+              }}>
+                {tab.badge}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}

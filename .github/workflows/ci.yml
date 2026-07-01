@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: fnc_erp_test
+          POSTGRES_USER: fnc_app
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://fnc_app:test_password@localhost:5433/fnc_erp_test
+      DATABASE_TEST_URL: postgresql://fnc_app:test_password@localhost:5433/fnc_erp_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_test_secret_that_is_long_enough_32chars
+      JWT_REFRESH_SECRET: ci_test_refresh_secret_32chars_long
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      GATEWAY_PORT: 3000
+      AUTH_SERVICE_PORT: 3001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      - name: Run migrations (test DB)
+        run: pnpm migrate:test
+
+      - name: Run tests
+        run: pnpm test

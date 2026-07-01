@@ -1,0 +1,42 @@
+{
+  "name": "@fnc-erp/fx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FX rate lookup, conversion, CBI sync client, and staleness detection",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./cbi-client": {
+      "import": "./dist/cbi-client.js",
+      "types": "./dist/cbi-client.d.ts"
+    },
+    "./staleness": {
+      "import": "./dist/staleness.js",
+      "types": "./dist/staleness.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fnc-erp/db": "workspace:*",
+    "@fnc-erp/logger": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.6",
+    "typescript": "^5.4.5",
+    "vitest": "^2.1.9"
+  }
+}

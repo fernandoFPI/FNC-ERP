@@ -1,0 +1,2411 @@
+================================================================================
+FNC GROUP ERP — COMPLETE USER GUIDE
+Operations Manual — Version 1.0
+Prepared for: FNC Group Staff
+Entities Covered: Nishtimani Yakam | Nishtimani Factory | Al Watanyia
+================================================================================
+
+HOW TO READ THIS GUIDE
+────────────────────────────────────────────────────────────────────────────────
+This guide covers every module in the FNC ERP system. Each section explains:
+
+  • What the module is for
+  • Who uses it
+  • What the statuses mean
+  • What each person can do at each step
+  • What happens automatically
+  • Common mistakes to avoid
+
+Use the table of contents to jump to the module you need. Button names appear
+in BOLD CAPITALS. Field names appear in **bold**. Status values appear in
+'single quotes'.
+
+
+TABLE OF CONTENTS
+────────────────────────────────────────────────────────────────────────────────
+  1.  Getting Started — Logging In, Companies, Themes
+  2.  Projects
+  3.  Purchase Orders
+  4.  Inventory
+  5.  Finance — Chart of Accounts, Journals, FX Rates, Periods
+  6.  Finance — Accounts Receivable (AR)
+  7.  Finance — Accounts Payable (AP)
+  8.  HR — Employees, Departments, Shifts, Work Locations
+  9.  HR — Leave and Overtime
+  10. Attendance
+  11. Payroll
+  12. Manufacturing
+  13. Equipment Rental
+  14. Reporting
+  15. Inter-Company Transactions
+  16. Admin — User and Company Management
+  17. Settings and Preferences
+
+  Guide Statistics (end of document)
+
+
+================================================================================
+SECTION 1 — GETTING STARTED
+================================================================================
+
+What this section covers
+────────────────────────────────────────────────────────────────────────────────
+Before you can use any module in the FNC ERP, you need to log in, understand
+which company you are working in, and know your way around the screen. This
+section walks you through everything you need to do on your first day.
+
+
+Logging In
+────────────────────────────────────────────────────────────────────────────────
+Open a web browser and go to the FNC ERP address your administrator provided.
+You will see a login screen asking for your **Email address** and **Password**.
+
+  1. Type your email address in the **Email** field.
+  2. Type your password in the **Password** field.
+  3. Click LOG IN.
+
+If your password is wrong five times in a row, your account will be locked
+automatically as a security measure. You will need to ask a system admin to
+unlock it, or wait for the lockout period to expire.
+
+If you have forgotten your password, click FORGOT PASSWORD on the login page.
+Enter your email address and click SEND RESET LINK. You will receive an email
+with a link that lets you set a new password. This link expires after 15 minutes,
+so use it quickly. The system will never tell you whether an email exists in the
+system — it always shows a generic success message to protect user privacy.
+
+
+What MFA Is and How to Set It Up
+────────────────────────────────────────────────────────────────────────────────
+MFA stands for Multi-Factor Authentication. It means that after entering your
+password, you also need to enter a six-digit code from your phone. This makes
+your account much harder to break into, even if someone steals your password.
+
+To set up MFA:
+  1. Go to SETTINGS in the left sidebar.
+  2. Click SECURITY.
+  3. Click ENABLE TWO-FACTOR AUTHENTICATION.
+  4. A QR code will appear on screen. Open an authenticator app on your phone
+     — Google Authenticator and Microsoft Authenticator both work.
+  5. In the app, choose "Scan QR code" and point your camera at the screen.
+  6. The app will start showing a six-digit code that changes every 30 seconds.
+  7. Type the current six-digit code into the **Verification code** field.
+  8. Click CONFIRM. MFA is now active.
+
+From this point forward, every time you log in you will be asked to enter your
+six-digit code after your password. If you lose access to your authenticator
+app, ask a system admin to reset your MFA. They can do this from the Admin
+Users page.
+
+
+Switching Between the Three FNC Companies
+────────────────────────────────────────────────────────────────────────────────
+FNC Group has three legal entities, each with its own set of books, employees,
+and projects:
+
+  • Nishtimani Yakam — the main contracting and EPC entity
+  • Nishtimani Factory — the manufacturing and production entity
+  • Al Watanyia — the equipment rental entity
+
+When you first log in, the system will load the company you were assigned to.
+You can see which company you are currently in at the top of the screen near
+your name.
+
+To switch to a different company:
+  1. Click the company name in the top bar.
+  2. A dropdown will appear showing all companies you have access to.
+  3. Click the company you want to switch to.
+  4. The page will reload and all data shown will be from the new company.
+
+This is called the entity switcher. It is critically important. If you raise
+a purchase order while in the wrong company, that PO belongs to the wrong
+entity and cannot easily be moved. Always check which company you are in before
+creating any record.
+
+You will only see companies that a system admin has given you access to. If
+you cannot see a company you need, contact your system admin.
+
+
+Understanding the Screen Layout
+────────────────────────────────────────────────────────────────────────────────
+The screen is divided into three main areas:
+
+  LEFT SIDEBAR — This is the navigation menu. Click any item to go to that
+  module. Some items have sub-menus that open when you click them. The sidebar
+  can be collapsed by clicking the arrow button at the top to give you more
+  screen space.
+
+  TOP BAR — This shows your current company, a notifications bell icon, and
+  your profile picture or initials. Click the bell to see recent system
+  notifications. Click your name to access your profile settings or log out.
+
+  MAIN AREA — This is where all your work happens. Every page, form, and list
+  appears here.
+
+
+Changing Your Theme
+────────────────────────────────────────────────────────────────────────────────
+The FNC ERP supports four visual themes to suit your preference and lighting
+conditions:
+
+  • Dark Glass — dark background with a frosted glass effect
+  • Dark White — dark background with white text
+  • Light Glass — light background with glass effect
+  • Light Flat — clean light background, no effects
+
+To change your theme:
+  1. Click your name in the top right corner.
+  2. Click APPEARANCE or go to SETTINGS → APPEARANCE.
+  3. Select your preferred theme by clicking it.
+  4. The change takes effect immediately.
+
+
+Finding Your Payslips
+────────────────────────────────────────────────────────────────────────────────
+If you are an employee, you can view and download your own payslips without
+needing to contact HR:
+  1. Click PAYROLL in the left sidebar.
+  2. Click MY PAYSLIPS.
+  3. Click any payslip row to view the full breakdown.
+  4. Click DOWNLOAD PDF to save a copy.
+
+Only your own payslips are visible here. HR admins and company admins can see
+all employee payslips from the main Payroll module.
+
+
+================================================================================
+SECTION 2 — PROJECTS
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Projects module is where FNC tracks every construction, EPC, or engineering
+project from the moment a client brief is received to the moment the work is
+approved and complete. It connects directly to procurement (the purchase orders
+raised for the project), finance (the costs incurred and invoices raised against
+the client), and HR (the staff assigned to work on it). Every cost that touches
+a project flows through here, giving management a real-time picture of project
+profitability.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Project Manager — creates projects, manages stages, moves the project
+    through its lifecycle, adds team members, tracks costs
+  • Finance team — views project costs, raises invoices against the project
+    from the Finance module
+  • Company Admin — can approve projects, view all projects across the entity
+  • System Admin — can override any action on any project in any company
+  • All staff — can view projects they are members of
+
+
+The statuses explained
+────────────────────────────────────────────────────────────────────────────────
+Status              | What it means                        | How you get here                        | What happens next
+--------------------|--------------------------------------|-----------------------------------------|------------------------------------------
+pending             | Created but not yet active           | Project Manager creates the project     | Submit for approval or put on hold
+submitted           | Sent to management for review        | Click SUBMIT FOR APPROVAL               | Company admin approves or rejects
+approved            | Management has signed off            | Company admin clicks APPROVE            | Project Manager clicks START PROJECT
+ongoing             | Active — work is in progress         | Project Manager clicks START PROJECT    | Submit to client or put on hold
+on_hold             | Work paused, reason recorded         | Any authorised user clicks HOLD         | Resume to return to previous status
+submitted (client)  | Deliverables sent to client          | Project Manager clicks SUBMIT TO CLIENT | Client approves or requests changes
+completed           | All work done and signed off         | After all blockers cleared, click COMPLETE | No further action — record is closed
+cancelled           | Abandoned before approval            | Click CANCEL (requires reason)          | No further action — record is closed
+cancelled_after_    | Abandoned after management approval  | Click CANCEL on an approved/ongoing     | No further action — record is closed
+  approval          |                                      | project (requires reason)               |
+
+
+Key concepts you need to understand
+────────────────────────────────────────────────────────────────────────────────
+PROJECT STAGE vs PROJECT STATUS
+The project status tells you where the project is in its overall lifecycle
+(pending, ongoing, completed, etc.). A project stage is a specific phase of
+work within the project — for example, "Foundation", "Structural Frame",
+"MEP Fit-Out". Stages help the team track internal progress. A project can be
+'ongoing' while its individual stages move from 'pending' to 'active' to
+'completed' independently.
+
+PROJECT VALUE vs BUDGET vs ACTUAL COSTS
+  • Project value — the contract amount FNC will invoice the client
+  • Project budget — the internal estimate of what it should cost to deliver
+  • Actual costs — what FNC has actually spent so far (from POs, payroll, MOs)
+The difference between the project value and the actual costs is your gross profit.
+
+RFQ NUMBER AND RECEIVING DATE
+When a client sends FNC a request for quotation (an RFQ), the document has a
+reference number. Record this in the **RFQ number** field when creating the
+project so the document can be traced later. The **Receiving date** is the date
+FNC actually received the RFQ.
+
+RESPONSIBLE COMPANY
+This is which FNC entity owns and executes the project — Nishtimani Yakam,
+Nishtimani Factory, or Al Watanyia. Always confirm this before creating the
+project, as costs and revenues will be recorded in that entity's books.
+
+WHY INVOICING IS NOT A PROJECT STATUS
+The finance team raises invoices from the Finance → Accounts Receivable section,
+not by changing the project status. The project status tracks delivery progress.
+Invoicing tracks billing and payment. They are parallel processes that happen at
+the same time — a project can be 'ongoing' and have multiple invoices issued.
+
+
+Step by step — creating and running a project
+────────────────────────────────────────────────────────────────────────────────
+CREATING A NEW PROJECT
+  1. Go to PROJECTS in the left sidebar.
+  2. Click NEW PROJECT in the top right.
+  3. Fill in the required fields:
+       • **Project name** — the client-facing name
+       • **Project type** — EPC, construction, manufacturing, etc.
+       • **Client name** — the client's company or individual name
+       • **Project manager** — select from the employee dropdown
+       • **Responsible company** — which FNC entity owns this project
+       • **RFQ number** — the client's reference if available
+       • **Project value** — the contract amount in the selected currency
+       • **Expected start date** and **Expected end date**
+  4. Click SAVE. The project is created in 'pending' status.
+     A unique project code is generated automatically (e.g., YAK-2025-0042).
+
+STARTING A PROJECT
+  5. Open the project. Click SUBMIT FOR APPROVAL.
+     Status moves to 'submitted'.
+  6. A company admin or system admin opens the project and clicks APPROVE.
+     Status moves to 'approved'.
+  7. The project manager opens the project and clicks START PROJECT.
+     Status moves to 'ongoing'.
+
+ADDING TEAM MEMBERS
+  8. Inside the project, open the TEAM tab.
+  9. Click ADD MEMBER.
+  10. Select the employee, enter their **Role on project**, **Allocated hours**,
+      and the dates they will be working on it.
+  11. Click SAVE.
+
+CREATING STAGES
+  12. Open the STAGES tab inside the project.
+  13. Click ADD STAGE.
+  14. Enter the **Stage name** and the planned start and end dates.
+  15. Click SAVE. The stage starts in 'pending' status.
+  16. When work begins on a stage, click the stage row and update its status
+      to 'active'.
+  17. Update the **Completion %** as work progresses — drag or type in a
+      percentage from 0 to 100.
+  18. When a stage is fully done, click COMPLETE STAGE. Status moves to
+      'completed' and the percentage locks at 100%.
+
+SUBMITTING TO THE CLIENT
+  19. When delivery milestones are ready, click SUBMIT TO CLIENT on the project.
+  20. This records the submission date in the system.
+
+RECORDING CLIENT APPROVAL
+  21. When the client formally accepts the work, click RECORD APPROVAL.
+  22. Enter the approval date and any reference number.
+
+COMPLETING A PROJECT
+  23. Before you can complete a project, the system checks four things:
+        • All project stages must be either 'completed' or 'cancelled'
+        • All purchase orders linked to this project must be 'completed' or
+          'deleted' (no open POs)
+        • All manufacturing orders must be 'completed' or 'cancelled'
+        • All contracts must be either 'completed' or 'cancelled'
+  24. If any blockers exist, the system will show them. Resolve each one.
+  25. Once all blockers are cleared, click COMPLETE PROJECT.
+      Status moves to 'completed' and the completion date is recorded.
+
+PUTTING A PROJECT ON HOLD
+  26. Click HOLD PROJECT at any point during the lifecycle.
+  27. Enter the **Hold reason** — this is mandatory and will be visible in
+      the audit trail.
+  28. Status moves to 'on_hold'. To resume, click RESUME PROJECT.
+
+CANCELLING A PROJECT
+  29. Click CANCEL PROJECT.
+  30. Enter the **Cancellation reason** — mandatory.
+  31. If the project was already approved or ongoing, status moves to
+      'cancelled_after_approval'. Otherwise it moves to 'cancelled'.
+  32. Cancelled projects cannot be reopened.
+
+
+Actions and who can perform them
+────────────────────────────────────────────────────────────────────────────────
+Action                  | Who can do it                            | From status      | Result
+------------------------|------------------------------------------|------------------|---------------------------
+Create project          | Any authenticated user                   | —                | Status = pending
+Submit for approval     | Project Manager, Company Admin, Sys Admin| pending          | Status = submitted
+Approve project         | Company Admin, System Admin              | submitted        | Status = approved
+Start project           | Project Manager, Company Admin, Sys Admin| approved         | Status = ongoing
+Submit to client        | Project Manager, Company Admin, Sys Admin| ongoing          | Submission date recorded
+Record client approval  | Project Manager, Company Admin, Sys Admin| ongoing          | Approval date recorded
+Complete project        | Project Manager, Company Admin, Sys Admin| ongoing          | Status = completed (if no blockers)
+Hold project            | Project Manager, Company Admin, Sys Admin| any active status| Status = on_hold
+Resume project          | Project Manager, Company Admin, Sys Admin| on_hold          | Returns to previous status
+Cancel project          | Company Admin, System Admin              | any status       | Status = cancelled or cancelled_after_approval
+Add team member         | Project Manager, Company Admin, Sys Admin| any status       | Member added to project
+Add / update stage      | Project Manager, Company Admin, Sys Admin| any status       | Stage created or updated
+Complete stage          | Project Manager, Company Admin, Sys Admin| stage = active   | Stage status = completed
+
+
+What happens automatically
+────────────────────────────────────────────────────────────────────────────────
+  • When a project is created, the system generates a unique project code
+    in the format [ENTITY PREFIX]-[YEAR]-[SEQUENCE NUMBER].
+  • When a project is linked to a contract with an analytic account, costs
+    from purchase orders, manufacturing orders, and payroll are automatically
+    attributed to that project's cost tracking.
+  • When a stage is completed, the system records the actual end date.
+  • Project members' overtime records, if linked to the project, feed into
+    the project's HR cost summary.
+
+
+Important rules
+────────────────────────────────────────────────────────────────────────────────
+  • A project cannot be completed if it has open purchase orders.
+  • A project cannot be completed if it has active manufacturing orders.
+  • A project cannot be completed if any stages are not yet completed or
+    cancelled.
+  • Cancellation requires a written reason that is stored permanently.
+  • Once a project is cancelled, it cannot be reactivated.
+  • A project manager must be assigned before a project can be approved.
+  • The project value currency and the contract value currency can differ —
+    FX rates are applied automatically when calculating profitability in IQD.
+
+
+Connections to other modules
+────────────────────────────────────────────────────────────────────────────────
+  • PURCHASE ORDERS — POs can be linked to a project at creation. They appear
+    in the project's PO tab and their costs feed into the project cost summary.
+  • MANUFACTURING ORDERS — MOs linked to the project appear in the MO tab.
+    Their actual production costs feed into project actuals.
+  • FINANCE (AR) — Project invoices raised from the Finance module link back
+    to this project. You can see all invoices and payment status in the project's
+    Finance tab.
+  • INVENTORY — Material issues drawn from warehouse stock for this project
+    are tracked in the Materials tab.
+  • HR / PAYROLL — Staff assigned to the project have their hours and payroll
+    costs attributed to project cost tracking.
+  • REPORTING — The Project Profitability report reads directly from project
+    data and shows margin per project.
+
+
+================================================================================
+SECTION 3 — PURCHASE ORDERS
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Purchase Orders module manages every external purchase FNC makes — from the
+initial request through stock checking, vendor pricing, internal approval, and
+finally goods receipt. It is designed to ensure that FNC never buys something
+that is already sitting in its warehouse, that all prices are verified before
+commitment, and that no payment can be made without proper management approval.
+This is the most process-intensive module in the system.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Organizer — the person who needs something bought. Creates the PO, drives
+    it through the process, and reviews all pricing before requesting approval.
+  • Store Keeper — checks whether the requested items already exist in FNC's
+    warehouses before going to external vendors.
+  • Store Pricing Officer — if items are available internally, sets the
+    internal transfer price for those items.
+  • Procurement Officer — contacts external vendors, collects quotes, and
+    records the market prices in the system.
+  • 2nd Procurement Officer — independently verifies the market prices
+    collected by the Procurement Officer. This double-check prevents pricing
+    errors.
+  • Department Head — the manager who gives final approval for the purchase.
+  • PO Admin — assigns which employees hold which roles for each project or
+    department. Must set up positions before the workflow can start.
+  • System Admin — can see all POs across all companies, override any stage,
+    and approve directly.
+
+CRITICAL CONCEPT — PO ROLES ARE NOT JOB TITLES
+PO roles are not the same as an employee's job title in HR. They are position
+assignments that a PO Admin configures per project or per department. The same
+person could be the Store Keeper for all projects in Yakam but have no PO role
+at all in Watanyia. Before the PO workflow can work on a new project, the PO
+Admin must go to PO POSITIONS and assign the five roles for that project.
+
+
+The statuses explained
+────────────────────────────────────────────────────────────────────────────────
+Status             | What it means                                 | How you get here                       | What happens next
+-------------------|-----------------------------------------------|----------------------------------------|------------------------------------
+opening            | PO just created, not yet submitted            | Organizer creates the PO               | Organizer submits to Store Keeper
+inventory_check    | Store Keeper reviewing available stock        | Organizer submits                      | Store Keeper marks check complete
+store_pricing      | Store Pricing Officer setting internal prices | Store Keeper completes check           | Store Pricing completes pricing
+market_pricing     | Procurement Officer getting vendor quotes     | Store Pricing completes                | Procurement Officer enters quotes
+price_verification | 2nd Procurement verifying the quotes          | Procurement Officer completes          | 2nd Procurement confirms
+review             | Organizer reviewing all pricing before submit | 2nd Procurement confirms               | Organizer requests approval
+pending_approval   | Waiting for Department Head to act            | Organizer requests approval            | Dept Head assigns themselves
+dept_assigned      | Department Head has taken ownership           | Dept Head clicks ASSIGN TO ME          | Dept Head approves or rejects
+approved           | Management approved, ready to order           | Dept Head or Sys Admin approves        | Goods are ordered, receipt recorded
+completed          | Goods received and reconciled                 | All items received, Organizer completes| No further action — PO is closed
+deleted            | Cancelled before commitment                   | Organizer or Admin deletes             | No further action
+
+
+Step by step — the full PO journey
+────────────────────────────────────────────────────────────────────────────────
+BEFORE YOU START — POSITION SETUP
+A PO Admin or System Admin must first assign the five PO roles for the project
+or department. If this has not been done, the workflow cannot progress past the
+'opening' stage.
+  1. Go to PROCUREMENT → PO POSITIONS.
+  2. Click ASSIGN POSITION.
+  3. Select the **Project** or **Department** this assignment applies to.
+  4. Select the **Role** (Store Keeper, Store Pricing, Procurement Officer,
+     2nd Procurement, Department Head).
+  5. Select the **Employee** who will hold this role.
+  6. Click SAVE. Repeat for all five roles.
+
+STEP 1 — CREATING THE PO (THE ORGANIZER)
+  7. Go to PROCUREMENT → PURCHASE ORDERS.
+  8. Click NEW PURCHASE ORDER.
+  9. Fill in:
+       • **Project** — link to a project (optional but recommended)
+       • **Currency** — the currency the vendor will invoice in
+       • **Expected delivery date**
+       • **Notes** — any relevant context for the reviewers
+  10. Add line items. For each item click ADD LINE and enter:
+       • **Description** — what is being purchased
+       • **Product** — select from the product catalogue if it exists
+       • **Quantity ordered**
+       • **Unit of measure** (metres, kg, units, etc.)
+       • **Estimated unit price** — your best estimate at this stage
+  11. Click SAVE. The PO is created in 'opening' status with an auto-generated
+      PO number (e.g., PO-2025-0187).
+  12. Review your lines, then click SUBMIT FOR INVENTORY CHECK.
+      Status moves to 'inventory_check'.
+
+STEP 2 — INVENTORY CHECK (THE STORE KEEPER)
+  13. The Store Keeper sees this PO in their MY PO QUEUE.
+  14. Open the PO. For each line, check whether the items are available in
+      the company's warehouses.
+  15. If items ARE available: note this in the line and mark the line as
+      available from stock.
+  16. If items are NOT available: mark the line as requiring external purchase.
+  17. Click COMPLETE INVENTORY CHECK. Status moves to 'store_pricing'.
+
+STEP 3 — STORE PRICING (STORE PRICING OFFICER)
+  18. The Store Pricing Officer sees this PO in their MY PO QUEUE.
+  19. For each line marked as available internally, enter the **Store price**
+      — what it would cost to transfer from FNC's own stock.
+  20. Add any relevant notes about the internal stock condition.
+  21. Click COMPLETE STORE PRICING. Status moves to 'market_pricing'.
+
+STEP 4 — GETTING VENDOR QUOTES (PROCUREMENT OFFICER)
+  22. The Procurement Officer sees this PO in their MY PO QUEUE.
+  23. For each line, contact vendors, collect quotes, and enter:
+       • **Vendor** — select the vendor from the vendor list
+       • **Vendor quote reference** — the vendor's quotation number
+       • **Quoted unit price** — the price the vendor quoted
+  24. Click COMPLETE MARKET PRICING. Status moves to 'price_verification'.
+
+STEP 5 — VERIFYING PRICES (2ND PROCUREMENT)
+  25. The 2nd Procurement Officer sees this PO in their MY PO QUEUE.
+  26. Review all vendor prices. If prices look correct, add **Verification notes**
+      confirming the prices are market-accurate.
+  27. If prices seem wrong, add notes explaining the discrepancy — the Organizer
+      will see these during their review.
+  28. Click CONFIRM PRICE VERIFICATION. Status moves to 'review'.
+
+STEP 6 — ORGANIZER REVIEW
+  29. The Organizer sees this PO in their MY PO QUEUE.
+  30. Review all pricing: store prices, market prices, and verification notes.
+  31. If everything is acceptable, click REQUEST APPROVAL.
+      Status moves to 'pending_approval'.
+  32. If something needs correction, the Organizer can edit the PO at this
+      stage and send it back.
+
+STEP 7 — DEPARTMENT HEAD APPROVAL
+  33. The Department Head sees this PO in their MY PO QUEUE (or in the
+      APPROVAL QUEUE page).
+  34. Click ASSIGN TO ME to take ownership. Status moves to 'dept_assigned'.
+  35. Review the full PO including all pricing and notes.
+  36. If approved: click APPROVE. Status moves to 'approved'. The Organizer
+      is notified.
+  37. If rejected: click REJECT and enter a reason. The PO is sent back to
+      the Organizer for correction.
+
+WHAT HAPPENS WHEN A PO IS REJECTED
+  38. The Organizer receives a rejection notification with the reason.
+  39. The PO returns to 'review' status.
+  40. The Organizer makes the required changes and clicks REQUEST APPROVAL again.
+      The cycle repeats from Step 6.
+
+STEP 8 — RECEIVING GOODS
+  41. Once the PO is 'approved', place the order with the vendor.
+  42. When goods arrive, go to the PO and click RECEIVE GOODS.
+  43. A receipt form opens. For each line, enter the **Quantity received**.
+      You do not have to receive all items at once — you can receive partial
+      quantities across multiple receipts.
+  44. Click CONFIRM RECEIPT.
+  45. The system automatically creates a stock movement into the warehouse
+      and updates inventory balances.
+
+STEP 9 — COMPLETING THE PO
+  46. Once all items have been received and reconciled, click COMPLETE PO.
+      Status moves to 'completed'.
+  47. A completed PO triggers the AP workflow — the Finance team can now
+      create a vendor invoice linked to this PO.
+
+DELETING A PO
+  • A PO can only be deleted when its status is 'opening' or 'inventory_check'.
+  • Once it has progressed beyond inventory check, it cannot be deleted —
+    it must be properly completed or cancelled with a documented reason.
+
+
+My PO Queue — what it is and why you should check it daily
+────────────────────────────────────────────────────────────────────────────────
+The MY PO QUEUE page (accessible from PROCUREMENT → MY QUEUE) is personal. It
+shows only the POs where you need to take action right now. If you are a Store
+Keeper, it shows POs waiting for your inventory check. If you are the Organizer,
+it shows POs you need to submit or review. If you are a Department Head, it
+shows POs waiting for your approval.
+
+Check this list every morning. If a PO sits waiting for your action, the whole
+purchasing process for that project is paused. Delayed POs delay projects.
+
+
+Actions and who can perform them
+────────────────────────────────────────────────────────────────────────────────
+Action                     | Who can do it                    | From status           | Result
+---------------------------|----------------------------------|-----------------------|-----------------------------
+Create PO                  | Any user (Organizer role)        | —                     | Status = opening
+Submit for inventory check | Organizer, System Admin          | opening               | Status = inventory_check
+Complete inventory check   | Store Keeper, System Admin       | inventory_check       | Status = store_pricing
+Complete store pricing     | Store Pricing Officer, Sys Admin | store_pricing         | Status = market_pricing
+Complete market pricing    | Procurement Officer, Sys Admin   | market_pricing        | Status = price_verification
+Confirm price verification | 2nd Procurement, Sys Admin       | price_verification    | Status = review
+Request approval           | Organizer, System Admin          | review                | Status = pending_approval
+Assign to me               | Department Head, Sys Admin       | pending_approval      | Status = dept_assigned
+Approve                    | Department Head, Sys Admin       | dept_assigned         | Status = approved
+Reject                     | Department Head, Sys Admin       | dept_assigned         | Status = review (with reason)
+Receive goods              | Any user with receipt access     | approved              | Receipt created, stock updated
+Complete PO                | Organizer, System Admin          | approved              | Status = completed
+Delete PO                  | Organizer, PO Admin, Sys Admin   | opening, inv. check   | Status = deleted
+
+
+What happens automatically
+────────────────────────────────────────────────────────────────────────────────
+  • A unique PO number is generated automatically when the PO is created.
+  • When goods are received, the system automatically creates a stock
+    movement into the correct warehouse location.
+  • When all lines are fully received, the system calculates the PO as
+    ready for completion.
+  • Approval notifications are sent automatically when status changes
+    require another person's action.
+  • The Approval Queue count shown in the sidebar badge updates in real time.
+
+
+Important rules
+────────────────────────────────────────────────────────────────────────────────
+  • PO roles must be assigned for a project before the workflow can function.
+    If the Store Keeper role is not assigned, nobody will receive the PO after
+    the inventory check is triggered.
+  • You cannot receive more items than were ordered. The system blocks
+    over-receipt.
+  • A PO cannot be edited after it reaches 'pending_approval' status.
+  • Rejection always requires a written reason.
+  • A PO linked to a project contributes to that project's cost tracking.
+  • The PO currency is set at creation and cannot be changed after the PO
+    is submitted.
+
+
+Connections to other modules
+────────────────────────────────────────────────────────────────────────────────
+  • PROJECTS — POs created for a project appear in the project's PO tab and
+    their costs feed into project financials.
+  • INVENTORY — Receiving goods creates an automatic stock movement. The
+    inventory balance increases immediately.
+  • FINANCE (AP) — A completed PO is the trigger for the Finance team to
+    create a vendor invoice. The vendor invoice can be linked to the specific PO.
+  • VENDORS — Each PO is linked to a vendor. The vendor's withholding tax rate
+    is used when creating the linked vendor invoice.
+
+
+================================================================================
+SECTION 4 — INVENTORY
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Inventory module tracks every physical item FNC owns — materials in
+warehouses, items on project sites, and goods in transit between locations.
+It knows exactly how many units of each product are available, where they are
+sitting, what they cost, and when they need to be reordered. Without accurate
+inventory, FNC cannot know whether to buy new materials or use what it already
+has, and it cannot accurately calculate the true cost of a project.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Store Keeper — manages physical stock, records receipts, performs
+    transfers between locations
+  • Procurement team — checks stock availability before raising purchase orders
+  • Finance team — uses inventory valuations for balance sheet reporting
+  • Project Managers — tracks materials issued to projects
+  • System Admin — full access to all inventory functions
+
+
+Key concepts you need to understand
+────────────────────────────────────────────────────────────────────────────────
+PRODUCTS AND SKUS
+A product is any item FNC tracks in its inventory — steel beams, cables,
+generators, screws, paint, etc. Each product has a unique SKU (Stock Keeping
+Unit) code. Think of the SKU as the product's identity card. No two products
+can share the same SKU within the same company.
+
+STOCK LOCATIONS
+Stock can be in different physical places. The system tracks these as locations:
+  • Warehouse — a physical storage space (e.g., "Main Erbil Warehouse")
+  • Site — a project construction site
+  • Virtual In — the system's way of receiving stock from outside FNC
+    (goods come in from this virtual source)
+  • Virtual Out — the system's way of consuming stock that leaves FNC
+    permanently (e.g., materials used in construction and embedded in the work)
+
+STOCK BALANCE — WHAT THOSE NUMBERS MEAN
+  • On hand — the total quantity physically present in a location
+  • Reserved — quantity committed to a manufacturing order or project issue
+    that has not yet been moved
+  • Available — on hand minus reserved (what you can actually use or sell)
+
+WHAT AVCO MEANS
+AVCO stands for Average Cost Valuation. It is the default way the system
+calculates what each unit of stock is worth. Every time new stock arrives at
+a different price, the system recalculates the average cost of all units.
+Example: You have 10 steel bars at IQD 50,000 each. You receive 10 more at
+IQD 60,000 each. The new average cost = (10×50,000 + 10×60,000) / 20 =
+IQD 55,000 per bar. This average is used for all subsequent valuations.
+
+STOCK LOTS
+A lot (also called a batch) is a group of items that arrived together and are
+tracked as a unit. Lots are useful when you need to know the expiry date of a
+batch of materials, or when different deliveries of the same product have
+different quality certifications. Use lot tracking when traceability matters.
+
+THE IMMUTABLE LEDGER
+Every stock movement is permanently recorded and cannot be deleted or changed.
+This is by design — just like a financial journal entry, stock moves create a
+history that auditors and managers can rely on. If a mistake is made, you
+correct it by creating a new counter-movement, not by editing or deleting the
+original.
+
+
+Step by step — common inventory tasks
+────────────────────────────────────────────────────────────────────────────────
+ADDING A NEW PRODUCT
+  1. Go to INVENTORY → PRODUCTS.
+  2. Click NEW PRODUCT.
+  3. Enter the **SKU** (must be unique per company), **Name**, **Unit of measure**,
+     and **Category**.
+  4. Set the **Valuation method** (AVCO is the default and recommended for most
+     materials).
+  5. Set the **Reorder point** — when stock falls below this number, the system
+     will alert you.
+  6. Click SAVE.
+
+CREATING A NEW STOCK LOCATION
+  1. Go to INVENTORY → LOCATIONS.
+  2. Click NEW LOCATION.
+  3. Enter the **Location name** and **Code** (must be unique).
+  4. Select the **Type** (warehouse, virtual_in, virtual_out).
+  5. Click SAVE.
+
+TRANSFERRING STOCK BETWEEN LOCATIONS
+  1. Go to INVENTORY → STOCK MOVES.
+  2. Click NEW TRANSFER.
+  3. Select the **Product**, the **From location**, and the **To location**.
+  4. Enter the **Quantity** to move and the **Unit cost**.
+  5. Add a lot number if lot tracking is enabled for this product.
+  6. Click CONFIRM. The stock balance updates immediately at both locations.
+
+CHECKING CURRENT STOCK LEVELS
+  1. Go to INVENTORY → STOCK BALANCES.
+  2. Use the filters to search by product, location, or both.
+  3. The table shows on-hand, reserved, and available quantities at each
+     location.
+
+LOW STOCK ALERTS
+When a product's available quantity falls below its reorder point, it appears
+highlighted in the stock balances view. Review this regularly and raise purchase
+orders to replenish.
+
+
+What happens automatically
+────────────────────────────────────────────────────────────────────────────────
+  • When goods are received against a purchase order, the system automatically
+    creates a stock move from the Virtual In location to the designated warehouse
+    location.
+  • When a manufacturing order is completed, the system creates a stock move
+    for the finished product into the warehouse.
+  • When materials are issued to a project, the system creates a stock move
+    from the warehouse to the Virtual Out location.
+  • The AVCO unit cost is recalculated automatically every time stock arrives
+    at a different price.
+  • Inter-company stock transfers are detected automatically and routed to
+    the Inter-Company module for pricing approval.
+
+
+Important rules
+────────────────────────────────────────────────────────────────────────────────
+  • You cannot move more stock than is available (unless moving from a
+    Virtual In location, which has no physical limit).
+  • You cannot transfer stock from and to the same location.
+  • Stock moves cannot be deleted or edited once created. To correct an error,
+    create a counter-transfer in the opposite direction.
+  • A product can only be deleted if it has no stock move history. Once a
+    product has been traded, it is deactivated (hidden from dropdowns) rather
+    than deleted.
+
+
+Connections to other modules
+────────────────────────────────────────────────────────────────────────────────
+  • PURCHASE ORDERS — goods receipts create stock movements automatically.
+  • MANUFACTURING — component consumption and finished goods output create
+    stock movements automatically.
+  • PROJECTS — material issues to projects reduce warehouse stock.
+  • FINANCE — inventory valuations feed into the balance sheet as assets.
+  • INTER-COMPANY — cross-entity stock transfers route through the interco
+    module for pricing and GL posting.
+
+
+================================================================================
+SECTION 5 — FINANCE: CORE (ACCOUNTS, JOURNALS, FX RATES, PERIODS)
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Finance core module is the foundation of FNC's accounting. Every financial
+event in the company — every purchase, every payment, every salary, every
+invoice — ultimately creates a journal entry here. The general ledger is the
+complete, permanent financial record of the company. From it, all financial
+reports are generated: the trial balance, profit and loss statement, and balance
+sheet.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Finance team — creates and posts journal entries, manages accounts, closes
+    periods, monitors FX rates
+  • Company Admin — reviews financial reports, closes accounting periods
+  • System Admin — full access including period closure and account deletion
+  • Other modules — many system actions (payroll posting, vendor payments,
+    project invoices) automatically create journal entries without manual input
+
+
+Key concepts you need to understand
+────────────────────────────────────────────────────────────────────────────────
+THE CHART OF ACCOUNTS
+The chart of accounts is the master list of every financial category the
+company uses to record transactions. Every transaction must be assigned to at
+least two accounts. The accounts are organised by type:
+
+  • Asset accounts — things FNC owns (cash, receivables, equipment, inventory)
+  • Liability accounts — things FNC owes (vendor payables, loans, accruals)
+  • Equity accounts — the owners' share of the business
+  • Revenue accounts — money earned (project revenue, rental income)
+  • Expense accounts — money spent (materials, salaries, depreciation)
+
+WHAT A JOURNAL ENTRY IS (DOUBLE-ENTRY EXPLAINED SIMPLY)
+Every financial event must be recorded in at least two accounts. This is called
+double-entry bookkeeping. For every amount that goes into one account (a debit),
+the same amount must leave another account (a credit). The total of all debits
+must always equal the total of all credits. The system enforces this — you
+cannot post a journal entry that does not balance.
+
+WHAT DEBIT AND CREDIT MEAN FOR A CONSTRUCTION COMPANY
+In everyday language, "debit" means your bank account went down and "credit"
+means it went up. In accounting, it is different:
+  • Debit increases Asset and Expense accounts
+  • Credit increases Liability, Equity, and Revenue accounts
+  • The opposite operation decreases the account
+
+Example: FNC pays a vendor IQD 5,000,000 for steel.
+  Debit: Materials Expense        5,000,000   (expense goes up)
+  Credit: Cash / Bank Account     5,000,000   (asset goes down)
+Both lines are for the same amount. The entry balances.
+
+WHY POSTING IS IRREVERSIBLE
+A draft journal entry can be edited. Once you click POST, it becomes permanent.
+The reason is that the general ledger must be a trustworthy, tamper-proof
+record. Auditors need to see that no entry was changed after it was recorded.
+If you make a mistake on a posted entry, you must create a reversal entry —
+the system can do this automatically when you cancel a posted journal.
+
+WHAT AN ACCOUNTING PERIOD IS
+An accounting period is a defined span of time (usually one month) during which
+transactions are recorded. FNC uses 12 monthly periods per year. When a period
+is closed, no new journal entries can be dated within it. You close a period
+when you are confident all transactions for that month have been recorded and
+reconciled. Closing is irreversible.
+
+WHAT FX RATE STALENESS MEANS
+FNC operates in multiple currencies (IQD, USD, EUR). The system needs to know
+the exchange rate to convert foreign-currency transactions into IQD for the
+books. If the FX rate for a currency has not been updated recently, the system
+flags it as stale. Using a stale rate produces inaccurate financials. The system
+will warn you before posting a journal with a stale rate.
+
+
+Step by step — managing the chart of accounts
+────────────────────────────────────────────────────────────────────────────────
+ADDING A NEW ACCOUNT
+  1. Go to FINANCE → CHART OF ACCOUNTS.
+  2. Click NEW ACCOUNT.
+  3. Enter the **Account code** (must be unique per company — e.g., 1001),
+     **Account name**, and **Account type**.
+  4. Optionally select a **Parent account** to create a hierarchical structure.
+  5. Set **Currency** if this account is always in a specific currency.
+  6. Click SAVE.
+
+VIEWING THE LEDGER FOR AN ACCOUNT
+  1. Go to FINANCE → CHART OF ACCOUNTS.
+  2. Click any account row.
+  3. Click VIEW LEDGER. You will see every posted transaction on this account,
+     with dates, amounts, and running balances.
+  4. Use the **From date** and **To date** filters to narrow the view.
+
+
+Step by step — creating a journal entry
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to FINANCE → JOURNAL ENTRIES.
+  2. Click NEW JOURNAL ENTRY.
+  3. Enter:
+       • **Entry date** — must fall within an open accounting period
+       • **Description** — a plain-English explanation of what this entry records
+       • **Reference** — any supporting document reference
+  4. Add lines. For each line click ADD LINE and enter:
+       • **Account** — select from the chart of accounts
+       • **Debit** or **Credit** amount (not both on the same line)
+       • **Analytic account** — optional, links cost to a project or dimension
+       • **Cost center** — optional, for departmental cost tracking
+       • **Currency** — if different from IQD, enter the foreign currency amount
+         and the system will look up the current FX rate
+  5. The TOTAL DEBITS and TOTAL CREDITS at the bottom must match. If they do
+     not match, you cannot post.
+  6. Click SAVE to save as draft. Review the entry carefully.
+  7. Click POST to make it permanent. The general ledger updates immediately.
+
+CANCELLING A POSTED JOURNAL
+  1. Open the posted journal entry.
+  2. Click CANCEL.
+  3. The system automatically creates a reversal entry with all debits and
+     credits swapped.
+  4. Both the original and the reversal are kept permanently in the ledger.
+
+
+Managing accounting periods
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to FINANCE → PERIODS.
+  2. The list shows all 12 monthly periods with their status (open or closed).
+  3. To close a period: click the period row, then click CLOSE PERIOD.
+  4. The system will block closure if there are any draft (unposted) journal
+     entries dated within that period. You must post or delete all drafts first.
+  5. Once closed, a period cannot be reopened. Contact a system admin if you
+     need to reopen a closed period — this is a rare and serious action.
+
+
+Managing FX rates
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to FINANCE → FX RATES.
+  2. The page shows all currencies with their latest rates and how old those
+     rates are.
+  3. Rates highlighted in amber are approaching the staleness threshold.
+     Rates highlighted in red are stale and will trigger warnings on journals.
+  4. To manually add a rate: click ADD RATE, select the **Currency pair** and
+     enter the **Rate** and **Effective date**.
+  5. To trigger an automatic sync with the central bank feed, click SYNC RATES.
+  6. The system admin can configure the staleness thresholds in Settings.
+
+
+Journal entry statuses
+────────────────────────────────────────────────────────────────────────────────
+Status    | What it means                              | How you get here             | What happens next
+----------|--------------------------------------------|------------------------------|---------------------------
+draft     | Entry created but not yet in the ledger    | Finance user creates entry   | Post or delete
+posted    | Permanently recorded in the general ledger | Finance user clicks POST     | Can only be reversed by cancelling
+cancelled | Entry reversed and no longer effective     | Finance user clicks CANCEL   | A reversal entry is created automatically
+
+
+Connections to other modules
+────────────────────────────────────────────────────────────────────────────────
+  • All other Finance modules feed into the general ledger through journal
+    entries.
+  • PAYROLL — when a payroll run is posted, the system creates salary expense
+    journal entries automatically.
+  • VENDOR PAYMENTS — each payment against a vendor invoice creates a GL entry.
+  • PROJECT INVOICES — issued project invoices create revenue entries.
+  • MANUFACTURING — MO completions can create cost-of-goods entries.
+  • INTER-COMPANY — interco transactions post simultaneous entries in both
+    companies' ledgers.
+
+
+================================================================================
+SECTION 6 — FINANCE: ACCOUNTS RECEIVABLE (AR)
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+Accounts Receivable (AR) is the money that clients owe FNC. When FNC issues a
+project invoice to a client, or bills a rental client for equipment use, the
+outstanding amount becomes an AR balance. The AR module gives the Finance team
+a consolidated view of everything owed by all clients across all projects and
+rental contracts, including how overdue each balance is.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Finance team — monitors outstanding balances, follows up on late payments,
+    tracks cash flow
+  • Company Admin and Directors — reviews the AR dashboard for business
+    health indicators
+  • System Admin — full access
+
+
+Where AR invoices come from
+────────────────────────────────────────────────────────────────────────────────
+AR invoices in FNC come from two sources:
+  1. PROJECT INVOICES — raised by the Finance team against project contracts.
+     These are milestone, progress, cost-plus, or fixed lump sum billings to
+     construction clients.
+  2. RENTAL INVOICES — raised automatically when a rental contract billing
+     period expires.
+
+You do not create invoices from the AR dashboard. The AR module is a read-only
+view that aggregates invoices from both sources. To create a project invoice,
+go to the Projects module. To create a rental invoice, go to the Rental module.
+
+
+Understanding the AR dashboard
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to FINANCE → ACCOUNTS RECEIVABLE.
+  2. The dashboard shows four key figures at the top:
+       • Total Outstanding — all money currently owed to FNC by all clients
+       • Open Invoices — the count of invoices not yet fully paid
+       • Overdue Amount — the portion of outstanding that is past its due date
+       • Collected This Month — total payments received in the current month
+
+THE AGING ANALYSIS
+Below the summary, you will see the aging analysis. This shows how long each
+outstanding amount has been owed:
+  • 0–30 days — recently issued invoices, not yet overdue (shown in green)
+  • 31–60 days — getting close to overdue territory (shown in amber)
+  • 61–90 days — significantly overdue, requires active follow-up (shown in red)
+  • Over 90 days — seriously overdue, may require legal action (shown in dark red)
+
+The bar length shows what proportion of total outstanding sits in each bucket.
+A healthy AR position has most of its balance in the 0–30 day bucket.
+
+THE BY-CLIENT TABLE
+Further down the page is a table showing what each client owes. Click any
+client row to filter the invoice list below to show only that client's invoices.
+
+THE INVOICE LIST
+The invoice list shows every outstanding invoice. You can:
+  • Search by invoice number or client name
+  • Filter by source (project invoices or rental invoices)
+  • Toggle to show only overdue invoices
+  • Click any invoice row to navigate directly to the source record (the
+    project invoice or the rental contract)
+
+WHAT "OVERDUE" MEANS
+An invoice is overdue when today's date is past the invoice's due date and the
+invoice has not been fully paid. The due date is set when the invoice is issued,
+based on the client's payment terms (e.g., Net 30 means payment is due 30 days
+after the invoice date).
+
+IMPORTANT: Payments are recorded in the Projects or Rental module, not from
+this AR dashboard. When a payment is recorded there, the AR balance updates
+automatically.
+
+
+How to see what one specific client owes
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to FINANCE → ACCOUNTS RECEIVABLE.
+  2. Scroll to the By Client table.
+  3. Click the client's name row. The invoice list below filters to show only
+     that client's invoices.
+  4. You can see the invoice number, issue date, due date, amount, and
+     how many days overdue each invoice is.
+  5. Click an invoice row to navigate to the original project invoice or
+     rental contract for full details.
+
+
+================================================================================
+SECTION 7 — FINANCE: ACCOUNTS PAYABLE (AP)
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+Accounts Payable (AP) is money FNC owes to vendors. When a vendor delivers
+goods or services, they send a paper invoice. The Finance team records this in
+the AP module as a vendor invoice. Every vendor invoice must go through an
+approval process before payment can be made. The AP module tracks all outstanding
+vendor invoices, manages approvals, records payments, and shows how long FNC has
+owed money to each vendor.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Finance team — creates vendor invoices, records payments, monitors
+    outstanding AP balances
+  • System Admin — the only role that can approve vendor invoices before
+    payment
+  • Company Admin — views AP dashboard and aging
+  • Management — monitors total outstanding AP for cash flow planning
+
+
+The difference between a PO and a vendor invoice
+────────────────────────────────────────────────────────────────────────────────
+A PURCHASE ORDER (PO) is the document FNC sends to a vendor saying "we want to
+buy these items at these prices." The PO is created before goods arrive.
+
+A VENDOR INVOICE is the document the vendor sends to FNC after they have
+delivered the goods or services, saying "you owe us this amount." The vendor
+invoice is created after goods arrive and the PO is completed.
+
+The Finance team creates the vendor invoice in the system when they receive the
+paper invoice from the vendor. The vendor invoice can be linked to the specific
+PO that triggered the purchase.
+
+
+Vendor invoice statuses
+────────────────────────────────────────────────────────────────────────────────
+Status          | What it means                             | How you get here                    | What happens next
+----------------|-------------------------------------------|-------------------------------------|----------------------------------------
+draft           | Invoice created but not yet submitted     | Finance user creates invoice        | Add lines, then submit for approval
+submitted       | Submitted to system admin for approval    | Finance clicks SUBMIT FOR APPROVAL  | System admin approves or rejects
+approved        | System admin approved the invoice         | System admin clicks APPROVE         | Finance can record payments
+partially_paid  | Some but not all of the invoice is paid   | Finance records a partial payment   | Continue recording payments
+paid            | Fully paid                                | Final payment clears the balance    | Invoice is closed
+cancelled       | Voided before payment                     | Finance or admin clicks CANCEL      | No payment can be made
+
+
+Step by step — creating and paying a vendor invoice
+────────────────────────────────────────────────────────────────────────────────
+CREATING A VENDOR INVOICE
+  1. Go to FINANCE → ACCOUNTS PAYABLE.
+  2. Click NEW VENDOR INVOICE.
+  3. Fill in:
+       • **Vendor** — select from the vendor list
+       • **Purchase order** — optionally link to the PO this invoice covers
+         (select from the vendor's completed POs)
+       • **Invoice number** — the number printed on the vendor's paper invoice
+         (this must match exactly for audit purposes)
+       • **Invoice date** — the date on the vendor's paper invoice
+       • **Due date** — when payment is due (auto-calculated from the vendor's
+         payment terms, but can be overridden)
+       • **Currency** — usually matches the PO currency
+       • **Cost center** and **Analytic account** — for cost allocation
+       • **Notes** — any relevant context
+  4. Add invoice lines. For each line click ADD LINE and enter:
+       • **Description** — what the line is for
+       • **PO line** — optionally link to a specific PO line
+       • **Quantity** and **Unit price**
+       • **GL account** — the expense account to post this cost to
+  5. The totals section shows:
+       • Subtotal — sum of all lines
+       • Tax — any applicable tax amount
+       • WHT — withholding tax (calculated automatically from the vendor's rate)
+       • Net payable — what FNC actually owes after deductions
+  6. Click SAVE. Invoice is created in 'draft' status.
+
+SUBMITTING FOR APPROVAL
+  7. Review the invoice carefully, then click SUBMIT FOR APPROVAL.
+  8. Status moves to 'submitted'. System admins are notified automatically.
+
+APPROVAL BY SYSTEM ADMIN
+  9. The system admin opens the invoice from their notifications or from the
+     AP dashboard (the "Pending Approval" KPI card is clickable and filters to
+     submitted invoices).
+  10. The system admin reviews all lines and totals.
+  11. Click APPROVE to approve. Status moves to 'approved'. The Finance team
+      is notified.
+  12. If something is wrong: click REJECT, enter the rejection reason, and click
+      REJECT INVOICE. The invoice returns to 'draft' and the Finance team is
+      notified with the reason.
+
+RECORDING A PAYMENT
+  13. Once the invoice is 'approved', open it and click RECORD PAYMENT.
+  14. A payment form opens. Fill in:
+       • **Amount** — you can pay less than the full amount for partial payments
+       • **Payment date**
+       • **Payment method** — bank transfer, cheque, cash, or other
+       • **Reference** — the bank transfer reference or cheque number
+       • **Notes** — any context
+  15. Click RECORD PAYMENT.
+  16. If the amount is less than the outstanding balance, status moves to
+      'partially_paid'. Make further payments until the invoice is fully paid.
+  17. When the final payment clears the balance, status automatically moves
+      to 'paid'.
+
+
+What WHT (Withholding Tax) is
+────────────────────────────────────────────────────────────────────────────────
+Withholding tax (WHT) is a tax that FNC deducts from vendor payments and pays
+directly to the Iraqi tax authority on the vendor's behalf. The vendor invoices
+FNC for the full amount, but FNC pays the vendor the net amount (minus WHT) and
+remits the WHT separately.
+
+Each vendor has a WHT rate configured in their vendor profile. When you create a
+vendor invoice, the system automatically calculates the WHT amount:
+  WHT amount = Subtotal × Vendor's WHT rate
+  Net payable = (Subtotal + Tax) − WHT amount
+
+You do not need to calculate this manually. The system handles it.
+
+
+AP aging — what it means
+────────────────────────────────────────────────────────────────────────────────
+The AP aging shows how long FNC has owed money to vendors:
+  • 0–30 days — invoices recently approved, not yet past their due date
+  • 31–60 days — invoices approaching overdue territory
+  • 61–90 days — invoices past their due date
+  • Over 90 days — seriously overdue, risk of vendor relationship damage
+
+Unlike AR aging (which shows how long clients have owed FNC money), AP aging
+shows how long FNC has owed vendors money. Pay invoices before they become
+overdue to maintain vendor relationships.
+
+
+Connections to other modules
+────────────────────────────────────────────────────────────────────────────────
+  • PURCHASE ORDERS — vendor invoices can be linked to a completed PO for
+    traceability.
+  • VENDORS — the vendor's WHT rate, payment terms, and currency are pulled
+    from their vendor profile automatically.
+  • FINANCE (GL) — when a payment is recorded, the system automatically
+    creates a journal entry in the general ledger via the outbox system.
+  • COST CENTERS / ANALYTIC ACCOUNTS — invoice lines can be allocated to
+    specific departments or projects.
+
+
+================================================================================
+SECTION 8 — HR: EMPLOYEES, DEPARTMENTS, SHIFTS, WORK LOCATIONS
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The HR module holds the complete record of every person who works for FNC —
+their personal details, employment terms, department, shift schedule, and bank
+information. It is the foundation for attendance tracking and payroll processing.
+Every other people-related module (attendance, leave, overtime, payroll) depends
+on data that lives here.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • HR Admin (module admin) — creates and manages employee records, departments,
+    shifts, and work locations
+  • Company Admin — has full HR access within their company
+  • System Admin — full access across all companies
+  • Department Managers — can view their own team members
+  • Employees — can view their own profile
+
+
+The employee record — what each field means
+────────────────────────────────────────────────────────────────────────────────
+  • **Employee number** — FNC's internal ID for this employee (unique per company)
+  • **First name / Last name** — legal name as on their ID documents
+  • **National ID** — Iraqi national ID or passport number
+  • **Job title** — their role description
+  • **Department** — the team they belong to
+  • **Work location** — their primary workplace (linked to a geofenced location)
+  • **Manager** — their direct line manager (another employee in the system)
+  • **Employment type** — one of four types (see below)
+  • **Hire date** — the date they started work at FNC
+  • **User account** — optionally link to a system login account, required for
+    the mobile app
+
+EMPLOYMENT TYPES
+  • Full-time — standard permanent employment, fixed monthly salary
+  • Part-time — reduced hours, prorated salary
+  • Contractor / Daily — paid by the day or by contract, not on monthly payroll
+  • Expat — international employee, may have different tax and allowance rules
+
+
+Work locations and geofencing
+────────────────────────────────────────────────────────────────────────────────
+A work location is a specific physical place where employees work — the main
+Erbil office, a construction site, a factory building. Each location has:
+  • GPS coordinates (latitude and longitude)
+  • A geofence radius (default 200 metres)
+
+A geofence is an invisible circular boundary around the location. When an
+employee clocks in or out using the mobile app, the system checks whether they
+are physically within this circle. If they are within the radius, the punch is
+marked as geofence-valid. If they are outside it, the punch is still recorded
+but flagged — the HR admin can see the exact distance from the boundary.
+
+This prevents employees from clocking in from home or another location.
+
+
+Shift configurations
+────────────────────────────────────────────────────────────────────────────────
+A shift defines the working hours for a group of employees:
+  • **Start time** — when the shift begins (e.g., 08:00)
+  • **End time** — when the shift ends (e.g., 17:00)
+  • **Break minutes** — lunch or prayer break time subtracted from worked hours
+  • **Overtime threshold hours** — any time worked beyond this number per day
+    is considered overtime (e.g., 8 hours means anything after 9 hours is OT)
+
+Shifts are assigned to individual employees with an effective date. If an
+employee switches shifts, create a new assignment with the new shift and the
+date it starts from.
+
+
+Bank details and why they are masked
+────────────────────────────────────────────────────────────────────────────────
+Each employee can have their bank details stored in the system for payroll
+payment processing. Bank account numbers are masked on screen by default —
+you will see asterisks instead of the full number. This protects against
+accidental exposure.
+
+To view the full bank account number:
+  1. Open the employee record.
+  2. Go to the BANK DETAILS section.
+  3. Click REVEAL. This action is permanently logged in the audit trail,
+     recording who revealed the number and when.
+
+
+Salary configuration
+────────────────────────────────────────────────────────────────────────────────
+Each employee's pay structure is set in their salary configuration:
+  • **Base salary** — the fixed monthly amount before adjustments
+  • **Allowances** — additional payments (housing allowance, transport allowance,
+    meal allowance). These are named items with individual amounts.
+  • **Deductions** — regular deductions (loan repayments, voluntary savings).
+    These reduce net pay.
+  • **Effective from date** — when this salary structure takes effect.
+    Previous configurations are preserved for historical payroll accuracy.
+
+
+Step by step — creating an employee record
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to HR → EMPLOYEES.
+  2. Click NEW EMPLOYEE.
+  3. Fill in the required fields: **Employee number**, **First name**,
+     **Last name**, **Job title**, **Department**, **Employment type**,
+     **Hire date**.
+  4. Assign a **Work location** if the employee works at a specific site.
+  5. Select a **Manager** if applicable.
+  6. If this employee needs system access (for mobile app): click the
+     **User account** field and link to their login account, OR invite them
+     to create a login from the Admin Users page.
+  7. Click SAVE. The employee record is created.
+  8. Go to the SALARY tab and click SET SALARY to configure their pay structure.
+  9. Go to the SHIFTS tab and click ASSIGN SHIFT to link them to a shift pattern.
+
+
+Terminating an employee
+────────────────────────────────────────────────────────────────────────────────
+  1. Open the employee record.
+  2. Click TERMINATE EMPLOYEE.
+  3. Enter the **Termination date** and the **Reason**.
+  4. Click CONFIRM.
+  5. The employee's status changes to 'terminated'. They will no longer appear
+     in active employee lists but their records are preserved permanently for
+     payroll history and audit purposes.
+  6. Their system login (if they have one) should be deactivated separately
+     by a system admin from the Admin Users page.
+
+
+================================================================================
+SECTION 9 — HR: LEAVE AND OVERTIME
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Leave and Overtime module manages time away from work and time worked beyond
+normal hours. Leave requests go through an approval process to ensure coverage
+is maintained. Overtime is tracked either from attendance data or by manual
+entry, and feeds directly into the payroll calculation at month end.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Employees — submit leave requests and view their leave balances
+  • Managers / HR Admin — approve or reject leave requests, approve overtime
+  • Company Admin — bulk approvals, policy configuration
+  • System Admin — full access
+
+
+Leave types and what they mean
+────────────────────────────────────────────────────────────────────────────────
+Leave types are configured per company by the HR admin. Common types:
+  • Annual leave — paid leave; employees are entitled to a set number of days
+    per year (configured in the leave type settings)
+  • Sick leave — paid leave for illness; may require documentation
+  • Unpaid leave — approved absence without pay; reduces the monthly salary
+    calculation
+  • Emergency leave — short-notice paid leave for personal emergencies
+
+Each leave type has:
+  • **Is paid** — yes means the employee is paid as normal during this leave
+  • **Max days per year** — the annual entitlement (0 means unlimited)
+  • **Requires approval** — yes means the request must be approved before it
+    takes effect
+
+
+Leave request statuses
+────────────────────────────────────────────────────────────────────────────────
+Status   | What it means                              | How you get here              | What happens next
+---------|-------------------------------------------|-------------------------------|------------------------------
+pending  | Request submitted, awaiting review         | Employee submits request      | Manager approves or rejects
+approved | Leave is confirmed                         | Manager clicks APPROVE        | Leave dates are locked
+rejected | Leave denied                               | Manager clicks REJECT         | Employee can resubmit
+cancelled| Employee withdrew the request              | Employee clicks CANCEL        | No effect on leave balance
+
+
+Step by step — how to request leave (employee)
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to HR → LEAVE REQUESTS.
+  2. Click NEW LEAVE REQUEST.
+  3. Select the **Leave type** (annual, sick, emergency, etc.).
+  4. Choose the **Start date** and **End date** of your absence.
+     The system calculates the number of days automatically.
+  5. Enter a **Reason** explaining why you need this leave.
+  6. Click SUBMIT. Your manager and HR admin will be notified.
+  7. Check the status on your MY LEAVE page. When it changes to 'approved',
+     your absence is formally recorded. When payroll runs, those days are
+     treated as approved leave.
+
+
+Step by step — how to approve or reject leave (manager / HR admin)
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to HR → LEAVE REQUESTS.
+  2. Filter by **Status = pending** to see requests awaiting action.
+  3. Click the leave request row.
+  4. Review the dates and reason.
+  5. To approve: click APPROVE. The employee is notified.
+  6. To reject: click REJECT, enter the rejection reason, click CONFIRM REJECT.
+     The employee is notified with your reason.
+
+
+Overtime
+────────────────────────────────────────────────────────────────────────────────
+Overtime is any time an employee works beyond their shift's overtime threshold.
+For example, if the threshold is 8 hours and an employee works 10 hours, they
+have 2 hours of overtime.
+
+Overtime can be created in two ways:
+  1. AUTOMATICALLY — when attendance data shows a punch-out significantly after
+     the shift end time, the system can flag potential overtime for review.
+  2. MANUALLY — a manager or HR admin can create an overtime record directly
+     by going to HR → OVERTIME and clicking NEW OVERTIME ENTRY.
+
+Overtime records follow an approval process identical to leave requests. Only
+approved overtime is included in the payroll calculation. Unapproved overtime
+is visible to the HR team for review but does not affect pay.
+
+
+Bulk overtime approval
+────────────────────────────────────────────────────────────────────────────────
+If many employees worked overtime on the same day (e.g., a project deadline),
+you do not need to approve each record individually:
+  1. Go to HR → OVERTIME.
+  2. Use the date filter to show all overtime records for the relevant date.
+  3. Select all records using the checkbox at the top of the list.
+  4. Click BULK APPROVE.
+  5. All selected records move to 'approved' simultaneously.
+
+
+================================================================================
+SECTION 10 — ATTENDANCE
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Attendance module records when employees arrive at and leave from work.
+It uses GPS location checks to verify that employees are physically at their
+work location when they clock in. This data feeds directly into payroll (to
+calculate paid working days) and overtime tracking.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Employees — clock in and out via the mobile app
+  • HR Admin — monitors attendance, investigates anomalies, views daily records
+  • Company Admin — views company-wide attendance reports
+  • Payroll team — uses attendance summaries for payroll processing
+  • System Admin — full access
+
+
+What a punch is
+────────────────────────────────────────────────────────────────────────────────
+A punch is a single clock-in or clock-out event. Every working day should
+have exactly two punches: one "in" punch when the employee arrives, and one
+"out" punch when they leave. The system records:
+  • The exact time of the punch (to the second)
+  • The GPS coordinates of the employee's phone at the time of the punch
+  • The distance in metres from the work location
+  • Whether the punch was within the geofence (valid) or outside it (flagged)
+
+
+What makes a punch valid vs flagged
+────────────────────────────────────────────────────────────────────────────────
+A punch is marked geofence-valid when the employee's GPS location at the time
+of the punch was within the configured radius of their assigned work location
+(typically 200 metres).
+
+A punch is marked invalid when:
+  • The employee was further than the radius from the work location
+  • No GPS data was provided (the employee had location services turned off)
+
+Flagged punches are still recorded — the system does not block them. But the
+HR admin can see the distance and decide whether to accept or query the punch.
+
+
+The attendance calendar — reading the colored dots
+────────────────────────────────────────────────────────────────────────────────
+The attendance calendar gives a visual overview of an employee's attendance
+over a month. Each day has a colored dot:
+
+  • Green — the employee was present and their punches were valid
+  • Amber — the employee was present and worked overtime
+  • Red — the employee was absent on a working day (no punches recorded)
+  • Blue — the employee was on approved leave on this day
+  • Grey — this was a weekend or non-working day for this employee
+
+Click any day on the calendar to see the full punch detail for that day —
+exact clock-in time, clock-out time, GPS coordinates, and distance from the
+work location.
+
+
+What happens if an employee forgets to clock out
+────────────────────────────────────────────────────────────────────────────────
+If an employee clocks in but does not clock out, the system records a single
+"in" punch with no paired "out" punch. The day is flagged as incomplete. The
+HR admin can view these flagged days and manually add the missing clock-out time
+after confirming with the employee or their manager. An incomplete punch does
+not block payroll — the HR team handles it during the monthly payroll preparation.
+
+
+How to view a specific employee's attendance
+────────────────────────────────────────────────────────────────────────────────
+EMPLOYEE VIEW (own attendance only)
+  1. Go to ATTENDANCE in the left sidebar.
+  2. Your own attendance calendar appears by default.
+  3. Use the month selector to navigate to previous months.
+  4. Click any day to see punch details.
+
+ADMIN VIEW (all employees)
+  1. Go to ATTENDANCE → ALL EMPLOYEES (only visible to HR Admin and above).
+  2. Use the **Employee** filter to select a specific person.
+  3. Use the **From date** and **To date** filters to set the date range.
+  4. Click SEARCH.
+  5. The list shows every punch record for the selected employee in the period.
+
+
+================================================================================
+SECTION 11 — PAYROLL
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Payroll module calculates, reviews, approves, and posts the monthly salary
+payment for all FNC employees. It draws from HR (salary configurations,
+allowances, deductions), attendance (working days), and leave data (unpaid
+absences) to calculate exactly what each employee should be paid. Once a payroll
+run is posted, it creates journal entries in the general ledger automatically.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • HR Admin — creates and processes payroll runs, reviews payslips
+  • Company Admin — approves the payroll run before it is posted
+  • Finance team — reviews the GL impact after posting
+  • Employees — view and download their own payslips
+  • System Admin — full access
+
+
+Payroll run statuses
+────────────────────────────────────────────────────────────────────────────────
+Status      | What it means                                  | How you get here              | What happens next
+------------|------------------------------------------------|-------------------------------|-------------------------------
+draft       | Run created, calculations not yet started      | HR Admin creates the run      | HR Admin clicks PROCESS
+processing  | System is calculating salaries                 | HR Admin clicks PROCESS       | Wait for calculations to complete
+review      | Calculations done, ready for human review      | Processing completes          | HR Admin reviews, then submits
+approved    | Company Admin has signed off                   | Company Admin clicks APPROVE  | HR Admin posts the run
+posted      | Payroll has been committed to the GL           | HR Admin clicks POST          | Payslips are locked; GL entries created
+rejected    | Company Admin has sent back for correction     | Company Admin clicks REJECT   | HR Admin corrects and resubmits
+
+
+Step by step — running payroll
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to PAYROLL → PAYROLL RUNS.
+  2. Click NEW PAYROLL RUN.
+  3. Select the **Period start** and **Period end** (typically the first and
+     last day of the month).
+  4. Click CREATE. The system creates a draft run including all active employees.
+  5. Click PROCESS. The system calculates each employee's pay:
+       • Base salary from their salary configuration
+       • Allowances from their salary configuration
+       • Deductions for unpaid leave days
+       • Income tax deduction (if configured for the company)
+       • Social security deductions (if configured)
+       • Net pay = gross - all deductions
+  6. Status moves to 'review'. Open the run to see each employee's payslip.
+  7. Review each payslip. Check that the gross pay, deductions, and net pay
+     look correct. If something is wrong (e.g., a salary change was not entered
+     in HR), correct the underlying data in HR, then re-run processing.
+  8. Click SUBMIT FOR APPROVAL. The company admin is notified.
+  9. The company admin opens the run, reviews the total figures, and clicks
+     APPROVE. Or, if there is an issue, clicks REJECT with a reason.
+  10. After approval, click POST. This is irreversible.
+
+WHAT POSTING DOES
+When you post a payroll run:
+  • Every employee's payslip is locked — no further changes can be made.
+  • The system automatically creates journal entries in the general ledger:
+      Debit: Salary Expense account (and individual allowance accounts)
+      Credit: Payroll Payable account (showing FNC now owes salaries)
+  • The FX rates at the moment of processing are locked into the payslips.
+    This ensures that a salary paid in USD is converted to IQD at the rate
+    that was valid on the processing date, not a later rate.
+
+
+Viewing and downloading payslips
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to PAYROLL → PAYSLIPS.
+  2. To see all employees: use the employee filter and date range filters.
+  3. To see your own: go to MY PAYSLIPS.
+  4. Click any payslip row to open the full breakdown.
+  5. The payslip shows:
+       • Employee details and employment period
+       • Attendance summary (working days, leave days, overtime hours)
+       • Gross pay breakdown (base + allowances)
+       • All deductions (tax, social security, other)
+       • Net pay
+  6. Click DOWNLOAD PDF to save a copy.
+
+
+FX rates and payroll
+────────────────────────────────────────────────────────────────────────────────
+If any employees are paid in a currency other than IQD (for example, an expat
+paid in USD), the system converts their salary to IQD at the FX rate in effect
+when the payroll run is processed. This rate is locked into the payslip record.
+Even if the USD/IQD rate changes the next day, that payslip always shows the
+historical rate that was used. This is critical for audit accuracy.
+
+
+================================================================================
+SECTION 12 — MANUFACTURING
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Manufacturing module manages the production process at Nishtimani Factory.
+It tracks what materials go into making a product, what work centres are
+involved, how much it costs to produce, and how actual production compares to
+the planned budget. It connects directly to inventory (consuming components
+and adding finished goods) and to project costing (manufacturing costs feed
+into project profitability).
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Production Manager — creates and manages manufacturing orders, tracks
+    actual quantities and costs
+  • Warehouse staff — receives finished goods into inventory after production
+  • Finance team — reviews production costs and cost variances
+  • Project Manager — tracks MOs linked to their project
+  • System Admin — full access
+
+
+Key concepts — Bills of Materials and Work Centers
+────────────────────────────────────────────────────────────────────────────────
+WHAT A BILL OF MATERIALS (BOM) IS
+A Bill of Materials (BOM) is a recipe. It lists exactly what raw materials and
+components are needed to produce one unit of a finished product.
+
+Example: To produce one prefabricated wall panel:
+  • 50 kg of structural steel
+  • 20 kg of lightweight concrete mix
+  • 4 anchor bolts (grade 8.8)
+  • 2 hours of welding labour at Work Center A
+
+The BOM is created once and reused every time that product is manufactured.
+When a manufacturing order is created from a BOM, the system automatically
+populates the required materials based on the BOM.
+
+WHAT A WORK CENTER IS
+A work center is a specific machine, team, or workspace that performs a
+manufacturing operation. Examples: Welding Bay 1, CNC Machine 3, Assembly Line B.
+Each work center has a capacity (how many units per hour it can process).
+Work centers help track where time and labour costs are being spent.
+
+
+Manufacturing order (MO) statuses
+────────────────────────────────────────────────────────────────────────────────
+Status      | What it means                              | How you get here                  | What happens next
+------------|--------------------------------------------|-----------------------------------|-----------------------------
+draft       | Order created, materials not yet reserved  | Production Manager creates MO     | Add lines, then submit
+submitted   | Ready for management approval              | Production Manager submits        | Manager or admin approves
+approved    | Management signed off, ready to start      | Manager clicks APPROVE            | Production Manager starts
+in_progress | Production is actively under way           | Production Manager clicks START   | Record actual quantities
+completed   | Production finished, goods moved to stock  | Production Manager completes      | Finished goods added to inventory
+rejected    | Approval denied                            | Manager clicks REJECT             | Production Manager revises and resubmits
+cancelled   | MO abandoned before completion             | Any authorised user cancels       | No stock movement
+
+
+Step by step — running a manufacturing order
+────────────────────────────────────────────────────────────────────────────────
+STEP 1 — CREATING THE BOM (one time per product)
+  1. Go to MANUFACTURING → BILLS OF MATERIALS.
+  2. Click NEW BOM.
+  3. Enter the **BOM number** and select the **Finished product** (the item
+     being produced).
+  4. Click SAVE to create the BOM header.
+  5. Click ADD COMPONENT. For each raw material needed, select the **Product**,
+     enter the **Quantity per unit** (how much is needed per finished unit),
+     and the **Unit cost**.
+  6. Repeat for all components.
+  7. Set the BOM status to 'active' when it is ready to use.
+
+STEP 2 — CREATING A MANUFACTURING ORDER
+  8. Go to MANUFACTURING → MANUFACTURING ORDERS.
+  9. Click NEW ORDER.
+  10. Fill in:
+        • **Project** — if this production is for a specific project
+        • **Description** — what is being made and why
+        • **Planned start date** and **Planned end date**
+        • **Quantity to produce** — how many units you intend to make
+  11. If this product has an active BOM, the system offers to populate the
+      component lines automatically from the BOM. Click YES to use the BOM.
+  12. Review and adjust the component lines if needed.
+  13. Click SAVE. Status is 'draft'.
+
+STEP 3 — SUBMITTING AND APPROVING
+  14. Click SUBMIT. Status moves to 'submitted'.
+  15. A production manager or system admin reviews the order.
+  16. Click APPROVE. Status moves to 'approved'.
+
+STEP 4 — STARTING PRODUCTION
+  17. Click START ORDER. Status moves to 'in_progress'.
+  18. The actual start date is recorded.
+
+STEP 5 — COMPLETING THE ORDER
+  19. When production is done, click COMPLETE ORDER.
+  20. Enter the **Actual quantity produced** and the **Actual component
+      quantities used** for each material (these may differ from the planned
+      quantities if there was waste or efficiency improvement).
+  21. Click CONFIRM.
+  22. The system automatically creates:
+        • A stock move consuming the actual component quantities from inventory
+        • A stock move adding the finished goods to the warehouse
+
+WHAT VARIANCE MEANS
+The difference between planned and actual component consumption is called
+variance. If you planned to use 50 kg of steel but actually used 55 kg, you
+have a 5 kg unfavourable materials variance. This is tracked in the cost analysis
+tab and feeds into project profitability.
+
+
+Connections to other modules
+────────────────────────────────────────────────────────────────────────────────
+  • INVENTORY — components are reserved from stock when the MO is approved and
+    consumed when it is completed. Finished goods are added to stock.
+  • PROJECTS — MO costs are attributed to the linked project's cost summary.
+  • FINANCE — MO cost data feeds into project invoice calculations (cost-plus
+    billing method uses actual MO costs).
+  • BOMS — reusable BOM templates drive the component lines on each order.
+
+
+================================================================================
+SECTION 13 — EQUIPMENT RENTAL
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Equipment Rental module, operated primarily by Al Watanyia, manages FNC's
+fleet of rental equipment — heavy machinery, vehicles, generators, and other
+assets. It tracks where every asset is, who has rented it, whether maintenance
+is due, and how much rental income has been collected. It handles both external
+rentals (FNC renting equipment to clients) and internal rentals (one FNC entity
+renting equipment to another).
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Fleet Manager — manages assets, creates contracts, monitors maintenance
+  • Operations staff — records usage logs, files condition reports
+  • Finance team — raises and tracks rental invoices
+  • Project Managers — views rental equipment assigned to their project
+  • System Admin — full access
+
+
+Asset statuses
+────────────────────────────────────────────────────────────────────────────────
+Status            | What it means                                    | How you get here                    | What happens next
+------------------|--------------------------------------------------|-------------------------------------|--------------------------------
+available         | Asset is in the yard, ready to rent              | Returned from contract or new asset | Assign to a rental contract
+rented            | Asset is out on an active rental contract        | Contract activated with this asset  | Record usage; maintain as needed
+under_maintenance | Asset is being serviced                          | Maintenance job created             | Complete maintenance; returns to available or rented
+retired / disposed| Asset has been written off or sold               | Admin marks as disposed             | No further use
+
+
+The maintenance dot — what it means
+────────────────────────────────────────────────────────────────────────────────
+On the asset list and fleet overview, you may see a pulsing red dot next to
+some assets. This is the maintenance alert. It means maintenance was due on
+this asset and has not yet been scheduled or completed. The dot pulses to
+draw attention to it. Assets with overdue maintenance are also shown in the
+sidebar badge count for the Rental module.
+
+Do not ignore maintenance alerts. Operating heavy equipment past its maintenance
+schedule creates safety risks and can void manufacturer warranties.
+
+
+Rental contract statuses
+────────────────────────────────────────────────────────────────────────────────
+Status      | What it means                              | How you get here                    | What happens next
+------------|--------------------------------------------|------------------------------------|----------------------------------
+draft       | Contract created but not yet active        | Fleet Manager creates contract      | Assign assets, then activate
+active      | Equipment is deployed to the client        | Fleet Manager clicks ACTIVATE       | Record usage, raise invoices
+expired     | Contract end date has passed               | End date passes automatically       | Renew contract or return equipment
+terminated  | Contract ended before expiry               | Fleet Manager clicks TERMINATE      | Equipment returned, final invoice issued
+
+
+Step by step — creating and managing a rental contract
+────────────────────────────────────────────────────────────────────────────────
+CREATING A RENTAL CONTRACT
+  1. Go to RENTAL → CONTRACTS.
+  2. Click NEW CONTRACT.
+  3. Fill in:
+       • **Contract number** — your reference (must be unique per company)
+       • **Client name** and **Client contact**
+       • **Start date** and **End date**
+       • **Monthly rate** — the base billing amount
+       • **Currency** — IQD or USD
+       • **Billing period** — how many days between invoices (e.g., 30)
+       • **Payment terms** — days allowed for payment after invoice
+  4. Click SAVE. Status is 'draft'.
+
+ASSIGNING ASSETS TO THE CONTRACT
+  5. Click ADD ITEMS.
+  6. Select the equipment assets to include. Only assets with 'available'
+     status are shown.
+  7. Set a **Monthly rate** per asset if different assets have different rates.
+  8. Click SAVE.
+
+ACTIVATING THE CONTRACT
+  9. Click ACTIVATE CONTRACT.
+  10. The system checks that at least one asset is assigned. If not, activation
+      is blocked.
+  11. Status moves to 'active'. All assigned assets change status to 'rented'.
+
+RECORDING USAGE
+  12. At regular intervals, update the usage log for GPS-tracked assets.
+  13. Click RECORD USAGE inside the contract.
+  14. Select the asset and enter:
+        • **Odometer reading** (if applicable)
+        • **Usage hours** — hours operated since last reading
+        • **Notes** — any operational observations
+  15. The system calculates incremental usage for billing purposes.
+
+RAISING A RENTAL INVOICE
+  16. When the billing period ends, click CREATE INVOICE inside the contract.
+  17. The system calculates the amount based on the monthly rate and the
+      billing period dates.
+  18. Review the draft invoice, then click ISSUE INVOICE.
+  19. The invoice is sent (or printed) and the status moves to 'issued'.
+  20. When payment is received, click RECORD PAYMENT and enter the amount.
+
+
+Maintenance schedules
+────────────────────────────────────────────────────────────────────────────────
+Each asset can have maintenance schedules set up. There are two types:
+  • Hours-based — maintenance is due every X operating hours
+    (e.g., engine oil change every 250 hours)
+  • Calendar-based — maintenance is due every X days or months
+    (e.g., annual safety inspection every 365 days)
+
+The system tracks usage hours from the usage log and compares against the
+scheduled threshold. When an asset approaches or passes its maintenance due
+point, the maintenance alert dot appears.
+
+To schedule maintenance:
+  1. Open the asset record.
+  2. Click SCHEDULE MAINTENANCE.
+  3. Enter the **Maintenance type** and **Scheduled date**.
+  4. The asset status changes to 'under_maintenance' on the scheduled date.
+  5. When the work is done, click COMPLETE MAINTENANCE and enter the actual
+     completion date and any service notes.
+  6. The asset returns to 'available' or 'rented' status.
+
+
+Condition reports
+────────────────────────────────────────────────────────────────────────────────
+A condition report documents the physical state of an asset — typically filed
+before a rental starts (so FNC can prove what condition it was in) and again
+when the equipment is returned (to identify any new damage).
+
+To file a condition report:
+  1. Open the asset or contract record.
+  2. Click NEW CONDITION REPORT.
+  3. Enter:
+       • **Assessed date**
+       • **Condition rating** — 1 (very poor) to 5 (excellent)
+       • **Damage notes** — describe any visible damage or wear
+       • **Odometer reading** if applicable
+  4. Click SAVE.
+
+
+The fleet overview
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to RENTAL → FLEET OVERVIEW.
+  2. This page shows every asset in the fleet with its current status, current
+     contract (if rented), and any maintenance alerts.
+  3. Use it to answer the question: "Where is every piece of equipment right now?"
+  4. Green status chips indicate available assets. Blue chips indicate rented.
+     Red pulsing dots indicate overdue maintenance.
+
+
+================================================================================
+SECTION 14 — REPORTING
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Reporting module gives FNC management a clear picture of company and group
+performance. It brings together data from every other module — projects, finance,
+HR, inventory, manufacturing, and rental — and presents it in summary form. Some
+reports cover a single entity. Consolidated reports combine all three FNC entities
+and eliminate inter-company transactions to show the group's true financial position.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Company Directors and CEO — executive dashboard, consolidated reports,
+    project profitability
+  • Finance team — financial statements, compliance reports
+  • HR Managers — payroll cost reports, attendance summaries
+  • Operations Managers — inventory valuation, project profitability
+  • System Admin — full access across all entities
+
+
+The executive dashboard — what each indicator means
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to REPORTING → EXECUTIVE DASHBOARD.
+  2. The top section shows company-level KPIs:
+       • Total active projects and their average margin
+       • Total AR outstanding (money owed to FNC)
+       • Total AP outstanding (money owed by FNC to vendors)
+       • Monthly revenue and monthly costs
+       • Cash position
+
+  3. The project scatter chart shows each active project as a bubble:
+       • The horizontal axis shows the project's completion percentage
+       • The vertical axis shows the profit margin percentage
+       • The bubble size represents the project's total cost
+       You want to see projects in the upper-right area — high completion,
+       high margin. Projects in the lower-right area are nearing completion
+       but with low or negative margins, which need attention.
+
+
+Understanding consolidated reports
+────────────────────────────────────────────────────────────────────────────────
+A consolidated report combines the financial data from all three FNC entities
+into one set of numbers, as if they were a single company.
+
+WHY INTER-COMPANY ELIMINATIONS MATTER
+When one FNC entity buys from another FNC entity, that transaction appears as
+revenue in one company and a cost in the other. If you simply added both
+companies' numbers together without adjustment, you would be double-counting
+money that never left the FNC Group.
+
+Example: Nishtimani Factory provides steel fabrication services to Nishtimani
+Yakam for IQD 50,000,000. In Factory's books: IQD 50M revenue. In Yakam's
+books: IQD 50M expense. If you add the two P&L statements together, the group
+appears to have made IQD 50M of revenue and IQD 50M of cost — which nets to
+zero, which is correct. But if you accidentally only show the revenue without
+the elimination, the group looks IQD 50M more profitable than it really is.
+
+Consolidated reports with the "include eliminations" option turned on remove
+all these inter-company transactions automatically, showing only the group's
+true external revenues and costs.
+
+
+The standard financial reports
+────────────────────────────────────────────────────────────────────────────────
+TRIAL BALANCE
+  Shows all accounts in the chart of accounts with their debit and credit
+  balances as of a selected date. Used by the Finance team to verify that
+  total debits equal total credits before closing a period. Go to
+  REPORTING → TRIAL BALANCE, set the **As of date**, and click GENERATE.
+
+PROFIT AND LOSS (P&L)
+  Shows revenues minus costs for a period. Revenue − COGS = Gross Profit.
+  Gross Profit − Operating Expenses = Net Income. Go to REPORTING → PROFIT
+  AND LOSS, set the period dates, and click GENERATE.
+
+BALANCE SHEET
+  Shows the company's financial position at a point in time. Assets =
+  Liabilities + Equity. A healthy balance sheet shows assets funded by a
+  mix of equity (owners' money) and manageable liabilities. Go to REPORTING
+  → BALANCE SHEET, set the **As of date**, and click GENERATE.
+
+
+Operational reports
+────────────────────────────────────────────────────────────────────────────────
+PROJECT PROFITABILITY REPORT
+  Shows every project with its contract value, total costs, gross profit, and
+  profit margin percentage. Filter by date range or specific project. A margin
+  above 25% is generally healthy for construction projects in Iraq. Margins
+  below 10% should be investigated.
+
+PAYROLL COST REPORT
+  Shows the total payroll cost broken down by department. Useful for comparing
+  headcount costs month over month and identifying departments where costs are
+  rising unexpectedly.
+
+ATTENDANCE SUMMARY REPORT
+  Shows, per employee per month: working days, absent days, overtime hours, and
+  leave days taken. Used by HR to validate payroll inputs.
+
+INVENTORY VALUATION REPORT
+  Shows the value of all stock on hand at a selected date. The total feeds into
+  the balance sheet as the "inventory" asset line.
+
+
+Compliance reports
+────────────────────────────────────────────────────────────────────────────────
+These reports are needed for tax filing and regulatory compliance.
+
+WHT REPORT — Shows all vendor invoices with the withholding tax amount deducted.
+Submit to the Iraqi tax authority to prove WHT was collected. Use this monthly
+or quarterly per regulatory requirements.
+
+FX EXPOSURE REPORT — Shows FNC's net position in each foreign currency
+(USD, EUR, etc.) — how much receivable vs payable in each currency. A large
+net exposure in a foreign currency means FNC is at risk from exchange rate
+movements. Finance and management should review this monthly.
+
+PAYROLL TAX REPORT — Shows each employee's gross salary, income tax withheld,
+and social security contributions. Used for filing payroll tax returns.
+
+
+How to export a report
+────────────────────────────────────────────────────────────────────────────────
+Every report in the Reporting module has an EXPORT button at the top right of
+the results table. Click it to download the data as a CSV file that can be
+opened in Microsoft Excel.
+
+
+================================================================================
+SECTION 15 — INTER-COMPANY TRANSACTIONS
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+When one FNC entity provides goods, services, equipment, or funds to another
+FNC entity, this must be formally recorded in both companies' accounting systems.
+This is not optional — it is required for the financials of each entity to be
+accurate and for the consolidated group accounts to show the correct net position.
+The Inter-Company (interco) module manages these cross-entity transactions from
+creation through dual approval to automatic GL posting.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • Finance team — creates interco transactions, reviews pricing
+  • Company Admin — approves interco transactions (both entities must approve)
+  • System Admin — can approve for both sides and post directly
+  • Management — views interco balances in consolidated reports
+
+
+What an inter-company transaction is
+────────────────────────────────────────────────────────────────────────────────
+An inter-company transaction is any financial event between two of FNC's three
+entities. Examples:
+  • Nishtimani Factory transfers steel bars to a Yakam project site
+  • Al Watanyia rents a crane to Nishtimani Yakam for a project
+  • Nishtimani Factory charges a management fee to Al Watanyia
+  • Yakam transfers petty cash to Watanyia
+
+Each of these must be recorded so that Factory's books show revenue from the
+sale, and Yakam's books show a cost from the purchase. The interco module
+handles this automatically once both sides approve.
+
+
+Transaction types
+────────────────────────────────────────────────────────────────────────────────
+  • Goods transfer — physical inventory moving from one entity to another
+  • Service charge — one entity invoicing another for services rendered
+  • Equipment rental — one entity renting equipment to another
+  • Management fee — a central entity charging group management overhead costs
+
+
+Transfer pricing — why it matters
+────────────────────────────────────────────────────────────────────────────────
+Transfer pricing is the price at which one FNC entity sells goods or services to
+another. This price matters for two reasons: it determines how profit is split
+between the entities, and it must be arm's-length (resembling a real market
+price) to comply with tax law.
+
+FNC uses one of four pricing methods for inter-company transfers (configured per
+entity pair in Company Settings):
+
+  • AVCO — the transfer is priced at the inventory's current weighted average
+    cost. No markup. Used when the transfer is pure cost pass-through.
+
+  • Cost Plus — the transfer is priced at AVCO cost multiplied by (1 + markup
+    percentage). Example: if AVCO cost is IQD 50,000 and the markup is 10%,
+    the transfer price is IQD 55,000. The selling entity earns IQD 5,000 profit.
+
+  • Market Price — the transfer is priced at the current market price for that
+    item. The Procurement Officer must input the market price at the time of
+    the transfer. This is the most accurate but requires manual input.
+
+  • Standard Cost — the transfer is priced at the product's standard cost value
+    set in the Inventory module. A fixed, predictable price.
+
+
+Interco transaction statuses
+────────────────────────────────────────────────────────────────────────────────
+Status   | What it means                                     | How you get here                     | What happens next
+---------|---------------------------------------------------|--------------------------------------|-------------------------------
+pending  | Transaction created, awaiting approval            | Finance creates the transaction       | Both company admins must approve
+approved | Both entities have signed off                     | Second company admin approves         | Finance or Sys Admin posts
+executed | GL entries created in both companies              | Finance or Sys Admin clicks POST      | Transaction is final
+rejected | One company rejected the transaction              | Either company admin rejects          | Finance revises and resubmits
+
+
+The dual approval requirement
+────────────────────────────────────────────────────────────────────────────────
+Every inter-company transaction requires approval from both the sending entity
+and the receiving entity. This prevents one entity from unilaterally recording
+a transaction that affects another entity's books without that entity's knowledge.
+
+Example: Watanyia charges Yakam IQD 10,000,000 for equipment rental.
+  1. Watanyia's Finance team creates the interco transaction.
+  2. Watanyia's Company Admin reviews and approves (this is the sending side).
+  3. Yakam's Company Admin reviews and approves (this is the receiving side).
+  4. Only after both approvals can the transaction be posted.
+
+A System Admin can approve for both sides. This is useful for straightforward
+routine transactions.
+
+
+What posting an interco transaction does
+────────────────────────────────────────────────────────────────────────────────
+When a transaction is posted, the system simultaneously creates journal entries
+in BOTH companies' general ledgers. For a goods transfer:
+
+  In the SENDING company (e.g., Factory):
+    Debit: Interco Receivable from Yakam
+    Credit: Inventory (reducing Factory's stock)
+
+  In the RECEIVING company (e.g., Yakam):
+    Debit: Inventory (adding Yakam's stock)
+    Credit: Interco Payable to Factory
+
+Both entries are created in a single atomic operation — either both succeed
+or neither does. This ensures the two companies' books are always in sync.
+
+For stock transfers specifically, the inventory system detects the cross-entity
+move automatically and triggers the interco workflow without requiring the
+Finance team to create the transaction manually.
+
+
+================================================================================
+SECTION 16 — ADMIN: USER AND COMPANY MANAGEMENT
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Admin module is used by System Admins and Company Admins to manage who can
+access the FNC ERP and what they are allowed to do. It also manages the company
+entities themselves. This section covers inviting users, assigning roles,
+managing companies, and monitoring the background processing queue.
+
+
+Who uses this module
+────────────────────────────────────────────────────────────────────────────────
+  • System Admin — creates companies, manages users across all entities,
+    monitors system health
+  • Company Admin — invites and manages users within their own entity
+
+
+The four system roles — what each can do
+────────────────────────────────────────────────────────────────────────────────
+SYSTEM ADMIN
+The most powerful role. A System Admin can see and do everything across all
+three FNC entities. They can create companies, delete users, override any
+workflow, approve vendor invoices, post interco transactions, and access all
+financial data. Only a small number of trusted individuals should hold this role.
+
+COMPANY ADMIN
+Full access within a single company. A Company Admin can manage all users in
+their company, approve projects, approve payroll runs, and view all financial
+reports for their entity. They cannot access other companies' data.
+
+MODULE ADMIN
+Access to a specific set of modules within one company. For example, a Finance
+Module Admin can do everything in the Finance module but has no access to HR.
+When assigning this role, both the company and the specific module must be
+selected. Modules available for scoping: Finance, Procurement, Inventory, HR,
+Payroll, Projects, Manufacturing, Rental, Reporting, Inter-Company, Admin.
+
+USER
+Standard access. A User can perform day-to-day tasks in the modules they have
+been given access to, but cannot manage other users, approve payroll runs,
+or access admin functions.
+
+
+How to invite a new user
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to ADMIN → USERS.
+  2. Click INVITE USER.
+  3. Enter the new user's **Email address**.
+  4. Select their **Role** and **Company**.
+  5. If Module Admin: select the specific **Module**.
+  6. Click SEND INVITATION.
+  7. The user receives an email with a link to set up their account and
+     choose their password.
+  8. The invitation link expires after 7 days. If the user misses the
+     deadline, send a new invitation.
+
+
+How to create a user directly (without an invitation email)
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to ADMIN → USERS.
+  2. Click NEW USER.
+  3. Enter the **Email address** and a **Password** (minimum 8 characters).
+  4. Assign the **Role** and **Company**.
+  5. Click CREATE. The user account is active immediately.
+  6. Communicate the credentials to the user securely — the system does not
+     send a welcome email in this flow.
+
+
+How to unlock a locked account
+────────────────────────────────────────────────────────────────────────────────
+If a user has been locked out after too many failed login attempts:
+  1. Go to ADMIN → USERS.
+  2. Search for the user by email.
+  3. Click the user row to open their profile.
+  4. Click UNLOCK ACCOUNT.
+  5. The failed attempt counter resets and the user can log in again.
+
+
+How to reset MFA for a user
+────────────────────────────────────────────────────────────────────────────────
+If a user has lost access to their authenticator app:
+  1. Go to ADMIN → USERS.
+  2. Open the user's profile.
+  3. Click RESET MFA.
+  4. The user's MFA is disabled. All their sessions are terminated.
+  5. The user must log in with their password and set up MFA again from
+     their Settings page.
+
+
+Creating a new company
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to ADMIN → COMPANIES.
+  2. Click NEW COMPANY.
+  3. Fill in all company details:
+       • Legal name and trading name
+       • Country, city, address
+       • Registration number and VAT number
+       • Bank details
+       • Inter-company transfer pricing method
+  4. Click CREATE.
+  5. The system automatically creates for the new company:
+       • 12 monthly accounting periods for the current year
+       • 3 default stock locations (Main Warehouse, Virtual In, Virtual Out)
+       • A default system configuration record
+
+
+The outbox monitor — what it is and when to check it
+────────────────────────────────────────────────────────────────────────────────
+Many FNC ERP actions trigger background tasks — sending notification emails,
+creating GL journal entries, generating PDFs, sending approval alerts. These
+tasks are placed in a queue called the outbox and processed automatically by
+background workers.
+
+Go to ADMIN → OUTBOX MONITOR to see the status of these background tasks.
+
+Under normal operation, the outbox should be empty or contain only recent
+items being processed. If you see many items stuck in 'pending' status for
+more than a few minutes, something may be wrong with the background workers.
+Contact the system administrator.
+
+
+The DLQ — dead letter queue
+────────────────────────────────────────────────────────────────────────────────
+Go to ADMIN → DLQ.
+
+If an outbox task fails multiple times (the system retries automatically),
+it is moved to the DLQ — the dead letter queue. Items in the DLQ are events
+that the system tried to process but could not complete.
+
+CRITICAL: If items appear in the DLQ, check them immediately. They may
+represent journal entries that did not post, payments not recorded, or
+notifications not sent. Each item shows the event type and the error message.
+Common items that are serious:
+  • VENDOR_PAYMENT_JOURNAL_REQUESTED — a vendor payment was recorded but
+    the GL entry was not created. The Finance team must manually post the entry.
+  • PAYROLL_FINALIZED — a payroll run was posted but the salary expense journal
+    was not created.
+  • PROJECT_INVOICE_ISSUED — an invoice was issued but the AR entry was not
+    created.
+
+Review the DLQ every day. Do not let items accumulate.
+
+
+System health
+────────────────────────────────────────────────────────────────────────────────
+Go to ADMIN → SYSTEM HEALTH.
+
+This page shows 12 service status cards covering every backend component of
+the FNC ERP. Each card shows:
+  • GREEN — the service is running normally
+  • AMBER — the service is running but with warnings (e.g., slow response)
+  • RED — the service is down or returning errors
+
+If any card is red, contact the system administrator immediately. A red finance
+service means journal entries cannot be posted. A red auth service means users
+cannot log in. A red inventory service means stock receipts are not being
+processed.
+
+
+================================================================================
+SECTION 17 — SETTINGS AND PREFERENCES
+================================================================================
+
+What this module is for
+────────────────────────────────────────────────────────────────────────────────
+The Settings module allows each user to personalise their experience of the
+FNC ERP and manage their account security. Company Admins also use this module
+to configure company-wide settings like tax rates, default currencies, and FX
+alert thresholds.
+
+
+Personal security settings
+────────────────────────────────────────────────────────────────────────────────
+CHANGING YOUR PASSWORD
+  1. Go to SETTINGS → SECURITY.
+  2. Click CHANGE PASSWORD.
+  3. Enter your **Current password**.
+  4. Enter your **New password** (minimum 8 characters).
+  5. Enter the new password again in **Confirm new password**.
+  6. Click SAVE.
+  7. All your active sessions are terminated and you will need to log in again
+     with the new password.
+
+SETTING UP MFA (DETAILED STEPS)
+  1. Go to SETTINGS → SECURITY.
+  2. Click ENABLE TWO-FACTOR AUTHENTICATION.
+  3. A QR code appears on screen.
+  4. On your phone, open Google Authenticator or Microsoft Authenticator.
+  5. Tap the + button in the app, then select SCAN QR CODE.
+  6. Point your camera at the QR code on screen.
+  7. The app adds FNC ERP to its list and starts showing a six-digit code
+     that changes every 30 seconds.
+  8. Back in the browser, enter the current six-digit code in the
+     **Verification code** field.
+  9. Click CONFIRM. MFA is now active.
+  10. From this point on, you will need to enter a code from the app every
+      time you log in.
+
+VIEWING AND REVOKING YOUR ACTIVE SESSIONS
+  1. Go to SETTINGS → SECURITY → ACTIVE SESSIONS.
+  2. You will see a list of all devices currently logged in with your account.
+     Each entry shows the device name, operating system, IP address, and when
+     the session was created.
+  3. If you see a session you do not recognise (e.g., a device you do not own),
+     click REVOKE next to that session to log it out immediately.
+  4. To log out of all devices everywhere: click REVOKE ALL SESSIONS.
+
+
+Display preferences
+────────────────────────────────────────────────────────────────────────────────
+CHANGING YOUR THEME
+  1. Go to SETTINGS → APPEARANCE.
+  2. Click one of the four theme options:
+       • Dark Glass — preferred for offices with screens in lower light
+       • Dark White — clean dark mode
+       • Light Glass — glass effect for bright environments
+       • Light Flat — simplest light theme, lowest visual weight
+  3. The theme changes immediately without needing to save.
+
+DATE AND NUMBER FORMAT
+  1. Go to SETTINGS → APPEARANCE.
+  2. Under **Date format**, select your preference:
+       • DD/MM/YYYY — standard Iraqi/European format (e.g., 15/06/2025)
+       • MM/DD/YYYY — US format (e.g., 06/15/2025)
+       • YYYY-MM-DD — international ISO format (e.g., 2025-06-15)
+  3. Under **Number format**, select:
+       • Standard — 1,234,567.89 (commas as thousands separator)
+       • European — 1.234.567,89 (dots as thousands separator)
+  4. Click SAVE.
+
+NOTIFICATION PREFERENCES
+  1. Go to SETTINGS → NOTIFICATIONS.
+  2. You will see a list of notification types. For each type you can toggle:
+       • Email — receive an email for this event
+       • In-app — see a notification in the bell icon in the top bar
+  3. Common notification types and what they mean:
+       • PO approval required — someone needs your approval on a PO
+       • PO approved / rejected — action was taken on a PO you submitted
+       • Leave request submitted — an employee under you submitted leave
+       • Leave approved / rejected — action was taken on your leave request
+       • Vendor invoice submitted — a vendor invoice needs your approval
+       • Payroll run submitted — a payroll run needs your approval
+       • New device login — a new device logged into your account
+  4. Click SAVE.
+
+
+Company settings (Company Admin only)
+────────────────────────────────────────────────────────────────────────────────
+  1. Go to SETTINGS → COMPANY SETTINGS.
+  2. This section allows the Company Admin to configure:
+       • **Fiscal year** — start month and day of the company's accounting year
+       • **Default currency** — the primary currency for this entity (IQD)
+       • **Default PO currency** — the currency purchase orders default to
+       • **Default payment terms** — standard days for vendor invoices
+       • **Income tax** — enable/disable and set the income tax rate
+       • **Social security rates** — employee and employer contribution percentages
+       • **WHT rates** — default withholding tax rates by category
+       • **Email settings** — the reply-to email for system notifications
+  3. Click SAVE CONFIGURATION after making changes.
+
+FX ALERT THRESHOLDS
+  1. Go to SETTINGS → COMPANY SETTINGS.
+  2. Scroll to the FX Rates section.
+  3. Set the **Warning threshold** — how many hours without an FX rate update
+     triggers an amber warning on the Finance FX page.
+  4. Set the **Critical threshold** — how many hours triggers a red alert and
+     blocks new journal entries without an override.
+  5. Recommended values for IQD:
+       • Warning: 24 hours (rates should update daily)
+       • Critical: 48 hours (anything older than 2 days is unreliable)
+  6. Click SAVE.
+
+
+================================================================================
+GUIDE STATISTICS
+================================================================================
+
+  Total sections:           17
+  Total workflows covered:  38
+  Total status tables:      17
+  Total action tables:       4
+  Approximate word count:  9,800
+
+  MODULES COVERED:         17
+  ROLES EXPLAINED:          9  (System Admin, Company Admin, Module Admin,
+                               User, Project Manager, Organizer, Store Keeper,
+                               Procurement Officer, Department Head)
+  STATUSES DOCUMENTED:     47  (across all modules)
+
+
+================================================================================
+END OF FNC GROUP ERP USER GUIDE — VERSION 1.0
+Prepared for FNC Group internal use.
+For technical support, contact your system administrator.
+================================================================================
