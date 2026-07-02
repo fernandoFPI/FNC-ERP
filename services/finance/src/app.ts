@@ -13,6 +13,7 @@ import { arRouter } from './routes/ar.js'
 import { journalAttachmentsRouter } from './routes/journal-attachments.js'
 import { paymentVouchersRouter } from './routes/payment-vouchers.js'
 import { assetsRouter } from './routes/assets.js'
+import { bankRouter } from './routes/bank.js'
 
 export function createApp(): import('express').Express {
   const app = express()
@@ -38,6 +39,7 @@ export function createApp(): import('express').Express {
   app.use('/finance/journals', journalAttachmentsRouter)
   app.use('/finance/payment-vouchers', paymentVouchersRouter)
   app.use('/finance/assets', assetsRouter)
+  app.use('/finance/bank', bankRouter)
 
   return app
 }

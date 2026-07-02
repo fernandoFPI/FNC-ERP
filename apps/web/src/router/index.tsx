@@ -42,6 +42,8 @@ const PaymentVoucherDetail = lazy(() => import('../pages/finance/payment-voucher
 const FixedAssetsPage = lazy(() => import('../pages/finance/assets/AssetsPage'))
 const FixedAssetForm = lazy(() => import('../pages/finance/assets/AssetForm'))
 const FixedAssetDetail = lazy(() => import('../pages/finance/assets/AssetDetail'))
+const BankReconPage = lazy(() => import('../pages/finance/bank/BankReconPage'))
+const ReconcileWorkspace = lazy(() => import('../pages/finance/bank/ReconcileWorkspace'))
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
@@ -298,6 +300,9 @@ export const router = createBrowserRouter([
           { path: 'assets/new', element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit') },
           { path: 'assets/:id', element: withPerm('finance.assets.view', <FixedAssetDetail />) },
           { path: 'assets/:id/edit', element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit') },
+          { path: 'bank', element: withPerm('finance.bank.view', <BankReconPage />) },
+          { path: 'bank/:accountId', element: withPerm('finance.bank.view', <ReconcileWorkspace />) },
+          { path: 'bank/:accountId/reconcile/:statementId', element: withPerm('finance.bank.edit', <ReconcileWorkspace />, 'edit') },
         ],
       },
 
