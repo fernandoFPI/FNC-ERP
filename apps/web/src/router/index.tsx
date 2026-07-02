@@ -50,6 +50,9 @@ const RetentionDetail = lazy(() => import('../pages/finance/retention/RetentionD
 const BudgetPage = lazy(() => import('../pages/finance/budget/BudgetPage'))
 const BudgetDetail = lazy(() => import('../pages/finance/budget/BudgetDetail'))
 const RevaluationPage = lazy(() => import('../pages/finance/revaluation/RevaluationPage'))
+const ExpenseClaimsPage = lazy(() => import('../pages/finance/expenses/ExpenseClaimsPage'))
+const ExpenseClaimDetail = lazy(() => import('../pages/finance/expenses/ExpenseClaimDetail'))
+const PettyCashPage = lazy(() => import('../pages/finance/petty-cash/PettyCashPage'))
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
@@ -315,6 +318,9 @@ export const router = createBrowserRouter([
           { path: 'budget', element: withPerm('finance.budget.view', <BudgetPage />) },
           { path: 'budget/:id', element: withPerm('finance.budget.view', <BudgetDetail />) },
           { path: 'revaluation', element: withPerm('finance.revaluation.view', <RevaluationPage />) },
+          { path: 'expense-claims', element: withPerm('finance.expenses.view', <ExpenseClaimsPage />) },
+          { path: 'expense-claims/:id', element: withPerm('finance.expenses.view', <ExpenseClaimDetail />) },
+          { path: 'petty-cash', element: withPerm('finance.petty_cash.view', <PettyCashPage />) },
         ],
       },
 

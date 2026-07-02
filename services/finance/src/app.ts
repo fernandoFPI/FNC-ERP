@@ -18,6 +18,8 @@ import { paymentTermsRouter } from './routes/payment-terms.js'
 import { retentionRouter } from './routes/retention.js'
 import { budgetRouter } from './routes/budget.js'
 import { revaluationRouter } from './routes/revaluation.js'
+import { expenseClaimsRouter } from './routes/expense-claims.js'
+import { pettyCashRouter } from './routes/petty-cash.js'
 
 export function createApp(): import('express').Express {
   const app = express()
@@ -48,6 +50,8 @@ export function createApp(): import('express').Express {
   app.use('/finance/retention', retentionRouter)
   app.use('/finance/budget', budgetRouter)
   app.use('/finance/revaluation', revaluationRouter)
+  app.use('/finance/expense-claims', expenseClaimsRouter)
+  app.use('/finance/petty-cash', pettyCashRouter)
 
   return app
 }
