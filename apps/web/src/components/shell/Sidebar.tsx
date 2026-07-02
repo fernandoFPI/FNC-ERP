@@ -84,6 +84,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Accounts Payable', icon: <Icon name="credit-card" />, path: '/finance/ap', badge: 'ap_pending', permKeys: ['finance.ap.view'] },
       { label: 'WHT Payable', icon: <Icon name="percent" />, path: '/finance/wht-payable', permKeys: ['finance.ap.view'] },
       { label: 'Payment Vouchers', icon: <Icon name="credit-card" />, path: '/finance/payment-vouchers', permKeys: ['finance.ap.view'] },
+      { label: 'Fixed Assets', icon: <Icon name="box" />, path: '/finance/assets', permKeys: ['finance.assets.view'] },
       { label: 'Cost Centers', icon: <Icon name="layers" />, path: '/finance/cost-centers', permKeys: ['finance.cost_centers.view'] },
       { label: 'Analytic Accounts', icon: <Icon name="tag" />, path: '/finance/analytic-accounts', permKeys: ['finance.analytic_accounts.view'] },
       { label: 'FX Rates', icon: <Icon name="refresh-cw" />, path: '/finance/fx-rates', permKeys: ['finance.fx_rates.view'] },
