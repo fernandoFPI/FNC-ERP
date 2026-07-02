@@ -44,6 +44,9 @@ const FixedAssetForm = lazy(() => import('../pages/finance/assets/AssetForm'))
 const FixedAssetDetail = lazy(() => import('../pages/finance/assets/AssetDetail'))
 const BankReconPage = lazy(() => import('../pages/finance/bank/BankReconPage'))
 const ReconcileWorkspace = lazy(() => import('../pages/finance/bank/ReconcileWorkspace'))
+const PaymentTermsPage = lazy(() => import('../pages/finance/terms/PaymentTermsPage'))
+const RetentionPage = lazy(() => import('../pages/finance/retention/RetentionPage'))
+const RetentionDetail = lazy(() => import('../pages/finance/retention/RetentionDetail'))
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
@@ -303,6 +306,9 @@ export const router = createBrowserRouter([
           { path: 'bank', element: withPerm('finance.bank.view', <BankReconPage />) },
           { path: 'bank/:accountId', element: withPerm('finance.bank.view', <ReconcileWorkspace />) },
           { path: 'bank/:accountId/reconcile/:statementId', element: withPerm('finance.bank.edit', <ReconcileWorkspace />, 'edit') },
+          { path: 'payment-terms', element: withPerm('finance.terms.view', <PaymentTermsPage />) },
+          { path: 'retention', element: withPerm('finance.retention.view', <RetentionPage />) },
+          { path: 'retention/:id', element: withPerm('finance.retention.view', <RetentionDetail />) },
         ],
       },
 

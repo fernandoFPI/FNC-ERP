@@ -14,6 +14,8 @@ import { journalAttachmentsRouter } from './routes/journal-attachments.js'
 import { paymentVouchersRouter } from './routes/payment-vouchers.js'
 import { assetsRouter } from './routes/assets.js'
 import { bankRouter } from './routes/bank.js'
+import { paymentTermsRouter } from './routes/payment-terms.js'
+import { retentionRouter } from './routes/retention.js'
 
 export function createApp(): import('express').Express {
   const app = express()
@@ -40,6 +42,8 @@ export function createApp(): import('express').Express {
   app.use('/finance/payment-vouchers', paymentVouchersRouter)
   app.use('/finance/assets', assetsRouter)
   app.use('/finance/bank', bankRouter)
+  app.use('/finance/payment-terms', paymentTermsRouter)
+  app.use('/finance/retention', retentionRouter)
 
   return app
 }
