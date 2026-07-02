@@ -9,6 +9,24 @@ export const bankRouter: import('express').Router = Router()
 
 function round2(n: number) { return Math.round(n * 100) / 100 }
 
+// ─── Company Bank Accounts (read-only, from existing bank_accounts table) ────
+
+bankRouter.get('/company-accounts', requirePermission('finance.bank.view', 'view'), async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT id, account_name AS name, bank_name, branch_code AS branch,
+              account_number, iban, swift AS swift_code, currency_code
+       FROM bank_accounts
+       WHERE is_active = true
+       ORDER BY account_name`,
+      [],
+    )
+    sendOk(res, r.rows)
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load company bank accounts', err)
+  }
+})
+
 // ─── Bank Accounts ────────────────────────────────────────────────────────────
 
 bankRouter.get('/accounts', requirePermission('finance.bank.view', 'view'), async (req, res) => {

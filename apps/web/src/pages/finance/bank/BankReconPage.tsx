@@ -26,10 +26,14 @@ interface BankAccount {
 }
 
 interface GLAccount { id: string; code: string; name: string }
+interface CompanyBankAccount {
+  id: string; name: string; bank_name: string | null; branch: string | null
+  account_number: string | null; iban: string | null; swift_code: string | null; currency_code: string
+}
 
 const emptyForm = {
-  name: '', account_number: '', bank_name: '', branch: '', currency_code: 'IQD',
-  gl_account_id: '', opening_balance: '0', notes: '',
+  name: '', account_number: '', bank_name: '', branch: '', swift_code: '', iban: '',
+  currency_code: 'IQD', gl_account_id: '', opening_balance: '0', notes: '',
 }
 
 export default function BankReconPage() {
@@ -42,16 +46,19 @@ export default function BankReconPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
+  const [companyBankAccounts, setCompanyBankAccounts] = useState<CompanyBankAccount[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [acctRes, glRes] = await Promise.all([
+      const [acctRes, glRes, cbaRes] = await Promise.all([
         api.get<BankAccount[]>('/finance/bank/accounts'),
-        api.get<GLAccount[]>('/finance/accounts?type=asset&limit=200'),
+        api.get<GLAccount[]>('/finance/accounts?limit=500'),
+        api.get<CompanyBankAccount[]>('/finance/bank/company-accounts'),
       ])
       setAccounts(acctRes.data)
       setGlAccounts(glRes.data)
+      setCompanyBankAccounts(cbaRes.data)
     } catch { /* handled by interceptor */ }
     finally { setLoading(false) }
   }, [])
@@ -70,6 +77,8 @@ export default function BankReconPage() {
       account_number: a.account_number ?? '',
       bank_name: a.bank_name ?? '',
       branch: '',
+      swift_code: '',
+      iban: '',
       currency_code: a.currency_code,
       gl_account_id: a.gl_account_id ?? '',
       opening_balance: String(a.opening_balance),
@@ -77,6 +86,21 @@ export default function BankReconPage() {
     })
     setEditingId(a.id)
     setShowForm(true)
+  }
+
+  function handleImportCompanyAccount(id: string) {
+    const cba = companyBankAccounts.find(a => a.id === id)
+    if (!cba) return
+    setForm(f => ({
+      ...f,
+      name: cba.name,
+      bank_name: cba.bank_name ?? '',
+      branch: cba.branch ?? '',
+      account_number: cba.account_number ?? '',
+      swift_code: cba.swift_code ?? '',
+      iban: cba.iban ?? '',
+      currency_code: cba.currency_code,
+    }))
   }
 
   async function handleSave() {
@@ -88,6 +112,8 @@ export default function BankReconPage() {
         account_number: form.account_number || undefined,
         bank_name: form.bank_name || undefined,
         branch: form.branch || undefined,
+        swift_code: form.swift_code || undefined,
+        iban: form.iban || undefined,
         currency_code: form.currency_code,
         gl_account_id: form.gl_account_id || undefined,
         opening_balance: Number(form.opening_balance) || 0,
@@ -210,6 +236,22 @@ export default function BankReconPage() {
               <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>✕</Button>
             </div>
 
+            {companyBankAccounts.length > 0 && (
+              <div style={{ background: theme.bgSurface, borderRadius: '8px', padding: '10px 12px', marginBottom: '16px', border: `1px solid ${theme.border}` }}>
+                <label style={{ ...labelStyle, marginBottom: '6px' }}>Auto-fill from company bank account</label>
+                <select
+                  style={inputStyle}
+                  defaultValue=""
+                  onChange={e => { if (e.target.value) handleImportCompanyAccount(e.target.value) }}
+                >
+                  <option value="">— Select to auto-fill fields below —</option>
+                  {companyBankAccounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}{a.bank_name ? ` · ${a.bank_name}` : ''}{a.account_number ? ` (${a.account_number})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
               <div style={{ gridColumn: '1/-1' }}>
                 <label style={labelStyle}>Account Name *</label>
@@ -234,6 +276,14 @@ export default function BankReconPage() {
                   <option value="USD">USD — US Dollar</option>
                   <option value="EUR">EUR — Euro</option>
                 </select>
+              </div>
+              <div>
+                <label style={labelStyle}>SWIFT / BIC</label>
+                <input style={inputStyle} value={form.swift_code} onChange={e => setForm(f => ({ ...f, swift_code: e.target.value }))} placeholder="RBNKIQBA" />
+              </div>
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>IBAN</label>
+                <input style={inputStyle} value={form.iban} onChange={e => setForm(f => ({ ...f, iban: e.target.value }))} placeholder="IQ98RBNK..." />
               </div>
               <div style={{ gridColumn: '1/-1' }}>
                 <label style={labelStyle}>GL Account (Bank Account in Chart of Accounts)</label>
