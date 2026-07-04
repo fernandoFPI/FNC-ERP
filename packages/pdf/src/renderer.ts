@@ -28,25 +28,12 @@ export async function renderHTMLToPDF(
       landscape: options.landscape ?? false,
       printBackground: true,
       margin: {
-        top: options.marginTop ?? '20mm',
+        top: options.marginTop ?? '15mm',
         bottom: options.marginBottom ?? '20mm',
         left: options.marginLeft ?? '15mm',
         right: options.marginRight ?? '15mm',
       },
-      displayHeaderFooter: true,
-      headerTemplate: `
-        <div style="font-size:8px;width:100%;text-align:right;
-                    padding-right:15mm;color:#888;font-family:Arial">
-          FNC Group ERP — Confidential
-        </div>
-      `,
-      footerTemplate: `
-        <div style="font-size:8px;width:100%;text-align:center;
-                    color:#888;font-family:Arial">
-          Page <span class="pageNumber"></span> of <span class="totalPages"></span>
-          — Generated <span>${new Date().toLocaleDateString('en-GB')}</span>
-        </div>
-      `,
+      displayHeaderFooter: false,
     })
 
     log.info({ size: pdfBuffer.length }, 'PDF rendered successfully')

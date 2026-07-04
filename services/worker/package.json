@@ -7,7 +7,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx --conditions=source src/index.ts",
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
     "test": "vitest run"

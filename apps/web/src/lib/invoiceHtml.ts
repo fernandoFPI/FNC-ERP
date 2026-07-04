@@ -94,10 +94,12 @@ export function buildInvoiceHTML(
   const hasTax = taxTotal > 0
   const retentionPct = inv.retentionPct ?? 0
 
-  const lineRows = inv.lines.map((l, idx) => {
+  const FIRST_PAGE_ROWS = 6
+
+  function buildRow(l: InvoiceLine, idx: number): string {
     const bg = idx % 2 === 1 ? 'background:#f8fafc;' : ''
     return `
-    <tr>
+    <tr style="page-break-inside:avoid;break-inside:avoid">
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;color:#888;${bg}">${l.lineNumber}</td>
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;${bg}">${l.description}</td>
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;${bg}">${l.qty}</td>
@@ -112,8 +114,16 @@ export function buildInvoiceHTML(
         <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;${bg}">${fmt(l.taxAmount ?? 0, cur)}</td>
       ` : ''}
       <td style="padding:11px 14px;border-bottom:1px solid #eef0f3;font-size:12px;text-align:right;font-family:monospace;font-weight:700;color:#1a3c5e;${bg}">${fmt(l.lineTotal, cur)}</td>
-    </tr>
-  `}).join('')
+    </tr>`
+  }
+
+  const isMultiPage = inv.lines.length > FIRST_PAGE_ROWS
+  const page1Lines  = isMultiPage ? inv.lines.slice(0, FIRST_PAGE_ROWS) : inv.lines
+  const page2Lines  = isMultiPage ? inv.lines.slice(FIRST_PAGE_ROWS)    : []
+  const totalPages  = isMultiPage ? 2 : 1
+
+  const lineRows = page1Lines.map((l, i) => buildRow(l, i)).join('')
+  const lineRows2 = page2Lines.map((l, i) => buildRow(l, i)).join('')
 
   const statusBadgeStyle = `display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;${
     inv.status === 'paid' ? 'background:#d1fae5;color:#065f46' :
@@ -187,6 +197,23 @@ export function buildInvoiceHTML(
     body { font-family: 'Inter', Arial, sans-serif; font-size: 13px; color: #1a1a1a; line-height: 1.5; background: white; }
     section { page-break-inside: avoid; break-inside: avoid; }
     tr { page-break-inside: avoid; break-inside: avoid; }
+    .page2-break {
+      page-break-before: always;
+      break-before: page;
+      position: relative;
+    }
+    @media screen {
+      .page2-break {
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 3px dashed #e2e8f0;
+      }
+    }
+    @media print {
+      .page2-break {
+        padding-top: ${letterhead ? '74mm' : '15mm'};
+      }
+    }
     ${letterhead ? `
     html, body { margin: 0; padding: 0; }
     html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -209,6 +236,10 @@ export function buildInvoiceHTML(
       .lh-stamp-img { max-height: 110px; max-width: 160px; }
       .page { padding: 54mm 15mm 50mm; }
       @page { size: A4; margin: 0; }
+      /* Page 2 header: show absolute version in print only */
+      .p2-screen-hdr { display: none !important; }
+      .p2-print-hdr  { display: block !important; position: absolute; top: 16mm; right: 15mm; text-align: right; }
+      .p2-print-divider { display: block !important; border-bottom: 2px solid #1a3c5e; margin-bottom: 22px; }
     }
     ` : `
     .page { padding: 40px; max-width: 900px; margin: 0 auto; }
@@ -288,8 +319,8 @@ ${letterhead ? `
     </div>
   </section>
 
-  <!-- Lines table -->
-  <table style="width:100%;border-collapse:collapse;margin-bottom:28px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+  <!-- Lines table (page 1 rows) -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:${isMultiPage ? '0' : '28px'};border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
     <thead>
       <tr>
         <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:left;width:36px">#</th>
@@ -309,7 +340,83 @@ ${letterhead ? `
       </tr>
     </thead>
     <tbody>${lineRows}</tbody>
+    ${isMultiPage ? `
+    <tfoot>
+      <tr>
+        <td colspan="99" style="padding:10px 14px;font-size:11px;color:#999;font-style:italic;text-align:right;border-top:1px solid #e2e8f0">
+          Continued on page 2 →
+        </td>
+      </tr>
+    </tfoot>` : ''}
   </table>
+
+  ${isMultiPage ? `
+  <!-- Page footer for page 1 -->
+  <div style="border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;text-align:center;display:flex;justify-content:space-between">
+    <span>${inv.companyName ?? 'FNC Group'} &bull; ${inv.invoiceNumber}</span>
+    <span>Page 1 of ${totalPages}</span>
+  </div>
+
+  <!-- PAGE 2 BREAK -->
+  <div class="page2-break">
+    <!-- Page 2 header -->
+    ${letterhead ? `
+    <!-- Screen: flex header (no overlap) -->
+    <div class="p2-screen-hdr">
+      <div style="font-size:11px;color:#999;font-style:italic">Continued from previous page</div>
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
+        <div style="font-size:12px;color:#555;font-family:monospace;margin-top:4px">${inv.invoiceNumber}</div>
+      </div>
+    </div>
+    <!-- Print: absolute header mirrors page 1 letterhead position (hidden on screen via inline style) -->
+    <div class="p2-print-hdr" style="display:none">
+      <div style="font-size:20px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Invoice</div>
+      <div style="font-size:12px;color:#555;font-family:monospace;margin-top:5px;letter-spacing:0.3px">${inv.invoiceNumber}</div>
+      ${qrDataUrl ? `
+      <div style="margin-top:8px;display:flex;justify-content:flex-end">
+        <div style="text-align:center">
+          <img src="${qrDataUrl}" alt="Scan to verify" style="width:72px;height:72px;display:block;"/>
+          <div style="font-size:8px;color:#999;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Scan to verify</div>
+        </div>
+      </div>` : ''}
+    </div>
+    <div class="p2-print-divider" style="display:none">
+      <div style="font-size:11px;color:#999;font-style:italic;padding-bottom:8px">Continued from previous page</div>
+    </div>
+    ` : `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;border-bottom:2px solid #1a3c5e;margin-bottom:20px">
+      <div style="font-size:13px;color:#666;font-style:italic">Continued from previous page</div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:1px">Invoice</div>
+        <div style="font-size:12px;color:#666;font-family:monospace">${inv.invoiceNumber}</div>
+      </div>
+    </div>
+    `}
+
+    <!-- Remaining rows table -->
+    <table style="width:100%;border-collapse:collapse;margin-bottom:28px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+      <thead>
+        <tr>
+          <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:left;width:36px">#</th>
+          <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:left">Description</th>
+          <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:56px">Qty</th>
+          <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:140px">Unit Cost</th>
+          <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:140px">Subtotal</th>
+          ${hasMargin ? `
+            <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:70px">Margin%</th>
+            <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:130px">Margin</th>
+          ` : ''}
+          ${hasTax ? `
+            <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:60px">Tax%</th>
+            <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:120px">Tax</th>
+          ` : ''}
+          <th style="background:#1a3c5e;color:white;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;padding:11px 14px;text-align:right;width:150px">Total</th>
+        </tr>
+      </thead>
+      <tbody>${lineRows2}</tbody>
+    </table>
+  ` : ''}
 
   <!-- Totals -->
   <section style="display:flex;justify-content:flex-end;margin-bottom:28px">
@@ -389,6 +496,13 @@ ${letterhead ? `
   <section>
   ${letterhead ? letterheadBottom : standardBottom}
   </section>
+
+  <div style="border-top:1px solid #e5e5e5;padding-top:10px;margin-top:16px;font-size:10px;color:#999;display:flex;justify-content:space-between">
+    <span>${inv.companyName ?? 'FNC Group'} &bull; ${inv.invoiceNumber}</span>
+    <span>Page ${totalPages} of ${totalPages}</span>
+  </div>
+
+  ${isMultiPage ? '</div>' : ''}
 
 </div>
 </body>

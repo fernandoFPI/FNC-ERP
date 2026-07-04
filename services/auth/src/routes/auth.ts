@@ -285,7 +285,7 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
     }
 
     const userResult = await query<UserRow>(
-      `SELECT id, email, mfa_secret, mfa_enabled FROM users WHERE id = $1 AND is_active = true`,
+      `SELECT id, email, mfa_secret, mfa_enabled, profile_completed FROM users WHERE id = $1 AND is_active = true`,
       [tempPayload.sub],
     )
 

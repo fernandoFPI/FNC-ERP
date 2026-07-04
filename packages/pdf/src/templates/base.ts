@@ -32,7 +32,7 @@ export const BASE_STYLES = `
   }
   .doc-title .doc-number { font-size: 14px; color: #666; margin-top: 4px; }
 
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-bottom: 32px; }
   .meta-section h3 {
     font-size: 10px; font-weight: 600; text-transform: uppercase;
     letter-spacing: 1px; color: #999; margin-bottom: 8px;
@@ -40,16 +40,18 @@ export const BASE_STYLES = `
   .meta-section p { font-size: 13px; color: #1a1a1a; line-height: 1.6; }
 
   .doc-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+  .doc-table thead { display: table-header-group; }
   .doc-table th {
     background: #1a3c5e; color: white; font-size: 11px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 12px; text-align: left;
   }
   .doc-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 12px; }
+  .doc-table tbody tr { page-break-inside: avoid; }
   .doc-table tr:nth-child(even) td { background: #fafafa; }
   .doc-table .text-right { text-align: right; }
   .doc-table .text-center { text-align: center; }
 
-  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 32px; }
+  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 32px; page-break-inside: avoid; }
   .totals-box { width: 320px; }
   .totals-row {
     display: flex; justify-content: space-between;

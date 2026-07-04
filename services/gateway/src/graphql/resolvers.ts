@@ -4739,6 +4739,27 @@ export const resolvers = {
           headerSets.push(`invoice_date=$${headerParams.length + 1}`)
           headerParams.push(args.invoiceDate)
         }
+
+        // Recalculate status if there are payments so editing lines doesn't leave
+        // the invoice showing 'paid' when more is now owed (or 'partial' when now fully covered)
+        const currentStatus = String(inv['status'] ?? '')
+        if (['issued', 'sent', 'partial', 'paid'].includes(currentStatus)) {
+          const paidRes = await client.query<{ total: string }>(
+            `SELECT COALESCE(SUM(amount),0) AS total FROM project_invoice_payments WHERE invoice_id=$1`,
+            [args.id],
+          )
+          const totalPaidNow = parseFloat(paidRes.rows[0]?.['total'] ?? '0')
+          if (totalPaidNow > 0) {
+            const whtScenario = inv['wht_scenario'] as string | null
+            const cashTarget  = whtScenario === 'client_withholds' ? newNetPayable - whtAmt : newNetPayable
+            const recalcStatus = totalPaidNow >= cashTarget - 0.001 ? 'paid' : 'partial'
+            if (recalcStatus !== currentStatus) {
+              headerSets.push(`status=$${headerParams.length + 1}`)
+              headerParams.push(recalcStatus)
+            }
+          }
+        }
+
         headerParams.push(args.id)
         await client.query(
           `UPDATE project_invoices SET ${headerSets.join(', ')} WHERE id=$${headerParams.length}`,

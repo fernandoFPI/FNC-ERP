@@ -1811,7 +1811,7 @@ async function fetchInvoiceData(invoiceId: string, companyId: string): Promise<I
   const invRow = await pool.query<Record<string, unknown>>(
     `SELECT pi.*,
             pc.contract_number, pc.payment_terms_days, pc.retention_pct, pc.client_name,
-            p.project_code, p.name AS project_name,
+            p.code AS project_code, p.name AS project_name,
             c.name AS company_name, c.legal_name, c.city, c.country
      FROM project_invoices pi
      JOIN project_contracts pc ON pc.id = pi.contract_id
