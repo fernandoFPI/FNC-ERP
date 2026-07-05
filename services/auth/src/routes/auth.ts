@@ -105,7 +105,8 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
     const user = userResult.rows[0] ?? null
 
     // Check account lock (before password check for locked real accounts)
-    if (user && user.locked_until && user.locked_until > new Date()) {
+    // pg returns TIMESTAMPTZ as strings due to custom type parsers, so use Date.parse
+    if (user && user.locked_until && Date.parse(String(user.locked_until)) > Date.now()) {
       sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.ACCOUNT_LOCKED, 'Account is temporarily locked due to too many failed login attempts')
       return
     }
@@ -285,7 +286,7 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
     }
 
     const userResult = await query<UserRow>(
-      `SELECT id, email, mfa_secret, mfa_enabled FROM users WHERE id = $1 AND is_active = true`,
+      `SELECT id, email, mfa_secret, mfa_enabled, profile_completed FROM users WHERE id = $1 AND is_active = true`,
       [tempPayload.sub],
     )
 

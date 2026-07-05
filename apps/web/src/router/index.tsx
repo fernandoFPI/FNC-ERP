@@ -39,6 +39,20 @@ const AnalyticAccountDetail = lazy(() => import('../pages/finance/analytic-accou
 const WHTPayablePage = lazy(() => import('../pages/finance/wht-payable/WHTPayablePage'))
 const PaymentVouchersPage = lazy(() => import('../pages/finance/payment-vouchers/PaymentVouchersPage'))
 const PaymentVoucherDetail = lazy(() => import('../pages/finance/payment-vouchers/PaymentVoucherDetail'))
+const FixedAssetsPage = lazy(() => import('../pages/finance/assets/AssetsPage'))
+const FixedAssetForm = lazy(() => import('../pages/finance/assets/AssetForm'))
+const FixedAssetDetail = lazy(() => import('../pages/finance/assets/AssetDetail'))
+const BankReconPage = lazy(() => import('../pages/finance/bank/BankReconPage'))
+const ReconcileWorkspace = lazy(() => import('../pages/finance/bank/ReconcileWorkspace'))
+const PaymentTermsPage = lazy(() => import('../pages/finance/terms/PaymentTermsPage'))
+const RetentionPage = lazy(() => import('../pages/finance/retention/RetentionPage'))
+const RetentionDetail = lazy(() => import('../pages/finance/retention/RetentionDetail'))
+const BudgetPage = lazy(() => import('../pages/finance/budget/BudgetPage'))
+const BudgetDetail = lazy(() => import('../pages/finance/budget/BudgetDetail'))
+const RevaluationPage = lazy(() => import('../pages/finance/revaluation/RevaluationPage'))
+const ExpenseClaimsPage = lazy(() => import('../pages/finance/expenses/ExpenseClaimsPage'))
+const ExpenseClaimDetail = lazy(() => import('../pages/finance/expenses/ExpenseClaimDetail'))
+const PettyCashPage = lazy(() => import('../pages/finance/petty-cash/PettyCashPage'))
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
@@ -90,6 +104,7 @@ const MaintenancePage = lazy(() => import('../pages/rental/maintenance/Maintenan
 // Reporting
 const ReportingLayout = lazy(() => import('../pages/reporting/ReportingLayout'))
 const ExecutiveDashboard = lazy(() => import('../pages/reporting/executive/ExecutiveDashboard'))
+const CashFlowStatement = lazy(() => import('../pages/reporting/financial/CashFlowStatement'))
 const ConsolidatedPL = lazy(() => import('../pages/reporting/consolidated/ConsolidatedPL'))
 const ConsolidatedBS = lazy(() => import('../pages/reporting/consolidated/ConsolidatedBS'))
 const ConsolidatedTrialBalance = lazy(() => import('../pages/reporting/consolidated/ConsolidatedTrialBalance'))
@@ -290,6 +305,22 @@ export const router = createBrowserRouter([
           { path: 'analytic-accounts', element: withPerm('finance.analytic_accounts.view', <AnalyticAccountsPage />) },
           { path: 'analytic-accounts/:id', element: withPerm('finance.analytic_accounts.view', <AnalyticAccountDetail />) },
           { path: 'wht-payable', element: withPerm('finance.ap.view', <WHTPayablePage />) },
+          { path: 'assets', element: withPerm('finance.assets.view', <FixedAssetsPage />) },
+          { path: 'assets/new', element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit') },
+          { path: 'assets/:id', element: withPerm('finance.assets.view', <FixedAssetDetail />) },
+          { path: 'assets/:id/edit', element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit') },
+          { path: 'bank', element: withPerm('finance.bank.view', <BankReconPage />) },
+          { path: 'bank/:accountId', element: withPerm('finance.bank.view', <ReconcileWorkspace />) },
+          { path: 'bank/:accountId/reconcile/:statementId', element: withPerm('finance.bank.edit', <ReconcileWorkspace />, 'edit') },
+          { path: 'payment-terms', element: withPerm('finance.terms.view', <PaymentTermsPage />) },
+          { path: 'retention', element: withPerm('finance.retention.view', <RetentionPage />) },
+          { path: 'retention/:id', element: withPerm('finance.retention.view', <RetentionDetail />) },
+          { path: 'budget', element: withPerm('finance.budget.view', <BudgetPage />) },
+          { path: 'budget/:id', element: withPerm('finance.budget.view', <BudgetDetail />) },
+          { path: 'revaluation', element: withPerm('finance.revaluation.view', <RevaluationPage />) },
+          { path: 'expense-claims', element: withPerm('finance.expenses.view', <ExpenseClaimsPage />) },
+          { path: 'expense-claims/:id', element: withPerm('finance.expenses.view', <ExpenseClaimDetail />) },
+          { path: 'petty-cash', element: withPerm('finance.petty_cash.view', <PettyCashPage />) },
         ],
       },
 
@@ -437,6 +468,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/reporting/executive" replace /> },
           { path: 'executive', element: withPerm('reporting.executive.view', <ExecutiveDashboard />) },
+          { path: 'financial/cash-flow', element: withPerm('reporting.financial.view', <CashFlowStatement />) },
           { path: 'consolidated/pl', element: withPerm('reporting.consolidated.view', <ConsolidatedPL />) },
           { path: 'consolidated/bs', element: withPerm('reporting.consolidated.view', <ConsolidatedBS />) },
           { path: 'consolidated/trial-balance', element: withPerm('reporting.consolidated.view', <ConsolidatedTrialBalance />) },

@@ -44,7 +44,7 @@ describe('Project lifecycle', () => {
       .get('/projects')
       .set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    const codes = (res.body.data as Array<{ code: string }>).map(p => p.code)
+    const codes = (res.body.data.data as Array<{ code: string }>).map(p => p.code)
     expect(codes).toContain('TEST-001')
   })
 
@@ -58,57 +58,55 @@ describe('Project lifecycle', () => {
     expect(res.body.data.budget_lines).toHaveLength(2)
   })
 
-  it('full lifecycle: draft → pending → active → submitted → completed → closed', async () => {
-    // submit for approval
-    let res = await request(app).post(`/projects/${projectId}/submit-for-approval`).set('Authorization', `Bearer ${token}`)
+  it('full lifecycle: pending → ongoing → submitted → approved → completed', async () => {
+    // start (pending → ongoing)
+    let res = await request(app).post(`/projects/${projectId}/start`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    expect(res.body.data.status).toBe('pending')
+    let proj = await request(app).get(`/projects/${projectId}`).set('Authorization', `Bearer ${token}`)
+    expect(proj.body.data.status).toBe('ongoing')
 
-    // activate
-    res = await request(app).post(`/projects/${projectId}/activate`).set('Authorization', `Bearer ${token}`)
+    // submit deliverable (ongoing → submitted)
+    res = await request(app).post(`/projects/${projectId}/submit`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    expect(res.body.data.status).toBe('active')
+    proj = await request(app).get(`/projects/${projectId}`).set('Authorization', `Bearer ${token}`)
+    expect(proj.body.data.status).toBe('submitted')
 
-    // submit for handover
-    res = await request(app).post(`/projects/${projectId}/submit-for-handover`).set('Authorization', `Bearer ${token}`)
+    // approve (submitted → approved)
+    res = await request(app).post(`/projects/${projectId}/approve`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    expect(res.body.data.status).toBe('submitted')
+    proj = await request(app).get(`/projects/${projectId}`).set('Authorization', `Bearer ${token}`)
+    expect(proj.body.data.status).toBe('approved')
 
-    // complete
+    // complete (approved → completed)
     res = await request(app).post(`/projects/${projectId}/complete`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
-    expect(res.body.data.status).toBe('completed')
-
-    // close (no stages, so should succeed)
-    res = await request(app).post(`/projects/${projectId}/close`).set('Authorization', `Bearer ${token}`)
-    expect(res.status).toBe(200)
-    expect(res.body.data.status).toBe('closed')
+    proj = await request(app).get(`/projects/${projectId}`).set('Authorization', `Bearer ${token}`)
+    expect(proj.body.data.status).toBe('completed')
   })
 
-  it('blocks close when open stages exist', async () => {
-    // Create a new project and add an open stage then try to close
+  it('blocks completion when open stages exist', async () => {
+    // Create a new project and add an open stage then try to complete
     const createRes = await request(app)
       .post('/projects')
       .set('Authorization', `Bearer ${token}`)
       .send({ code: 'TEST-002', name: 'Test with Stages', project_type: 'construction', budget_amount: 0 })
     const pid = (createRes.body.data as { id: string }).id
 
-    // Add a stage
+    // Add an open stage
     await request(app)
       .post(`/projects/${pid}/stages`)
       .set('Authorization', `Bearer ${token}`)
       .send({ name: 'Phase 1', sequence: 1 })
 
-    // Move to completed state first
-    await request(app).post(`/projects/${pid}/submit-for-approval`).set('Authorization', `Bearer ${token}`)
-    await request(app).post(`/projects/${pid}/activate`).set('Authorization', `Bearer ${token}`)
-    await request(app).post(`/projects/${pid}/submit-for-handover`).set('Authorization', `Bearer ${token}`)
-    await request(app).post(`/projects/${pid}/complete`).set('Authorization', `Bearer ${token}`)
+    // Move to approved state (required before complete)
+    await request(app).post(`/projects/${pid}/start`).set('Authorization', `Bearer ${token}`)
+    await request(app).post(`/projects/${pid}/submit`).set('Authorization', `Bearer ${token}`)
+    await request(app).post(`/projects/${pid}/approve`).set('Authorization', `Bearer ${token}`)
 
-    // Try to close — should fail (pending stage)
-    const closeRes = await request(app).post(`/projects/${pid}/close`).set('Authorization', `Bearer ${token}`)
-    expect(closeRes.status).toBe(409)
-    expect(closeRes.body.error.code).toBe('OPEN_STAGES')
+    // Try to complete — should fail (open stage)
+    const closeRes = await request(app).post(`/projects/${pid}/complete`).set('Authorization', `Bearer ${token}`)
+    expect(closeRes.status).toBe(400)
+    expect(closeRes.body.error.code).toBe('COMPLETION_BLOCKED')
   })
 
   it('rejects invalid workflow transitions', async () => {
@@ -118,8 +116,8 @@ describe('Project lifecycle', () => {
       .send({ code: 'TEST-003', name: 'Workflow Test', project_type: 'internal', budget_amount: 0 })
     const pid = (createRes.body.data as { id: string }).id
 
-    // Can't close from draft
-    const res = await request(app).post(`/projects/${pid}/close`).set('Authorization', `Bearer ${token}`)
+    // Can't submit from pending (must start first)
+    const res = await request(app).post(`/projects/${pid}/submit`).set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(409)
   })
 

@@ -15,10 +15,10 @@ export async function createTestUser(): Promise<{ userId: string; token: string 
   )
   const userId = result.rows[0]!['id']
   await pool.query(
-    `INSERT INTO user_company_roles (user_id, company_id, role, module) VALUES ($1,$2,'admin','all') ON CONFLICT DO NOTHING`,
+    `INSERT INTO user_company_roles (user_id, company_id, role, module) VALUES ($1,$2,'company_admin','all') ON CONFLICT DO NOTHING`,
     [userId, TEST_COMPANY_ID],
   )
-  const token = signAccessToken({ userId, companyId: TEST_COMPANY_ID, role: 'admin', module: 'all', sessionId: 'test-session' })
+  const token = signAccessToken({ userId, companyId: TEST_COMPANY_ID, role: 'company_admin', module: 'all', sessionId: 'test-session' })
   const tokenHash = createHash('sha256').update(token).digest('hex')
   await pool.query(
     `INSERT INTO sessions (user_id, token_hash, refresh_token_hash, expires_at, refresh_expires_at)

@@ -34,12 +34,12 @@ beforeEach(() => {
 // ── PayrollRunsPage ────────────────────────────────────────────────────────────
 describe('PayrollRunsPage', () => {
   const runs = [
-    { id: 'pr1', name: 'June 2026 Payroll', period_start: '2026-06-01', period_end: '2026-06-30', run_scope: 'all', status: 'draft', employee_count: 25, created_at: '2026-06-01' },
-    { id: 'pr2', name: 'May 2026 Payroll', period_start: '2026-05-01', period_end: '2026-05-31', run_scope: 'all', status: 'posted', total_net: '50000000', employee_count: 25, created_at: '2026-05-01' },
+    { id: 'pr1', period_name: 'June 2026 Payroll', start_date: '2026-06-01', end_date: '2026-06-30', status: 'draft', created_at: '2026-06-01' },
+    { id: 'pr2', period_name: 'May 2026 Payroll', start_date: '2026-05-01', end_date: '2026-05-31', status: 'posted', total_net: '50000000', created_at: '2026-05-01' },
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { payrollRuns: { runs, total: 2 } }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({ data: { payrollRuns: runs }, loading: false, refetch: vi.fn() })
   })
 
   it('renders payroll run list', async () => {
@@ -77,10 +77,10 @@ describe('PayrollRunForm', () => {
     expect(screen.getByText(/period end/i)).toBeInTheDocument()
   })
 
-  it('shows run scope select', async () => {
+  it('shows run name input', async () => {
     const PayrollRunForm = (await import('../runs/PayrollRunForm')).default
     wrap(<PayrollRunForm />)
-    expect(screen.getByText(/run scope/i)).toBeInTheDocument()
+    expect(screen.getByText(/run name/i)).toBeInTheDocument()
   })
 
   it('shows overlap warning when period conflicts with existing run', async () => {
@@ -110,9 +110,9 @@ describe('PayrollRunForm', () => {
 // ── PayrollRunDetail ───────────────────────────────────────────────────────────
 describe('PayrollRunDetail', () => {
   function mockRun(status: string) {
-    const run = { id: 'pr1', name: 'June 2026 Payroll', period_start: '2026-06-01', period_end: '2026-06-30', run_scope: 'all', status, employee_count: 25, state_history: [] }
-    const lines = [{ id: 'l1', employee_name: 'Ahmad Hassan', department_name: 'Engineering', days_present: 26, overtime_hours: 4, gross_pay: '2000000', net_pay: '1800000', currency_code: 'IQD' }]
-    mockUseQuery.mockReturnValue({ data: { payrollRun: run, payrollLines: { lines, total: 1 } }, loading: false, refetch: vi.fn() })
+    const run = { id: 'pr1', period_name: 'June 2026 Payroll', start_date: '2026-06-01', end_date: '2026-06-30', status, state_history: [] }
+    const payslips = [{ id: 'l1', employee_name: 'Ahmad Hassan', gross_salary: '2000000', net_salary: '1800000', currency_code: 'IQD' }]
+    mockUseQuery.mockReturnValue({ data: { payrollRun: run, payslips }, loading: false, refetch: vi.fn() })
   }
 
   it('shows Process button for draft status', async () => {
@@ -141,11 +141,11 @@ describe('PayrollRunDetail', () => {
 // ── PayslipsPage ───────────────────────────────────────────────────────────────
 describe('PayslipsPage', () => {
   const payslips = [
-    { id: 'ps1', period_label: 'June 2026', gross_pay: '2000000', net_pay: '1800000', currency_code: 'IQD', pdf_path: 'pdf-1' },
+    { id: 'ps1', employee_name: 'June 2026', gross_salary: '2000000', net_salary: '1800000', currency_code: 'IQD' },
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { myPayslips: { lines: payslips, total: 1 } }, loading: false })
+    mockUseQuery.mockReturnValue({ data: { myPayslips: payslips }, loading: false })
   })
 
   it('renders payslip list', async () => {

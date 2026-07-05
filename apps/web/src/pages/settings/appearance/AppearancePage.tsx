@@ -19,10 +19,8 @@ interface MyPreferences {
 interface PreferencesData { myPreferences: MyPreferences }
 
 const THEMES: { key: ThemeKey; label: string; description: string; preview: string }[] = [
-  { key: 'dark-glass', label: 'Dark Glass', description: 'Frosted glass with blue accents', preview: '#0d1117' },
-  { key: 'dark-white', label: 'Dark White', description: 'Dark with white highlights', preview: '#1a1a1a' },
-  { key: 'light-glass', label: 'Light Glass', description: 'Frosted glass light variant', preview: '#f0f4f8' },
-  { key: 'light-flat', label: 'Light Flat', description: 'Clean professional light theme', preview: '#f8fafc' },
+  { key: 'light-flat', label: 'Light Flat', description: 'Clean white, maximum readability', preview: '#f4f6f8' },
+  { key: 'black', label: 'Black', description: 'Pure black, maximum contrast', preview: '#1c1e21' },
 ]
 
 const DATE_FORMATS = [

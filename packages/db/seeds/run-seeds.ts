@@ -62,7 +62,7 @@ async function runSeeds() {
       await client.query(
         `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active)
          VALUES ($1, $2, 'system_admin', 'all', true)
-         ON CONFLICT (user_id, company_id, module) DO NOTHING`,
+         ON CONFLICT DO NOTHING`,
         [adminId, company.id],
       )
     }

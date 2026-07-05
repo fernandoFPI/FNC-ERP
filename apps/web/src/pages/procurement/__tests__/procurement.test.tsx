@@ -105,20 +105,18 @@ describe('PurchaseOrderDetail', () => {
     mockUseQuery.mockReturnValue({ data: { purchaseOrder: po }, loading: false })
   }
 
-  it('shows Submit for inventory check button for opening status', async () => {
-    mockPO('opening')
+  it('shows Submit for inventory check button for draft status', async () => {
+    mockPO('draft')
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
-    fireEvent.click(screen.getByRole('button', { name: /^action$/i }))
     expect(screen.getByRole('button', { name: /submit for inventory check/i })).toBeInTheDocument()
   })
 
-  it('shows Approve button in Action tab for pending_approval status', async () => {
+  it('shows Approve PO button for pending_approval status', async () => {
     mockPO('pending_approval')
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
-    fireEvent.click(screen.getByRole('button', { name: /^action$/i }))
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve po/i })).toBeInTheDocument()
   })
 
   it('does not show Submit button for non-opening statuses', async () => {
@@ -128,20 +126,18 @@ describe('PurchaseOrderDetail', () => {
     expect(screen.queryByRole('button', { name: /submit for inventory check/i })).not.toBeInTheDocument()
   })
 
-  it('shows approve and reject UI in Action tab for pending_approval status', async () => {
+  it('shows approve and reject UI for pending_approval status', async () => {
     mockPO('pending_approval')
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
-    fireEvent.click(screen.getByRole('button', { name: /^action$/i }))
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/required for rejection/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /approve po/i })).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/enter reason/i)).toBeInTheDocument()
   })
 
-  it('shows action notes textarea in Action tab', async () => {
+  it('shows action notes textarea in inline action panel', async () => {
     mockPO('pending_approval')
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
-    fireEvent.click(screen.getByRole('button', { name: /^action$/i }))
     await waitFor(() => {
       expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
     })

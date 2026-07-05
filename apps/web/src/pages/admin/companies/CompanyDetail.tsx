@@ -1,6 +1,4 @@
 ﻿import { useState } from 'react'
-import * as pdfjs from 'pdfjs-dist'
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -109,6 +107,8 @@ export default function CompanyDetail() {
     if (isPdf) {
       try {
         addToast({ type: 'info', message: 'Converting PDF to image…' })
+        const pdfjs = await import('pdfjs-dist')
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
         const arrayBuffer = await file.arrayBuffer()
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
         const page = await pdf.getPage(1)
@@ -166,6 +166,8 @@ export default function CompanyDetail() {
     if (isPdf) {
       try {
         addToast({ type: 'info', message: 'Converting PDF to image…' })
+        const pdfjs = await import('pdfjs-dist')
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
         const arrayBuffer = await file.arrayBuffer()
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(arrayBuffer) }).promise
         const page = await pdf.getPage(1)

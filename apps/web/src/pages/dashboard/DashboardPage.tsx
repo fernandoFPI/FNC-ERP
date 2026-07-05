@@ -1,5 +1,6 @@
 ﻿import { useQuery, gql } from '@apollo/client'
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { KPICard } from '../../components/ui/KPICard'
 import { Card } from '../../components/ui/Card'
@@ -118,6 +119,7 @@ export default function DashboardPage() {
   const { theme } = useTheme()
   const { isPhone, isTablet } = useBreakpoint()
   const pagePadding = usePagePadding()
+  const navigate = useNavigate()
   const { activeCompany } = useCompanyStore()
   const companyId = activeCompany?.id ?? ''
   const currency = activeCompany?.currencyCode ?? 'USD'
@@ -154,7 +156,7 @@ export default function DashboardPage() {
           title="Dashboard"
           subtitle={subtitle}
           actions={
-            <Button variant="primary" size="md">
+            <Button variant="primary" size="md" onClick={() => navigate('/reporting/executive')}>
               New report
             </Button>
           }
@@ -319,8 +321,8 @@ export default function DashboardPage() {
                     <div>
                       <p style={{ fontSize: '12px', color: theme.textSecondary, margin: 0 }}>
                         <span style={{ fontWeight: 500, color: theme.textPrimary }}>{event.user}</span>
-                        {' '}{event.action}{' '}
-                        <span style={{ color: theme.accent }}>{event.entity}</span>
+                        {' '}<span style={{ color: theme.accent }}>{event.action.replace(/_/g, ' ')}</span>
+                        {event.entity && event.entity !== 'null' ? <>{' '}{event.entity}</> : null}
                       </p>
                       <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0, marginTop: '2px' }}>
                         {new Date(event.timestamp).toLocaleString()}

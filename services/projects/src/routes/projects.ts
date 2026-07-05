@@ -364,7 +364,7 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
           ELSE NULL
         END AS days_to_submission,
         COALESCE(
-          (SELECT json_agg(h_data ORDER BY h.created_at DESC)
+          (SELECT json_agg(h_data)
            FROM (SELECT json_build_object(
              'id', h.id, 'fromStatus', h.from_status, 'toStatus', h.to_status,
              'changedBy', u.email, 'reason', h.reason, 'createdAt', h.created_at
@@ -372,7 +372,15 @@ projectsRouter.get('/:id', requirePermission('projects.view', 'view'), async (re
            FROM project_status_history h JOIN users u ON u.id = h.changed_by
            WHERE h.project_id = p.id ORDER BY h.created_at DESC LIMIT 10) h),
           '[]'
-        ) AS status_history
+        ) AS status_history,
+        COALESCE(
+          (SELECT json_agg(json_build_object(
+            'id', pbl.id, 'category', pbl.category,
+            'budgetedAmount', pbl.budgeted_amount
+          ) ORDER BY pbl.category)
+          FROM project_budget_lines pbl WHERE pbl.project_id = p.id),
+          '[]'
+        ) AS budget_lines
       FROM projects p
       LEFT JOIN employees e ON e.id = p.project_manager_id
       LEFT JOIN companies c ON c.id = p.company_id
@@ -445,6 +453,20 @@ projectsRouter.post('/', requirePermission('projects.edit', 'edit'), async (req,
       )
 
       const row = project.rows[0] as Record<string, unknown>
+
+      // Insert inline budget lines if provided
+      const budgetLines = b['budget_lines'] as Array<Record<string, unknown>> | undefined
+      if (Array.isArray(budgetLines) && budgetLines.length > 0) {
+        for (const bl of budgetLines) {
+          await client.query(
+            `INSERT INTO project_budget_lines (project_id, category, description, account_id, budgeted_amount, currency_code)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [row['id'], bl['category'], bl['description'] ?? null, bl['account_id'] ?? null,
+             bl['budgeted_amount'] ?? 0, bl['currency_code'] ?? b['budget_currency'] ?? 'IQD'],
+          )
+        }
+      }
+
       await recordStatusChange(client, row['id'] as string, null, 'pending', userId)
 
       await logAudit({

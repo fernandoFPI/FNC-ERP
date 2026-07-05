@@ -84,25 +84,25 @@ describe('Purchase Orders', () => {
     expect(res.body.data.lines).toHaveLength(1)
   })
 
-  it('POST /procurement/orders — rejects invalid vendor', async () => {
-    const payload = poPayload()
+  it('POST /procurement/orders — rejects invalid currency_code', async () => {
     const res = await request(app)
       .post('/procurement/orders')
       .set('Authorization', `Bearer ${token}`)
-      .send({ ...payload, vendor_id: '00000000-0000-0000-0000-000000000099' })
+      .send({ ...poPayload(), currency_code: 'US' })
     expect(res.status).toBe(400)
-    expect(res.body.error.code).toBe('INVALID_VENDOR')
+    expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
 
-  it('POST /procurement/orders — rejects duplicate PO number', async () => {
-    const payload = { ...poPayload(), po_number: 'TEST-DUP-PO' }
-    await request(app).post('/procurement/orders').set('Authorization', `Bearer ${token}`).send(payload)
-    const res = await request(app).post('/procurement/orders').set('Authorization', `Bearer ${token}`).send(payload)
-    expect(res.status).toBe(409)
-    expect(res.body.error.code).toBe('DUPLICATE_PO')
+  it('POST /procurement/orders — rejects invalid project_id format', async () => {
+    const res = await request(app)
+      .post('/procurement/orders')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...poPayload(), project_id: 'not-a-uuid' })
+    expect(res.status).toBe(400)
+    expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
 
-  it('POST /procurement/orders/:id/action — submit transitions draft to submitted', async () => {
+  it('POST /:id/submit-to-inventory-check — transitions draft to inventory_check', async () => {
     const createRes = await request(app)
       .post('/procurement/orders')
       .set('Authorization', `Bearer ${token}`)
@@ -110,45 +110,60 @@ describe('Purchase Orders', () => {
     const poId = (createRes.body.data as { id: string }).id
 
     const actionRes = await request(app)
-      .post(`/procurement/orders/${poId}/action`)
+      .post(`/procurement/orders/${poId}/submit-to-inventory-check`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ action: 'submit' })
     expect(actionRes.status).toBe(200)
-    expect(actionRes.body.data.status).toBe('submitted')
+
+    const getRes = await request(app)
+      .get(`/procurement/orders/${poId}`)
+      .set('Authorization', `Bearer ${token}`)
+    expect(getRes.body.data.status).toBe('inventory_check')
   })
 
-  it('POST /procurement/orders/:id/action — rejects invalid transition', async () => {
+  it('POST /:id/submit-to-inventory-check — rejects when PO is not in draft state', async () => {
     const createRes = await request(app)
       .post('/procurement/orders')
       .set('Authorization', `Bearer ${token}`)
       .send(poPayload())
     const poId = (createRes.body.data as { id: string }).id
 
+    // Advance to inventory_check
+    await request(app).post(`/procurement/orders/${poId}/submit-to-inventory-check`).set('Authorization', `Bearer ${token}`)
+
+    // Try again — wrong state
     const res = await request(app)
-      .post(`/procurement/orders/${poId}/action`)
+      .post(`/procurement/orders/${poId}/submit-to-inventory-check`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ action: 'approve_l1' })
     expect(res.status).toBe(422)
-    expect(res.body.error.code).toBe('INVALID_TRANSITION')
+    expect(res.body.error.code).toBe('INVALID_STATUS')
   })
 
-  it('Full PO lifecycle: draft → submitted → pending_review → under_review → approved_l1 → approved_l2 → ordered', async () => {
+  it('Full PO lifecycle: draft → inventory_check → store_pricing → market_pricing → price_verification → pending_approval → approved', async () => {
     const createRes = await request(app)
       .post('/procurement/orders')
       .set('Authorization', `Bearer ${token}`)
       .send(poPayload())
     const poId = (createRes.body.data as { id: string }).id
 
-    const actions = ['submit', 'review', 'start_review', 'approve_l1', 'approve_l2', 'mark_ordered']
-    let currentStatus = 'draft'
-    for (const action of actions) {
-      const res = await request(app)
-        .post(`/procurement/orders/${poId}/action`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ action })
-      expect(res.status).toBe(200)
-      currentStatus = (res.body.data as { status: string }).status
-    }
-    expect(currentStatus).toBe('ordered')
+    let r = await request(app).post(`/procurement/orders/${poId}/submit-to-inventory-check`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+
+    r = await request(app).post(`/procurement/orders/${poId}/confirm-inventory-check`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+
+    r = await request(app).post(`/procurement/orders/${poId}/submit-store-pricing`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+
+    r = await request(app).post(`/procurement/orders/${poId}/submit-market-pricing`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+
+    r = await request(app).post(`/procurement/orders/${poId}/submit-price-verification`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+
+    r = await request(app).post(`/procurement/orders/${poId}/approve`).set('Authorization', `Bearer ${token}`)
+    expect(r.status).toBe(200)
+
+    const getRes = await request(app).get(`/procurement/orders/${poId}`).set('Authorization', `Bearer ${token}`)
+    expect(getRes.body.data.status).toBe('approved')
   })
 })

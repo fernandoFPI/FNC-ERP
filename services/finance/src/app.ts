@@ -12,6 +12,14 @@ import { vendorInvoicesRouter } from './routes/vendor-invoices.js'
 import { arRouter } from './routes/ar.js'
 import { journalAttachmentsRouter } from './routes/journal-attachments.js'
 import { paymentVouchersRouter } from './routes/payment-vouchers.js'
+import { assetsRouter } from './routes/assets.js'
+import { bankRouter } from './routes/bank.js'
+import { paymentTermsRouter } from './routes/payment-terms.js'
+import { retentionRouter } from './routes/retention.js'
+import { budgetRouter } from './routes/budget.js'
+import { revaluationRouter } from './routes/revaluation.js'
+import { expenseClaimsRouter } from './routes/expense-claims.js'
+import { pettyCashRouter } from './routes/petty-cash.js'
 
 export function createApp(): import('express').Express {
   const app = express()
@@ -36,6 +44,14 @@ export function createApp(): import('express').Express {
   app.use('/finance/ar', arRouter)
   app.use('/finance/journals', journalAttachmentsRouter)
   app.use('/finance/payment-vouchers', paymentVouchersRouter)
+  app.use('/finance/assets', assetsRouter)
+  app.use('/finance/bank', bankRouter)
+  app.use('/finance/payment-terms', paymentTermsRouter)
+  app.use('/finance/retention', retentionRouter)
+  app.use('/finance/budget', budgetRouter)
+  app.use('/finance/revaluation', revaluationRouter)
+  app.use('/finance/expense-claims', expenseClaimsRouter)
+  app.use('/finance/petty-cash', pettyCashRouter)
 
   return app
 }

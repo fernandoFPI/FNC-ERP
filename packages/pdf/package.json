@@ -8,20 +8,24 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "source": "./src/index.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js",
       "default": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
     "./templates/payslip": {
+      "source": "./src/templates/payslip.ts",
       "import": "./dist/templates/payslip.js",
       "types": "./dist/templates/payslip.d.ts"
     },
     "./templates/invoice": {
+      "source": "./src/templates/invoice.ts",
       "import": "./dist/templates/invoice.js",
       "types": "./dist/templates/invoice.d.ts"
     },
     "./templates/purchase-order": {
+      "source": "./src/templates/purchase-order.ts",
       "import": "./dist/templates/purchase-order.js",
       "types": "./dist/templates/purchase-order.d.ts"
     }

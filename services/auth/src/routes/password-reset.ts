@@ -6,7 +6,10 @@ import { query, withSystemTransaction } from '@fnc-erp/db'
 import { hashPassword, validatePasswordStrength, requireAuth } from '@fnc-erp/auth'
 import { env, HTTP_STATUS } from '@fnc-erp/config'
 import { logAudit } from '@fnc-erp/audit'
+import { createServiceLogger } from '@fnc-erp/logger'
 import { sendError } from '../lib/errors.js'
+
+const logger = createServiceLogger('auth')
 
 export const passwordResetRouter: IRouter = Router()
 
@@ -21,7 +24,7 @@ function getRedis() {
   if (!redis) {
     redis = createClient({ url: env.REDIS_URL })
     redis.on('error', (err: unknown) => {
-      console.error('[auth] Redis error:', err)
+      logger.error({ err }, 'Redis client error in password-reset')
     })
     void redis.connect()
   }
@@ -102,7 +105,7 @@ passwordResetRouter.post('/forgot-password', async (req: Request, res: Response)
 
     res.json(GENERIC_RESPONSE)
   } catch (err) {
-    console.error('[auth] forgot-password error:', err)
+    logger.error({ err }, 'forgot-password error')
     res.json(GENERIC_RESPONSE) // never leak errors on this endpoint
   }
 })
@@ -215,7 +218,7 @@ passwordResetRouter.post('/reset-password', async (req: Request, res: Response) 
       data: { message: 'Password updated successfully. Please log in with your new password.' },
     })
   } catch (err) {
-    console.error('[auth] reset-password error:', err)
+    logger.error({ err }, 'reset-password error')
     sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR', 'Password reset failed')
   }
 })
@@ -245,7 +248,7 @@ passwordResetRouter.get('/sessions', requireAuth(), async (req: Request, res: Re
       })),
     })
   } catch (err) {
-    console.error('[auth] GET /sessions error:', err)
+    logger.error({ err }, 'GET /sessions error')
     sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR', 'Failed to fetch sessions')
   }
 })
@@ -283,7 +286,7 @@ passwordResetRouter.delete('/sessions/:sessionId', requireAuth(), async (req: Re
 
     res.json({ success: true, data: { sessionId, revoked: true } })
   } catch (err) {
-    console.error('[auth] DELETE /sessions error:', err)
+    logger.error({ err }, 'DELETE /sessions error')
     sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR', 'Failed to revoke session')
   }
 })

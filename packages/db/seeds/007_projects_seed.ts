@@ -34,7 +34,7 @@ export async function seedProjects(client: PoolClient, adminId: string): Promise
     await client.query(
       `INSERT INTO projects
          (id, company_id, code, name, project_type, budget_amount, budget_currency, created_by, status)
-       VALUES ($1,$2,$3,$4,$5,$6,'IQD',$7,'draft')
+       VALUES ($1,$2,$3,$4,$5,$6,'IQD',$7,'pending')
        ON CONFLICT (company_id, code) DO NOTHING`,
       [p.id, p.company_id, p.code, p.name, p.project_type, p.budget_amount, adminId],
     )

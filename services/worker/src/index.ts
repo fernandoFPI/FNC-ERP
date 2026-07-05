@@ -7,6 +7,7 @@ import { sendLowStockAlerts } from './jobs/low-stock-alert.js'
 import { processRentalBilling } from './jobs/rental-billing.js'
 import { cleanupPendingFiles, reviewUnattachedFiles } from './jobs/file-cleanup.js'
 import { sendContractExpiryAlerts } from './jobs/contract-expiry-alerts.js'
+import { runMonthlyDepreciation } from './jobs/asset-depreciation.js'
 // Side-effect imports: register cron jobs on module load
 import './jobs/fx-sync.js'
 import './jobs/maintenance-alerts.js'
@@ -61,6 +62,12 @@ async function start() {
     })
   })
   log.info({ cron: '0 8 * * *' }, 'Contract expiry alert cron registered')
+
+  // Asset depreciation: 1st of every month at 02:00
+  cron.schedule('0 2 1 * *', () => {
+    void runMonthlyDepreciation().catch((err) => { log.error({ err }, 'Asset depreciation job failed') })
+  })
+  log.info({ cron: '0 2 1 * *' }, 'Asset depreciation cron registered')
 
   // File cleanup: pending files every hour, unattached review daily at 03:00
   cron.schedule('0 * * * *', () => {

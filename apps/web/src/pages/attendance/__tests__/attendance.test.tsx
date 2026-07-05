@@ -85,7 +85,7 @@ describe('AttendanceCalendar component', () => {
 // ── AttendancePage ─────────────────────────────────────────────────────────────
 describe('AttendancePage', () => {
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { attendanceCalendar: [], attendanceSummary: { days_present: 20, days_absent: 2, total_hours: 160, overtime_hours: 8, leave_days: 2 }, attendanceLogs: { logs: [], total: 0 } }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({ data: { attendanceCalendar: [], attendanceSummary: { days_present: 20, days_absent: 2, total_hours: 160, overtime_hours: 8, leave_days: 2 }, attendanceLogs: [] }, loading: false, refetch: vi.fn() })
   })
 
   it('renders Attendance page header', async () => {

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+﻿import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   resolve: {
@@ -11,7 +11,7 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 15_000,
     hookTimeout: 15_000,
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.perf.ts'],
     setupFiles: [],
     pool: 'forks',
     poolOptions: {
@@ -21,3 +21,4 @@ export default defineConfig({
     },
   },
 })
+

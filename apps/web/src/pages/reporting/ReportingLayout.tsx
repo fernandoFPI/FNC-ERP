@@ -4,6 +4,8 @@ import { useTheme } from '../../theme/ThemeContext'
 const REPORTING_NAV: ({ label: string; path: string } | null)[] = [
   { label: 'Executive', path: '/reporting/executive' },
   null,
+  { label: 'Cash Flow', path: '/reporting/financial/cash-flow' },
+  null,
   { label: 'Consolidated P&L', path: '/reporting/consolidated/pl' },
   { label: 'Consolidated BS', path: '/reporting/consolidated/bs' },
   { label: 'Trial Balance', path: '/reporting/consolidated/trial-balance' },

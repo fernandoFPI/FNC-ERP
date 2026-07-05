@@ -23,52 +23,52 @@ beforeEach(() => {
 })
 
 describe('ThemeContext', () => {
-  it('applies dark-glass tokens to CSS custom properties on mount', () => {
+  it('applies light-flat tokens to CSS custom properties on mount', () => {
     render(<ThemeProvider><div /></ThemeProvider>)
     const bg = document.documentElement.style.getPropertyValue('--bg-canvas')
-    expect(bg).toBe(themes['dark-glass'].bgCanvas)
+    expect(bg).toBe(themes['light-flat'].bgCanvas)
   })
 
   it('switches tokens when setTheme is called', () => {
     const { getByText, getByTestId } = render(
       <ThemeProvider>
         <ThemeDisplay />
-        <ThemeChanger target="light-flat" />
+        <ThemeChanger target="black" />
       </ThemeProvider>
     )
     act(() => getByText('change').click())
-    expect(getByTestId('key').textContent).toBe('light-flat')
+    expect(getByTestId('key').textContent).toBe('black')
     const bg = document.documentElement.style.getPropertyValue('--bg-canvas')
-    expect(bg).toBe(themes['light-flat'].bgCanvas)
+    expect(bg).toBe(themes['black'].bgCanvas)
   })
 
   it('persists theme key to localStorage', () => {
     const { getByText } = render(
       <ThemeProvider>
-        <ThemeChanger target="dark-white" />
+        <ThemeChanger target="black" />
       </ThemeProvider>
     )
     act(() => getByText('change').click())
-    expect(localStorage.getItem('fnc-theme')).toBe('dark-white')
+    expect(localStorage.getItem('fnc-theme')).toBe('black')
   })
 
   it('reads saved theme from localStorage on init', () => {
-    localStorage.setItem('fnc-theme', 'light-glass')
+    localStorage.setItem('fnc-theme', 'black')
     const { getByTestId } = render(
       <ThemeProvider>
         <ThemeDisplay />
       </ThemeProvider>
     )
-    expect(getByTestId('key').textContent).toBe('light-glass')
+    expect(getByTestId('key').textContent).toBe('black')
   })
 
-  it('falls back to dark-glass when localStorage value is invalid', () => {
+  it('falls back to light-flat when localStorage value is invalid', () => {
     localStorage.setItem('fnc-theme', 'not-a-theme')
     const { getByTestId } = render(
       <ThemeProvider>
         <ThemeDisplay />
       </ThemeProvider>
     )
-    expect(getByTestId('key').textContent).toBe('dark-glass')
+    expect(getByTestId('key').textContent).toBe('light-flat')
   })
 })
