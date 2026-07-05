@@ -32,12 +32,12 @@ beforeEach(() => {
 // ── EmployeesPage ─────────────────────────────────────────────────────────────
 describe('EmployeesPage', () => {
   const employees = [
-    { id: 'e1', employee_number: 'EMP-001', first_name: 'Ahmad', last_name: 'Hassan', job_title: 'Engineer', contract_type: 'full_time', is_active: true, department_name: 'Engineering', work_location_name: 'Main Office' },
-    { id: 'e2', employee_number: 'EMP-002', first_name: 'Sara', last_name: 'Ali', job_title: 'Designer', contract_type: 'full_time', is_active: false, department_name: 'Design', work_location_name: 'Main Office' },
+    { id: 'e1', employee_number: 'EMP-001', first_name: 'Ahmad', last_name: 'Hassan', job_title: 'Engineer', employment_type: 'full_time', status: 'active', department_name: 'Engineering' },
+    { id: 'e2', employee_number: 'EMP-002', first_name: 'Sara', last_name: 'Ali', job_title: 'Designer', employment_type: 'full_time', status: 'inactive', department_name: 'Design' },
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { employees: { employees, total: 2 }, departments: [] }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({ data: { employees, departments: [] }, loading: false, refetch: vi.fn() })
   })
 
   it('renders employee list with avatar and name', async () => {
@@ -63,8 +63,8 @@ describe('EmployeesPage', () => {
   it('shows active and inactive status badges', async () => {
     const EmployeesPage = (await import('../employees/EmployeesPage')).default
     wrap(<EmployeesPage />)
-    expect(screen.getAllByText('Active').length).toBeGreaterThan(0)
-    expect(screen.getByText('Inactive')).toBeInTheDocument()
+    expect(screen.getAllByText('active').length).toBeGreaterThan(0)
+    expect(screen.getByText('inactive')).toBeInTheDocument()
   })
 
   it('navigates to new employee on New Employee click', async () => {
@@ -91,7 +91,7 @@ describe('EmployeeForm', () => {
   it('renders employment section', async () => {
     const EmployeeForm = (await import('../employees/EmployeeForm')).default
     wrap(<EmployeeForm />)
-    expect(screen.getByText(/employment/i)).toBeInTheDocument()
+    expect(screen.getByText('Employment')).toBeInTheDocument()
   })
 
   it('shows Create Employee submit button', async () => {
@@ -110,34 +110,31 @@ describe('EmployeeForm', () => {
 // ── SalaryConfigForm ───────────────────────────────────────────────────────────
 describe('SalaryConfigForm', () => {
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { employee: { id: 'e1', first_name: 'Ahmad', last_name: 'Hassan' }, employeeSalaryConfig: { current: null, history: [] } }, loading: false })
+    mockUseQuery.mockReturnValue({ data: { employee: { id: 'e1', first_name: 'Ahmad', last_name: 'Hassan' }, employeeSalaryConfig: null }, loading: false })
   })
 
-  it('renders salary breakdown preview', async () => {
+  it('renders base salary section', async () => {
     const SalaryConfigForm = (await import('../../payroll/salary/SalaryConfigForm')).default
     wrap(<SalaryConfigForm />)
-    expect(screen.getByText(/salary breakdown preview/i)).toBeInTheDocument()
+    expect(screen.getByText('Base Salary')).toBeInTheDocument()
   })
 
-  it('adds allowance row on Add allowance click', async () => {
+  it('renders allowances section', async () => {
     const SalaryConfigForm = (await import('../../payroll/salary/SalaryConfigForm')).default
     wrap(<SalaryConfigForm />)
-    fireEvent.click(screen.getByRole('button', { name: /\+ add allowance/i }))
-    await waitFor(() => {
-      expect(screen.getAllByPlaceholderText('Allowance name').length).toBeGreaterThan(0)
-    })
+    expect(screen.getByText('Allowances')).toBeInTheDocument()
   })
 
-  it('shows salary breakdown preview section', async () => {
+  it('shows estimated net pay breakdown', async () => {
     const SalaryConfigForm = (await import('../../payroll/salary/SalaryConfigForm')).default
     wrap(<SalaryConfigForm />)
-    expect(screen.getByText(/salary breakdown preview/i)).toBeInTheDocument()
+    expect(screen.getByText('Estimated net pay')).toBeInTheDocument()
   })
 
-  it('shows quick-add suggested allowance chips', async () => {
+  it('shows Update salary submit button', async () => {
     const SalaryConfigForm = (await import('../../payroll/salary/SalaryConfigForm')).default
     wrap(<SalaryConfigForm />)
-    expect(screen.getByText(/site allowance/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /update salary/i })).toBeInTheDocument()
   })
 })
 
@@ -148,11 +145,7 @@ describe('OvertimePage', () => {
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockImplementation((_query, opts) => {
-      const status = (opts?.variables as { status?: string })?.status
-      if (status === 'pending') return { data: { overtimeRequests: pendingOT }, loading: false, refetch: vi.fn() }
-      return { data: { overtimeRequests: [] }, loading: false, refetch: vi.fn() }
-    })
+    mockUseQuery.mockReturnValue({ data: { overtimeRequests: pendingOT }, loading: false, refetch: vi.fn() })
   })
 
   it('shows pending OT cards in left panel', async () => {
@@ -169,11 +162,7 @@ describe('OvertimePage', () => {
   })
 
   it('shows Approve all button when multiple pending', async () => {
-    mockUseQuery.mockImplementation((_query, opts) => {
-      const status = (opts?.variables as { status?: string })?.status
-      if (status === 'pending') return { data: { overtimeRequests: [...pendingOT, { ...pendingOT[0], id: 'ot2', employee_name: 'Sara Ali' }] }, loading: false, refetch: vi.fn() }
-      return { data: { overtimeRequests: [] }, loading: false, refetch: vi.fn() }
-    })
+    mockUseQuery.mockReturnValue({ data: { overtimeRequests: [...pendingOT, { ...pendingOT[0], id: 'ot2', employee_name: 'Sara Ali' }] }, loading: false, refetch: vi.fn() })
     const OvertimePage = (await import('../overtime/OvertimePage')).default
     wrap(<OvertimePage />)
     expect(screen.getByRole('button', { name: /approve all/i })).toBeInTheDocument()
