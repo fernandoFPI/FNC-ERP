@@ -20,8 +20,10 @@ const locations: LocationDef[] = [
   { companyKey: 'FACTORY', name: 'Virtual Consumption', code: 'VIR-NF-OUT', type: 'virtual_out' },
   { companyKey: 'FACTORY', name: 'Transit (Factory → Site)', code: 'TRANSIT-01', type: 'transit' },
   // Nishtimani Yakam
+  { companyKey: 'YAKAM', name: 'Main Warehouse', code: 'WH-NYK-01', type: 'warehouse' },
   { companyKey: 'YAKAM', name: 'Site Store', code: 'SITE-NYK-01', type: 'site' },
   { companyKey: 'YAKAM', name: 'Virtual Receipts', code: 'VIR-NYK-IN', type: 'virtual_in' },
+  { companyKey: 'YAKAM', name: 'Virtual Consumption', code: 'VIR-NYK-OUT', type: 'virtual_out' },
   // Al Watanyia
   { companyKey: 'WATANYIA', name: 'Baghdad Site Store', code: 'SITE-AWC-01', type: 'site' },
   { companyKey: 'WATANYIA', name: 'Virtual Receipts', code: 'VIR-AWC-IN', type: 'virtual_in' },

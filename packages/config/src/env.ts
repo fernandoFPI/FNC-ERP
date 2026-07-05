@@ -3,10 +3,16 @@ import { config as loadDotenv } from 'dotenv'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
-// Auto-load .env from monorepo root in non-production environments.
+// Auto-load .env in non-production environments.
+// Load order (first-wins, later files fill gaps):
+//   1. <cwd>/.env        — service-local overrides (e.g. services/gateway/.env)
+//   2. <monorepo-root>/.env — shared defaults
 // Production systems should inject vars via the OS/container environment.
 if (process.env['NODE_ENV'] !== 'production') {
   const __dirname = dirname(fileURLToPath(import.meta.url))
+  // Load service-local .env first (override: true so it wins over root)
+  loadDotenv({ path: resolve(process.cwd(), '.env'), override: true })
+  // Then fill in any missing vars from the monorepo root .env
   // packages/config/src → packages/config → packages → root
   loadDotenv({ path: resolve(__dirname, '../../../.env'), override: false })
 }

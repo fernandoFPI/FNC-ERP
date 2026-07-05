@@ -38,7 +38,7 @@ beforeAll(async () => {
     await pool.query(
       `INSERT INTO stock_balances (product_id, location_id, qty_on_hand, average_cost, qty_reserved)
        VALUES ($1,$2,10000,10000,0)
-       ON CONFLICT (product_id, location_id, lot_id)
+       ON CONFLICT (product_id, location_id) WHERE lot_id IS NULL
        DO UPDATE SET qty_on_hand=10000, average_cost=10000, qty_reserved=0`,
       [componentProductId, warehouseLoc.rows[0]['id']],
     )
@@ -47,6 +47,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanMfgData()
+  await pool.query(`DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku IN ('TEST-FIN','TEST-COMP'))`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku IN ('TEST-FIN','TEST-COMP')`, [TEST_COMPANY_ID])
 })
 

@@ -53,7 +53,7 @@ function applyTokens(t: ThemeTokens) {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeKey, setThemeKey] = useState<ThemeKey>(() => {
     const saved = localStorage.getItem('fnc-theme') as ThemeKey | null
-    return saved && themes[saved] ? saved : 'dark-glass'
+    return saved && themes[saved] ? saved : 'light-flat'
   })
 
   useEffect(() => {

@@ -10,10 +10,8 @@ interface ThemePreview {
 }
 
 const PREVIEWS: Record<ThemeKey, ThemePreview> = {
-  'dark-glass': { canvas: '#0a0812', surface: 'rgba(255,255,255,0.06)', accent: '#88b4cc' },
-  'dark-white': { canvas: '#0a0812', surface: 'rgba(255,255,255,0.06)', accent: 'rgba(255,255,255,0.9)' },
-  'light-glass': { canvas: '#eef4ff', surface: 'rgba(255,255,255,0.65)', accent: '#4a7a9b' },
   'light-flat': { canvas: '#f4f6f8', surface: '#ffffff', accent: '#4a7a9b' },
+  'black': { canvas: '#141618', surface: '#1c1e21', accent: '#6ba8ca' },
 }
 
 export function ThemeSwitcher() {
@@ -29,7 +27,7 @@ export function ThemeSwitcher() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const themeKeys: ThemeKey[] = ['dark-glass', 'dark-white', 'light-glass', 'light-flat']
+  const themeKeys: ThemeKey[] = ['light-flat', 'black']
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -50,7 +48,7 @@ export function ThemeSwitcher() {
           backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
         }}
       >
-        {themeKey.startsWith('dark') ? (
+        {themeKey === 'black' ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>

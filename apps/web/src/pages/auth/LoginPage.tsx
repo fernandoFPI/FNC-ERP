@@ -69,18 +69,12 @@ export default function LoginPage() {
         <Card padding="lg" rimHighlight>
           {/* Logo / Brand */}
           <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '14px',
-              background: theme.accentBg,
-              border: `1px solid ${theme.accentBorder}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 12px',
-            }}>
-              <span style={{ fontSize: '20px', fontWeight: 800, color: theme.accent, letterSpacing: '-0.05em' }}>F</span>
+            <div style={{ margin: '0 auto 12px', width: '72px', height: '72px' }}>
+              <img
+                src="/fnc_logo.gif"
+                alt="FNC Group"
+                style={{ width: '110%', height: '110%', objectFit: 'contain', display: 'block' }}
+              />
             </div>
             <h1 style={{ fontSize: '18px', fontWeight: 700, color: theme.textPrimary, margin: '0 0 4px' }}>FNC ERP</h1>
             <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>Sign in to your account</p>

@@ -8,10 +8,12 @@ import {
 
 const app = createApp()
 let token: string
+let testUserId: string
 
 beforeAll(async () => {
   const user = await createTestUser()
   token = user.token
+  testUserId = user.userId
 })
 
 afterAll(async () => {
@@ -106,15 +108,15 @@ describe('POST /finance/periods', () => {
     const acctId = await getAccountId('1100')
     const acctId2 = await getAccountId('3100')
     await pool.query(
-      `INSERT INTO journal_entries (company_id, reference, entry_date, status, created_by) VALUES ($1,'TEST-001','2025-01-15','draft','00000000-0000-0000-0000-000000000001')`,
-      [TEST_COMPANY_ID],
+      `INSERT INTO journal_entries (company_id, reference, entry_date, status, created_by) VALUES ($1,'TEST-001','2025-01-15','draft',$2)`,
+      [TEST_COMPANY_ID, testUserId],
     )
     const je = await pool.query<{ id: string }>(
       `SELECT id FROM journal_entries WHERE company_id = $1 AND reference = 'TEST-001'`,
       [TEST_COMPANY_ID],
     )
     await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit) VALUES ($1,$2,1000,0),($1,$3,0,1000)`,
+      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, amount_company_currency) VALUES ($1,$2,1000,0,1000),($1,$3,0,1000,1000)`,
       [je.rows[0]!.id, acctId, acctId2],
     )
 

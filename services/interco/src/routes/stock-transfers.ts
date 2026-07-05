@@ -280,15 +280,17 @@ stockTransfersRouter.post('/stock-transfers', requirePermission('interco.stock_t
   try {
     const userId = req.auth!.userId
 
+    // Check same-company before full schema validation so the error code is correct
+    const raw = req.body as { from_company_id?: string; to_company_id?: string }
+    if (raw.from_company_id && raw.to_company_id && raw.from_company_id === raw.to_company_id) {
+      return sendError(res, 400, 'SAME_COMPANY', 'from_company_id and to_company_id must differ')
+    }
+
     const parsed = CreateTransferSchema.safeParse(req.body)
     if (!parsed.success) {
       return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     }
     const { from_company_id, to_company_id, transfer_date, notes, lines } = parsed.data
-
-    if (from_company_id === to_company_id) {
-      return sendError(res, 400, 'SAME_COMPANY', 'from_company_id and to_company_id must differ')
-    }
 
     // Validate locations ownership (from_locations ∈ from_company, to_locations ∈ to_company)
     for (const line of lines) {
@@ -322,7 +324,6 @@ stockTransfersRouter.post('/stock-transfers', requirePermission('interco.stock_t
           ...(line.market_price != null ? { manualPrice: line.market_price } : {}),
         })
         if (pricing.requires_manual_input) {
-          client.release()
           return res.status(422).json({
             success: false,
             error: {
@@ -343,7 +344,6 @@ stockTransfersRouter.post('/stock-transfers', requirePermission('interco.stock_t
         )
         const onHand = parseFloat(bal.rows[0]?.qty_on_hand ?? '0')
         if (onHand < line.qty) {
-          client.release()
           return sendError(
             res,
             422,

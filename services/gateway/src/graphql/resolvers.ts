@@ -6307,8 +6307,8 @@ const phase5QueryResolvers = {
   executiveDashboard: async (_: unknown, __: unknown, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const cid = ctx.auth.companyId
-    const [revenueRes, costsRes, projectsRes, headcountRes, poRes, trendRes] = await Promise.all([
-      // Revenue: credit-side of income accounts (4x) from posted journal lines this month
+    const [revenueRes, costsRes, projectsRes, headcountRes, poRes, trendRes, entityRes, entityTrendRes, scatterRes, entityHcRes] = await Promise.all([
+      // Revenue: credit-side of income accounts this month for current company
       query(
         `SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS total
          FROM journal_lines jl
@@ -6319,7 +6319,7 @@ const phase5QueryResolvers = {
            AND je.entry_date >= date_trunc('month', CURRENT_DATE)`,
         [cid],
       ),
-      // Costs: debit-side of expense accounts (5x/6x) this month
+      // Costs: debit-side of expense accounts this month
       query(
         `SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS total
          FROM journal_lines jl
@@ -6330,12 +6330,12 @@ const phase5QueryResolvers = {
            AND je.entry_date >= date_trunc('month', CURRENT_DATE)`,
         [cid],
       ),
-      query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(budget),0) AS budget FROM projects WHERE company_id=$1 AND status='active'`, [cid]),
-      query(`SELECT COUNT(*) AS cnt FROM employees WHERE company_id=$1 AND is_active=true`, [cid]),
+      query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(budget_amount),0) AS budget FROM projects WHERE company_id=$1 AND status='active'`, [cid]),
+      query(`SELECT COUNT(*) AS cnt FROM employees WHERE company_id=$1 AND status='active'`, [cid]),
       query(`SELECT COALESCE(SUM(total_amount),0) AS total FROM purchase_orders WHERE company_id=$1 AND status IN ('draft','submitted','approved')`, [cid]),
       // 6-month revenue + cost trend
       query(
-        `SELECT TO_CHAR(m.month,'YYYY-MM') AS month,
+        `SELECT TO_CHAR(m.month,'YYYY-MM') AS period,
                 COALESCE(SUM(CASE WHEN coa.account_type IN ('revenue','income') THEN jl.credit - jl.debit ELSE 0 END),0) AS revenue,
                 COALESCE(SUM(CASE WHEN coa.account_type IN ('expense','cost')   THEN jl.debit - jl.credit ELSE 0 END),0) AS costs
          FROM generate_series(date_trunc('month', CURRENT_DATE - INTERVAL '5 months'), date_trunc('month', CURRENT_DATE), INTERVAL '1 month') AS m(month)
@@ -6347,10 +6347,98 @@ const phase5QueryResolvers = {
          GROUP BY m.month ORDER BY m.month`,
         [cid],
       ),
+      // Entity breakdown: all companies, revenue + costs this month
+      query(
+        `SELECT c.id AS company_id, c.name AS company_name,
+                COALESCE(SUM(CASE WHEN coa.account_type IN ('revenue','income') THEN jl.credit - jl.debit ELSE 0 END),0) AS revenue,
+                COALESCE(SUM(CASE WHEN coa.account_type IN ('expense','cost') THEN jl.debit - jl.credit ELSE 0 END),0) AS costs
+         FROM companies c
+         LEFT JOIN journal_entries je ON je.company_id=c.id AND je.status='posted'
+           AND je.entry_date >= date_trunc('month', CURRENT_DATE)
+         LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
+         LEFT JOIN chart_of_accounts coa ON coa.id=jl.account_id
+           AND coa.account_type IN ('revenue','income','expense','cost')
+         GROUP BY c.id, c.name ORDER BY c.name`,
+        [],
+      ),
+      // Revenue by entity, 6-month trend
+      query(
+        `SELECT c.name AS company_name, TO_CHAR(m.month,'YYYY-MM') AS period,
+                COALESCE(SUM(CASE WHEN coa.account_type IN ('revenue','income') THEN jl.credit - jl.debit ELSE 0 END),0) AS revenue
+         FROM companies c
+         CROSS JOIN generate_series(date_trunc('month', CURRENT_DATE - INTERVAL '5 months'), date_trunc('month', CURRENT_DATE), INTERVAL '1 month') AS m(month)
+         LEFT JOIN journal_entries je ON je.company_id=c.id AND je.status='posted'
+           AND date_trunc('month', je.entry_date)=m.month
+         LEFT JOIN journal_lines jl ON jl.journal_entry_id=je.id
+         LEFT JOIN chart_of_accounts coa ON coa.id=jl.account_id
+           AND coa.account_type IN ('revenue','income')
+         GROUP BY c.name, m.month ORDER BY m.month, c.name`,
+        [],
+      ),
+      // Project profitability scatter: active + completed projects, actual cost from cost_actuals
+      query(
+        `SELECT p.id, p.name, COALESCE(p.budget_amount,0) AS budget,
+                COALESCE(SUM(pca.amount),0) AS actual_cost, p.status,
+                COALESCE(p.client_name,'') AS client_name,
+                CASE WHEN COALESCE(p.budget_amount,0)>0
+                     THEN ((COALESCE(p.budget_amount,0) - COALESCE(SUM(pca.amount),0)) / p.budget_amount) * 100
+                     ELSE 0 END AS margin_pct
+         FROM projects p
+         LEFT JOIN project_cost_actuals pca ON pca.project_id=p.id
+         WHERE p.status IN ('active','completed')
+         GROUP BY p.id, p.name, p.budget_amount, p.status, p.client_name
+         ORDER BY p.budget_amount DESC NULLS LAST LIMIT 60`,
+        [],
+      ),
+      // Headcount per company
+      query(`SELECT company_id, COUNT(*) AS cnt FROM employees WHERE status='active' GROUP BY company_id`, []),
     ])
     const totalRevenue = parseFloat(String((revenueRes.rows[0] as Record<string, unknown>)['total'] ?? '0'))
     const totalCosts   = parseFloat(String((costsRes.rows[0]   as Record<string, unknown>)['total'] ?? '0'))
-    const trend = trendRes.rows as Array<{ month: string; revenue: string; costs: string }>
+    const trend = trendRes.rows as Array<{ period: string; revenue: string; costs: string }>
+
+    // Entity breakdown
+    const hcMap: Record<string, number> = {}
+    for (const r of entityHcRes.rows as Array<Record<string, unknown>>) {
+      hcMap[String(r['company_id'])] = parseInt(String(r['cnt'] ?? '0'))
+    }
+    const entityBreakdown = (entityRes.rows as Array<Record<string, unknown>>).map((r) => {
+      const rev  = parseFloat(String(r['revenue'] ?? '0'))
+      const cost = parseFloat(String(r['costs']   ?? '0'))
+      return {
+        companyId: String(r['company_id']),
+        companyName: String(r['company_name']),
+        revenueThisMonth: rev,
+        costThisMonth: cost,
+        netThisMonth: rev - cost,
+        headcount: hcMap[String(r['company_id'])] ?? 0,
+      }
+    })
+
+    // Revenue by entity monthly (pivot company name → yakam/factory/watanyia)
+    const monthMap: Record<string, { month: string; yakam: number; factory: number; watanyia: number }> = {}
+    for (const r of entityTrendRes.rows as Array<Record<string, unknown>>) {
+      const period = String(r['period'])
+      if (!monthMap[period]) monthMap[period] = { month: period, yakam: 0, factory: 0, watanyia: 0 }
+      const rev  = parseFloat(String(r['revenue'] ?? '0'))
+      const name = String(r['company_name'] ?? '').toLowerCase()
+      if (name.includes('yakam'))                                   monthMap[period].yakam    += rev
+      else if (name.includes('factory') || name.includes('mfg'))   monthMap[period].factory  += rev
+      else if (name.includes('watanyia') || name.includes('watania')) monthMap[period].watanyia += rev
+    }
+    const revenueByEntityMonthly = Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month))
+
+    // Project scatter
+    const projectProfitabilityScatter = (scatterRes.rows as Array<Record<string, unknown>>).map((r) => ({
+      id: String(r['id']),
+      name: String(r['name']),
+      budget: parseFloat(String(r['budget'] ?? '0')),
+      actualCost: parseFloat(String(r['actual_cost'] ?? '0')),
+      marginPct: parseFloat(String(r['margin_pct'] ?? '0')),
+      status: String(r['status']),
+      client_name: String(r['client_name'] ?? ''),
+    }))
+
     return {
       totalRevenue,
       totalCosts,
@@ -6359,12 +6447,12 @@ const phase5QueryResolvers = {
       totalProjectBudget: parseFloat(String((projectsRes.rows[0] as Record<string, unknown>)['budget'] ?? '0')),
       totalHeadcount: parseInt(String((headcountRes.rows[0] as Record<string, unknown>)['cnt'] ?? '0')),
       openPOsValue: parseFloat(String((poRes.rows[0] as Record<string, unknown>)['total'] ?? '0')),
-      revenueTrend: trend.map((r) => ({ month: r['month'], value: parseFloat(r['revenue']) })),
-      costsTrend:   trend.map((r) => ({ month: r['month'], value: parseFloat(r['costs']) })),
-      profitTrend:  trend.map((r) => ({ month: r['month'], value: parseFloat(r['revenue']) - parseFloat(r['costs']) })),
-      entityBreakdown: [],
-      revenueByEntityMonthly: [],
-      projectProfitabilityScatter: [],
+      revenueTrend: trend.map((r) => ({ period: r['period'], value: parseFloat(r['revenue']) })),
+      costsTrend:   trend.map((r) => ({ period: r['period'], value: parseFloat(r['costs']) })),
+      profitTrend:  trend.map((r) => ({ period: r['period'], value: parseFloat(r['revenue']) - parseFloat(r['costs']) })),
+      entityBreakdown,
+      revenueByEntityMonthly,
+      projectProfitabilityScatter,
     }
   },
 
@@ -6382,7 +6470,7 @@ const phase5QueryResolvers = {
       [ctx.auth.companyId, args.fromDate, args.toDate]
     )
     return {
-      rows: rows.rows.map((r: Record<string, unknown>) => ({ accountType: r.account_type, accountCode: r.account_code, accountName: r.account_name, companies: {}, consolidated: parseFloat(String(r.consolidated)), eliminated: 0 })),
+      rows: rows.rows.map((r: Record<string, unknown>) => ({ accountType: r.account_type, accountCode: r.account_code, accountName: r.account_name, companies: [], consolidated: parseFloat(String(r.consolidated)), eliminated: 0 })),
       companies: [],
       currency: 'IQD',
       totalRevenue: 0,
@@ -6408,7 +6496,7 @@ const phase5QueryResolvers = {
     )
     const rows = r.rows.map((row: Record<string, unknown>) => ({
       accountType: row['account_type'], accountCode: row['account_code'], accountName: row['account_name'],
-      companies: {}, consolidated: parseFloat(String(row['consolidated'])), eliminated: 0,
+      companies: [], consolidated: parseFloat(String(row['consolidated'])), eliminated: 0,
     }))
     const totalAssets      = rows.filter((r) => r.accountType === 'asset').reduce((s, r) => s + r.consolidated, 0)
     const totalLiabilities = rows.filter((r) => r.accountType === 'liability').reduce((s, r) => s + r.consolidated, 0)
@@ -6434,7 +6522,7 @@ const phase5QueryResolvers = {
     )
     const rows = r.rows.map((row: Record<string, unknown>) => ({
       accountType: row['account_type'], accountCode: row['account_code'], accountName: row['account_name'],
-      companies: {}, consolidated: parseFloat(String(row['consolidated'])), eliminated: 0,
+      companies: [], consolidated: parseFloat(String(row['consolidated'])), eliminated: 0,
     }))
     const totalDebits  = r.rows.reduce((s, row: Record<string, unknown>) => s + parseFloat(String(row['total_debit'])),  0)
     const totalCredits = r.rows.reduce((s, row: Record<string, unknown>) => s + parseFloat(String(row['total_credit'])), 0)
@@ -6445,20 +6533,26 @@ const phase5QueryResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const cid = args.companyId ?? ctx.auth.companyId
     const r = await query(
-      `SELECT p.id, p.code, p.name, p.project_type, p.status, p.budget, p.actual_cost, p.revenue,
-              (p.revenue - p.actual_cost) as margin,
-              CASE WHEN p.budget > 0 THEN ((p.revenue - p.actual_cost) / p.budget) * 100 ELSE 0 END as margin_pct,
-              c.client_name
+      `SELECT p.id, p.code, p.name, p.project_type, p.status, p.budget_amount AS budget,
+              COALESCE(SUM(pca.amount),0) AS actual_cost,
+              COALESCE(p.client_name,'') AS client_name,
+              CASE WHEN COALESCE(p.budget_amount,0)>0
+                   THEN ((p.budget_amount - COALESCE(SUM(pca.amount),0)) / p.budget_amount) * 100
+                   ELSE 0 END AS margin_pct
        FROM projects p
-       LEFT JOIN project_contracts c ON c.project_id = p.id
-       WHERE p.company_id = $1 ORDER BY p.created_at DESC LIMIT 50`,
+       LEFT JOIN project_cost_actuals pca ON pca.project_id=p.id
+       WHERE p.company_id=$1
+       GROUP BY p.id, p.code, p.name, p.project_type, p.status, p.budget_amount, p.client_name
+       ORDER BY p.created_at DESC LIMIT 50`,
       [cid]
     )
     return r.rows.map((row: Record<string, unknown>) => ({
-      id: row.id, code: row.code, name: row.name, projectType: row.project_type, companyName: cid,
-      budget: parseFloat(String(row.budget ?? 0)), actualCost: parseFloat(String(row.actual_cost ?? 0)),
-      revenue: parseFloat(String(row.revenue ?? 0)), margin: parseFloat(String(row.margin ?? 0)),
-      marginPct: parseFloat(String(row.margin_pct ?? 0)), status: row.status, costBreakdown: [],
+      id: row['id'], code: row['code'], name: row['name'], projectType: row['project_type'], companyName: cid,
+      budget: parseFloat(String(row['budget'] ?? 0)), actualCost: parseFloat(String(row['actual_cost'] ?? 0)),
+      revenue: parseFloat(String(row['budget'] ?? 0)) - parseFloat(String(row['actual_cost'] ?? 0)),
+      margin: parseFloat(String(row['budget'] ?? 0)) - parseFloat(String(row['actual_cost'] ?? 0)),
+      marginPct: parseFloat(String(row['margin_pct'] ?? 0)), status: row['status'],
+      costBreakdown: [],
     }))
   },
 
@@ -6888,14 +6982,16 @@ const phase5QueryResolvers = {
     }
   },
 
-  companyIntercoPricingSettings: async (_: unknown, args: { companyId: string }, _ctx: GQLContext) => {
+  companyIntercoPricingSettings: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(`SELECT ipc.*, c.name as company_name FROM interco_pricing_configs ipc JOIN companies c ON c.id=ipc.company_id WHERE ipc.company_id=$1`, [args.companyId])
     if (!r.rows[0]) return null
     const row = r.rows[0] as Record<string, unknown>
     return { companyId: row.company_id, companyName: row.company_name, method: row.method, costPlusMarkupPct: row.cost_plus_markup_pct ? parseFloat(String(row.cost_plus_markup_pct)) : null, updatedAt: row.updated_at, updatedByEmail: row.updated_by_email }
   },
 
-  intercoPricingConfigHistory: async (_: unknown, args: { companyId: string }, _ctx: GQLContext) => {
+  intercoPricingConfigHistory: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(`SELECT * FROM interco_pricing_config_history WHERE company_id=$1 ORDER BY changed_at DESC LIMIT 20`, [args.companyId])
     return r.rows.map((row: Record<string, unknown>) => ({ previousMethod: row.previous_method, newMethod: row.new_method, changedBy: row.changed_by, changedAt: row.changed_at, notes: row.notes }))
   },

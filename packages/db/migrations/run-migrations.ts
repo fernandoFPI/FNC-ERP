@@ -46,23 +46,27 @@ async function runMigrations() {
 
     console.warn(`[migrate] ${pending.length} pending migration(s): ${pending.join(', ')}`)
 
-    await client.query('BEGIN')
-
     for (const file of pending) {
       const sqlPath = join(__dirname, file)
-      const sql = readFileSync(sqlPath, 'utf8')
+      // Strip embedded BEGIN/COMMIT so each file runs in its own managed transaction
+      const raw = readFileSync(sqlPath, 'utf8')
+      const sql = raw.replace(/^\s*BEGIN\s*;/gim, '').replace(/^\s*COMMIT\s*;/gim, '')
 
-      console.warn(`[migrate] Applying: ${file}`)
-      await client.query(sql)
-      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file])
-      console.warn(`[migrate] Done: ${file}`)
+      await client.query('BEGIN')
+      try {
+        console.warn(`[migrate] Applying: ${file}`)
+        await client.query(sql)
+        await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [file])
+        await client.query('COMMIT')
+        console.warn(`[migrate] Done: ${file}`)
+      } catch (err) {
+        await client.query('ROLLBACK')
+        throw err
+      }
     }
-
-    await client.query('COMMIT')
     console.warn('[migrate] All migrations applied successfully.')
   } catch (err) {
-    await client.query('ROLLBACK')
-    console.error('[migrate] Migration failed, rolling back:', err)
+    console.error('[migrate] Migration failed:', err)
     process.exit(1)
   } finally {
     client.release()

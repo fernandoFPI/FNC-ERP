@@ -9,7 +9,7 @@ import { requirePermission } from '@fnc-erp/permissions'
 export const contractsRouter: IRouter = Router()
 
 const ContractSchema = z.object({
-  rental_type: z.enum(['external','internal']).default('external'),
+  rental_type: z.enum(['short_term','long_term','project_based']).default('short_term'),
   client_name: z.string().max(255).optional(),
   client_contact: z.string().optional(),
   to_company_id: z.string().uuid().optional(),

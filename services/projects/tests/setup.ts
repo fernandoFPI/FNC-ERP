@@ -34,6 +34,8 @@ export async function cleanProjectsData(): Promise<void> {
   await pool.query(`DELETE FROM project_members WHERE project_id IN (SELECT id FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%')`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM project_stages WHERE project_id IN (SELECT id FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%')`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM project_budget_lines WHERE project_id IN (SELECT id FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%')`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM project_status_history WHERE project_id IN (SELECT id FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%')`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM project_status_history WHERE changed_by IN (SELECT id FROM users WHERE email=$1)`, [TEST_USER_EMAIL])
   await pool.query(`DELETE FROM analytic_accounts WHERE company_id=$1 AND code LIKE 'PRJ-TEST-%'`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM projects WHERE company_id=$1 AND code LIKE 'TEST-%'`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])

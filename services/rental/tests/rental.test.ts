@@ -41,7 +41,7 @@ describe('Equipment rental', () => {
       .post('/rental/contracts')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        rental_type: 'external',
+        rental_type: 'short_term',
         client_name: 'Test Client LLC',
         billing_cycle: 'monthly',
         rate_amount: 15_000_000,
@@ -63,7 +63,7 @@ describe('Equipment rental', () => {
       .post('/rental/contracts')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        rental_type: 'external',
+        rental_type: 'short_term',
         client_name: 'Another Client',
         billing_cycle: 'monthly',
         rate_amount: 5_000_000,
@@ -113,7 +113,7 @@ describe('Equipment rental', () => {
       .post('/rental/contracts')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        rental_type: 'external', client_name: 'Client X', billing_cycle: 'monthly',
+        rental_type: 'short_term', client_name: 'Client X', billing_cycle: 'monthly',
         rate_amount: 9_000_000, currency_code: 'IQD', start_date: '2026-07-01',
         lines: [{ asset_id: aid, qty: 1, daily_rate: 300_000 }],
       })

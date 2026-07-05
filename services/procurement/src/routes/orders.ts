@@ -289,7 +289,7 @@ ordersRouter.post('/', requirePermission('procurement.po.edit', 'edit'), async (
          (company_id, po_number, status, organizer_id, project_id,
           currency_code, fx_rate, subtotal, tax_amount, total_amount,
           expected_delivery_date, notes, created_by)
-       VALUES ($1,$2,'opening',$3,$4,$5,1,0,0,0,$6,$7,$3)
+       VALUES ($1,$2,'draft',$3,$4,$5,1,0,0,0,$6,$7,$3)
        RETURNING *`,
       [auth.companyId, poNumber, auth.userId, project_id ?? null,
        currency_code, expected_delivery_date ?? null, notes ?? null],
@@ -320,7 +320,7 @@ ordersRouter.post('/', requirePermission('procurement.po.edit', 'edit'), async (
     await logAudit({
       companyId: auth.companyId, userId: auth.userId,
       action: 'PO_CREATED', tableName: 'purchase_orders', recordId: po.id,
-      newValues: { poNumber, status: 'opening' }, client,
+      newValues: { poNumber, status: 'draft' }, client,
     })
 
     await client.query('COMMIT')

@@ -472,7 +472,7 @@ export function Sidebar({ mobile = false, expanded = false, onClose, rail = fals
           flexShrink: 0,
         }}>
           <span style={{ fontSize: '16px', fontWeight: 700, color: theme.textPrimary, letterSpacing: '-0.01em' }}>
-            FNC ERP
+            FNC GROUP
           </span>
           <button
             onClick={onClose}
