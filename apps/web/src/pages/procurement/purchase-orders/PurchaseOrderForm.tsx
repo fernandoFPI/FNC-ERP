@@ -180,7 +180,7 @@ export default function PurchaseOrderForm() {
       <form onSubmit={handleSubmit}>
         <Card style={{ marginTop: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Row 1: Purpose + Project/MO */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+          <div data-tour="po-purpose-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <Select label="Purchase Purpose" value={purpose} onChange={(e) => setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing')}>
               <option value="stock">General Stock</option>
               <option value="project">Project Supply</option>
@@ -205,7 +205,7 @@ export default function PurchaseOrderForm() {
           </div>
 
           {/* Row 2: Vendor + Currency */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+          <div data-tour="po-vendor-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <SearchableSelect
               label={purpose === 'manufacturing' ? 'Vendor (optional)' : 'Vendor *'}
               value={form.vendor_id}
@@ -220,7 +220,7 @@ export default function PurchaseOrderForm() {
           </div>
 
           {/* Row 3: Analytic Account + Expected Delivery + FX Rate */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
+          <div data-tour="po-delivery-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
             <Select label="Analytic Account" value={form.analytic_account_id} onChange={(e) => setForm((f) => ({ ...f, analytic_account_id: e.target.value }))}>
               <option value="">None</option>
               {analytics.map((a: { id: string; name: string }) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -246,6 +246,7 @@ export default function PurchaseOrderForm() {
         </Card>
 
         {/* Lines */}
+        <div data-tour="po-lines-card">
         <Card style={{ marginTop: '16px' }}>
           <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, fontWeight: 600, color: theme.textPrimary }}>
             Order Lines
@@ -281,17 +282,18 @@ export default function PurchaseOrderForm() {
             ))}
 
             <div style={{ padding: '8px 16px', display: 'flex', justifyContent: 'space-between', borderTop: `1px solid ${theme.border}` }}>
-              <Button variant="ghost" size="sm" type="button" onClick={() => setLines((p) => [...p, emptyLine()])}>+ Add Line</Button>
+              <Button data-tour="po-add-line" variant="ghost" size="sm" type="button" onClick={() => setLines((p) => [...p, emptyLine()])}>+ Add Line</Button>
               <span style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, fontFamily: 'monospace' }}>
                 Total: {subtotal.toLocaleString()} {form.currency_code}
               </span>
             </div>
           </div>
         </Card>
+        </div>
 
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
           <Button variant="ghost" type="button" onClick={() => navigate('/procurement/purchase-orders')}>Cancel</Button>
-          <Button variant="primary" type="submit" loading={loading}>Create Purchase Order</Button>
+          <Button data-tour="submit-po-btn" variant="primary" type="submit" loading={loading}>Create Purchase Order</Button>
         </div>
       </form>
     </div>

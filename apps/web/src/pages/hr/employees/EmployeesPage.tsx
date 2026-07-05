@@ -75,7 +75,7 @@ export default function EmployeesPage() {
         subtitle={`${filtered.length} employees`}
         actions={
           <PermissionGate permission="hr.employees.create" minLevel="edit">
-            <Button variant="primary" size="sm" onClick={() => navigate('/hr/employees/new')}>New Employee</Button>
+            <Button data-tour="new-employee-btn" variant="primary" size="sm" onClick={() => navigate('/hr/employees/new')}>New Employee</Button>
           </PermissionGate>
         }
       />

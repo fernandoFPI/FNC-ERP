@@ -4,6 +4,8 @@ import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { BottomNav } from './BottomNav'
 import { Toast } from '../ui/Toast'
+import { HelpDrawer } from '../help/HelpDrawer'
+import { TourModeBanner } from '../help/TourModeBanner'
 import { useTheme } from '../../theme/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -15,6 +17,7 @@ export function AppShell() {
   const location = useLocation()
   const [phoneDrawerOpen, setPhoneDrawerOpen] = useState(false)
   const [tabletSidebarExpanded, setTabletSidebarExpanded] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const pageRef = useRef<HTMLDivElement>(null)
   useWebSocket()
 
@@ -30,12 +33,20 @@ export function AppShell() {
     return () => window.removeEventListener('fnc:open-sidebar', handler)
   }, [])
 
+  // Help button opens the help drawer
+  useEffect(() => {
+    const handler = (_e: Event) => setHelpOpen(true)
+    window.addEventListener('fnc:open-help', handler)
+    return () => window.removeEventListener('fnc:open-help', handler)
+  }, [])
+
   // Escape closes any open drawer
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setPhoneDrawerOpen(false)
         setTabletSidebarExpanded(false)
+        setHelpOpen(false)
       }
     }
     document.addEventListener('keydown', handler)
@@ -113,6 +124,8 @@ export function AppShell() {
 
         <BottomNav />
         <Toast />
+        <TourModeBanner />
+        <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     )
   }
@@ -156,6 +169,8 @@ export function AppShell() {
         </div>
 
         <Toast />
+        <TourModeBanner />
+        <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     )
   }
@@ -195,6 +210,8 @@ export function AppShell() {
       </div>
 
       <Toast />
+      <TourModeBanner />
+      <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }

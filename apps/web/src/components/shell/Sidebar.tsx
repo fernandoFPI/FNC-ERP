@@ -677,32 +677,29 @@ export function Sidebar({ mobile = false, expanded = false, onClose, rail = fals
             {!effectiveCollapsed && <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Settings</span>}
           </div>
         </NavLink>
-        <a
-          href="https://docs.fnc-group.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ textDecoration: 'none', display: 'block' }}
+        <button
+          title={effectiveCollapsed ? 'Help' : undefined}
+          onClick={() => window.dispatchEvent(new Event('fnc:open-help'))}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: effectiveCollapsed ? '9px 0' : '9px 16px',
+            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+            minHeight: touchMinHeight,
+            color: theme.textSecondary,
+            cursor: 'pointer',
+            background: 'none',
+            border: 'none',
+            width: '100%',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
         >
-          <div
-            title={effectiveCollapsed ? 'Help' : undefined}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: effectiveCollapsed ? '9px 0' : '9px 16px',
-              justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-              minHeight: touchMinHeight,
-              color: theme.textSecondary,
-              cursor: 'pointer',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-          >
-            <span style={{ display: 'flex', flexShrink: 0 }}><Icon name="help-circle" /></span>
-            {!effectiveCollapsed && <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Help</span>}
-          </div>
-        </a>
+          <span style={{ display: 'flex', flexShrink: 0 }}><Icon name="help-circle" /></span>
+          {!effectiveCollapsed && <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Help</span>}
+        </button>
       </div>
     </div>
   )
