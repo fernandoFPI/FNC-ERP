@@ -107,24 +107,28 @@ export default function JournalForm() {
       <form onSubmit={handleSubmit}>
         <Card style={{ marginTop: '20px', padding: '20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '16px', marginBottom: '20px' }}>
-            <Input
-              label="Entry Date"
-              type="date"
-              value={entryDate}
-              onChange={(e) => setEntryDate(e.target.value)}
-              required
-            />
-            <Textarea
-              label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="Purpose of this entry…"
-            />
+            <div data-tour="journal-entry-date">
+              <Input
+                label="Entry Date"
+                type="date"
+                value={entryDate}
+                onChange={(e) => setEntryDate(e.target.value)}
+                required
+              />
+            </div>
+            <div data-tour="journal-description">
+              <Textarea
+                label="Description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                placeholder="Purpose of this entry…"
+              />
+            </div>
           </div>
 
           {/* Lines table */}
-          <div style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+          <div data-tour="journal-lines-table" style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
             <div style={{
               display: 'grid',
               gridTemplateColumns: '1fr 160px 120px 120px 32px',
@@ -208,13 +212,13 @@ export default function JournalForm() {
           )}
 
           <div style={{ marginTop: '12px' }}>
-            <Button variant="ghost" size="sm" type="button" onClick={addLine}>+ Add Line</Button>
+            <Button data-tour="add-line-btn" variant="ghost" size="sm" type="button" onClick={addLine}>+ Add Line</Button>
           </div>
         </Card>
 
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
           <Button variant="ghost" type="button" onClick={() => navigate('/finance/journals')}>Cancel</Button>
-          <Button variant="primary" type="submit" loading={loading} disabled={!isBalanced}>Create Entry</Button>
+          <Button data-tour="create-entry-btn" variant="primary" type="submit" loading={loading} disabled={!isBalanced}>Create Entry</Button>
         </div>
       </form>
     </div>

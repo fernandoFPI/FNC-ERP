@@ -1,8 +1,11 @@
-import { ApolloClient, InMemoryCache, createHttpLink, from, fromPromise } from '@apollo/client'
+import { ApolloClient, ApolloLink, InMemoryCache, createHttpLink, from, fromPromise } from '@apollo/client'
+import { getMainDefinition } from '@apollo/client/utilities'
 import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
 import { useAuthStore } from '../store/authStore'
 import { useCompanyStore } from '../store/companyStore'
+import { useToastStore } from '../store/toastStore'
+import { useTourStore } from '../store/tourStore'
 import { decodeJWT } from './jwt'
 
 const httpLink = createHttpLink({
@@ -93,8 +96,31 @@ const errorLink = onError(({ networkError, operation, forward }) => {
   }
 })
 
+// Intercepts all mutations while an interactive tour is active — nothing is saved to the DB.
+const tourLink = new ApolloLink((operation, forward) => {
+  if (!useTourStore.getState().isActive) return forward(operation)
+  const def = getMainDefinition(operation.query)
+  if (def.kind !== 'OperationDefinition' || def.operation !== 'mutation') return forward(operation)
+  return fromPromise(
+    new Promise<{ data: Record<string, unknown> }>((resolve) => {
+      setTimeout(() => {
+        useToastStore.getState().addToast({
+          message: '🎓 Tour mode — form submitted (not saved to database)',
+          type: 'info',
+        })
+        // Proxy so any field access (e.g. res.data.createEmployee.id) returns ''
+        // rather than throwing, preventing component navigation errors in tour mode.
+        const mock = new Proxy({} as Record<string, Record<string, string>>, {
+          get: (_t, key) => ({ id: '', __typename: String(key) }),
+        })
+        resolve({ data: mock })
+      }, 400)
+    }),
+  )
+})
+
 export const apolloClient = new ApolloClient({
-  link: from([errorLink, authLink, httpLink]),
+  link: from([tourLink, errorLink, authLink, httpLink]),
   cache: new InMemoryCache({
     typePolicies: {
       ProjectInvoice: {

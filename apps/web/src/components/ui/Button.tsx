@@ -16,6 +16,7 @@ interface ButtonProps {
   className?: string
   style?: React.CSSProperties
   fullWidthOnMobile?: boolean
+  'data-tour'?: string
 }
 
 const desktopHeights = { sm: '28px', md: '34px', lg: '40px' }
@@ -35,6 +36,7 @@ export function Button({
   className = '',
   style: styleProp,
   fullWidthOnMobile = false,
+  'data-tour': dataTour,
 }: ButtonProps) {
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
@@ -80,6 +82,7 @@ export function Button({
       onClick={onClick}
       disabled={isDisabled}
       className={className}
+      data-tour={dataTour}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

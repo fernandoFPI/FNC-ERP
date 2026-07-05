@@ -118,7 +118,7 @@ export default function PurchaseOrdersPage() {
         title="Purchase Orders"
         subtitle={`${filtered.length} orders`}
         actions={
-          <Button variant="primary" size="sm" onClick={() => navigate('/procurement/purchase-orders/new')}>
+          <Button data-tour="new-po-btn" variant="primary" size="sm" onClick={() => navigate('/procurement/purchase-orders/new')}>
             New PO
           </Button>
         }

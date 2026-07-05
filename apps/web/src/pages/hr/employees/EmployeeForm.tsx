@@ -129,6 +129,7 @@ export default function EmployeeForm() {
 
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '20px' }}>
+          <div data-tour="personal-info-card">
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <SectionHeader title="Personal information" />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
@@ -140,7 +141,9 @@ export default function EmployeeForm() {
               <Select label="Gender" value={form.gender} onChange={field('gender')} options={GENDER_OPTIONS} placeholder="Select…" />
             </div>
           </Card>
+          </div>
 
+          <div data-tour="employment-card">
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <SectionHeader title="Employment" />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
@@ -154,7 +157,9 @@ export default function EmployeeForm() {
                 options={locations.map((l: { id: string; name: string }) => ({ value: l.id, label: l.name }))} />
             </div>
           </Card>
+          </div>
 
+          <div data-tour="contact-card">
           <Card style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <SectionHeader title="Contact" />
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
@@ -162,10 +167,11 @@ export default function EmployeeForm() {
               <Input label="Phone" value={form.phone} onChange={field('phone')} />
             </div>
           </Card>
+          </div>
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
             <Button variant="ghost" type="button" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button variant="primary" type="submit" loading={loading}>{isEdit ? 'Save changes' : 'Create employee'}</Button>
+            <Button data-tour="save-employee-btn" variant="primary" type="submit" loading={loading}>{isEdit ? 'Save changes' : 'Create employee'}</Button>
           </div>
         </div>
       </form>

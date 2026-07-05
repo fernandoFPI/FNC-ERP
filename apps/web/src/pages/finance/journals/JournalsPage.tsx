@@ -126,7 +126,7 @@ export default function JournalsPage() {
             {selectedCount === 1 && (
               <span style={{ fontSize: '12px', color: theme.textMuted }}>Select 1 more draft to combine</span>
             )}
-            <Button variant="primary" size="sm" onClick={() => navigate('/finance/journals/new')}>
+            <Button data-tour="new-journal-btn" variant="primary" size="sm" onClick={() => navigate('/finance/journals/new')}>
               New Entry
             </Button>
           </div>
