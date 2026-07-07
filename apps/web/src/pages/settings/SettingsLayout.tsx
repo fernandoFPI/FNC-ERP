@@ -47,6 +47,7 @@ function buildNav(role: string | undefined): NavGroup[] {
         { label: 'Tax & WHT', path: '/settings/company/tax' },
         { label: 'Accounting', path: '/settings/company/accounting' },
         { label: 'Integrations', path: '/settings/company/integrations' },
+        { label: 'Document Numbering', path: '/settings/company/numbering' },
       ],
     })
   }
@@ -79,6 +80,8 @@ function buildNav(role: string | undefined): NavGroup[] {
         { label: 'Outbox Monitor', path: '/settings/system/outbox' },
         { label: 'Dead Letter Queue', path: '/settings/system/dlq' },
         { label: 'Event Configs', path: '/settings/system/events' },
+        { label: 'Notification Routing', path: '/settings/system/notification-routing' },
+        { label: 'Job History', path: '/settings/system/job-history' },
         { label: 'Audit Log', path: '/settings/system/audit' },
         { label: 'Inventory Import', path: '/settings/system/inventory-import' },
         { label: 'Workflow Import', path: '/settings/system/workflow-import' },

@@ -9,6 +9,10 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '', type: '', fromDate: '', toDate: '' }
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
@@ -76,6 +80,8 @@ export default function IntercoTransactionsPage() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [page] = useState(1)
+  const currentFilters = { search, status: statusFilter, type: typeFilter, fromDate, toDate }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('interco_transactions', FILTER_DEFAULTS)
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState<CreateTxForm>(EMPTY_FORM)
 
@@ -164,7 +170,21 @@ export default function IntercoTransactionsPage() {
           onToDateChange={setToDate}
           onRefresh={() => { refetch() }}
           resultCount={items.length}
-        />
+        >
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status)
+              setTypeFilter(r.type)
+              setFromDate(r.fromDate)
+              setToDate(r.toDate)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
       </Card>
 
       <Card padding="none">

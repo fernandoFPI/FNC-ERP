@@ -1,5 +1,5 @@
 import cron from 'node-cron'
-import { pool } from '@fnc-erp/db'
+import { pool, startJobRun, finishJobRun, failJobRun } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 
 const log = logger.child({ job: 'maintenance-alerts' })
@@ -19,7 +19,9 @@ cron.schedule('0 8 * * *', () => {
 })
 
 export async function runMaintenanceDueCheck(): Promise<void> {
+  const runId = await startJobRun('maintenance-due-check')
   log.info('running maintenance alert check')
+  try {
 
   const dueSoon = await pool.query<Record<string, unknown>>(`
     SELECT
@@ -99,21 +101,33 @@ export async function runMaintenanceDueCheck(): Promise<void> {
   }
 
   log.info({ alertsSent: dueSoon.rows.length }, 'maintenance alert check complete')
+  await finishJobRun(runId, { alertsSent: dueSoon.rows.length })
+  } catch (err) {
+    await failJobRun(runId, err instanceof Error ? err.message : String(err))
+    throw err
+  }
 }
 
 export async function markOverdueRecords(): Promise<void> {
-  const result = await pool.query<{ id: string; asset_id: string }>(
-    `UPDATE maintenance_records
-     SET status = 'overdue', updated_at = NOW()
-     WHERE status = 'scheduled'
-       AND due_date < NOW()::DATE
-     RETURNING id, asset_id`,
-  )
+  const runId = await startJobRun('maintenance-overdue-mark')
+  try {
+    const result = await pool.query<{ id: string; asset_id: string }>(
+      `UPDATE maintenance_records
+       SET status = 'overdue', updated_at = NOW()
+       WHERE status = 'scheduled'
+         AND due_date < NOW()::DATE
+       RETURNING id, asset_id`,
+    )
 
-  if (result.rows.length > 0) {
-    log.warn({
-      count: result.rows.length,
-      records: result.rows.map((r) => r.id),
-    }, 'maintenance records marked overdue')
+    if (result.rows.length > 0) {
+      log.warn({
+        count: result.rows.length,
+        records: result.rows.map((r) => r.id),
+      }, 'maintenance records marked overdue')
+    }
+    await finishJobRun(runId, { markedOverdue: result.rows.length })
+  } catch (err) {
+    await failJobRun(runId, err instanceof Error ? err.message : String(err))
+    throw err
   }
 }

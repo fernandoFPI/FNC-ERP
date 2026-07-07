@@ -6,6 +6,10 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '' }
 import { Table, Column } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -37,6 +41,8 @@ export default function ManufacturingOrdersPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
+  const currentFilters = { search, status: statusFilter ?? '' }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('manufacturing_orders', FILTER_DEFAULTS)
 
   const { data, loading, refetch } = useQuery(MANUFACTURING_ORDERS_QUERY, {
     variables: { status: statusFilter },
@@ -104,7 +110,18 @@ export default function ManufacturingOrdersPage() {
       </div>
 
       <Card>
-        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()} />
+        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()}>
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status || undefined)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
         <Table columns={columns} data={filtered} loading={loading} rowKey="id" />
       </Card>
     </div>

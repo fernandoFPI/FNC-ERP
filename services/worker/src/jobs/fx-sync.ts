@@ -6,7 +6,7 @@ import {
   type FetchedRate,
 } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
-import { pool, withTransaction } from '@fnc-erp/db'
+import { pool, withTransaction, getSystemConfig, startJobRun, finishJobRun, partialJobRun, failJobRun } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import { env } from '@fnc-erp/config'
 
@@ -27,13 +27,20 @@ export async function syncFXRates(
   const errors: string[] = []
   let fetchedRates: FetchedRate[] = []
   let source = 'unknown'
+  const runId = await startJobRun('fx-sync', { syncType, triggeredBy: triggeredBy ?? null })
 
   log.info({ syncType, triggeredBy }, 'starting FX rate sync')
 
+  // Prefer DB-stored API keys (set via admin UI) over env vars
+  const exchangeRateApiKey =
+    (await getSystemConfig('fx.exchange_rate_api_key')) ?? env.EXCHANGE_RATE_API_KEY
+  const openExchangeRatesAppId =
+    (await getSystemConfig('fx.open_exchange_rates_app_id')) ?? env.OPEN_EXCHANGE_RATES_APP_ID
+
   // ── Step 1: Primary source ────────────────────────────────
   try {
-    if (env.EXCHANGE_RATE_API_KEY) {
-      fetchedRates = await fetchFromExchangeRateAPI(env.EXCHANGE_RATE_API_KEY)
+    if (exchangeRateApiKey) {
+      fetchedRates = await fetchFromExchangeRateAPI(exchangeRateApiKey)
       source = 'exchangerate_api'
     } else {
       errors.push('EXCHANGE_RATE_API_KEY not configured — skipping primary source')
@@ -45,9 +52,9 @@ export async function syncFXRates(
   }
 
   // ── Step 2: Fallback source ───────────────────────────────
-  if (fetchedRates.length === 0 && env.OPEN_EXCHANGE_RATES_APP_ID) {
+  if (fetchedRates.length === 0 && openExchangeRatesAppId) {
     try {
-      const fallbackRates = await fetchFromOpenExchangeRates(env.OPEN_EXCHANGE_RATES_APP_ID)
+      const fallbackRates = await fetchFromOpenExchangeRates(openExchangeRatesAppId)
       if (fallbackRates && fallbackRates.length > 0) {
         fetchedRates = fallbackRates
         source = 'open_exchange_rates'
@@ -207,6 +214,11 @@ export async function syncFXRates(
   // ── Step 6: Alert on total failure ────────────────────────
   if (finalStatus === 'failed') {
     await notifyAdminsOfSyncFailure(errors, syncLogId)
+    await failJobRun(runId, errors.join('; '))
+  } else if (finalStatus === 'partial') {
+    await partialJobRun(runId, errors.join('; '), { ratesUpdated, ratesSkipped })
+  } else {
+    await finishJobRun(runId, { ratesUpdated, ratesSkipped })
   }
 
   log.info(
@@ -266,6 +278,8 @@ const TRACKED_PAIRS = [
 ]
 
 async function runStalenessCheck(): Promise<void> {
+  const runId = await startJobRun('fx-staleness-check')
+  try {
   const companies = await pool.query<{ id: string }>(
     `SELECT id FROM companies WHERE is_active = true`,
   )
@@ -291,5 +305,10 @@ async function runStalenessCheck(): Promise<void> {
         )
       }
     }
+  }
+  await finishJobRun(runId)
+  } catch (err) {
+    await failJobRun(runId, err instanceof Error ? err.message : String(err))
+    throw err
   }
 }

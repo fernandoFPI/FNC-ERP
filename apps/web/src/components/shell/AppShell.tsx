@@ -6,6 +6,7 @@ import { BottomNav } from './BottomNav'
 import { Toast } from '../ui/Toast'
 import { HelpDrawer } from '../help/HelpDrawer'
 import { TourModeBanner } from '../help/TourModeBanner'
+import { SearchPalette } from '../search/SearchPalette'
 import { useTheme } from '../../theme/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
@@ -18,6 +19,8 @@ export function AppShell() {
   const [phoneDrawerOpen, setPhoneDrawerOpen] = useState(false)
   const [tabletSidebarExpanded, setTabletSidebarExpanded] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchPrefill, setSearchPrefill] = useState('')
   const pageRef = useRef<HTMLDivElement>(null)
   useWebSocket()
 
@@ -40,6 +43,42 @@ export function AppShell() {
     return () => window.removeEventListener('fnc:open-help', handler)
   }, [])
 
+  // fnc:open-search event — Topbar button or any other trigger
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const prefill = (e as CustomEvent<{ prefill?: string }>).detail?.prefill ?? ''
+      setSearchPrefill(prefill)
+      setSearchOpen(true)
+    }
+    window.addEventListener('fnc:open-search', handler)
+    return () => window.removeEventListener('fnc:open-search', handler)
+  }, [])
+
+  // "Type anywhere" — any printable keystroke outside an input opens search
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ctrl+K / Cmd+K always opens search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchPrefill('')
+        setSearchOpen(true)
+        return
+      }
+      // Single printable char with no modifier (Shift OK for uppercase)
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (searchOpen) return
+        const el = document.activeElement
+        const tag = (el?.tagName ?? '').toLowerCase()
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+        if ((el as HTMLElement)?.isContentEditable) return
+        setSearchPrefill(e.key)
+        setSearchOpen(true)
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [searchOpen])
+
   // Escape closes any open drawer
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -47,6 +86,7 @@ export function AppShell() {
         setPhoneDrawerOpen(false)
         setTabletSidebarExpanded(false)
         setHelpOpen(false)
+        setSearchOpen(false)
       }
     }
     document.addEventListener('keydown', handler)
@@ -126,6 +166,7 @@ export function AppShell() {
         <Toast />
         <TourModeBanner />
         <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
+        <SearchPalette open={searchOpen} prefill={searchPrefill} onClose={() => setSearchOpen(false)} />
       </div>
     )
   }
@@ -171,6 +212,7 @@ export function AppShell() {
         <Toast />
         <TourModeBanner />
         <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
+        <SearchPalette open={searchOpen} prefill={searchPrefill} onClose={() => setSearchOpen(false)} />
       </div>
     )
   }
@@ -212,6 +254,7 @@ export function AppShell() {
       <Toast />
       <TourModeBanner />
       <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <SearchPalette open={searchOpen} prefill={searchPrefill} onClose={() => setSearchOpen(false)} />
     </div>
   )
 }

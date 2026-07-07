@@ -9,6 +9,10 @@ import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { status: '', fromDate: '', toDate: '' }
 import { Table, Column } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -49,6 +53,8 @@ export default function LeaveRequestsPage() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
+  const currentFilters = { status: statusFilter, fromDate, toDate }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('leave_requests', FILTER_DEFAULTS)
   const [form, setForm] = useState(emptyForm)
 
   const { data, loading, refetch } = useQuery(LEAVE_REQUESTS_QUERY, {
@@ -99,7 +105,19 @@ export default function LeaveRequestsPage() {
             filters={[{ key: 'status', label: 'Status', value: statusFilter, options: STATUS_OPTIONS, onChange: setStatusFilter }]}
             fromDate={fromDate} toDate={toDate} onFromDateChange={setFromDate} onToDateChange={setToDate}
             resultCount={requests.length} onRefresh={() => refetch()}
-          />
+          >
+            <FilterPresets
+              presets={presets}
+              onApply={(preset) => {
+                const r = resolvePreset(preset)
+                setStatusFilter(r.status)
+                setFromDate(r.fromDate)
+                setToDate(r.toDate)
+              }}
+              onSave={(name) => savePreset(name, currentFilters)}
+              onDelete={deletePreset}
+            />
+          </FilterBar>
         </div>
         <Table columns={columns} data={requests} loading={loading} rowKey="id" onRowClick={(r) => navigate(`/hr/leave/${r.id}`)} />
       </Card>

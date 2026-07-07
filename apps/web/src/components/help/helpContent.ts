@@ -34,6 +34,7 @@ const DASHBOARD: HelpTopic = {
     'Numbers update automatically as transactions are posted.',
     'Bookmark the dashboard as your start page.',
   ],
+  tourKey: 'dashboard-overview',
 }
 
 // ── Finance ───────────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ const ACCOUNTS_PAYABLE: HelpTopic = {
     'Invoices on hold will not appear in the payment queue.',
     'Use batch payment to pay multiple vendors in one step.',
   ],
+  tourKey: 'accounts-payable',
 }
 
 const ACCOUNTS_RECEIVABLE: HelpTopic = {
@@ -89,6 +91,7 @@ const ACCOUNTS_RECEIVABLE: HelpTopic = {
     'Send the invoice PDF directly from the system using the Send button.',
     'Partial payments are supported — the remaining balance stays open.',
   ],
+  tourKey: 'accounts-receivable',
 }
 
 const BANK_RECON: HelpTopic = {
@@ -124,6 +127,7 @@ const FIXED_ASSETS: HelpTopic = {
     'Asset categories define the default useful life and GL accounts.',
     'Depreciation journals are created in draft — review before posting.',
   ],
+  tourKey: 'fixed-assets',
 }
 
 const BUDGET: HelpTopic = {
@@ -141,6 +145,7 @@ const BUDGET: HelpTopic = {
     'Use cost centres to budget by department, not just account.',
     'You can have multiple budgets per year (original, revised, forecast).',
   ],
+  tourKey: 'budget-management',
 }
 
 const EXPENSE_CLAIMS: HelpTopic = {
@@ -157,6 +162,7 @@ const EXPENSE_CLAIMS: HelpTopic = {
     'Attach receipts as images or PDFs — required for amounts above the policy threshold.',
     'Claims older than 60 days may be flagged for review per company policy.',
   ],
+  tourKey: 'expense-claims',
 }
 
 const PETTY_CASH: HelpTopic = {
@@ -173,6 +179,7 @@ const PETTY_CASH: HelpTopic = {
     'Each petty cash fund is tied to a specific GL account and custodian.',
     'Replenishment automatically posts a journal entry.',
   ],
+  tourKey: 'petty-cash',
 }
 
 const PAYMENT_VOUCHERS: HelpTopic = {
@@ -189,6 +196,7 @@ const PAYMENT_VOUCHERS: HelpTopic = {
     'Vouchers can only be generated for posted (not draft) AP invoices.',
     'The PV stamp template is configured in Admin → Company → Configuration.',
   ],
+  tourKey: 'payment-vouchers',
 }
 
 const PAYMENT_TERMS: HelpTopic = {
@@ -205,6 +213,7 @@ const PAYMENT_TERMS: HelpTopic = {
     'Payment terms affect AP aging and due date calculations.',
     'Multiple instalment lines are supported for complex schedules.',
   ],
+  tourKey: 'payment-terms',
 }
 
 // ── Procurement ───────────────────────────────────────────────────────────────
@@ -242,6 +251,7 @@ const VENDORS: HelpTopic = {
     'Deactivated vendors cannot receive new POs.',
     'Payment terms set here default to all new invoices for that vendor.',
   ],
+  tourKey: 'vendors',
 }
 
 const APPROVAL_QUEUE: HelpTopic = {
@@ -258,6 +268,7 @@ const APPROVAL_QUEUE: HelpTopic = {
     'You receive a notification for each new PO added to your queue.',
     'Use the count badge in the sidebar to see how many POs await action.',
   ],
+  tourKey: 'approval-queue',
 }
 
 // ── Other modules ─────────────────────────────────────────────────────────────
@@ -277,25 +288,44 @@ const INVENTORY: HelpTopic = {
     'Inter-company stock transfers go through the Inter-company module, not here.',
     'Set minimum stock levels to trigger reorder alerts.',
   ],
+  tourKey: 'inventory',
 }
 
 const PROJECTS: HelpTopic = {
   key: 'projects',
   title: 'Projects',
   emoji: '🏗️',
-  summary: 'Track construction and service projects — budget, timeline, contracts, and invoicing.',
+  summary: 'Create and manage construction or service projects — budget setup, cost tracking, and team oversight.',
   steps: [
-    { title: 'Create a project', body: 'Click New Project. Set the code, type (construction/service/internal), and budget. Assign a project manager and team members.' },
-    { title: 'Budget lines', body: 'Break the budget into categories (Materials, Labour, Subcontractors, etc.) to enable detailed budget vs actual tracking.' },
-    { title: 'Contracts', body: 'Attach customer contracts under the Contracts tab. Contracts hold the billing schedule for invoicing milestones.' },
-    { title: 'Invoice from contract', body: 'Open a contract, add invoice lines based on milestones or progress percentage, and click Generate Invoice.' },
-    { title: 'Track costs', body: 'The Budget tab shows planned vs actual costs. Actual costs come from AP invoices linked to this project code.' },
+    { title: 'Create a project', body: 'Click New Project. Set the project code (e.g. PRJ-2026-042), type (construction/service/internal), and assign a project manager.' },
+    { title: 'Set the budget', body: 'Go to the Budget tab. Add cost categories (Materials, Labour, Subcontractors, Equipment) with planned amounts for each.' },
+    { title: 'Track actual costs', body: 'Costs post to the project automatically when an AP invoice or PO references this project code. The Budget tab shows live Actual vs Planned.' },
+    { title: 'Monitor project status', body: 'Status flows from Active → On Hold → Completed. Each change is timestamped. Use the History tab to see the full audit trail.' },
   ],
   tips: [
     'Use the project code on AP invoice lines to automatically track costs against the project budget.',
-    'Status changes (Active → On Hold → Completed) are logged with timestamps in the history tab.',
+    'Budget alerts fire when a cost category reaches 80% or 100% of its planned amount.',
   ],
   tourKey: 'project',
+}
+
+const CONTRACTS: HelpTopic = {
+  key: 'contracts',
+  title: 'Project Contracts',
+  emoji: '📄',
+  summary: 'Manage customer billing agreements — billing methods, milestones, and invoice generation.',
+  steps: [
+    { title: 'Create a contract', body: 'Click New Contract. Link it to a project, enter the client name, contract value, and choose a billing method.' },
+    { title: 'Billing methods', body: 'Four methods are supported: Fixed Lump Sum (one payment), Milestone (payment per completed milestone), Cost Plus / T&M (reimburse actual costs + margin), and Progress % (bill based on completion percentage).' },
+    { title: 'Add milestones', body: 'For milestone-based contracts, open the contract and add each milestone with a name, sequence number, and billable amount.' },
+    { title: 'Mark a milestone reached', body: 'When a milestone is completed on site, open the contract and set its status to Reached. This unlocks invoice generation for that milestone.' },
+    { title: 'Generate an invoice', body: 'From the contract detail, click Generate Invoice. The AR invoice pre-fills with the client and milestone amount. Review and post it.' },
+  ],
+  tips: [
+    'The Contracts list shows total Value, Invoiced so far, and Outstanding balance per contract.',
+    'Retention % withholds a portion of each invoice until project completion — configure it on the contract.',
+  ],
+  tourKey: 'contracts',
 }
 
 const HR_EMPLOYEES: HelpTopic = {
@@ -331,6 +361,7 @@ const HR_ATTENDANCE: HelpTopic = {
     'Punches outside the geofence are flagged in red — they are recorded but marked invalid.',
     'Employees punch in and out via the mobile app.',
   ],
+  tourKey: 'hr-attendance',
 }
 
 const HR_OVERTIME: HelpTopic = {
@@ -347,6 +378,7 @@ const HR_OVERTIME: HelpTopic = {
     'Approved overtime is included in the next payroll run automatically.',
     'Overtime multipliers (1.5×, 2×) are set in the employee\'s shift configuration.',
   ],
+  tourKey: 'hr-overtime',
 }
 
 const HR_LEAVE: HelpTopic = {
@@ -364,6 +396,7 @@ const HR_LEAVE: HelpTopic = {
     'Approved leave days appear as yellow blocks on the attendance calendar.',
     'Leave taken is reflected in the monthly attendance summary KPIs.',
   ],
+  tourKey: 'hr-leave',
 }
 
 const MANUFACTURING: HelpTopic = {
@@ -381,6 +414,7 @@ const MANUFACTURING: HelpTopic = {
     'Check raw material availability before creating a production order.',
     'Production costs flow into the finished goods cost for inventory valuation.',
   ],
+  tourKey: 'manufacturing',
 }
 
 const RENTAL: HelpTopic = {
@@ -398,6 +432,7 @@ const RENTAL: HelpTopic = {
     'Equipment availability updates automatically when contracts start or end.',
     'Maintenance schedules are configured per equipment record.',
   ],
+  tourKey: 'rental',
 }
 
 const REPORTING: HelpTopic = {
@@ -416,6 +451,26 @@ const REPORTING: HelpTopic = {
     'Reports only include posted journals — drafts are always excluded.',
     'Compare periods by changing the date range filter.',
   ],
+  tourKey: 'reporting',
+}
+
+const INTEGRATIONS: HelpTopic = {
+  key: 'integrations',
+  title: 'Integrations & System Configuration',
+  emoji: '🔌',
+  summary: 'Configure SMTP email, FX rate API keys, file storage, and the public app URL — without editing server files.',
+  steps: [
+    { title: 'SMTP email server', body: 'Enter the hostname, port, username, and password for your outgoing mail server. Click "Send Test Email" to confirm the settings work before saving.' },
+    { title: 'Application base URL', body: 'Set the public URL of this ERP (e.g. https://erp.company.com). Used in QR codes on invoice PDFs and in email deep-links.' },
+    { title: 'FX rate API keys', body: 'Add your ExchangeRate-API key (primary) and/or Open Exchange Rates App ID (fallback). The daily FX sync job uses these automatically.' },
+    { title: 'File storage (B2)', body: 'Connect a Backblaze B2 bucket for PDF and attachment storage. You need the endpoint, region, key ID, and application key from your B2 account.' },
+  ],
+  tips: [
+    'Fields with a DB badge override the .env file. Fields with an env badge are read from the server environment file and can be overridden by saving here.',
+    'Sensitive values (passwords, API keys) are stored AES-256-GCM encrypted in the database.',
+    'Changes to SMTP or FX API keys take effect within 5 minutes for background workers.',
+  ],
+  tourKey: 'integrations',
 }
 
 const SETTINGS: HelpTopic = {
@@ -433,6 +488,7 @@ const SETTINGS: HelpTopic = {
     'Letterhead changes take effect immediately on new PDF documents.',
     'Role changes take effect on the user\'s next login.',
   ],
+  tourKey: 'settings',
 }
 
 const ADMIN: HelpTopic = {
@@ -450,6 +506,7 @@ const ADMIN: HelpTopic = {
     'Only Super Admin users can create new companies.',
     'Deactivated users cannot log in, but their data is fully preserved.',
   ],
+  tourKey: 'admin',
 }
 
 // ── Registry ──────────────────────────────────────────────────────────────────
@@ -459,9 +516,13 @@ const routeMap: Array<{ pattern: string; topic: HelpTopic }> = [
   { pattern: '/dashboard',                         topic: DASHBOARD },
   { pattern: '/finance/journals',                  topic: JOURNALS },
   { pattern: '/finance/accounts-payable',          topic: ACCOUNTS_PAYABLE },
+  { pattern: '/finance/ap',                        topic: ACCOUNTS_PAYABLE },
   { pattern: '/finance/accounts-receivable',       topic: ACCOUNTS_RECEIVABLE },
+  { pattern: '/finance/ar',                        topic: ACCOUNTS_RECEIVABLE },
   { pattern: '/finance/bank-reconciliation',       topic: BANK_RECON },
+  { pattern: '/finance/bank',                      topic: BANK_RECON },
   { pattern: '/finance/fixed-assets',              topic: FIXED_ASSETS },
+  { pattern: '/finance/assets',                    topic: FIXED_ASSETS },
   { pattern: '/finance/budget',                    topic: BUDGET },
   { pattern: '/finance/expense-claims',            topic: EXPENSE_CLAIMS },
   { pattern: '/finance/petty-cash',                topic: PETTY_CASH },
@@ -474,6 +535,7 @@ const routeMap: Array<{ pattern: string; topic: HelpTopic }> = [
   { pattern: '/procurement/approval-queue',        topic: APPROVAL_QUEUE },
   { pattern: '/procurement',                       topic: PURCHASE_ORDERS },
   { pattern: '/inventory',                         topic: INVENTORY },
+  { pattern: '/projects/contracts',                 topic: CONTRACTS },
   { pattern: '/projects',                          topic: PROJECTS },
   { pattern: '/hr/employees',                      topic: HR_EMPLOYEES },
   { pattern: '/hr/attendance',                     topic: HR_ATTENDANCE },
@@ -482,7 +544,9 @@ const routeMap: Array<{ pattern: string; topic: HelpTopic }> = [
   { pattern: '/hr',                                topic: HR_EMPLOYEES },
   { pattern: '/manufacturing',                     topic: MANUFACTURING },
   { pattern: '/rental',                            topic: RENTAL },
+  { pattern: '/finance/reports',                   topic: REPORTING },
   { pattern: '/reporting',                         topic: REPORTING },
+  { pattern: '/settings/company/integrations',      topic: INTEGRATIONS },
   { pattern: '/settings',                          topic: SETTINGS },
   { pattern: '/admin',                             topic: ADMIN },
 ]
@@ -504,12 +568,12 @@ export const allTopics: HelpTopic[] = [
   FIXED_ASSETS, BUDGET, EXPENSE_CLAIMS, PETTY_CASH, PAYMENT_VOUCHERS, PAYMENT_TERMS,
   PURCHASE_ORDERS, VENDORS, APPROVAL_QUEUE,
   INVENTORY,
-  PROJECTS,
+  PROJECTS, CONTRACTS,
   HR_EMPLOYEES, HR_ATTENDANCE, HR_OVERTIME, HR_LEAVE,
   MANUFACTURING,
   RENTAL,
   REPORTING,
-  SETTINGS, ADMIN,
+  INTEGRATIONS, SETTINGS, ADMIN,
 ]
 
 export const helpGroups: HelpGroup[] = [
@@ -517,10 +581,10 @@ export const helpGroups: HelpGroup[] = [
   { label: 'Finance',      topics: [JOURNALS, ACCOUNTS_PAYABLE, ACCOUNTS_RECEIVABLE, BANK_RECON, FIXED_ASSETS, BUDGET, EXPENSE_CLAIMS, PETTY_CASH, PAYMENT_VOUCHERS, PAYMENT_TERMS] },
   { label: 'Procurement',  topics: [PURCHASE_ORDERS, VENDORS, APPROVAL_QUEUE] },
   { label: 'Inventory',    topics: [INVENTORY] },
-  { label: 'Projects',     topics: [PROJECTS] },
+  { label: 'Projects',     topics: [PROJECTS, CONTRACTS] },
   { label: 'HR',           topics: [HR_EMPLOYEES, HR_ATTENDANCE, HR_OVERTIME, HR_LEAVE] },
   { label: 'Manufacturing',topics: [MANUFACTURING] },
   { label: 'Rental',       topics: [RENTAL] },
   { label: 'Reporting',    topics: [REPORTING] },
-  { label: 'Admin',        topics: [SETTINGS, ADMIN] },
+  { label: 'Admin',        topics: [INTEGRATIONS, SETTINGS, ADMIN] },
 ]

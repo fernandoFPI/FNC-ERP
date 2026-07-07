@@ -18,6 +18,7 @@
     "@aws-sdk/client-s3": "^3.1058.0",
     "@aws-sdk/s3-request-presigner": "^3.1058.0",
     "@fnc-erp/audit": "workspace:*",
+    "@fnc-erp/email": "workspace:*",
     "@fnc-erp/workflow": "workspace:*",
     "@fnc-erp/auth": "workspace:*",
     "@fnc-erp/config": "workspace:*",

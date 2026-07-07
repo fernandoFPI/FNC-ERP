@@ -1,0 +1,35 @@
+{
+  "name": "@fnc-erp/service-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Background worker â€” outbox processor, scheduled jobs",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fnc-erp/audit": "workspace:*",
+    "@fnc-erp/config": "workspace:*",
+    "@fnc-erp/db": "workspace:*",
+    "@fnc-erp/email": "workspace:*",
+    "@fnc-erp/fx": "workspace:*",
+    "@fnc-erp/logger": "workspace:*",
+    "@fnc-erp/pdf": "workspace:*",
+    "@fnc-erp/storage": "workspace:*",
+    "node-cron": "^3.0.3",
+    "qrcode": "^1.5.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/qrcode": "^1.5.6",
+    "vitest": "^2.1.9"
+  }
+}

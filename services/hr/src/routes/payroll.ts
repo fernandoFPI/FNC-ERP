@@ -77,7 +77,7 @@ payrollRouter.post('/:id/process', requirePermission('payroll.runs.approve', 'ap
       [req.params['id'], companyId],
     )
     const run = runResult.rows[0] as {
-      id: string; status: string; start_date: string; end_date: string
+      id: string; status: string; start_date: string; end_date: string; period_name: string
     } | undefined
     if (!run) return sendError(res, 404, 'NOT_FOUND', 'Payroll run not found')
     if (run['status'] !== 'draft') return sendError(res, 409, 'WRONG_STATUS', `Cannot process run in status: ${run['status']}`)
@@ -195,6 +195,20 @@ payrollRouter.post('/:id/process', requirePermission('payroll.runs.approve', 'ap
         )
 
         await logAudit({ companyId, userId: req.auth!.userId, action: 'UPDATE', tableName: 'payroll_runs', recordId: run['id'], newValues: { status: 'approved' }, client })
+
+        await client.query(
+          `INSERT INTO service_outbox (service, event_type, payload)
+           VALUES ('finance', 'PAYROLL_JOURNAL_REQUESTED', $1)`,
+          [JSON.stringify({
+            payroll_run_id: run['id'],
+            company_id:     companyId,
+            period_name:    run['period_name'],
+            total_gross:    Math.round(totalGross      * 10000) / 10000,
+            total_net:      Math.round(totalNet        * 10000) / 10000,
+            total_deductions: Math.round(totalDeductions * 10000) / 10000,
+            end_date:       run['end_date'],
+          })],
+        )
 
         const updated = await client.query(`SELECT * FROM payroll_runs WHERE id = $1`, [run['id']])
         return updated.rows[0]!

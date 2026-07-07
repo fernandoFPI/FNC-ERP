@@ -14,6 +14,10 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '' }
 import { Table, Column } from '../../../components/ui/Table'
 import { Modal } from '../../../components/ui/Modal'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
@@ -64,6 +68,8 @@ export default function ManufacturingRequestsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
   const [showCreate, setShowCreate] = useState(false)
+  const currentFilters = { search, status: statusFilter ?? '' }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('manufacturing_requests', FILTER_DEFAULTS)
   const [form, setForm] = useState<CreateForm>({
     projectId: '', productId: '', bomId: '', qtyRequested: '1',
     requiredDate: '', description: '', notes: '',
@@ -192,7 +198,18 @@ export default function ManufacturingRequestsPage() {
       </div>
 
       <Card>
-        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()} />
+        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()}>
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status || undefined)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
         <Table columns={columns} data={filtered} loading={loading} rowKey="id" />
       </Card>
 

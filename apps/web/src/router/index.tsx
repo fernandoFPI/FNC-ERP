@@ -137,6 +137,8 @@ const DLQPage = lazy(() => import('../pages/admin/outbox/DLQPage'))
 const SystemHealthPage = lazy(() => import('../pages/admin/health/SystemHealthPage'))
 const AuditLogPage = lazy(() => import('../pages/admin/audit/AuditLogPage'))
 const EventConfigsPage = lazy(() => import('../pages/admin/event-configs/EventConfigsPage'))
+const NotificationRoutingPage = lazy(() => import('../pages/admin/notification-routing/NotificationRoutingPage'))
+const JobHistoryPage = lazy(() => import('../pages/settings/system/JobHistoryPage'))
 const BankAccountsPage = lazy(() => import('../pages/admin/bank-accounts/BankAccountsPage'))
 const RoleTemplatesPage = lazy(() => import('../pages/admin/roles/RoleTemplatesPage'))
 
@@ -150,6 +152,7 @@ const NotificationPreferencesPage = lazy(() => import('../pages/settings/notific
 const CompanySettingsPage = lazy(() => import('../pages/settings/company/CompanySettingsPage'))
 const AccountingSettingsPage = lazy(() => import('../pages/settings/company/accounting/AccountingSettingsPage'))
 const IntegrationsPage = lazy(() => import('../pages/settings/company/integrations/IntegrationsPage'))
+const DocumentNumberingPage = lazy(() => import('../pages/settings/company/numbering/DocumentNumberingPage'))
 const InviteHistoryPage = lazy(() => import('../pages/settings/users/InviteHistoryPage'))
 const POPositionsPage = lazy(() => import('../pages/procurement/positions/POPositionsPage'))
 
@@ -523,6 +526,7 @@ export const router = createBrowserRouter([
           { path: 'company/tax', element: withPerm('admin.companies.view', <CompanySettingsPage />) },
           { path: 'company/accounting', element: withPerm('admin.companies.view', <AccountingSettingsPage />) },
           { path: 'company/integrations', element: withPerm('admin.companies.admin', <IntegrationsPage />, 'admin') },
+          { path: 'company/numbering', element: withPerm('admin.companies.admin', <DocumentNumberingPage />, 'admin') },
 
           // Users & Roles (system_admin)
           { path: 'users', element: withPerm('admin.users.view', <UsersPage />) },
@@ -538,6 +542,8 @@ export const router = createBrowserRouter([
           { path: 'system/outbox', element: withPerm('admin.system.view', <OutboxMonitorPage />) },
           { path: 'system/dlq', element: withPerm('admin.system.view', <DLQPage />) },
           { path: 'system/events', element: withPerm('admin.system.admin', <EventConfigsPage />, 'admin') },
+          { path: 'system/notification-routing', element: withPerm('admin.system.admin', <NotificationRoutingPage />, 'admin') },
+          { path: 'system/job-history', element: withPerm('admin.system.view', <JobHistoryPage />) },
           { path: 'system/audit', element: withPerm('admin.system.view', <AuditLogPage />) },
           { path: 'system/inventory-import', element: withPerm('admin.system.admin', <InventoryImportPage />, 'admin') },
           { path: 'system/workflow-import', element: withPerm('admin.system.admin', <WorkflowImportPage />, 'admin') },
