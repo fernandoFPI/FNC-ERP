@@ -261,6 +261,12 @@ workflowImportRouter.post(
     try {
       await client.query('BEGIN')
 
+      // ── Resolve Al Watanyia company (Basra branch) ────────────────────
+      const wataniaRes = await client.query<{ id: string }>(
+        `SELECT id FROM companies WHERE name ILIKE '%watani%' LIMIT 1`,
+      )
+      const wataniaCompanyId: string = wataniaRes.rows[0]?.id ?? companyId
+
       // ── 1. Projects ───────────────────────────────────────────────────
       // Columns: [0]id [1]ref_number [2]client_name [3]client_location [4]project_name
       //          [5]receiving_date [6]submission_date ... [13]remarks [17]project_status
@@ -268,13 +274,20 @@ workflowImportRouter.post(
       //          [21]project_invoicing_date [22]project_complete_date [23]project_canceled_date
       //          [26]project_number [27]project_invoicing_note
       const projRows: unknown[][] = []
+      // Track which project codes belong to Al Watanyia (Basra)
+      const basraProjectCodes = new Set<string>()
+
       for (const r of rawProjects) {
         const code = r[1]?.trim()
         const name = r[4]?.trim()
         if (!code || !name) { stats.skipped++; continue }
 
+        const isBasra = r[3]?.toLowerCase().includes('basra') ?? false
+        if (isBasra) basraProjectCodes.add(code)
+        const projCompanyId = isBasra ? wataniaCompanyId : companyId
+
         projRows.push([
-          companyId,
+          projCompanyId,
           code,
           name.slice(0, 255),
           r[27] ? clamp(r[27], 2000) : null,     // description
@@ -317,13 +330,18 @@ workflowImportRouter.post(
       stats.projects = pi
       errors.push(...pe)
 
-      // Build code → uuid map (includes both newly inserted and pre-existing)
-      const projMapRes = await client.query<{ id: string; code: string }>(
-        'SELECT id, code FROM projects WHERE company_id = $1',
-        [companyId],
+      // Build code → uuid map covering both the uploader's company and Al Watanyia
+      const targetCompanyIds = [...new Set([companyId, wataniaCompanyId])]
+      const projMapRes = await client.query<{ id: string; code: string; company_id: string }>(
+        'SELECT id, code, company_id FROM projects WHERE company_id = ANY($1::uuid[])',
+        [targetCompanyIds],
       )
-      const projMap = new Map<string, string>()
-      for (const r of projMapRes.rows) projMap.set(r.code, r.id)
+      const projMap = new Map<string, string>()          // code → uuid
+      const projCodeToCompany = new Map<string, string>() // code → company_id
+      for (const r of projMapRes.rows) {
+        projMap.set(r.code, r.id)
+        projCodeToCompany.set(r.code, r.company_id)
+      }
 
       // ── 2. Purchase orders ─────────────────────────────────────────────
       // Columns: [0]po_id [1]po_number [2]open_date [4]po_ref_number [5]po_status
@@ -337,8 +355,12 @@ workflowImportRouter.post(
 
         if (r[0]) oldPoIdToNumber.set(r[0].trim(), poNum) // old_id → po_number
 
+        // Route PO to Al Watanyia if its linked project is a Basra project
+        const refCode = r[4]?.trim()
+        const poCompanyId = (refCode && basraProjectCodes.has(refCode)) ? wataniaCompanyId : companyId
+
         poRows.push([
-          companyId,
+          poCompanyId,
           poNum,
           mapPoStatus(r[5]),
           'USD',                          // currency_code
@@ -367,11 +389,11 @@ workflowImportRouter.post(
       stats.pos = poi
       errors.push(...poe)
 
-      // Build po_number → new uuid map
+      // Build po_number → new uuid map (across both companies)
       const insertedPoNumbers = [...new Set(poRows.map(r => r[1] as string))]
       const poMapRes = await client.query<{ id: string; po_number: string }>(
-        'SELECT id, po_number FROM purchase_orders WHERE company_id = $1 AND po_number = ANY($2::text[])',
-        [companyId, insertedPoNumbers],
+        'SELECT id, po_number FROM purchase_orders WHERE company_id = ANY($1::uuid[]) AND po_number = ANY($2::text[])',
+        [targetCompanyIds, insertedPoNumbers],
       )
       const poNumberToUuid = new Map<string, string>()
       for (const r of poMapRes.rows) poNumberToUuid.set(r.po_number, r.id)
@@ -383,25 +405,27 @@ workflowImportRouter.post(
         if (uuid) oldPoIdToUuid.set(oldId, uuid)
       }
 
-      // Link POs to projects
-      const poLinkRows: unknown[][] = []
+      // Link POs to projects — update each company's POs separately
+      const poLinkByCompany = new Map<string, { poNumbers: string[]; projIds: string[] }>()
       for (const r of rawPos) {
         const poNum = r[1]?.trim()
         const refCode = r[4]?.trim()
         if (!poNum || !refCode) continue
         const projUuid = projMap.get(refCode)
         if (!projUuid) continue
-        poLinkRows.push([poNum, projUuid])
+        const poCompId = basraProjectCodes.has(refCode) ? wataniaCompanyId : companyId
+        const bucket = poLinkByCompany.get(poCompId) ?? { poNumbers: [], projIds: [] }
+        bucket.poNumbers.push(poNum)
+        bucket.projIds.push(projUuid)
+        poLinkByCompany.set(poCompId, bucket)
       }
-      if (poLinkRows.length > 0) {
-        const linkNumbers = poLinkRows.map(r => r[0])
-        const linkProjIds = poLinkRows.map(r => r[1])
+      for (const [cId, { poNumbers, projIds }] of poLinkByCompany) {
         await client.query(
           `UPDATE purchase_orders po
            SET linked_project_id = mapping.proj_id, project_id = mapping.proj_id, purpose = 'project'
            FROM (SELECT unnest($2::text[]) AS po_number, unnest($3::uuid[]) AS proj_id) AS mapping
            WHERE po.company_id = $1 AND po.po_number = mapping.po_number`,
-          [companyId, linkNumbers, linkProjIds],
+          [cId, poNumbers, projIds],
         )
       }
 
@@ -482,6 +506,9 @@ workflowImportRouter.post(
           continue
         }
 
+        // Use the company that owns this project (Al Watanyia for Basra projects)
+        const invCompanyId = projCodeToCompany.get(refCode) ?? companyId
+
         // Calculate total value across all invoices in this group
         let groupTotal = 0
         for (const inv of invGroup) {
@@ -505,7 +532,7 @@ workflowImportRouter.post(
         // Find existing contract or create
         const existingRes = await client.query<{ id: string }>(
           'SELECT id FROM project_contracts WHERE company_id = $1 AND contract_number = $2',
-          [companyId, contractNum],
+          [invCompanyId, contractNum],
         )
 
         let contractId: string
@@ -521,7 +548,7 @@ workflowImportRouter.post(
                VALUES ($1,$2,$3,$4,$5,$6,$7,'fixed_lump_sum',0,30,0,$8,'active',$9)
                RETURNING id`,
               [
-                projUuid, companyId, contractNum,
+                projUuid, invCompanyId, contractNum,
                 `Legacy Contract — ${refCode}`,
                 clientName, contractValue, currency,
                 contractDate, userId,
@@ -566,7 +593,7 @@ workflowImportRouter.post(
                ON CONFLICT (company_id, invoice_number) DO NOTHING
                RETURNING id`,
               [
-                contractId, projUuid, companyId, invNum,
+                contractId, projUuid, invCompanyId, invNum,
                 subtotal, invCur,
                 mapInvStatus(inv[6]),
                 invDate, dueDate, userId,

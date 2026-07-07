@@ -485,6 +485,64 @@ userManagementRouter.post(
   },
 )
 
+// ── POST /auth/users/:id/set-password ─────────────────────────────────────────
+
+userManagementRouter.post(
+  '/:id/set-password',
+  requireAuth(),
+  requireRole('system_admin'),
+  requirePermission('admin.users.edit', 'edit'),
+  async (req: Request, res: Response): Promise<void> => {
+    const { newPassword } = req.body as { newPassword?: string }
+
+    if (!newPassword || newPassword.length < 8) {
+      sendError(res, 400, 'WEAK_PASSWORD', 'Password must be at least 8 characters')
+      return
+    }
+
+    const strength = validatePasswordStrength(newPassword)
+    if (!strength.valid) {
+      sendError(res, 400, 'WEAK_PASSWORD', strength.reason ?? 'Password too weak')
+      return
+    }
+
+    try {
+      const exists = await query(`SELECT id FROM users WHERE id = $1`, [req.params['id']])
+      if (!exists.rows[0]) {
+        sendError(res, 404, 'USER_NOT_FOUND', 'User not found')
+        return
+      }
+
+      const passwordHash = await hashPassword(newPassword)
+
+      await withSystemTransaction(async (client) => {
+        await client.query(
+          `UPDATE users
+           SET password_hash = $1, failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
+           WHERE id = $2`,
+          [passwordHash, req.params['id']],
+        )
+        await client.query(`DELETE FROM sessions WHERE user_id = $1`, [req.params['id']])
+        await logAudit({
+          userId: req.auth!.userId,
+          companyId: undefined,
+          action: 'USER_PASSWORD_CHANGED_BY_ADMIN',
+          tableName: 'users',
+          recordId: req.params['id'],
+          ipAddress: req.ip ?? undefined,
+          userAgent: String(req.headers['user-agent'] ?? ''),
+          client,
+        })
+      })
+
+      log.info({ targetUserId: req.params['id'], changedBy: req.auth!.userId }, 'admin set user password')
+      res.json({ success: true, data: { message: 'Password updated. All sessions have been revoked.' } })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to set password', err)
+    }
+  },
+)
+
 // ── POST /auth/users/:id/reset-mfa ────────────────────────────────────────────
 
 userManagementRouter.post(

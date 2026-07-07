@@ -214,6 +214,12 @@ export const REVOKE_ALL_USER_SESSIONS = gql`
   }
 `
 
+export const ADMIN_SET_USER_PASSWORD = gql`
+  mutation AdminSetUserPassword($userId: ID!, $newPassword: String!) {
+    adminSetUserPassword(userId: $userId, newPassword: $newPassword)
+  }
+`
+
 export const RETRY_OUTBOX_EVENT = gql`
   mutation RetryOutboxEvent($eventId: ID!) {
     retryOutboxEvent(eventId: $eventId)

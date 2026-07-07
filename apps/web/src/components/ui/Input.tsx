@@ -26,6 +26,7 @@ interface InputProps {
   autoCapitalize?: string
   autoCorrect?: string
   maxLength?: number
+  inputRef?: React.RefObject<HTMLInputElement>
 }
 
 export function Input({
@@ -52,6 +53,7 @@ export function Input({
   autoCapitalize,
   autoCorrect,
   maxLength,
+  inputRef,
 }: InputProps) {
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
@@ -77,6 +79,7 @@ export function Input({
           </span>
         )}
         <input
+          ref={inputRef}
           type={type}
           value={value}
           onChange={onChange}
