@@ -6,6 +6,10 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '', source: '', fromDate: '', toDate: '' }
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
@@ -46,6 +50,8 @@ export default function JournalsPage() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const currentFilters = { search, status: statusFilter, source: sourceFilter, fromDate, toDate }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('journals', FILTER_DEFAULTS)
   const [showCombineDialog, setShowCombineDialog] = useState(false)
   const [combineDesc, setCombineDesc] = useState('')
 
@@ -159,7 +165,21 @@ export default function JournalsPage() {
           onToDateChange={setToDate}
           resultCount={filtered.length}
           onRefresh={() => refetch()}
-        />
+        >
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status)
+              setSourceFilter(r.source)
+              setFromDate(r.fromDate)
+              setToDate(r.toDate)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
 
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>

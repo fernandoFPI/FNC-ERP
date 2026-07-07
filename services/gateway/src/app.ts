@@ -22,6 +22,11 @@ import { inventoryImportRouter } from './routes/inventory-import.js'
 import { workflowImportRouter } from './routes/workflow-import.js'
 import { userProfileRouter } from './routes/user-profile.js'
 import { verifyRouter } from './routes/verify.js'
+import { systemConfigRouter } from './routes/system-config.js'
+import { documentSequencesRouter } from './routes/document-sequences.js'
+import { notificationRoutingRouter } from './routes/notification-routing.js'
+import { searchRouter } from './routes/search.js'
+import { jobRunsRouter } from './routes/job-runs.js'
 
 const PUBLIC_PATHS = [
   '/api/v1/auth/login',
@@ -130,6 +135,21 @@ export async function createApp(): Promise<express.Application> {
 
   // ── 11b-iv. Public invoice verify (no auth required) ────────
   app.use('/api/v1/verify', verifyRouter)
+
+  // ── 11b-v. System config (system_admin only) ─────────────────
+  app.use('/api/v1/admin/system-config', systemConfigRouter)
+
+  // ── 11b-vi. Document sequences (system_admin only) ───────────
+  app.use('/api/v1/admin/document-sequences', documentSequencesRouter)
+
+  // ── 11b-vii. Notification routing (system_admin only) ────────
+  app.use('/api/v1/admin/notification-routing', notificationRoutingRouter)
+
+  // ── 11b-viii. Global search ───────────────────────────────────
+  app.use('/api/v1/search', searchRouter)
+
+  // ── 11b-ix. Job run history (system_admin only) ───────────────
+  app.use('/api/v1/admin/job-runs', jobRunsRouter)
 
   // ── 11c. Mobile sync routes ──────────────────────────────────
   app.use('/api/v1/mobile', mobileSyncRouter)

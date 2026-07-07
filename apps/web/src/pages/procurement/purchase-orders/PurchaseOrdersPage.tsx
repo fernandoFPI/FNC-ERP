@@ -1,7 +1,7 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@apollo/client'
-import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
+import { useQuery, useMutation } from '@apollo/client'
+import { PURCHASE_ORDERS_QUERY, APPROVE_PO } from '../../../graphql/procurement'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -11,6 +11,11 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
+import { useToastStore } from '../../../store/toastStore'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '' }
 
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', high: 'High', emergency: 'Emergency' }
 const PRIORITY_STYLES: Record<string, { color: string; bg: string; border: string }> = {
@@ -37,14 +42,26 @@ const STATUS_OPTIONS = [
   { value: 'deleted', label: 'Deleted' },
 ]
 
+function downloadCSV(rows: string[][], filename: string) {
+  const content = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob(['﻿' + content, ''], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function PurchaseOrdersPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const addToast = useToastStore((s) => s.addToast)
   const [urlParams] = useSearchParams()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkApproving, setBulkApproving] = useState(false)
 
   const projectIdFilter   = urlParams.get('project_id')   ?? ''
   const projectNameFilter = urlParams.get('project_name') ?? ''
@@ -53,6 +70,11 @@ export default function PurchaseOrdersPage() {
     variables: { status: statusFilter || undefined, projectId: projectIdFilter || undefined },
     fetchPolicy: 'cache-and-network',
   })
+
+  const [approvePOMutation] = useMutation(APPROVE_PO)
+
+  const currentFilters = { search, status: statusFilter, fromDate, toDate }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('purchase_orders', FILTER_DEFAULTS)
 
   const orders: PurchaseOrder[] = data?.purchaseOrders ?? []
   const filtered = orders.filter((o) => {
@@ -65,7 +87,91 @@ export default function PurchaseOrdersPage() {
     return true
   })
 
-  const columns: Column<PurchaseOrder>[] = [
+  // ── Selection helpers ────────────────────────────────────────────────────────
+  const filteredIds = filtered.map((o) => o.id)
+  const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
+  const someSelected = filteredIds.some((id) => selectedIds.has(id))
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredIds))
+    }
+  }
+
+  const clearSelection = () => setSelectedIds(new Set())
+
+  // ── Bulk actions ─────────────────────────────────────────────────────────────
+  const selectedRows = filtered.filter((o) => selectedIds.has(o.id))
+  const approvableRows = selectedRows.filter((o) => o.status === 'pending_approval')
+
+  const handleBulkApprove = async () => {
+    if (approvableRows.length === 0) return
+    setBulkApproving(true)
+    const results = await Promise.allSettled(
+      approvableRows.map((o) => approvePOMutation({ variables: { id: o.id } })),
+    )
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length
+    const failed = results.filter((r) => r.status === 'rejected').length
+    setBulkApproving(false)
+    clearSelection()
+    void refetch()
+    if (failed === 0) {
+      addToast({ type: 'success', message: `${succeeded} PO${succeeded !== 1 ? 's' : ''} approved` })
+    } else {
+      addToast({ type: 'warning', message: `${succeeded} approved, ${failed} failed` })
+    }
+  }
+
+  const handleBulkExport = () => {
+    const header = ['PO Number', 'Vendor', 'Status', 'Priority', 'Total Amount', 'Currency', 'Created', 'Expected Delivery']
+    const rows = selectedRows.map((o) => [
+      o.po_number, o.vendor_name ?? '', getPOStatusLabel(o.status),
+      PRIORITY_LABELS[o.priority] ?? o.priority,
+      o.total_amount, o.currency_code,
+      o.created_at.slice(0, 10), o.expected_delivery_date ?? '',
+    ])
+    downloadCSV([header, ...rows], `purchase-orders-selected-${new Date().toISOString().slice(0, 10)}.csv`)
+  }
+
+  // ── Columns ──────────────────────────────────────────────────────────────────
+  const checkboxCol: Column<PurchaseOrder> = {
+    key: '__select',
+    header: '',
+    width: '40px',
+    mobileHide: true,
+    renderHeader: () => (
+      <input
+        type="checkbox"
+        checked={allSelected}
+        ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected }}
+        onChange={toggleSelectAll}
+        style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: theme.accent }}
+      />
+    ),
+    render: (o) => (
+      <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center' }}>
+        <input
+          type="checkbox"
+          checked={selectedIds.has(o.id)}
+          onChange={() => toggleSelect(o.id)}
+          style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: theme.accent }}
+        />
+      </div>
+    ),
+  }
+
+  const dataColumns: Column<PurchaseOrder>[] = [
     {
       key: 'priority',
       header: 'Priority',
@@ -112,15 +218,29 @@ export default function PurchaseOrdersPage() {
     },
   ]
 
+  const columns = [checkboxCol, ...dataColumns]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
         title="Purchase Orders"
         subtitle={`${filtered.length} orders`}
         actions={
-          <Button data-tour="new-po-btn" variant="primary" size="sm" onClick={() => navigate('/procurement/purchase-orders/new')}>
-            New PO
-          </Button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button variant="ghost" size="sm" onClick={() => {
+              const header = ['PO Number', 'Vendor', 'Status', 'Priority', 'Total Amount', 'Currency', 'Created', 'Expected Delivery']
+              const rows = filtered.map((o) => [
+                o.po_number, o.vendor_name ?? '', getPOStatusLabel(o.status),
+                PRIORITY_LABELS[o.priority] ?? o.priority,
+                o.total_amount, o.currency_code,
+                o.created_at.slice(0, 10), o.expected_delivery_date ?? '',
+              ])
+              downloadCSV([header, ...rows], `purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`)
+            }}>Export CSV</Button>
+            <Button data-tour="new-po-btn" variant="primary" size="sm" onClick={() => navigate('/procurement/purchase-orders/new')}>
+              New PO
+            </Button>
+          </div>
         }
       />
 
@@ -218,16 +338,86 @@ export default function PurchaseOrdersPage() {
           onToDateChange={setToDate}
           resultCount={filtered.length}
           onRefresh={() => refetch()}
-        />
+        >
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status)
+              setFromDate(r.fromDate)
+              setToDate(r.toDate)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
+
+        {/* ── Bulk action toolbar ── */}
+        {selectedIds.size > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+            padding: '10px 14px',
+            background: theme.accentBg,
+            borderBottom: `1px solid ${theme.accentBorder}`,
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
+              {selectedIds.size} selected
+            </span>
+            <div style={{ width: '1px', height: '18px', background: theme.accentBorder }} />
+            {approvableRows.length > 0 && (
+              <button
+                onClick={() => void handleBulkApprove()}
+                disabled={bulkApproving}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '5px 12px', borderRadius: '7px', fontSize: '12px', fontWeight: 600,
+                  background: theme.accent, color: '#fff', border: 'none',
+                  cursor: bulkApproving ? 'not-allowed' : 'pointer',
+                  opacity: bulkApproving ? 0.6 : 1,
+                }}
+              >
+                {bulkApproving ? 'Approving…' : `Approve (${approvableRows.length})`}
+              </button>
+            )}
+            <button
+              onClick={handleBulkExport}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '5px 12px', borderRadius: '7px', fontSize: '12px', fontWeight: 500,
+                background: theme.bgSurface, color: theme.textSecondary,
+                border: `1px solid ${theme.border}`, cursor: 'pointer',
+              }}
+            >
+              Export selected
+            </button>
+            <button
+              onClick={clearSelection}
+              style={{
+                marginLeft: 'auto', padding: '5px 10px', borderRadius: '7px',
+                fontSize: '12px', background: 'none', border: 'none',
+                color: theme.textMuted, cursor: 'pointer',
+              }}
+            >
+              Deselect all
+            </button>
+          </div>
+        )}
+
         <Table
           columns={columns}
           data={filtered}
           loading={loading}
           rowKey="id"
           onRowClick={(o) => navigate(`/procurement/purchase-orders/${o.id}`)}
-          getRowStyle={(o) => o.priority === 'emergency'
-            ? { background: 'rgba(220,38,38,0.06)', borderLeft: '3px solid #dc2626' }
-            : {}}
+          getRowStyle={(o) => {
+            const base = o.priority === 'emergency'
+              ? { background: 'rgba(220,38,38,0.06)', borderLeft: '3px solid #dc2626' }
+              : {}
+            return selectedIds.has(o.id)
+              ? { ...base, background: theme.accentBg }
+              : base
+          }}
         />
       </Card>
     </div>

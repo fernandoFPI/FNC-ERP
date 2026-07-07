@@ -6,6 +6,10 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', dept: '', showInactive: 'false' }
 import { Table, Column } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -24,12 +28,23 @@ interface Employee {
   hire_date?: string
 }
 
+function downloadCSV(rows: string[][], filename: string) {
+  const content = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob(['﻿' + content, ''], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function EmployeesPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [deptFilter, setDeptFilter] = useState('')
   const [showInactive, setShowInactive] = useState(false)
+  const currentFilters = { search, dept: deptFilter, showInactive: String(showInactive) }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('employees', FILTER_DEFAULTS)
 
   const { data, loading, refetch } = useQuery(EMPLOYEES_QUERY, {
     variables: { department_id: deptFilter || undefined, is_active: showInactive ? undefined : true },
@@ -74,9 +89,21 @@ export default function EmployeesPage() {
         title="Employees"
         subtitle={`${filtered.length} employees`}
         actions={
-          <PermissionGate permission="hr.employees.create" minLevel="edit">
-            <Button data-tour="new-employee-btn" variant="primary" size="sm" onClick={() => navigate('/hr/employees/new')}>New Employee</Button>
-          </PermissionGate>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button variant="ghost" size="sm" onClick={() => {
+              const header = ['Employee Number', 'First Name', 'Last Name', 'Job Title', 'Department', 'Employment Type', 'Status', 'Hire Date']
+              const rows = filtered.map((e) => [
+                e.employee_number ?? '', e.first_name, e.last_name,
+                e.job_title ?? '', e.department_name ?? '',
+                (e.employment_type ?? '').replace('_', ' '),
+                e.status, e.hire_date ?? '',
+              ])
+              downloadCSV([header, ...rows], `employees-${new Date().toISOString().slice(0,10)}.csv`)
+            }}>Export CSV</Button>
+            <PermissionGate permission="hr.employees.create" minLevel="edit">
+              <Button data-tour="new-employee-btn" variant="primary" size="sm" onClick={() => navigate('/hr/employees/new')}>New Employee</Button>
+            </PermissionGate>
+          </div>
         }
       />
 
@@ -102,6 +129,17 @@ export default function EmployeesPage() {
             >
               {showInactive ? 'Hide inactive' : 'Show inactive'}
             </button>
+            <FilterPresets
+              presets={presets}
+              onApply={(preset) => {
+                const r = resolvePreset(preset)
+                setSearch(r.search)
+                setDeptFilter(r.dept)
+                setShowInactive(r.showInactive === 'true')
+              }}
+              onSave={(name) => savePreset(name, currentFilters)}
+              onDelete={deletePreset}
+            />
           </FilterBar>
         </div>
         <Table columns={columns} data={filtered} loading={loading} rowKey="id" onRowClick={(e) => navigate(`/hr/employees/${e.id}`)} />

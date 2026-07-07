@@ -613,6 +613,9 @@ importers:
       '@fnc-erp/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@fnc-erp/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@fnc-erp/fx':
         specifier: workspace:*
         version: link:../../packages/fx

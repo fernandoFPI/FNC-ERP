@@ -252,20 +252,36 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         {!isPhone && (
           <button
             aria-label="Search"
+            title="Search (Ctrl+K)"
+            onClick={() => window.dispatchEvent(new CustomEvent('fnc:open-search', { detail: { prefill: '' } }))}
             style={{
-              width: '34px', height: '34px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '34px',
+              display: 'flex', alignItems: 'center', gap: '6px',
+              padding: '0 10px 0 8px',
               background: theme.bgSurface,
               border: `1px solid ${theme.border}`,
               borderRadius: '8px',
-              color: theme.textSecondary,
+              color: theme.textMuted,
               cursor: 'pointer',
               backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+              flexShrink: 0,
             }}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ flexShrink: 0 }}>
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
+            <span style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>Search</span>
+            <kbd style={{
+              fontSize: '10px',
+              padding: '1px 4px',
+              borderRadius: '4px',
+              background: theme.bgCanvas,
+              border: `1px solid ${theme.border}`,
+              fontFamily: 'inherit',
+              lineHeight: '1.4',
+            }}>
+              Ctrl K
+            </kbd>
           </button>
         )}
 

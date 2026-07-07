@@ -8,6 +8,10 @@ import { Card } from '../../../components/ui/Card'
 import { KPICard } from '../../../components/ui/KPICard'
 import { AssetStatusBadge } from '../../../components/ui/AssetStatusBadge'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '' }
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 
@@ -33,6 +37,8 @@ export default function FleetOverviewPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
+  const currentFilters = { search, status: statusFilter ?? '' }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('fleet_overview', FILTER_DEFAULTS)
 
   const { data, loading, refetch } = useQuery(EQUIPMENT_ASSETS_QUERY, {
     variables: { status: statusFilter },
@@ -101,7 +107,18 @@ export default function FleetOverviewPage() {
 
       {/* Asset grid */}
       <div style={{ marginTop: '16px' }}>
-        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()} />
+        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()}>
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status || undefined)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px', marginTop: '12px' }}>
           {filtered.map(a => (
             <div key={a.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/rental/assets/${a.id}`)}>

@@ -7,6 +7,10 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', category: '', subCategory: '', showLowStock: 'false', showHasBom: 'false' }
 import { Table, Column } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -57,6 +61,8 @@ export default function ProductsPage() {
   const [subCategoryFilter, setSubCategoryFilter] = useState('')
   const [showLowStock, setShowLowStock] = useState(false)
   const [showHasBom, setShowHasBom] = useState(false)
+  const currentFilters = { search, category: categoryFilter, subCategory: subCategoryFilter, showLowStock: String(showLowStock), showHasBom: String(showHasBom) }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('products', FILTER_DEFAULTS)
 
   const { data, loading, refetch } = useQuery(PRODUCTS_QUERY, {
     variables: { category: categoryFilter || undefined },
@@ -203,6 +209,19 @@ export default function ProductsPage() {
             }} />
             Manufactured Only
           </button>
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setCategoryFilter(r.category)
+              setSubCategoryFilter(r.subCategory)
+              setShowLowStock(r.showLowStock === 'true')
+              setShowHasBom(r.showHasBom === 'true')
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
         </FilterBar>
         <Table
           columns={columns}

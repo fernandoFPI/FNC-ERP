@@ -4,12 +4,23 @@ import { logger } from '@fnc-erp/logger'
 
 const log = logger.child({ module: 'email' })
 
-let transporter: Transporter | null = null
+export interface SmtpConfig {
+  host: string
+  port: number
+  secure: boolean
+  user: string
+  password: string
+  fromName?: string
+  fromAddress?: string
+  replyTo?: string
+}
+
+let _cachedTransporter: Transporter | null = null
 
 export function getTransporter(): Transporter {
-  if (transporter) return transporter
+  if (_cachedTransporter) return _cachedTransporter
 
-  transporter = nodemailer.createTransport({
+  _cachedTransporter = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
     secure: env.SMTP_SECURE,
@@ -25,7 +36,7 @@ export function getTransporter(): Transporter {
     socketTimeout: 30_000,
   })
 
-  transporter.verify((err) => {
+  _cachedTransporter.verify((err) => {
     if (err) {
       log.error({ err }, 'SMTP connection verification failed')
     } else {
@@ -33,5 +44,24 @@ export function getTransporter(): Transporter {
     }
   })
 
-  return transporter
+  return _cachedTransporter
+}
+
+export function createTransporterFromConfig(config: SmtpConfig): Transporter {
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: {
+      user: config.user,
+      pass: config.password,
+    },
+    connectionTimeout: 10_000,
+    greetingTimeout: 5_000,
+    socketTimeout: 30_000,
+  })
+}
+
+export function invalidateTransporterCache(): void {
+  _cachedTransporter = null
 }

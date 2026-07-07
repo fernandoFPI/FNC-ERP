@@ -1,4 +1,4 @@
-import { query, pool, getAttachments, createAttachment, removeAttachment, withTransaction } from '@fnc-erp/db'
+import { query, pool, getAttachments, createAttachment, removeAttachment, withTransaction, nextDocumentNumber } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { resolveTransferPrice } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
@@ -3748,7 +3748,7 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
       return withTransaction({ companyId: ctx.auth!.companyId, userId: ctx.auth!.userId, role: ctx.auth!.role }, async (client) => {
-        const poNum = `PO-${Date.now()}`
+        const poNum = await nextDocumentNumber(ctx.auth!.companyId, 'purchase_order', 'PO')
         const subtotal = i.lines.reduce((s, l) => s + l.qty * l.unit_price, 0)
         const po = await client.query(
           `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by)
@@ -4501,7 +4501,7 @@ export const resolvers = {
     createProjectContract: async (_: unknown, args: { projectId: string; input: Record<string, unknown> }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
-      const num = `CTR-${Date.now()}`
+      const num = await nextDocumentNumber(ctx.auth.companyId, 'project_contract', 'CTR')
       const billingMethodMap: Record<string, string> = {
         fixed: 'fixed_lump_sum', fixed_lump_sum: 'fixed_lump_sum',
         milestone: 'milestone',
@@ -4587,7 +4587,7 @@ export const resolvers = {
         if (!contractRow.rows[0]) throw new Error('Contract not found')
         const projectId = contractRow.rows[0].project_id
 
-        const num = `INV-${Date.now()}`
+        const num = await nextDocumentNumber(ctx.auth!.companyId, 'project_invoice', 'INV')
         const lines = (i['lines'] as Array<Record<string, unknown>>) ?? []
         const subtotalBeforeTax = lines.reduce((s, l) => s + (Number(l['qty'] ?? 1) * Number(l['unitCost'] ?? 0)), 0)
         const taxTotal = lines.reduce((s, l) => {
@@ -6151,7 +6151,7 @@ export const resolvers = {
     createRentalContract: async (_: unknown, args: { input: Record<string, unknown> }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
-      const num = `RC-${Date.now()}`
+      const num = await nextDocumentNumber(ctx.auth.companyId, 'rental_contract', 'RC')
       const r = await query(
         `INSERT INTO rental_contracts (company_id,contract_number,asset_id,project_id,client_name,client_contact,
            rental_type,billing_cycle,rate_amount,currency_code,start_date,end_date,deposit_amount,notes,
@@ -6221,7 +6221,7 @@ export const resolvers = {
       const whtScenario = whtApplies ? (args.whtScenario ?? null) : null
       const whtRate     = whtApplies ? Number(args.whtRate ?? 0) : 0
       const whtAmount   = whtApplies ? Math.round(totalAmount * whtRate * 10000) / 10000 : 0
-      const num = `RI-${Date.now()}`
+      const num = await nextDocumentNumber(ctx.auth.companyId, 'rental_invoice', 'RI')
       const due = new Date(end)
       due.setDate(due.getDate() + 30)
       const r = await query(

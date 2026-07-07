@@ -5,6 +5,7 @@ import { useBreakpoint } from '../../hooks/useBreakpoint'
 export interface Column<T> {
   key: string
   header: string
+  renderHeader?: () => React.ReactNode
   width?: string
   render?: (row: T) => React.ReactNode
   sortable?: boolean
@@ -245,7 +246,7 @@ export function Table<T extends object>({
                   zIndex: stickyFirstColumn && i === 0 ? 2 : undefined,
                 }}
               >
-                {col.header}
+                {col.renderHeader ? col.renderHeader() : col.header}
               </th>
             ))}
           </tr>

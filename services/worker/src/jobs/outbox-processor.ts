@@ -1,11 +1,12 @@
-import { pool } from '@fnc-erp/db'
+import { pool, getSystemConfig, isEmailEnabled } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
 import QRCode from 'qrcode'
 import { renderHTMLToPDF, renderPayslip, renderInvoice, renderPurchaseOrder } from '@fnc-erp/pdf'
 import type { PayslipData, InvoiceData, POData } from '@fnc-erp/pdf'
+import type { SmtpConfig } from '@fnc-erp/email'
 import {
-  sendEmail,
+  sendEmail as _sendEmail,
   renderPayslipEmail,
   renderInvoiceEmail,
   renderPOConfirmationEmail,
@@ -21,6 +22,56 @@ import {
 } from './interco-stock-transfer.js'
 
 const log = logger.child({ module: 'outbox-processor' })
+
+// ── SMTP CONFIG CACHE ─────────────────────────────────────────
+// Refreshed from system_config every 5 minutes so SMTP credential changes
+// in the admin UI take effect without restarting the worker.
+let _smtpCache: SmtpConfig | null = null
+let _smtpCacheAt = 0
+const SMTP_TTL_MS = 300_000
+
+async function getSmtpConfigForSend(): Promise<SmtpConfig | null> {
+  if (_smtpCache && Date.now() - _smtpCacheAt < SMTP_TTL_MS) return _smtpCache
+  try {
+    const [host, portStr, secureStr, user, password, fromName, fromAddress, replyTo] =
+      await Promise.all([
+        getSystemConfig('smtp.host'),
+        getSystemConfig('smtp.port'),
+        getSystemConfig('smtp.secure'),
+        getSystemConfig('smtp.user'),
+        getSystemConfig('smtp.password'),
+        getSystemConfig('email.from_name'),
+        getSystemConfig('email.from_address'),
+        getSystemConfig('email.reply_to'),
+      ])
+    if (host && user && password) {
+      const config: SmtpConfig = {
+        host,
+        port: portStr ? parseInt(portStr, 10) : 465,
+        secure: secureStr ? secureStr.toLowerCase() === 'true' : true,
+        user,
+        password,
+      }
+      if (fromName) config.fromName = fromName
+      if (fromAddress) config.fromAddress = fromAddress
+      if (replyTo) config.replyTo = replyTo
+      _smtpCache = config
+      _smtpCacheAt = Date.now()
+      return _smtpCache
+    }
+  } catch (err) {
+    log.warn({ err }, 'failed to load SMTP config from DB — using env fallback')
+  }
+  _smtpCache = null
+  return null
+}
+
+async function sendEmail(
+  ...args: Parameters<typeof _sendEmail>
+): Promise<void> {
+  const smtpConfig = await getSmtpConfigForSend()
+  await _sendEmail(args[0], smtpConfig)
+}
 
 // ── TYPES ─────────────────────────────────────────────────────
 interface OutboxRow {
@@ -290,8 +341,8 @@ async function alertSystemAdminsOfDLQEntry(
           log.error({ err, adminId: admin.id }, 'failed to insert DLQ in-app notification'),
         )
 
-      // Email only for critical and high
-      if (config.dlqPriority === 'critical' || config.dlqPriority === 'high') {
+      // Email only for critical and high, and only if routing allows
+      if ((config.dlqPriority === 'critical' || config.dlqPriority === 'high') && await isEmailEnabled('email.dlq_alert')) {
         const criticalNote =
           config.dlqPriority === 'critical'
             ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:12px 16px;margin-top:16px">
@@ -361,7 +412,7 @@ async function alertSystemAdminsOfDLQEntry(
 }
 
 // ── MAIN PROCESSING LOOP ──────────────────────────────────────
-export async function processOutbox(): Promise<void> {
+export async function processOutbox(): Promise<number> {
   const client = await pool.connect()
   let events: OutboxRow[] = []
 
@@ -391,7 +442,7 @@ export async function processOutbox(): Promise<void> {
     events = result.rows
     if (events.length === 0) {
       await client.query('ROLLBACK')
-      return
+      return 0
     }
 
     // Mark all as processing and record first_attempted_at before releasing lock
@@ -413,12 +464,13 @@ export async function processOutbox(): Promise<void> {
     } catch { /* ignore */ }
     log.error({ err }, 'outbox processor lock/batch error')
     client.release()
-    return
+    return 0
   } finally {
     client.release()
   }
 
   log.debug({ count: events.length }, 'processing outbox batch')
+  const batchSize = events.length
 
   for (const event of events) {
     if (isCircuitOpen(event.service)) {
@@ -508,6 +560,7 @@ export async function processOutbox(): Promise<void> {
       }
     }
   }
+  return batchSize
 }
 
 // ── EVENT DELIVERY ────────────────────────────────────────────
@@ -645,6 +698,9 @@ async function deliverToFinance(event: OutboxRow): Promise<void> {
       break
     case 'RENTAL_INVOICE_JOURNAL_REQUESTED':
       await createRentalInvoiceJournal(event.payload as unknown as RentalInvoiceJournalPayload)
+      break
+    case 'PAYROLL_JOURNAL_REQUESTED':
+      await createPayrollJournal(event.payload as unknown as PayrollJournalPayload)
       break
     default:
       throw new Error(`Unknown finance event: ${event.event_type}`)
@@ -1015,6 +1071,98 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
   log.info({ jeId, invoiceId: p.invoice_id }, 'rental invoice GL journal created')
 }
 
+interface PayrollJournalPayload {
+  payroll_run_id:   string
+  company_id:       string
+  period_name:      string
+  total_gross:      number
+  total_net:        number
+  total_deductions: number
+  end_date:         string
+}
+
+async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
+  const totalGross       = parseFloat(String(p.total_gross))
+  const totalNet         = parseFloat(String(p.total_net))
+  const totalDeductions  = parseFloat(String(p.total_deductions))
+
+  if (totalGross <= 0) return
+
+  // Rounding sanity check: gross must equal net + deductions within 1 fils
+  if (Math.abs(totalGross - totalNet - totalDeductions) > 0.01) {
+    throw new Error(
+      `Payroll totals out of balance for run ${p.payroll_run_id}: ` +
+      `gross=${totalGross} net=${totalNet} deductions=${totalDeductions}`,
+    )
+  }
+
+  // Idempotency: skip if a journal was already created (outbox retry path)
+  const existing = await pool.query<{ journal_entry_id: string | null }>(
+    `SELECT journal_entry_id FROM payroll_runs WHERE id = $1`,
+    [p.payroll_run_id],
+  )
+  if (existing.rows[0]?.['journal_entry_id']) {
+    log.warn({ runId: p.payroll_run_id }, 'payroll journal already exists — skipping duplicate')
+    return
+  }
+
+  // Required GL accounts: 60x expense, 26x net-salaries payable, 25x tax/SS payable
+  // (2400 is reserved for Intercompany Payable across all companies)
+  const accounts = await pool.query<{ id: string; code: string }>(
+    `SELECT id, code FROM chart_of_accounts
+     WHERE company_id = $1 AND is_active = true
+       AND (code LIKE '60%' OR code LIKE '26%' OR code LIKE '25%')
+     ORDER BY code`,
+    [p.company_id],
+  )
+  const salaryExpense   = accounts.rows.find((a) => a['code'].startsWith('60'))
+  const salariesPayable = accounts.rows.find((a) => a['code'].startsWith('26'))
+  const taxSSPayable    = accounts.rows.find((a) => a['code'].startsWith('25'))
+
+  if (!salaryExpense || !salariesPayable || !taxSSPayable) {
+    throw new Error(
+      `Missing payroll GL accounts for company ${p.company_id} — ` +
+      `need 60x (salary expense), 26x (accrued salaries payable), 25x (payroll tax/SS payable)`,
+    )
+  }
+
+  const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
+  const userId = sysUser.rows[0]?.['id'] ?? ''
+
+  const jeResult = await pool.query<{ id: string }>(
+    `INSERT INTO journal_entries
+       (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+     VALUES ($1, 'PAYR-' || LEFT($2::text, 8), $3, $4::date, 'posted', 'payroll_run', $2, $5)
+     RETURNING id`,
+    [p.company_id, p.payroll_run_id, `Payroll expense — ${p.period_name}`, p.end_date, userId],
+  )
+  const jeId = jeResult.rows[0]!['id']
+
+  // Dr Salary & Wages Expense (gross)
+  // Cr Accrued Salaries Payable (net take-home)
+  // Cr Payroll Tax & SS Payable (income tax + social security withheld)
+  await pool.query(
+    `INSERT INTO journal_lines
+       (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+     VALUES ($1, $2, $3, 0,   'IQD', $3),
+            ($1, $4, 0,  $5,  'IQD', $5),
+            ($1, $6, 0,  $7,  'IQD', $7)`,
+    [jeId,
+     salaryExpense['id'],   totalGross,
+     salariesPayable['id'], totalNet,
+     taxSSPayable['id'],    totalDeductions],
+  )
+
+  await pool.query(
+    `UPDATE payroll_runs
+     SET journal_entry_id = $1, status = 'posted', updated_at = NOW()
+     WHERE id = $2`,
+    [jeId, p.payroll_run_id],
+  )
+
+  log.info({ jeId, runId: p.payroll_run_id, period: p.period_name }, 'payroll GL journal created')
+}
+
 // ── Interco ───────────────────────────────────────────────────
 async function deliverToInterco(event: OutboxRow): Promise<void> {
   switch (event.event_type) {
@@ -1075,7 +1223,7 @@ async function handlePayslipPDF(
     [fileKey, payrollRunId, employeeId],
   )
 
-  if (data.employee.email) {
+  if (data.employee.email && await isEmailEnabled('email.payslip')) {
     const emailHtml = renderPayslipEmail({
       employeeName: data.employee.name,
       period: data.payrollRun.name,
@@ -1135,7 +1283,7 @@ async function handleInvoicePDF(invoiceId: string, companyId: string): Promise<v
     [fileKey, invoiceId],
   )
 
-  if (data.client.email) {
+  if (data.client.email && await isEmailEnabled('email.project_invoice')) {
     const emailHtml = renderInvoiceEmail({
       clientName: data.client.name,
       invoiceNumber: data.invoice.number,
@@ -1173,7 +1321,7 @@ async function handlePOPDF(poId: string, companyId: string): Promise<void> {
 
   await pool.query(`UPDATE purchase_orders SET pdf_path=$1 WHERE id=$2`, [fileKey, poId])
 
-  if (data.vendor.email) {
+  if (data.vendor.email && await isEmailEnabled('email.po_confirmation')) {
     const emailHtml = renderPOConfirmationEmail({
       vendorName: data.vendor.name,
       poNumber: data.po.number,
@@ -1257,6 +1405,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
     case 'FX_SYNC_FAILED_ALERT': {
+      if (!(await isEmailEnabled('email.fx_sync_failed'))) break
       const emailHtml = `
         <div style="font-family:Arial;max-width:600px;margin:0 auto">
           <div style="background:#d97706;color:white;padding:16px 24px">
@@ -1376,7 +1525,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
             log.error({ err, adminId: admin.id }, 'failed to insert maintenance alert notification'),
           )
 
-        if (p['urgency'] === 'overdue') {
+        if (p['urgency'] === 'overdue' && await isEmailEnabled('email.maintenance_overdue')) {
           await sendEmail({
             to: admin.email,
             subject: `[OVERDUE] Maintenance required: ${String(p['assetName'])} — ${String(p['scheduleName'])}`,

@@ -10,6 +10,10 @@ import { Button } from '../../../components/ui/Button'
 import { Table, Column } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { FilterPresets } from '../../../components/ui/FilterPresets'
+import { useFilterPresets } from '../../../hooks/useFilterPresets'
+
+const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '' }
 
 interface PaymentVoucher {
   id: string
@@ -47,6 +51,8 @@ export default function PaymentVouchersPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [fromDate, setFromDate]       = useState('')
   const [toDate, setToDate]           = useState('')
+  const currentFilters = { search, status: statusFilter, fromDate, toDate }
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('payment_vouchers', FILTER_DEFAULTS)
 
   const { data, loading, refetch } = useQuery(PAYMENT_VOUCHERS_QUERY, {
     variables: { status: statusFilter || undefined, fromDate: fromDate || undefined, toDate: toDate || undefined },
@@ -131,7 +137,20 @@ export default function PaymentVouchersPage() {
           onToDateChange={setToDate}
           resultCount={filtered.length}
           onRefresh={() => refetch()}
-        />
+        >
+          <FilterPresets
+            presets={presets}
+            onApply={(preset) => {
+              const r = resolvePreset(preset)
+              setSearch(r.search)
+              setStatusFilter(r.status)
+              setFromDate(r.fromDate)
+              setToDate(r.toDate)
+            }}
+            onSave={(name) => savePreset(name, currentFilters)}
+            onDelete={deletePreset}
+          />
+        </FilterBar>
         <Table
           columns={columns}
           data={filtered}
