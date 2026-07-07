@@ -2794,6 +2794,7 @@ export const typeDefs = `#graphql
     resetUserMFA(userId: ID!): Boolean!
     revokeUserSession(sessionId: ID!): Boolean!
     revokeAllUserSessions(userId: ID!): Boolean!
+    adminSetUserPassword(userId: ID!, newPassword: String!): Boolean!
     updateOutboxEventConfig(eventType: String!, input: EventConfigInput!): EventConfig!
 
     updatePassword(currentPassword: String!, newPassword: String!): Boolean!

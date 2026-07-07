@@ -27,6 +27,7 @@ import {
   RESET_USER_MFA,
   REVOKE_USER_SESSION,
   REVOKE_ALL_USER_SESSIONS,
+  ADMIN_SET_USER_PASSWORD,
   COMPANIES_QUERY,
 } from '../../../graphql/admin'
 
@@ -111,6 +112,9 @@ export default function UserDetail() {
   const [removeRoleId, setRemoveRoleId] = useState<string | null>(null)
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
   const [roleForm, setRoleForm] = useState({ companyId: '', role: '', module: '' })
+  const [showSetPasswordModal, setShowSetPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' })
+  const [passwordError, setPasswordError] = useState('')
 
   const { data: companiesData } = useQuery<{ companies: Array<{ id: string; name: string }> }>(COMPANIES_QUERY)
   const companyOptions = (companiesData?.companies ?? []).map((c) => ({ value: c.id, label: c.name }))
@@ -170,6 +174,16 @@ export default function UserDetail() {
     onError: (e) => addToast({ type: 'error', message: e.message }),
   })
 
+  const [setUserPassword, { loading: settingPassword }] = useMutation(ADMIN_SET_USER_PASSWORD, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Password updated. All sessions have been revoked.' })
+      setShowSetPasswordModal(false)
+      setPasswordForm({ newPassword: '', confirmPassword: '' })
+      setPasswordError('')
+    },
+    onError: (e) => { setPasswordError(e.message) },
+  })
+
   const [assignRole, { loading: assigningRole }] = useMutation(ASSIGN_ROLE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Role assigned' })
@@ -215,6 +229,9 @@ export default function UserDetail() {
             {user.mfaEnabled && (
               <Button variant="secondary" size="sm" onClick={() => setConfirmResetMFA(true)} loading={resettingMFA}>Reset MFA</Button>
             )}
+            <Button variant="secondary" size="sm" onClick={() => { setPasswordForm({ newPassword: '', confirmPassword: '' }); setPasswordError(''); setShowSetPasswordModal(true) }}>
+              Set Password
+            </Button>
             {user.isActive ? (
               <Button variant="danger" size="sm" loading={deactivating} onClick={() => setConfirmDeactivate(true)}>Deactivate</Button>
             ) : (
@@ -438,6 +455,56 @@ export default function UserDetail() {
         confirmVariant="danger"
         loading={removingRole}
       />
+
+      {showSetPasswordModal && (
+        <Modal open={showSetPasswordModal} title="Set Password" onClose={() => setShowSetPasswordModal(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '360px' }}>
+            <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
+              Set a new password for <strong style={{ color: theme.textPrimary }}>{user.email}</strong>. All active sessions will be revoked.
+            </p>
+            <div>
+              <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>New Password *</label>
+              <input
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                autoComplete="new-password"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Confirm Password *</label>
+              <input
+                type="password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                autoComplete="new-password"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px', boxSizing: 'border-box' }}
+              />
+            </div>
+            {passwordError && (
+              <p style={{ fontSize: '12px', color: theme.danger, margin: 0 }}>{passwordError}</p>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button variant="ghost" onClick={() => setShowSetPasswordModal(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                loading={settingPassword}
+                disabled={!passwordForm.newPassword || !passwordForm.confirmPassword}
+                onClick={() => {
+                  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+                    setPasswordError('Passwords do not match')
+                    return
+                  }
+                  void setUserPassword({ variables: { userId: id, newPassword: passwordForm.newPassword } })
+                }}
+              >
+                Set Password
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {showAddRoleModal && (
         <Modal open={showAddRoleModal} title="Add Role" onClose={() => setShowAddRoleModal(false)}>

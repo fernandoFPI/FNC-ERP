@@ -8387,6 +8387,27 @@ const phase5MutationResolvers = {
     return true
   },
 
+  adminSetUserPassword: async (_: unknown, args: { userId: string; newPassword: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    if (!args.newPassword || args.newPassword.length < 8) throw new Error('Password must be at least 8 characters')
+    const exists = await query(`SELECT id FROM users WHERE id=$1`, [args.userId])
+    if (!exists.rows[0]) throw new Error('User not found')
+    const passwordHash = await hashPassword(args.newPassword)
+    await query(
+      `UPDATE users SET password_hash=$1, failed_login_attempts=0, locked_until=NULL, updated_at=NOW() WHERE id=$2`,
+      [passwordHash, args.userId],
+    )
+    await query(`DELETE FROM sessions WHERE user_id=$1`, [args.userId])
+    await logAudit({
+      userId: ctx.auth.userId,
+      companyId: undefined,
+      action: 'USER_PASSWORD_CHANGED_BY_ADMIN',
+      tableName: 'users',
+      recordId: args.userId,
+    })
+    return true
+  },
+
   retryOutboxEvent: async (_: unknown, args: { eventId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await query(`UPDATE service_outbox SET status='pending', next_retry_at=NOW() WHERE id=$1`, [args.eventId])
