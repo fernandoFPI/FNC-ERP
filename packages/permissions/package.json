@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "@fnc-erp/permissions",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Permission registry, caching, and middleware for FNC ERP",
   "type": "module",

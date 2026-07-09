@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "@fnc-erp/workflow",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Reusable state machine for status-based workflows (PO, projects, manufacturing)",
   "type": "module",

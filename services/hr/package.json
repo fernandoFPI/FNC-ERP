@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "@fnc-erp/service-hr",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "HR service â€” employees, shifts, geofenced attendance, leave, payroll",
   "type": "module",
