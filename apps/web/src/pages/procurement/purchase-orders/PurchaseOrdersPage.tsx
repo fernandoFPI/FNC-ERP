@@ -35,6 +35,7 @@ interface PurchaseOrder {
   currency_code: string
   created_at: string
   expected_delivery_date?: string
+  invoice_count: number
 }
 
 const STATUS_OPTIONS = [
@@ -200,6 +201,27 @@ export default function PurchaseOrdersPage() {
       key: 'status',
       header: 'Status',
       render: (o) => <Badge variant={getPOStatusVariant(o.status)}>{getPOStatusLabel(o.status)}</Badge>,
+    },
+    {
+      key: 'invoice_count',
+      header: 'AP',
+      render: (o) => {
+        if (o.invoice_count > 0) {
+          return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: '#16a34a', background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', borderRadius: '5px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
+              ✓ AP Complete
+            </span>
+          )
+        }
+        if (['invoiced', 'completed'].includes(o.status)) {
+          return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600, color: '#d97706', background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.25)', borderRadius: '5px', padding: '2px 8px', whiteSpace: 'nowrap' }}>
+              ⚠ Needs Invoice
+            </span>
+          )
+        }
+        return <span style={{ fontSize: '12px', color: theme.textMuted }}>—</span>
+      },
     },
     {
       key: 'total_amount',

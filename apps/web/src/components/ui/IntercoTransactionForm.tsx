@@ -211,7 +211,7 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
                     {fromCompany.name} — Interco Receivable
                   </td>
                   <td style={{ padding: '3px 8px', color: theme.success, textAlign: 'right' as const }}>
-                    {amountNum.toLocaleString('en-US', { minimumFractionDigits: 2 })} {form.currencyCode}
+                    {amountNum.toLocaleString('en-US', { maximumFractionDigits: 2 })} {form.currencyCode}
                   </td>
                   <td style={{ padding: '3px 8px', textAlign: 'right' as const }}>—</td>
                 </tr>
@@ -221,7 +221,7 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
                   </td>
                   <td style={{ padding: '3px 8px', textAlign: 'right' as const }}>—</td>
                   <td style={{ padding: '3px 8px', color: theme.danger, textAlign: 'right' as const }}>
-                    {amountNum.toLocaleString('en-US', { minimumFractionDigits: 2 })} {form.currencyCode}
+                    {amountNum.toLocaleString('en-US', { maximumFractionDigits: 2 })} {form.currencyCode}
                   </td>
                 </tr>
               </tbody>

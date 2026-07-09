@@ -14,7 +14,7 @@ interface CurrencyInputProps {
 }
 
 function formatWithCommas(n: number): string {
-  return n.toLocaleString('en-US', { maximumFractionDigits: 4 })
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
 export function CurrencyInput({

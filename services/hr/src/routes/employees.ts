@@ -26,9 +26,11 @@ const EmployeeSchema = z.object({
 
 employeesRouter.get('/', requirePermission('hr.employees.view', 'view'), async (req, res) => {
   try {
-    const { status, department_id, page = '1', limit = '50' } = req.query
+    const { status, department_id, search, page = '1', limit = '50' } = req.query
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string)
-    let sql = `SELECT e.*, d.name AS department_name, wl.name AS work_location_name
+    let sql = `SELECT e.id, e.first_name, e.last_name, e.employee_number, e.job_title,
+                      e.email, e.status, e.hire_date, e.employment_type,
+                      d.name AS department_name, wl.name AS work_location_name
                FROM employees e
                LEFT JOIN departments d ON d.id = e.department_id
                LEFT JOIN work_locations wl ON wl.id = e.work_location_id
@@ -37,6 +39,11 @@ employeesRouter.get('/', requirePermission('hr.employees.view', 'view'), async (
     let idx = 2
     if (status) { sql += ` AND e.status = $${idx++}`; params.push(status) }
     if (department_id) { sql += ` AND e.department_id = $${idx++}`; params.push(department_id) }
+    if (search) {
+      sql += ` AND (e.first_name ILIKE $${idx} OR e.last_name ILIKE $${idx} OR e.employee_number ILIKE $${idx} OR (e.first_name || ' ' || e.last_name) ILIKE $${idx})`
+      params.push(`%${search}%`)
+      idx++
+    }
     sql += ` ORDER BY e.last_name, e.first_name LIMIT $${idx++} OFFSET $${idx++}`
     params.push(parseInt(limit as string), offset)
     const result = await query(sql, params)

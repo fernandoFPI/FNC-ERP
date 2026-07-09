@@ -274,6 +274,7 @@ export const typeDefs = `#graphql
     expected_delivery_date: String
     created_at: String!
     updated_at: String!
+    invoice_count: Int!
   }
 
   type POPositionAssignment {

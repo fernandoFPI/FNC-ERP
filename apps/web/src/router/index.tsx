@@ -65,6 +65,8 @@ const PurchaseOrderDetail = lazy(() => import('../pages/procurement/purchase-ord
 const ApprovalQueue = lazy(() => import('../pages/procurement/purchase-orders/ApprovalQueue'))
 const MyPOQueue = lazy(() => import('../pages/procurement/purchase-orders/MyPOQueue'))
 const ReceiptForm = lazy(() => import('../pages/procurement/receipts/ReceiptForm'))
+const POReturnForm = lazy(() => import('../pages/procurement/purchase-orders/POReturnForm'))
+const POReturnDetail = lazy(() => import('../pages/procurement/purchase-orders/POReturnDetail'))
 
 // Projects
 const ProjectsLayout = lazy(() => import('../pages/projects/ProjectsLayout'))
@@ -337,6 +339,8 @@ export const router = createBrowserRouter([
           { path: 'purchase-orders/new', element: withPerm('procurement.po.edit', <PurchaseOrderForm />, 'edit') },
           { path: 'purchase-orders/:id', element: withPerm('procurement.po.view', <PurchaseOrderDetail />) },
           { path: 'purchase-orders/:id/receive', element: withPerm('procurement.po.edit', <ReceiptForm />, 'edit') },
+          { path: 'purchase-orders/:id/returns/new', element: withPerm('procurement.po.edit', <POReturnForm />, 'edit') },
+          { path: 'purchase-orders/:id/returns/:returnId', element: withPerm('procurement.po.view', <POReturnDetail />) },
           { path: 'vendors', element: withPerm('procurement.vendors.view', <VendorsPage />) },
           { path: 'vendors/new', element: withPerm('procurement.vendors.edit', <VendorForm />, 'edit') },
           { path: 'vendors/:id', element: withPerm('procurement.vendors.view', <VendorDetail />) },

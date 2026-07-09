@@ -140,24 +140,51 @@ payrollRouter.post('/:id/process', requirePermission('payroll.runs.approve', 'ap
           const grossSalary = Math.round((baseSalary + housingAllowance + transportAllowance + otherAllowances + overtimePay) * 10000) / 10000
           const incomeTax = Math.round(grossSalary * incomeTaxPct * 10000) / 10000
           const socialSecurity = Math.round(baseSalary * ssPct * 10000) / 10000
-          const netSalary = Math.round((grossSalary - incomeTax - socialSecurity) * 10000) / 10000
 
-          totalGross += grossSalary; totalNet += netSalary; totalDeductions += incomeTax + socialSecurity
+          // Apply any pending salary deduction requests for this employee
+          const deductionResult = await client.query<{ id: string; amount: string }>(
+            `SELECT id, amount FROM salary_deduction_requests
+             WHERE employee_id=$1 AND company_id=$2 AND status='pending'`,
+            [emp.id, companyId],
+          )
+          const otherDeductions = deductionResult.rows.reduce(
+            (sum, d) => sum + parseFloat(d.amount), 0,
+          )
 
-          await client.query(
+          const netSalary = Math.round((grossSalary - incomeTax - socialSecurity - otherDeductions) * 10000) / 10000
+
+          totalGross += grossSalary; totalNet += netSalary
+          totalDeductions += incomeTax + socialSecurity + otherDeductions
+
+          const payslipResult = await client.query(
             `INSERT INTO payslips (payroll_run_id, employee_id, company_id, base_salary, housing_allowance,
              transport_allowance, other_allowances, overtime_hours, overtime_pay, gross_salary,
-             income_tax, social_security, net_salary, currency_code, leave_days)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+             income_tax, social_security, other_deductions, net_salary, currency_code, leave_days)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
              ON CONFLICT (payroll_run_id, employee_id) DO UPDATE SET
              gross_salary = EXCLUDED.gross_salary, net_salary = EXCLUDED.net_salary,
              overtime_hours = EXCLUDED.overtime_hours, overtime_pay = EXCLUDED.overtime_pay,
              income_tax = EXCLUDED.income_tax, social_security = EXCLUDED.social_security,
-             leave_days = EXCLUDED.leave_days, updated_at = NOW()`,
+             other_deductions = EXCLUDED.other_deductions,
+             leave_days = EXCLUDED.leave_days, updated_at = NOW()
+             RETURNING id`,
             [run['id'], emp.id, companyId, baseSalary, housingAllowance, transportAllowance,
              otherAllowances, overtimeHours, overtimePay, grossSalary, incomeTax, socialSecurity,
-             netSalary, emp['currency_code'], leaveDays],
+             Math.round(otherDeductions * 10000) / 10000, netSalary, emp['currency_code'], leaveDays],
           )
+          const payslipId = (payslipResult.rows[0] as { id: string }).id
+
+          // Mark deduction requests as applied
+          if (deductionResult.rows.length > 0) {
+            const deductionIds = deductionResult.rows.map((d) => d.id)
+            await client.query(
+              `UPDATE salary_deduction_requests
+               SET status='applied', applied_payroll_run_id=$1, applied_at=now(), updated_at=now()
+               WHERE id = ANY($2::uuid[])`,
+              [run['id'], deductionIds],
+            )
+            void payslipId
+          }
         }
 
         await client.query(

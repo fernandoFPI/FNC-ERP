@@ -5,6 +5,7 @@ import { useCompanyStore } from '../../../store/companyStore'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
 import { api } from '../../../lib/axios'
+import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -128,7 +129,7 @@ export default function APDashboard() {
       setApprovingId(null)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message ?? 'Approval failed' })
+      addToast({ type: 'error', message: apiErrMsg(e, 'Approval failed') })
     } finally {
       setApproveLoading(false)
     }

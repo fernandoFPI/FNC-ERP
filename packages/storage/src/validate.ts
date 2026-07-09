@@ -31,6 +31,13 @@ export const ALLOWED_TYPES: Record<string, string[]> = {
     'image/heic',
     'image/heif',
   ],
+  po_return_damage_photo: [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+  ],
 }
 
 const BLOCKED_EXTENSIONS = [

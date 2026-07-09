@@ -18,7 +18,7 @@ const uploadUrlSchema = z.object({
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1).max(100),
   sizeBytes: z.number().int().positive(),
-  category: z.enum(['contract', 'identity', 'attachment', 'report', 'po_receipt_photo']),
+  category: z.enum(['contract', 'identity', 'attachment', 'report', 'po_receipt_photo', 'po_return_damage_photo']),
 })
 
 // ── POST /api/v1/files/upload-url ─────────────────────────────
@@ -184,6 +184,73 @@ filesRouter.post(
     }
   },
 )
+
+// ── GET /api/v1/files/attachments?entityType=X&entityId=Y ──────
+filesRouter.get('/attachments', requireAuth(), async (req, res) => {
+  const { entityType, entityId } = req.query as { entityType?: string; entityId?: string }
+  if (!entityType || !entityId) {
+    res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'entityType and entityId are required' } })
+    return
+  }
+  try {
+    const rows = await query(
+      `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, f.category,
+              da.label, da.is_primary, da.created_at
+       FROM document_attachments da
+       JOIN files f ON f.id = da.file_id
+       WHERE da.entity_type=$1 AND da.entity_id=$2 AND f.company_id=$3 AND f.status != 'deleted'
+       ORDER BY da.created_at`,
+      [entityType, entityId, req.auth!.companyId],
+    )
+    // Generate short-lived download URLs for each file
+    const withUrls = await Promise.all(rows.rows.map(async (row) => {
+      const r = row as { file_id: string; [k: string]: unknown }
+      const file = await query<{ file_key: string }>(
+        `SELECT file_key FROM files WHERE id=$1`, [r.file_id],
+      )
+      try {
+        const { downloadUrl } = await generateDownloadUrl(file.rows[0]!.file_key, String(r['original_filename']))
+        return { ...r, download_url: downloadUrl }
+      } catch {
+        return { ...r, download_url: null }
+      }
+    }))
+    res.json({ success: true, data: withUrls })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to list attachments' } })
+  }
+})
+
+// ── POST /api/v1/files/attach ──────────────────────────────────
+filesRouter.post('/attach', requireAuth(), async (req, res) => {
+  const { fileId, entityType, entityId, label } = req.body as {
+    fileId?: string; entityType?: string; entityId?: string; label?: string
+  }
+  if (!fileId || !entityType || !entityId) {
+    res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'fileId, entityType, and entityId are required' } })
+    return
+  }
+  const file = await query(
+    `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
+    [fileId, req.auth!.companyId],
+  )
+  if (!file.rows[0]) {
+    res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found or not yet uploaded' } })
+    return
+  }
+  try {
+    await query(
+      `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (file_id, entity_type, entity_id) DO NOTHING`,
+      [fileId, entityType, entityId, label ?? null, req.auth!.userId],
+    )
+    await query(`UPDATE files SET status='attached' WHERE id=$1`, [fileId])
+    res.json({ success: true, data: { message: 'File attached' } })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to attach file' } })
+  }
+})
 
 // ── DELETE /api/v1/files/:fileId ───────────────────────────────
 filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {

@@ -11,15 +11,22 @@ export function formatDate(date: string | Date, format?: string): string {
 }
 
 export function formatNumber(value: number, format?: string): string {
+  const n = parseFloat(String(value))
+  if (isNaN(n)) return '—'
   const fmt = format ?? 'standard'
   if (fmt === 'european') {
-    return value.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    return n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
   }
-  return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
-export function formatCurrency(amount: number, currency: string, format?: string): string {
-  return `${formatNumber(amount, format)} ${currency}`
+export function formatCurrency(amount: number | string, currency: string, format?: string): string {
+  return `${formatNumber(parseFloat(String(amount)), format)} ${currency}`
+}
+
+// For input field defaults: strips trailing zeros so "10.0000" → "10", "10.5000" → "10.5"
+export function stripTrailingZeros(value: number | string): string {
+  return String(parseFloat(String(value)))
 }
 
 export function formatRelativeTime(date: string | Date): string {

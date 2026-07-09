@@ -4,6 +4,7 @@ import { vendorsRouter } from './routes/vendors.js'
 import { ordersRouter } from './routes/orders.js'
 import { receiptsRouter } from './routes/receipts.js'
 import { poAttachmentsRouter, poReceiptAttachmentsRouter, vendorAttachmentsRouter } from './routes/attachments.js'
+import { returnsRouter } from './routes/returns.js'
 
 export function createApp(): import('express').Express {
   const app = express()
@@ -23,6 +24,8 @@ export function createApp(): import('express').Express {
   app.use('/procurement/orders', receiptsRouter)
   app.use('/procurement/purchase-orders', receiptsRouter)
   app.use('/procurement/receipts', poReceiptAttachmentsRouter)
+  app.use('/procurement/purchase-orders/:poId/returns', returnsRouter)
+  app.use('/procurement/orders/:poId/returns', returnsRouter)
 
   return app
 }
