@@ -286,7 +286,7 @@ export default function RentalContractForm() {
                   {(
                     parseFloat(form.depreciation_per_day) *
                     (Math.ceil((new Date(form.end_date).getTime() - new Date(form.start_date).getTime()) / 86400000) + 1)
-                  ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   {' '}{form.currency_code}
                 </strong>
               </div>

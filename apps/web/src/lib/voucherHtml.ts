@@ -321,10 +321,11 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
     ? data.linked_pos.map((p) => `${p.po_number}${p.vendor_name ? ' – ' + p.vendor_name : ''}`).join(', ')
     : ''
 
-  // Row y-positions: table header 40-53mm, data rows from 54mm, pitch 14mm
+  // Row y-positions: table header 40-53mm, data rows from 54mm, pitch 7mm
+  // MAX_ROWS=8 so totalY lands at 112mm (main table totals), above cost center section (~120mm)
   const ROW_START = 54
   const ROW_H = 7
-  const MAX_ROWS = 10
+  const MAX_ROWS = 8
 
   const lineOverlays = data.lines.slice(0, MAX_ROWS).map((l, i) => {
     const y = ROW_START + i * ROW_H
@@ -343,7 +344,7 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
     `
   }).join('')
 
-  const totalY = ROW_START + MAX_ROWS * ROW_H + 2
+  const totalY = ROW_START + MAX_ROWS * ROW_H + 6
   const sigY = totalY + 80
 
   return `<!DOCTYPE html><html dir="ltr">
@@ -353,10 +354,11 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
 <div class="page">
   <div class="tmpl-bg"><img src="${template}" alt=""/></div>
 
-  <!-- Reference and page fields (top-left) -->
-  <span class="val" style="top:19mm;left:30mm;width:80mm;font-size:9.5px">${linkedPOList || data.description || ''}</span>
-  <span class="val val-c" style="top:19mm;left:155mm;width:40mm;font-size:10px;font-weight:600">${data.reference}</span>
-  <span class="val val-c" style="top:26mm;left:155mm;width:40mm;font-size:10px">${fmtDate(data.entry_date)}</span>
+  <!-- Left header: linked PO / description in "وذلك عن" field -->
+  <span class="val" style="top:19mm;left:20mm;width:80mm;font-size:9.5px">${linkedPOList || data.description || ''}</span>
+  <!-- Right header: entry reference + date (below company logo, right panel) -->
+  <span class="val val-c" style="top:30mm;left:200mm;width:70mm;font-size:10px;font-weight:600">${data.reference}</span>
+  <span class="val val-c" style="top:37mm;left:200mm;width:70mm;font-size:10px">${fmtDate(data.entry_date)}</span>
 
   <!-- Data rows -->
   ${lineOverlays}
@@ -364,8 +366,8 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
   <!-- Totals row -->
   <span class="val val-r" style="top:${totalY}mm;left:104mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
   <span class="val val-r" style="top:${totalY}mm;left:120mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
-  <span class="val val-r" style="top:${totalY}mm;left:136mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
-  <span class="val val-r" style="top:${totalY}mm;left:152mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
+  <span class="val val-r" style="top:${totalY}mm;left:185mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
+  <span class="val val-r" style="top:${totalY}mm;left:210mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
 
   <!-- Signatures -->
   <span class="val" style="top:${sigY}mm;left:8mm;width:80mm;font-size:9px">${data.accountant_email ?? ''}</span>

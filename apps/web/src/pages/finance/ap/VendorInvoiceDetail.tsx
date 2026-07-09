@@ -79,7 +79,7 @@ const PAYMENT_METHODS: Record<string, string> = {
 }
 
 function fmtAmt(v: string | number) {
-  return parseFloat(String(v ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return parseFloat(String(v ?? 0)).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {

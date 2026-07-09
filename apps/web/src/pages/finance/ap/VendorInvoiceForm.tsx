@@ -413,7 +413,7 @@ export default function VendorInvoiceForm() {
                         style={{ ...inputStyle(theme as unknown as Record<string, string>), width: '100px' }} />
                     </td>
                     <td style={{ padding: '6px 10px', color: theme.textPrimary, whiteSpace: 'nowrap' }}>
-                      {form.currency_code} {lineTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {form.currency_code} {lineTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                     </td>
                     <td style={{ padding: '6px 10px', minWidth: '160px' }}>
                       <SearchableSelect
@@ -483,7 +483,7 @@ export default function VendorInvoiceForm() {
             <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontSize: '12px' }}>
               <span style={{ color: theme.textMuted }}>{row.label}</span>
               <span style={{ color: row.color ?? theme.textPrimary, fontWeight: row.bold ? 700 : 400 }}>
-                {form.currency_code} {row.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {form.currency_code} {row.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </span>
             </div>
           ))}

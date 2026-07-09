@@ -637,7 +637,9 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      let sql = `SELECT po.*, v.name AS vendor_name FROM purchase_orders po LEFT JOIN vendors v ON v.id = po.vendor_id WHERE po.company_id = $1`
+      let sql = `SELECT po.*, v.name AS vendor_name,
+        (SELECT COUNT(*) FROM vendor_invoices vi WHERE vi.po_id = po.id AND vi.company_id = po.company_id)::int AS invoice_count
+        FROM purchase_orders po LEFT JOIN vendors v ON v.id = po.vendor_id WHERE po.company_id = $1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
       if (args.status !== undefined) {

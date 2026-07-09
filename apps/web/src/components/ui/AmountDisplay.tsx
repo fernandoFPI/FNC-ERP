@@ -14,9 +14,8 @@ const fontSizes = { sm: '12px', md: '13px', lg: '16px' }
 export function AmountDisplay({ amount, currency, size = 'md', showSign = false, colored = false }: AmountDisplayProps) {
   const { theme } = useTheme()
   const formatted = new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Math.abs(amount))
+  }).format(Math.abs(parseFloat(String(amount))))
 
   const sign = amount < 0 ? '−' : (showSign && amount > 0 ? '+' : '')
   const color = colored ? (amount < 0 ? theme.danger : amount > 0 ? theme.success : theme.textPrimary) : 'inherit'

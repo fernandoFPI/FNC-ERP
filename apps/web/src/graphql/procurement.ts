@@ -36,7 +36,7 @@ export const PURCHASE_ORDERS_QUERY = gql`
     purchaseOrders(status: $status, vendor_id: $vendorId, project_id: $projectId) {
       id po_number vendor_name vendor_id status priority
       total_amount currency_code created_at analytic_account_id
-      expected_delivery_date assigned_to_email
+      expected_delivery_date assigned_to_email invoice_count
     }
   }
 `

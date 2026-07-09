@@ -379,7 +379,7 @@ export default function InvoiceDetail() {
                             />
                           </td>
                           <td style={{ padding: '6px 12px', fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary, fontWeight: 600 }}>
-                            {preview.toLocaleString(undefined, { minimumFractionDigits: 2 })} {cur}
+                            {preview.toLocaleString(undefined, { maximumFractionDigits: 2 })} {cur}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <button

@@ -131,7 +131,7 @@ export default function SalaryConfigForm() {
               ].map(({ label, value, bold }) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: bold ? '14px' : '13px', fontWeight: bold ? 700 : 400, color: bold ? theme.textPrimary : theme.textSecondary, borderTop: bold ? `1px solid ${theme.border}` : undefined, paddingTop: bold ? '8px' : undefined, marginTop: bold ? '4px' : undefined }}>
                   <span>{label}</span>
-                  <span style={{ fontFamily: 'monospace', color: value < 0 ? theme.danger : undefined }}>{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {form.currency_code}</span>
+                  <span style={{ fontFamily: 'monospace', color: value < 0 ? theme.danger : undefined }}>{value.toLocaleString(undefined, { maximumFractionDigits: 2 })} {form.currency_code}</span>
                 </div>
               ))}
             </div>
