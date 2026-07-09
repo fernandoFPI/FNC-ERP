@@ -2,6 +2,7 @@
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
+import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -91,7 +92,7 @@ export default function CostCentersPage() {
       setModalOpen(false)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message ?? 'Save failed' })
+      addToast({ type: 'error', message: apiErrMsg(e, 'Save failed') })
     } finally {
       setSaving(false)
     }
@@ -106,7 +107,7 @@ export default function CostCentersPage() {
       setDeletingId(null)
       void fetchData()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message ?? 'Delete failed' })
+      addToast({ type: 'error', message: apiErrMsg(e, 'Delete failed') })
     } finally {
       setDeleteLoading(false)
     }

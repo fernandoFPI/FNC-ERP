@@ -96,6 +96,38 @@ export default function PurchaseOrdersPage() {
       render: (o) => <Badge variant={getPOStatusVariant(o.status)}>{getPOStatusLabel(o.status)}</Badge>,
     },
     {
+      key: 'ap_status',
+      header: 'AP',
+      width: '110px',
+      render: (o) => {
+        if (o.status === 'invoiced') {
+          return (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '5px',
+              background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.35)',
+              color: '#b45309', letterSpacing: '0.03em',
+            }}>
+              ⏳ Pending Completion
+            </span>
+          )
+        }
+        if (o.status === 'completed') {
+          return (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '4px',
+              fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '5px',
+              background: 'rgba(22,163,74,0.1)', border: '1px solid rgba(22,163,74,0.3)',
+              color: '#15803d', letterSpacing: '0.03em',
+            }}>
+              ✓ AP Complete
+            </span>
+          )
+        }
+        return null
+      },
+    },
+    {
       key: 'total_amount',
       header: 'Total',
       render: (o) => <AmountDisplay amount={parseFloat(o.total_amount)} currency={o.currency_code} />,

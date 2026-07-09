@@ -3,8 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
-import axios from 'axios'
 import { api } from '../../../lib/axios'
+import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -109,6 +109,9 @@ export default function VendorInvoiceDetail() {
   const [payOpen, setPayOpen] = useState(false)
   const [payForm, setPayForm] = useState({ amount: '', payment_date: new Date().toISOString().slice(0, 10), payment_method: 'bank_transfer', payment_reference: '', notes: '' })
   const [payLoading, setPayLoading] = useState(false)
+  const [linkPOId, setLinkPOId] = useState('')
+  const [linkLoading, setLinkLoading] = useState(false)
+  const [poOptions, setPoOptions] = useState<{ value: string; label: string }[]>([])
 
   async function fetchInvoice() {
     setLoading(true)
@@ -124,12 +127,30 @@ export default function VendorInvoiceDetail() {
 
   useEffect(() => { void fetchInvoice() }, [id])
 
-  function apiErrMsg(e: unknown, fallback: string): string {
-    if (axios.isAxiosError(e)) {
-      const body = e.response?.data as { error?: { message?: string }; message?: string } | undefined
-      return body?.error?.message ?? body?.message ?? fallback
+  useEffect(() => {
+    if (!invoice || invoice.po_id) return
+    type PORow = { id: string; po_number: string }
+    api.get<PORow[] | { items?: PORow[] }>('/procurement/purchase-orders', { params: { limit: 200 } })
+      .then(r => {
+        const d = r.data
+        const list: PORow[] = Array.isArray(d) ? d : ((d as { items?: PORow[] }).items ?? [])
+        setPoOptions(list.map(p => ({ value: p.id, label: p.po_number })))
+      })
+      .catch(() => {})
+  }, [invoice])
+
+  async function handleLinkPO() {
+    if (!linkPOId) return
+    setLinkLoading(true)
+    try {
+      await api.patch(`/finance/vendor-invoices/${id}/link-po`, { po_id: linkPOId })
+      addToast({ type: 'success', message: 'PO linked successfully' })
+      void fetchInvoice()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: apiErrMsg(e, 'Failed to link PO') })
+    } finally {
+      setLinkLoading(false)
     }
-    return (e as Error).message ?? fallback
   }
 
   async function runAction(action: 'submit' | 'approve' | 'cancel') {
@@ -224,6 +245,34 @@ export default function VendorInvoiceDetail() {
       {inv.rejection_reason && (
         <div style={{ padding: '10px 14px', background: `${theme.danger}18`, border: `1px solid ${theme.danger}`, borderRadius: '6px', marginBottom: '16px', fontSize: '12px', color: theme.danger }}>
           <strong>Rejected:</strong> {inv.rejection_reason}
+        </div>
+      )}
+
+      {!inv.po_id && (
+        <div style={{
+          padding: '12px 16px', marginBottom: '16px', borderRadius: '8px',
+          background: theme.warningBg, border: `1px solid ${theme.warningBorder}`,
+          display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+        }}>
+          <div style={{ flex: 1, minWidth: '180px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: theme.warning }}>Not linked to a PO</div>
+            <div style={{ fontSize: '11px', color: theme.warning, opacity: 0.85, marginTop: '2px' }}>
+              Link this invoice to a PO so it appears on the PO detail page and in audit reports.
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', minWidth: '260px' }}>
+            <div style={{ flex: 1 }}>
+              <SearchableSelect
+                value={linkPOId}
+                onChange={setLinkPOId}
+                options={poOptions}
+                placeholder="Select PO…"
+              />
+            </div>
+            <Button variant="primary" size="sm" loading={linkLoading} disabled={!linkPOId} onClick={() => void handleLinkPO()}>
+              Link
+            </Button>
+          </div>
         </div>
       )}
 

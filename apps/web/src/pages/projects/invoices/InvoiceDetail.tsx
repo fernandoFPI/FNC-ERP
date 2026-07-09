@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@apollo/client'
 import { PROJECT_INVOICE_QUERY, VOID_PROJECT_INVOICE, UPDATE_PROJECT_INVOICE } from '../../../graphql/projects'
 import { BANK_ACCOUNTS_QUERY, SET_INVOICE_BANK_ACCOUNT, SET_INVOICE_PAYMENT_TYPE } from '../../../graphql/admin'
 import { useTheme } from '../../../theme/ThemeContext'
+import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -113,7 +114,7 @@ export default function InvoiceDetail() {
       addToast({ type: 'success', message: successMsg })
       void refetch()
     } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message ?? 'Action failed' })
+      addToast({ type: 'error', message: apiErrMsg(e, 'Action failed') })
     } finally {
       setTransitioning(false)
     }

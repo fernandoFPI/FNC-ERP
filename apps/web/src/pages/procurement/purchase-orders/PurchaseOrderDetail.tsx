@@ -221,13 +221,6 @@ export default function PurchaseOrderDetail() {
   const { isSystemLevel, can } = usePermission()
   const [apInvoice, setApInvoice] = useState<{ id: string; invoice_number: string; status: string } | null | undefined>(undefined)
 
-  useEffect(() => {
-    if (!id) return
-    api.get<{ data: { id: string; invoice_number: string; status: string }[] }>('/finance/vendor-invoices', { params: { po_id: id, limit: 1 } })
-      .then(r => setApInvoice(r.data?.data?.[0] ?? null))
-      .catch(() => setApInvoice(null))
-  }, [id])
-
   const fetchLineComments = React.useCallback(() => {
     if (!id) return
     type RawComment = { id: string; po_line_id: string; comment: string; created_by_name: string; created_at: string; flag?: string | null; resolved: boolean; resolved_at?: string | null }
@@ -250,6 +243,26 @@ export default function PurchaseOrderDetail() {
 
   const { data, loading, refetch } = useQuery(PO_LIFECYCLE_QUERY, { variables: { id }, fetchPolicy: 'cache-and-network' })
   const po: PO | undefined = data?.purchaseOrder
+
+  useEffect(() => {
+    if (!id) return
+    type APInv = { id: string; invoice_number: string; status: string }
+    api.get<{ items: APInv[] }>('/finance/vendor-invoices', { params: { po_id: id, limit: 1 } })
+      .then(async r => {
+        const byPoId = r.data?.items?.[0] ?? null
+        if (byPoId) { setApInvoice(byPoId); return }
+        // Fallback: workflow-imported POs have duplicate UUIDs per company.
+        // If the invoice was created in another company context, look up by auto-generated number.
+        if (po?.po_number) {
+          const autoNum = 'INV-' + po.po_number.replace(/^PO-/i, '')
+          const r2 = await api.get<{ items: APInv[] }>('/finance/vendor-invoices', { params: { invoice_number: autoNum, cross_company: 'true', limit: 1 } })
+          setApInvoice(r2.data?.items?.[0] ?? null)
+        } else {
+          setApInvoice(null)
+        }
+      })
+      .catch(() => setApInvoice(null))
+  }, [id, po?.po_number])
 
   const { data: stockData } = useQuery(PO_STOCK_AVAILABILITY_QUERY, {
     variables: { poId: id },
@@ -920,14 +933,84 @@ export default function PurchaseOrderDetail() {
             })()}
 
             {po.status === 'invoiced' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ padding: '10px 14px', borderRadius: '8px', background: '#eff6ff', border: '1px solid #3b82f6', fontSize: '13px', color: '#1e40af' }}>
-                  PO has been invoiced. Mark as completed once the payment voucher is paid.
+              can('finance.ap.view') ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {/* AP vendor invoice status — finance users only */}
+                  {apInvoice ? (
+                    <div style={{
+                      padding: '10px 14px', borderRadius: '8px',
+                      background: theme.accentBg,
+                      border: `1px solid ${theme.accent}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>Vendor Invoice Created</div>
+                        <div style={{ fontSize: '11px', color: theme.textSecondary, marginTop: '2px' }}>
+                          {apInvoice.invoice_number} — <span style={{ textTransform: 'capitalize' }}>{apInvoice.status}</span>
+                        </div>
+                      </div>
+                      <Button variant="secondary" size="sm" onClick={() => navigate(`/finance/ap/${apInvoice.id}`)}>
+                        View in AP
+                      </Button>
+                    </div>
+                  ) : can('finance.ap.edit') ? (
+                    <div style={{
+                      padding: '10px 14px', borderRadius: '8px',
+                      background: theme.dangerBg,
+                      border: `1px solid ${theme.dangerBorder}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                    }}>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.danger }}>No vendor invoice in AP yet</div>
+                        <div style={{ fontSize: '11px', color: theme.danger, opacity: 0.8, marginTop: '2px' }}>
+                          Create a vendor invoice in AP to trigger the journal entry and payment flow.
+                        </div>
+                      </div>
+                      <Button variant="primary" size="sm" onClick={() => navigate(`/finance/ap/new?po_id=${po.id}`)}>
+                        Create in AP
+                      </Button>
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: '10px 14px', borderRadius: '8px',
+                      background: theme.bgSurface,
+                      border: `1px solid ${theme.border}`,
+                      fontSize: '12px', color: theme.textSecondary,
+                    }}>
+                      No vendor invoice created yet.
+                    </div>
+                  )}
+
+                  {can('finance.ap.approve', 'approve') && (
+                    <>
+                      <Button
+                        variant={apInvoice?.status === 'paid' ? 'primary' : 'secondary'}
+                        loading={anyLoading}
+                        disabled={apInvoice?.status !== 'paid' && apInvoice !== null}
+                        onClick={() => void completePO({ variables: { id: po.id } })}
+                      >
+                        Mark as Completed
+                      </Button>
+                      {apInvoice && apInvoice.status !== 'paid' && (
+                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                          "Mark as Completed" will be enabled once the vendor invoice is fully paid.
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <Button variant="primary" loading={anyLoading} onClick={() => void completePO({ variables: { id: po.id } })}>
-                  Mark as Completed
-                </Button>
-              </div>
+              ) : (
+                <div style={{
+                  padding: '10px 14px', borderRadius: '8px',
+                  background: theme.bgSurface,
+                  border: `1px solid ${theme.border}`,
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>Awaiting Finance</div>
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                    This PO has been invoiced and is now with the Finance team for vendor invoice processing and payment. No action required from you.
+                  </div>
+                </div>
+              )
             )}
 
             {po.status === 'rejected' && (
@@ -941,42 +1024,6 @@ export default function PurchaseOrderDetail() {
               </div>
             )}
 
-            {isSystemLevel && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', paddingTop: '10px', borderTop: `1px dashed ${theme.border}` }}>
-                <span style={{ fontSize: '11px', color: theme.textMuted, whiteSpace: 'nowrap' }}>Admin override:</span>
-                <SearchableSelect
-                  value={adminPoStatus}
-                  onChange={setAdminPoStatus}
-                  placeholder="Force set status…"
-                  options={[
-                    { value: 'draft', label: 'Draft' },
-                    { value: 'inventory_check', label: 'Inventory Check' },
-                    { value: 'store_pricing', label: 'Store Pricing' },
-                    { value: 'market_pricing', label: 'Market Pricing' },
-                    { value: 'price_verification', label: 'Price Verification' },
-                    { value: 'pending_approval', label: 'Pending Approval' },
-                    { value: 'approved', label: 'Approved' },
-                    { value: 'ready_to_issue', label: 'Ready to Issue' },
-                    { value: 'goods_received', label: 'Goods Received' },
-                    { value: 'finance_audit', label: 'Finance Audit' },
-                    { value: 'invoiced', label: 'Invoiced' },
-                    { value: 'completed', label: 'Completed' },
-                    { value: 'rejected', label: 'Rejected' },
-                    { value: 'cancelled', label: 'Cancelled' },
-                    { value: 'deleted', label: 'Deleted' },
-                  ]}
-                />
-                <Button
-                  variant="danger"
-                  size="sm"
-                  disabled={!adminPoStatus || adminPoStatus === po.status}
-                  loading={adminSetting}
-                  onClick={() => void adminSetPOStatus({ variables: { id: po.id, status: adminPoStatus } })}
-                >
-                  Apply
-                </Button>
-              </div>
-            )}
 
             {!['rejected', 'goods_received', 'finance_audit'].includes(po.status) && (
               <div style={{ paddingTop: '8px', borderTop: `1px dashed ${theme.border}` }}>
@@ -991,12 +1038,24 @@ export default function PurchaseOrderDetail() {
             )}
 
             {!['rejected'].includes(po.status) && (
-              <div style={{ paddingTop: '8px', borderTop: `1px dashed ${theme.border}` }}>
-                <span style={{ fontSize: '11px', color: theme.textMuted }}>Cancel this PO: </span>
+              <div style={{
+                marginTop: '4px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: theme.dangerBg,
+                border: `1px solid ${theme.dangerBorder}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+              }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: theme.danger }}>Cancel this PO</div>
+                  <div style={{ fontSize: '11px', color: theme.danger, opacity: 0.8, marginTop: '1px' }}>This action cannot be undone without admin override.</div>
+                </div>
                 <Button
-                  variant="ghost"
+                  variant="danger"
                   size="sm"
-                  style={{ color: '#dc2626' }}
                   onClick={() => {
                     const reason = window.prompt('Cancel reason (optional):') ?? ''
                     void cancelPO({ variables: { id: po.id, reason: reason || undefined } })
@@ -1006,6 +1065,59 @@ export default function PurchaseOrderDetail() {
                 </Button>
               </div>
             )}
+          </div>
+        </Card>
+      )}
+
+      {/* Admin override — always visible to system admins regardless of PO status */}
+      {isSystemLevel && (
+        <Card style={{ marginBottom: '16px', padding: '0', overflow: 'hidden', border: `1px solid ${theme.dangerBorder}` }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 16px',
+            background: theme.dangerBg,
+            borderBottom: `1px solid ${theme.dangerBorder}`,
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={theme.danger} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: theme.danger, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Admin Override</span>
+            <span style={{ fontSize: '11px', color: theme.danger, opacity: 0.7, marginLeft: 'auto' }}>Force-set status — bypasses workflow</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px' }}>
+            <SearchableSelect
+              value={adminPoStatus}
+              onChange={setAdminPoStatus}
+              placeholder="Select target status…"
+              options={[
+                { value: 'draft', label: 'Draft' },
+                { value: 'inventory_check', label: 'Inventory Check' },
+                { value: 'store_pricing', label: 'Store Pricing' },
+                { value: 'market_pricing', label: 'Market Pricing' },
+                { value: 'price_verification', label: 'Price Verification' },
+                { value: 'pending_approval', label: 'Pending Approval' },
+                { value: 'approved', label: 'Approved' },
+                { value: 'ready_to_issue', label: 'Ready to Issue' },
+                { value: 'goods_received', label: 'Goods Received' },
+                { value: 'finance_audit', label: 'Finance Audit' },
+                { value: 'invoiced', label: 'Invoiced' },
+                { value: 'completed', label: 'Completed' },
+                { value: 'rejected', label: 'Rejected' },
+                { value: 'cancelled', label: 'Cancelled' },
+                { value: 'deleted', label: 'Deleted' },
+              ]}
+            />
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={!adminPoStatus || adminPoStatus === po.status}
+              loading={adminSetting}
+              onClick={() => void adminSetPOStatus({ variables: { id: po.id, status: adminPoStatus } })}
+            >
+              Apply
+            </Button>
           </div>
         </Card>
       )}

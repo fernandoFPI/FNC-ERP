@@ -48,15 +48,18 @@ const PaymentSchema = z.object({
 // ── GET /finance/vendor-invoices ──────────────────────────────
 vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), async (req, res) => {
   try {
-    const { status, vendor_id, po_id, from_date, to_date, overdue, page = '1', limit = '20' } = req.query as Record<string, string>
+    const { status, vendor_id, po_id, invoice_number, from_date, to_date, overdue, cross_company, page = '1', limit = '20' } = req.query as Record<string, string>
     const offset = (parseInt(page) - 1) * parseInt(limit)
-    const conditions = [`vi.company_id = $1`]
-    const values: unknown[] = [req.auth!.companyId]
-    let p = 1
+    // cross_company=true skips the company filter — used by PO detail to find invoices
+    // created in a different company context (workflow-imported POs exist in multiple companies)
+    const conditions: string[] = cross_company === 'true' ? [] : [`vi.company_id = $1`]
+    const values: unknown[] = cross_company === 'true' ? [] : [req.auth!.companyId]
+    let p = cross_company === 'true' ? 0 : 1
 
     if (status) { conditions.push(`vi.status = ANY($${++p}::text[])`); values.push(status.split(',')) }
     if (vendor_id) { conditions.push(`vi.vendor_id = $${++p}`); values.push(vendor_id) }
     if (po_id) { conditions.push(`vi.po_id = $${++p}`); values.push(po_id) }
+    if (invoice_number) { conditions.push(`vi.invoice_number = $${++p}`); values.push(invoice_number) }
     if (from_date) { conditions.push(`vi.invoice_date >= $${++p}`); values.push(from_date) }
     if (to_date) { conditions.push(`vi.invoice_date <= $${++p}`); values.push(to_date) }
     if (overdue === 'true') {
@@ -64,7 +67,7 @@ vendorInvoicesRouter.get('/', requirePermission('finance.ap.view', 'view'), asyn
       conditions.push(`vi.status NOT IN ('paid','cancelled')`)
     }
 
-    const where = `WHERE ${conditions.join(' AND ')}`
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const rows = await query(`
       SELECT
         vi.*,
@@ -274,6 +277,23 @@ vendorInvoicesRouter.post('/', requirePermission('finance.ap.edit', 'edit'), asy
     const e = err as { code?: string }
     if (e.code === '23505') return sendError(res, 409, 'DUPLICATE_INVOICE_NUMBER', 'Invoice number already exists for this vendor')
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create vendor invoice', err)
+  }
+})
+
+// ── PATCH /finance/vendor-invoices/:id/link-po ────────────────
+vendorInvoicesRouter.patch('/:id/link-po', requirePermission('finance.ap.edit', 'edit'), async (req, res) => {
+  try {
+    const { po_id } = req.body as { po_id?: string | null }
+    const result = await query(
+      `UPDATE vendor_invoices SET po_id = $1, updated_at = NOW()
+       WHERE id = $2 AND company_id = $3
+       RETURNING id, po_id`,
+      [po_id ?? null, req.params['id'], req.auth!.companyId],
+    )
+    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
+    sendOk(res, result.rows[0])
+  } catch (err: unknown) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to link PO', err)
   }
 })
 

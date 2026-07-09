@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import { api } from '../../../lib/axios'
+import { apiErrMsg } from '../../../lib/apiError'
 import { PURCHASE_ORDER_QUERY, RECORD_RECEIPT, ATTACH_RECEIPT_PHOTO } from '../../../graphql/procurement'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
@@ -187,8 +188,8 @@ export default function ReceiptForm() {
           setPendingPhotos((prev) => prev.map((p, idx) => idx === i ? { ...p, uploading: false } : p))
         } catch (photoErr) {
           photosFailed++
-          setPendingPhotos((prev) => prev.map((p, idx) => idx === i ? { ...p, uploading: false, error: (photoErr as Error).message } : p))
-          addToast({ type: 'error', message: `Photo ${i + 1} failed: ${(photoErr as Error).message}` })
+          setPendingPhotos((prev) => prev.map((p, idx) => idx === i ? { ...p, uploading: false, error: apiErrMsg(photoErr, 'Upload failed') } : p))
+          addToast({ type: 'error', message: `Photo ${i + 1} failed: ${apiErrMsg(photoErr, 'Upload failed')}` })
         }
       }
 
@@ -201,7 +202,7 @@ export default function ReceiptForm() {
       addToast({ type: 'success', message: 'Receipt recorded' })
       navigate(`/procurement/purchase-orders/${id}`)
     } catch (err) {
-      addToast({ type: 'error', message: (err as Error).message })
+      addToast({ type: 'error', message: apiErrMsg(err, 'Save failed') })
     } finally {
       setSubmitting(false)
     }
