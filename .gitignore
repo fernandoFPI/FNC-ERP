@@ -34,5 +34,8 @@ coverage/
 postgres_data/
 redis_data/
 
+# User uploads (runtime files, not source code)
+services/gateway/dev-uploads/
+
 # Odoo source extraction (reference only, not part of the project)
 odoo_deb_extracted/
