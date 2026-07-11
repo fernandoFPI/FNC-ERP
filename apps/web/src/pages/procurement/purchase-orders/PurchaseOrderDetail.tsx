@@ -883,31 +883,57 @@ export default function PurchaseOrderDetail() {
                         {(() => {
                           const poPrice = line.unit_price ?? 0
                           const actualPrice = line.actual_unit_price ?? null
-                          const verifiedPrice = line.verified_price ?? null
-                          const displayPrice = actualPrice ?? verifiedPrice ?? poPrice
                           const variance = actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
                           const variancePct = variance != null && poPrice > 0 ? (variance / poPrice) * 100 : null
+                          const varColor = variance == null || variance === 0 ? theme.textMuted : variance > 0 ? '#dc2626' : '#16a34a'
+                          const rcv = line.qty_received ?? 0
+                          const fromStock = line.qty_from_stock ?? 0
                           return (
-                            <div style={{ marginTop: '8px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                PO price: <strong style={{ color: theme.textPrimary }}>{poPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                              </span>
-                              {actualPrice != null && (
-                                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                  Actual price: <strong style={{ color: variance != null && variance !== 0 ? (variance > 0 ? '#dc2626' : '#16a34a') : theme.textPrimary }}>
-                                    {actualPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                  </strong>
-                                  {variancePct != null && Math.abs(variancePct) > 0.01 && (
-                                    <span style={{ marginLeft: '4px', color: variance! > 0 ? '#dc2626' : '#16a34a', fontSize: '11px' }}>
-                                      ({variance! > 0 ? '+' : ''}{variancePct.toFixed(1)}%)
-                                    </span>
-                                  )}
-                                </span>
-                              )}
-                              {displayPrice > 0 && (
-                                <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                  Line total: <strong style={{ color: theme.textPrimary }}>{((line.qty_received ?? 0) * displayPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-                                </span>
+                            <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
+                              {/* PO Price */}
+                              <div style={{ padding: '8px 10px', borderRadius: '6px', background: theme.bgSurface, border: `1px solid ${theme.border}` }}>
+                                <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>PO Price</div>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary, fontFamily: 'monospace' }}>
+                                  {poPrice > 0 ? poPrice.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
+                                </div>
+                              </div>
+                              {/* Actual Price */}
+                              <div style={{ padding: '8px 10px', borderRadius: '6px', background: actualPrice == null ? '#fff7ed' : variance === 0 ? '#f0fdf4' : variance! > 0 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}` }}>
+                                <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>Actual Price</div>
+                                {actualPrice != null ? (
+                                  <>
+                                    <div style={{ fontSize: '14px', fontWeight: 700, color: varColor, fontFamily: 'monospace' }}>
+                                      {actualPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                                    </div>
+                                    {variancePct != null && Math.abs(variancePct) > 0.01 && (
+                                      <div style={{ fontSize: '11px', fontWeight: 600, color: varColor, marginTop: '2px' }}>
+                                        {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}{variancePct.toFixed(1)}% vs PO
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div style={{ fontSize: '12px', color: '#d97706', fontWeight: 600 }}>Not recorded</div>
+                                )}
+                              </div>
+                              {/* Line Total */}
+                              <div style={{ padding: '8px 10px', borderRadius: '6px', background: theme.bgSurface, border: `1px solid ${theme.border}` }}>
+                                <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>Line Total</div>
+                                <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary, fontFamily: 'monospace' }}>
+                                  {((actualPrice ?? poPrice) * rcv).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                </div>
+                                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                                  {rcv} {line.uom} × {(actualPrice ?? poPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </div>
+                              </div>
+                              {/* From Stock (only if > 0) */}
+                              {fromStock > 0 && (
+                                <div style={{ padding: '8px 10px', borderRadius: '6px', background: '#f0fdf4', border: '1px solid #86efac' }}>
+                                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>From Inventory</div>
+                                  <div style={{ fontSize: '14px', fontWeight: 700, color: '#166534', fontFamily: 'monospace' }}>
+                                    {fromStock} {line.uom}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '2px' }}>No cost — issued from stock</div>
+                                </div>
                               )}
                             </div>
                           )

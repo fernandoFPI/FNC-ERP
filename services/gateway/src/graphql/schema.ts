@@ -1639,6 +1639,7 @@ export const typeDefs = `#graphql
   input ReceiptLineInput {
     po_line_id: ID!
     qty_received: Float!
+    actual_unit_price: Float
   }
 
   input ReceiptInput {

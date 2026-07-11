@@ -3869,7 +3869,7 @@ export const resolvers = {
 
     recordReceipt: async (
       _: unknown,
-      args: { poId: string; input: { receipt_date: string; location_id?: string; notes?: string; received_by_name?: string; location_notes?: string; lines: Array<{ po_line_id: string; qty_received: number }> } },
+      args: { poId: string; input: { receipt_date: string; location_id?: string; notes?: string; received_by_name?: string; location_notes?: string; lines: Array<{ po_line_id: string; qty_received: number; actual_unit_price?: number }> } },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -3899,10 +3899,17 @@ export const resolvers = {
             `INSERT INTO po_receipt_lines (receipt_id,po_line_id,qty_received) VALUES ($1,$2,$3)`,
             [rRow['id'], l.po_line_id, l.qty_received],
           )
-          await client.query(
-            `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1 WHERE id=$2`,
-            [l.qty_received, l.po_line_id],
-          )
+          if (l.actual_unit_price != null && l.actual_unit_price > 0) {
+            await client.query(
+              `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1, actual_unit_price=$2 WHERE id=$3`,
+              [l.qty_received, l.actual_unit_price, l.po_line_id],
+            )
+          } else {
+            await client.query(
+              `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1 WHERE id=$2`,
+              [l.qty_received, l.po_line_id],
+            )
+          }
           const polRes = await client.query(`SELECT product_id, unit_price FROM po_lines WHERE id=$1`, [l.po_line_id])
           const polProductId = polRes.rows[0]?.['product_id'] as string | null
           const polUnitPrice = parseFloat(String(polRes.rows[0]?.['unit_price'] ?? 0))
