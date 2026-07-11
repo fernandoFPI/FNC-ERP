@@ -360,6 +360,25 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     allowedActions: projectStateMachine.allowedActions(row.status as never),
+    isRfq: row.is_rfq === true || row.is_rfq === 't' || row.is_rfq === 'true',
+    rfqEstimatedCost: row.rfq_estimated_cost != null ? parseFloat(String(row.rfq_estimated_cost)) : null,
+    rfqOutcome: row.rfq_outcome ?? null,
+    rfqOutcomeReason: row.rfq_outcome_reason ?? null,
+  }
+}
+
+function rfqLineToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    sequence: row.sequence != null ? parseInt(String(row.sequence)) : 0,
+    phaseLabel: row.phase_label ?? null,
+    description: row.description,
+    quantity: row.quantity != null ? parseFloat(String(row.quantity)) : null,
+    unit: row.unit ?? null,
+    estimatedUnitCost: row.estimated_unit_cost != null ? parseFloat(String(row.estimated_unit_cost)) : null,
+    bidUnitPrice: row.bid_unit_price != null ? parseFloat(String(row.bid_unit_price)) : null,
+    notes: row.notes ?? null,
   }
 }
 
@@ -3749,6 +3768,18 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
+      if (i.linkedProjectId) {
+        const projCheck = await query(
+          `SELECT status, is_rfq FROM projects WHERE id=$1 AND company_id=$2`,
+          [i.linkedProjectId, ctx.auth.companyId],
+        )
+        const pr = projCheck.rows[0] as Record<string, unknown> | undefined
+        if (pr && (pr['is_rfq'] === true || pr['is_rfq'] === 't' || pr['is_rfq'] === 'true')) {
+          if (!['approved', 'completed', 'cancelled_after_approval'].includes(pr['status'] as string)) {
+            throw new Error('Cannot create a PO for an RFQ that has not been approved yet. Approve the RFQ first to convert it to a project.')
+          }
+        }
+      }
       return withTransaction({ companyId: ctx.auth!.companyId, userId: ctx.auth!.userId, role: ctx.auth!.role }, async (client) => {
         const poNum = await nextDocumentNumber(ctx.auth!.companyId, 'purchase_order', 'PO')
         const subtotal = i.lines.reduce((s, l) => s + l.qty * l.unit_price, 0)
@@ -4181,7 +4212,7 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (!isAdminGW(ctx.auth.role)) throw new Error('Forbidden: only administrators can create projects')
       const i = args.input
-      const code = (i['code'] as string | undefined) ?? `PRJ-${Date.now().toString().slice(-8)}`
+      const code = (i['code'] as string | undefined) ?? await nextDocumentNumber(ctx.auth.companyId, 'project', 'PRJ')
       // Auto-create analytic account — code capped at VARCHAR(20)
       const aaCode = code.slice(0, 20)
       const aa = await query(
@@ -4286,6 +4317,144 @@ export const resolvers = {
         await logActivity(args.id, ctx.auth.userId, 'field_update', `Updated: ${changed.join(', ')}`)
       }
       return projectRowToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    createRFQ: async (_: unknown, args: { input: Record<string, unknown> }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const i = args.input
+      const [rfqNum, code] = await Promise.all([
+        nextDocumentNumber(ctx.auth.companyId, 'rfq', 'RFQ'),
+        nextDocumentNumber(ctx.auth.companyId, 'project', 'PRJ'),
+      ])
+      const r = await query(
+        `INSERT INTO projects (
+          company_id, name, code, description, project_type,
+          client_name, client_contact, rfq_number, contract_name, project_location,
+          receiving_date, submission_date, project_value, project_value_currency,
+          planned_start_date, planned_end_date, budget_amount, budget_currency,
+          project_manager_id, cost_center_id, remarks,
+          submission_time, site_visit_date, site_visit_time, question_date, question_time,
+          rfq_estimated_cost, is_rfq, status, created_by
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,true,'pending',$28)
+        RETURNING *`,
+        [
+          ctx.auth.companyId, i['name'], code,
+          i['description'] ?? null, i['projectType'] ?? 'construction',
+          i['clientName'] ?? null, i['clientContact'] ?? null,
+          rfqNum, i['contractName'] ?? null, i['projectLocation'] ?? null,
+          i['receivingDate'] ?? null, i['submissionDate'] ?? null,
+          i['projectValue'] ?? null, i['projectValueCurrency'] ?? 'IQD',
+          i['plannedStartDate'] ?? null, i['plannedEndDate'] ?? null,
+          i['budgetAmount'] ?? 0, i['budgetCurrency'] ?? 'IQD',
+          i['projectManagerId'] ?? null, i['costCenterId'] ?? null,
+          i['remarks'] ?? null,
+          i['submissionTime'] ?? null, i['siteVisitDate'] ?? null, i['siteVisitTime'] ?? null,
+          i['questionDate'] ?? null, i['questionTime'] ?? null,
+          i['rfqEstimatedCost'] ?? null,
+          ctx.auth.userId,
+        ],
+      )
+      const projectId = r.rows[0].id as string
+      await query(
+        `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by) VALUES ($1, NULL, 'pending', $2)`,
+        [projectId, ctx.auth.userId],
+      )
+      const lines = i['rfqLines'] as Array<Record<string, unknown>> | undefined
+      if (lines && lines.length > 0) {
+        for (const [idx, line] of lines.entries()) {
+          await query(
+            `INSERT INTO rfq_lines (project_id, sequence, description, quantity, unit, estimated_unit_cost, bid_unit_price, notes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [projectId, line['sequence'] ?? idx, line['description'], line['quantity'] ?? null, line['unit'] ?? null, line['estimatedUnitCost'] ?? null, line['bidUnitPrice'] ?? null, line['notes'] ?? null],
+          )
+        }
+      }
+      return projectRowToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    approveRFQ: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (!isAdminGW(ctx.auth.role)) throw new Error('Forbidden: only administrators can approve RFQs')
+      const proj = await query(
+        `SELECT id, name, code, status, is_rfq, analytic_account_id FROM projects WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!proj.rows[0]) throw new Error('Project not found')
+      if (!(proj.rows[0].is_rfq === true || proj.rows[0].is_rfq === 't' || proj.rows[0].is_rfq === 'true')) {
+        throw new Error('This project is not an RFQ')
+      }
+      if (proj.rows[0].status !== 'submitted') throw new Error('RFQ must be in submitted status to approve')
+      let analyticAccountId = proj.rows[0].analytic_account_id as string | null
+      if (!analyticAccountId) {
+        const aaCode = (proj.rows[0].code as string).slice(0, 20)
+        const aa = await query(
+          `INSERT INTO analytic_accounts (company_id, name, code, is_active) VALUES ($1,$2,$3,true) RETURNING id`,
+          [ctx.auth.companyId, `Project: ${proj.rows[0].name}`, aaCode],
+        )
+        analyticAccountId = aa.rows[0].id as string
+      }
+      const r = await query(
+        `UPDATE projects SET status='approved', analytic_account_id=$1, rfq_outcome='won', approved_at=NOW(), updated_at=NOW()
+         WHERE id=$2 AND company_id=$3 RETURNING *`,
+        [analyticAccountId, args.id, ctx.auth.companyId],
+      )
+      await query(
+        `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by, reason) VALUES ($1,'submitted','approved',$2,$3)`,
+        [args.id, ctx.auth.userId, args.notes ?? null],
+      )
+      // Auto-create one project stage per distinct phase label (only if none exist yet)
+      const existingStages = await query(
+        `SELECT COUNT(*) AS cnt FROM project_stages WHERE project_id=$1`,
+        [args.id],
+      )
+      if (parseInt(String(existingStages.rows[0]?.cnt ?? 0)) === 0) {
+        const phases = await query(
+          `SELECT phase_label, MIN(sequence) AS min_seq
+           FROM rfq_lines
+           WHERE project_id=$1 AND phase_label IS NOT NULL AND phase_label <> ''
+           GROUP BY phase_label
+           ORDER BY min_seq`,
+          [args.id],
+        )
+        for (const [idx, phase] of phases.rows.entries()) {
+          await query(
+            `INSERT INTO project_stages (project_id, name, sequence, status) VALUES ($1,$2,$3,'pending')`,
+            [args.id, phase.phase_label, idx],
+          )
+        }
+      }
+      return projectRowToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    rejectRFQ: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (!isAdminGW(ctx.auth.role)) throw new Error('Forbidden: only administrators can reject RFQs')
+      return projectTransition(args.id, ctx.auth.companyId, ctx.auth.userId, 'reject_rfq', 'pending', { reason: args.reason })
+    },
+
+    submitToTeam: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      return projectTransition(args.id, ctx.auth.companyId, ctx.auth.userId, 'submit_to_team', 'ongoing')
+    },
+
+    upsertRFQLines: async (_: unknown, args: { projectId: string; lines: Array<Record<string, unknown>> }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const proj = await query(
+        `SELECT id FROM projects WHERE id=$1 AND company_id=$2`,
+        [args.projectId, ctx.auth.companyId],
+      )
+      if (!proj.rows[0]) throw new Error('Project not found')
+      await query(`DELETE FROM rfq_lines WHERE project_id=$1`, [args.projectId])
+      const results: Record<string, unknown>[] = []
+      for (const [idx, line] of args.lines.entries()) {
+        const r = await query(
+          `INSERT INTO rfq_lines (project_id, sequence, phase_label, description, quantity, unit, estimated_unit_cost, bid_unit_price, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+          [args.projectId, line['sequence'] ?? idx, line['phaseLabel'] ?? null, line['description'], line['quantity'] ?? null, line['unit'] ?? null, line['estimatedUnitCost'] ?? null, line['bidUnitPrice'] ?? null, line['notes'] ?? null],
+        )
+        results.push(r.rows[0] as Record<string, unknown>)
+      }
+      return results.map(rfqLineToGQL)
     },
 
     startProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -7190,6 +7359,20 @@ const phase5QueryResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(`SELECT * FROM sessions WHERE user_id=$1 AND expires_at > NOW() ORDER BY created_at DESC`, [ctx.auth.userId])
     return r.rows.map((row: Record<string, unknown>) => ({ id: row['id'], deviceName: row['device_name'], platform: row['platform'], ipAddress: row['ip_address'], createdAt: row['created_at'], lastActive: row['last_active'] ?? row['created_at'], isCurrent: row['id'] === ctx.auth?.sessionId }))
+  },
+
+  // ── RFQ ────────────────────────────────────────────────────────────────────
+
+  rfqLines: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `SELECT rl.* FROM rfq_lines rl
+       JOIN projects p ON p.id = rl.project_id
+       WHERE rl.project_id = $1 AND p.company_id = $2
+       ORDER BY rl.sequence, rl.created_at`,
+      [args.projectId, ctx.auth.companyId],
+    )
+    return r.rows.map(rfqLineToGQL)
   },
 
   // ── Phase 4: Projects (moved from Mutation block) ─────────────────────────

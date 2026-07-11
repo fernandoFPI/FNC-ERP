@@ -10,6 +10,7 @@ const PROJECT_FIELDS = gql`
     holdReason cancelReason receivingDate submissionDate submissionTime siteVisitDate siteVisitTime questionDate questionTime submittedAt approvedAt completedAt cancelledAt
     overallCompletionPct teamCount openPoCount stagesCompleted stagesTotal currentStageName
     analyticAccountName allowedActions
+    isRfq rfqEstimatedCost rfqOutcome rfqOutcomeReason
     costSummary stages team statusHistory activityLog recentPos
     createdAt updatedAt
   }
@@ -19,7 +20,7 @@ export const PROJECTS_QUERY = gql`
   query Projects($status: [String], $projectType: String, $search: String, $projectManagerId: ID, $page: Int, $limit: Int, $includeAll: Boolean) {
     projects(status: $status, projectType: $projectType, search: $search, projectManagerId: $projectManagerId, page: $page, limit: $limit, includeAll: $includeAll) {
       data {
-        id code name projectType status
+        id code name projectType status isRfq
         rfqNumber clientName projectValue budgetAmount budgetCurrency
         plannedStartDate plannedEndDate overallCompletionPct teamCount openPoCount allowedActions
         analyticAccountId analyticAccountName
@@ -52,6 +53,48 @@ export const CREATE_PROJECT = gql`
   mutation CreateProject($input: ProjectCreateInput!) {
     createProject(input: $input) {
       id code name status allowedActions
+    }
+  }
+`
+
+export const CREATE_RFQ = gql`
+  mutation CreateRFQ($input: ProjectCreateInput!) {
+    createRFQ(input: $input) {
+      id code name status isRfq allowedActions
+    }
+  }
+`
+
+export const APPROVE_RFQ = gql`
+  mutation ApproveRFQ($id: ID!, $notes: String) {
+    approveRFQ(id: $id, notes: $notes) { id status isRfq rfqOutcome approvedAt allowedActions statusHistory }
+  }
+`
+
+export const REJECT_RFQ = gql`
+  mutation RejectRFQ($id: ID!, $reason: String!) {
+    rejectRFQ(id: $id, reason: $reason) { id status allowedActions statusHistory }
+  }
+`
+
+export const SUBMIT_TO_TEAM = gql`
+  mutation SubmitToTeam($id: ID!) {
+    submitToTeam(id: $id) { id status allowedActions statusHistory }
+  }
+`
+
+export const UPSERT_RFQ_LINES = gql`
+  mutation UpsertRFQLines($projectId: ID!, $lines: [RFQLineInput!]!) {
+    upsertRFQLines(projectId: $projectId, lines: $lines) {
+      id projectId sequence phaseLabel description quantity unit estimatedUnitCost bidUnitPrice notes
+    }
+  }
+`
+
+export const RFQ_LINES_QUERY = gql`
+  query RFQLines($projectId: ID!) {
+    rfqLines(projectId: $projectId) {
+      id projectId sequence phaseLabel description quantity unit estimatedUnitCost bidUnitPrice notes
     }
   }
 `

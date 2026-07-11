@@ -690,8 +690,38 @@ export const typeDefs = `#graphql
 
     allowedActions: [String!]
 
+    isRfq: Boolean!
+    rfqEstimatedCost: Float
+    rfqOutcome: String
+    rfqOutcomeReason: String
+    rfqLines: [RFQLine!]
+
     createdAt: String!
     updatedAt: String
+  }
+
+  type RFQLine {
+    id: ID!
+    projectId: ID!
+    sequence: Int!
+    phaseLabel: String
+    description: String!
+    quantity: Float
+    unit: String
+    estimatedUnitCost: Float
+    bidUnitPrice: Float
+    notes: String
+  }
+
+  input RFQLineInput {
+    sequence: Int
+    phaseLabel: String
+    description: String!
+    quantity: Float
+    unit: String
+    estimatedUnitCost: Float
+    bidUnitPrice: Float
+    notes: String
   }
 
   type PaginationMeta {
@@ -1907,6 +1937,8 @@ export const typeDefs = `#graphql
     projectManagerId: ID
     costCenterId: ID
     remarks: String
+    rfqEstimatedCost: Float
+    rfqLines: [RFQLineInput!]
   }
 
   input ProjectUpdateInput {
@@ -1934,6 +1966,9 @@ export const typeDefs = `#graphql
     projectManagerId: ID
     costCenterId: ID
     remarks: String
+    rfqEstimatedCost: Float
+    rfqOutcome: String
+    rfqOutcomeReason: String
   }
 
   type ProjectStage {
@@ -1998,16 +2033,25 @@ export const typeDefs = `#graphql
     projectCompletionBlockers(id: ID!): ProjectCompletionBlockers!
   }
 
+  extend type Query {
+    rfqLines(projectId: ID!): [RFQLine!]!
+  }
+
   extend type Mutation {
     createProject(input: ProjectCreateInput!): Project!
+    createRFQ(input: ProjectCreateInput!): Project!
     updateProject(id: ID!, input: ProjectUpdateInput!): Project!
     startProject(id: ID!): Project!
+    submitToTeam(id: ID!): Project!
     holdProject(id: ID!, reason: String!): Project!
     resumeProject(id: ID!): Project!
     submitProject(id: ID!): Project!
     approveProject(id: ID!): Project!
+    approveRFQ(id: ID!, notes: String): Project!
+    rejectRFQ(id: ID!, reason: String!): Project!
     rejectBackProject(id: ID!, reason: String!): Project!
     completeProject(id: ID!): Project!
+    upsertRFQLines(projectId: ID!, lines: [RFQLineInput!]!): [RFQLine!]!
     cancelProject(id: ID!, reason: String!): Project!
     cancelProjectAfterApproval(id: ID!, reason: String!): Project!
     adminSetProjectStatus(id: ID!, status: String!): Project!

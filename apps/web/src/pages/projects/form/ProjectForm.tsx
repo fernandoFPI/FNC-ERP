@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
-import { PROJECT_QUERY, CREATE_PROJECT, UPDATE_PROJECT } from '../../../graphql/projects'
+import { PROJECT_QUERY, CREATE_RFQ, UPDATE_PROJECT } from '../../../graphql/projects'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
@@ -22,7 +22,7 @@ const PROJECT_TYPES = [
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'GBP']
 
 interface FormState {
-  name: string; rfqNumber: string; contractName: string; projectLocation: string
+  name: string; contractName: string; projectLocation: string
   projectType: string; clientName: string; clientContact: string
   projectValue: string; budgetAmount: string; currencyCode: string
   startDate: string; endDate: string; description: string
@@ -30,10 +30,11 @@ interface FormState {
   submissionDate: string; submissionTime: string
   siteVisitDate: string; siteVisitTime: string
   questionDate: string; questionTime: string
+  rfqEstimatedCost: string
 }
 
 const BLANK: FormState = {
-  name: '', rfqNumber: '', contractName: '', projectLocation: '',
+  name: '', contractName: '', projectLocation: '',
   projectType: 'construction', clientName: '', clientContact: '',
   projectValue: '', budgetAmount: '', currencyCode: 'IQD',
   startDate: '', endDate: '', description: '',
@@ -41,6 +42,7 @@ const BLANK: FormState = {
   submissionDate: '', submissionTime: '',
   siteVisitDate: '', siteVisitTime: '',
   questionDate: '', questionTime: '',
+  rfqEstimatedCost: '',
 }
 
 export default function ProjectForm() {
@@ -67,7 +69,7 @@ export default function ProjectForm() {
     setCustomTypeMode(false)
   }
   const { data } = useQuery(PROJECT_QUERY, { variables: { id }, skip: !isEdit, fetchPolicy: 'cache-and-network' })
-  const [createProject, { loading: creating }] = useMutation(CREATE_PROJECT)
+  const [createRFQ,     { loading: creating }] = useMutation(CREATE_RFQ)
   const [updateProject, { loading: updating }] = useMutation(UPDATE_PROJECT)
   const saving = creating || updating
 
@@ -76,7 +78,6 @@ export default function ProjectForm() {
     if (!p) return
     setForm({
       name:            p.name            ?? '',
-      rfqNumber:       p.rfqNumber       ?? '',
       contractName:    p.contractName    ?? '',
       projectLocation: p.projectLocation ?? '',
       projectType:     p.projectType     ?? 'construction',
@@ -95,6 +96,7 @@ export default function ProjectForm() {
       siteVisitTime:   p.siteVisitTime   ? String(p.siteVisitTime).slice(0, 5) : '',
       questionDate:    p.questionDate    ?? '',
       questionTime:    p.questionTime    ? String(p.questionTime).slice(0, 5) : '',
+      rfqEstimatedCost: p.rfqEstimatedCost != null ? String(p.rfqEstimatedCost) : '',
     })
   }, [data])
 
@@ -118,7 +120,6 @@ export default function ProjectForm() {
     if (!validate()) return
     const input = {
       name:             form.name,
-      rfqNumber:        form.rfqNumber       || null,
       contractName:     form.contractName    || null,
       projectLocation:  form.projectLocation || null,
       projectType:      form.projectType,
@@ -137,6 +138,7 @@ export default function ProjectForm() {
       siteVisitTime:    form.siteVisitTime   || null,
       questionDate:     form.questionDate    || null,
       questionTime:     form.questionTime    || null,
+      rfqEstimatedCost: form.rfqEstimatedCost ? Number(form.rfqEstimatedCost) : null,
     }
     try {
       if (isEdit) {
@@ -144,9 +146,9 @@ export default function ProjectForm() {
         addToast({ type: 'success', message: 'Project updated' })
         navigate(`/projects/${id}`)
       } else {
-        const res = await createProject({ variables: { input } })
-        const newId = res.data?.createProject?.id
-        addToast({ type: 'success', message: 'Project created' })
+        const res = await createRFQ({ variables: { input } })
+        const newId = res.data?.createRFQ?.id
+        addToast({ type: 'success', message: 'RFQ created' })
         navigate(newId ? `/projects/${newId}` : '/projects')
       }
     } catch (err) {
@@ -176,17 +178,21 @@ export default function ProjectForm() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <PageHeader
-        title={isEdit ? 'Edit Project' : 'New Project'}
-        subtitle={isEdit ? 'Update project details' : 'Create a new project'}
+        title={isEdit ? 'Edit Project' : 'New RFQ'}
+        subtitle={isEdit ? 'Update project details' : 'Create a new Request for Quotation'}
       />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', paddingBottom: '80px' }}>
         {/* Identification */}
         <div style={{ marginBottom: '28px' }}>
           <div style={secStyle}>Identification</div>
+          {!isEdit && (
+            <div style={{ marginBottom: '10px', padding: '8px 12px', background: theme.accentBg, border: `1px solid ${theme.accentBorder}`, borderRadius: '7px', fontSize: '12px', color: theme.textMuted }}>
+              RFQ number and project code are auto-generated on save.
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
-            {inp('name',         'Project Name *', 'text', 'Enter project name')}
-            {inp('rfqNumber',    'RFQ Number')}
+            {inp('name',         'Project / Tender Name *', 'text', 'Enter project name')}
             {inp('contractName', 'Contract Name / Number')}
           </div>
         </div>
@@ -262,8 +268,9 @@ export default function ProjectForm() {
         <div style={{ marginBottom: '28px' }}>
           <div style={secStyle}>Financials</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            {inp('projectValue', 'Project Value', 'number', '0.00')}
-            {inp('budgetAmount', 'Budget Amount', 'number', '0.00')}
+            {inp('projectValue',      'Bid Price (Project Value)', 'number', '0.00')}
+            {inp('rfqEstimatedCost',  'Internal Cost Estimate',    'number', '0.00')}
+            {inp('budgetAmount',      'Budget Amount',             'number', '0.00')}
           </div>
         </div>
 

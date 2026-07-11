@@ -252,6 +252,38 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
   }
 })
 
+// ── DELETE /api/v1/files/attachments/:attachmentId ────────────
+// Detaches the attachment record and, if the file has no other
+// attachments, removes it from storage and marks it deleted.
+filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res) => {
+  const attachmentId = req.params['attachmentId']!
+  const attachment = await query<{ id: string; file_id: string; file_key: string }>(
+    `SELECT da.id, da.file_id, f.file_key
+     FROM document_attachments da
+     JOIN files f ON f.id = da.file_id
+     WHERE da.id=$1 AND f.company_id=$2`,
+    [attachmentId, req.auth!.companyId],
+  )
+  if (!attachment.rows[0]) {
+    res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Attachment not found' } })
+    return
+  }
+  const { file_id: fileId, file_key: fileKey } = attachment.rows[0]
+  try {
+    await query('DELETE FROM document_attachments WHERE id=$1', [attachmentId])
+    const remaining = await query<{ count: string }>(
+      'SELECT COUNT(*) AS count FROM document_attachments WHERE file_id=$1', [fileId],
+    )
+    if (parseInt(remaining.rows[0]?.count ?? '0') === 0) {
+      try { await deleteFile(fileKey) } catch { /* storage delete best-effort */ }
+      await query(`UPDATE files SET status='deleted', deleted_at=NOW() WHERE id=$1`, [fileId])
+    }
+    res.json({ success: true, data: { message: 'Attachment removed' } })
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to delete attachment' } })
+  }
+})
+
 // ── DELETE /api/v1/files/:fileId ───────────────────────────────
 filesRouter.delete('/:fileId', requireAuth(), async (req, res) => {
   const fileId = req.params['fileId']!

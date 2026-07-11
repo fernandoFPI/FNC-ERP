@@ -47,6 +47,7 @@ interface Project {
   name: string
   projectType?: string
   status: string
+  isRfq?: boolean
   rfqNumber?: string
   clientName?: string
   projectValue?: number
@@ -107,7 +108,7 @@ export default function ProjectsPage() {
         subtitle={pagination ? `${pagination.total} project${pagination.total !== 1 ? 's' : ''}` : undefined}
         actions={isAdmin ? (
           <Button variant="primary" size="sm" onClick={() => navigate('/projects/new')}>
-            + New Project
+            + New RFQ
           </Button>
         ) : undefined}
       />
@@ -207,7 +208,14 @@ export default function ProjectsPage() {
                       <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>{p.code}</td>
                       <td style={{ padding: '12px 14px', fontWeight: 500, color: theme.textPrimary, maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</td>
                       <td style={{ padding: '12px 14px', color: theme.textMuted, textTransform: 'capitalize' }}>{p.projectType ?? '—'}</td>
-                      <td style={{ padding: '12px 14px' }}><Badge variant={STATUS_VARIANT[p.status] ?? 'neutral'}>{p.status.replace(/_/g, ' ')}</Badge></td>
+                      <td style={{ padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          {p.isRfq && !['approved','completed','cancelled_after_approval'].includes(p.status) && (
+                            <Badge variant="info">RFQ</Badge>
+                          )}
+                          <Badge variant={STATUS_VARIANT[p.status] ?? 'neutral'}>{p.status.replace(/_/g, ' ')}</Badge>
+                        </div>
+                      </td>
                       <td style={{ padding: '12px 14px', color: theme.textMuted, maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.clientName ?? '—'}</td>
                       {isAdmin && <td style={{ padding: '12px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: theme.textPrimary }}>{p.projectValue ? formatCurrency(p.projectValue, p.budgetCurrency ?? 'IQD') : '—'}</td>}
                       {isAdmin && <td style={{ padding: '12px 14px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: theme.textMuted }}>{p.budgetAmount ? formatCurrency(p.budgetAmount, p.budgetCurrency ?? 'IQD') : '—'}</td>}

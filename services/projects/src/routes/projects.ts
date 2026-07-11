@@ -863,12 +863,13 @@ projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), 
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
     const b = req.body as Record<string, unknown>
+    const memberType = (b['member_type'] === 'commercial') ? 'commercial' : 'technical'
     const result = await query(
-      `INSERT INTO project_members (project_id, employee_id, role, allocated_hours, start_date, end_date)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (project_id, employee_id) DO UPDATE SET is_active = true, role = EXCLUDED.role, updated_at = NOW()
+      `INSERT INTO project_members (project_id, employee_id, role, member_type, allocated_hours, start_date, end_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (project_id, employee_id) DO UPDATE SET is_active = true, role = EXCLUDED.role, member_type = EXCLUDED.member_type, updated_at = NOW()
        RETURNING *`,
-      [id, b['employee_id'], b['role'] ?? null, b['allocated_hours'] ?? null, b['start_date'] ?? null, b['end_date'] ?? null],
+      [id, b['employee_id'], b['role'] ?? null, memberType, b['allocated_hours'] ?? null, b['start_date'] ?? null, b['end_date'] ?? null],
     )
     const empRow = await query(`SELECT first_name||' '||last_name AS name FROM employees WHERE id=$1`, [b['employee_id']])
     const empName = (empRow.rows[0] as Record<string, unknown>)?.['name'] ?? 'Unknown'

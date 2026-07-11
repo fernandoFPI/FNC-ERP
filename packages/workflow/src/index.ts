@@ -89,20 +89,24 @@ export type ProjectStatus =
 
 export type ProjectAction =
   | 'start'
+  | 'submit_to_team'
   | 'cancel'
   | 'hold'
   | 'submit'
   | 'resume'
   | 'approve'
+  | 'approve_rfq'
   | 'reject_back'
+  | 'reject_rfq'
   | 'complete'
   | 'cancel_after_approval'
 
 export const projectStateMachine = new StateMachine<ProjectStatus, ProjectAction>({
   initial: 'pending',
   transitions: [
-    // pending → ongoing (project manager starts project)
+    // pending → ongoing (project manager starts / submits to team)
     { from: 'pending',   to: 'ongoing',                 action: 'start' },
+    { from: 'pending',   to: 'ongoing',                 action: 'submit_to_team' },
     // pending → cancelled
     { from: 'pending',   to: 'cancelled',                action: 'cancel' },
     // pending → on_hold (rare but possible)
@@ -115,10 +119,13 @@ export const projectStateMachine = new StateMachine<ProjectStatus, ProjectAction
     // ongoing → cancelled
     { from: 'ongoing',   to: 'cancelled',                action: 'cancel' },
 
-    // submitted → approved (client approves)
+    // submitted → approved (admin approves RFQ / project deliverable)
     { from: 'submitted', to: 'approved',                 action: 'approve' },
-    // submitted → ongoing (client rejects — reopen for rework)
+    { from: 'submitted', to: 'approved',                 action: 'approve_rfq' },
+    // submitted → ongoing (reject for rework)
     { from: 'submitted', to: 'ongoing',                  action: 'reject_back' },
+    // submitted → pending (admin sends RFQ back for full revision)
+    { from: 'submitted', to: 'pending',                  action: 'reject_rfq' },
     // submitted → cancelled
     { from: 'submitted', to: 'cancelled',                action: 'cancel' },
 

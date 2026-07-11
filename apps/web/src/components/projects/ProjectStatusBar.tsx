@@ -6,6 +6,7 @@ import {
   START_PROJECT, HOLD_PROJECT, RESUME_PROJECT, SUBMIT_PROJECT,
   APPROVE_PROJECT, REJECT_BACK_PROJECT, COMPLETE_PROJECT,
   CANCEL_PROJECT, CANCEL_PROJECT_AFTER_APPROVAL, UPDATE_PROJECT,
+  SUBMIT_TO_TEAM, APPROVE_RFQ, REJECT_RFQ,
 } from '../../graphql/projects'
 
 type ProjectStatus = 'pending' | 'ongoing' | 'submitted' | 'approved' | 'completed' | 'on_hold' | 'cancelled' | 'cancelled_after_approval'
@@ -37,22 +38,24 @@ const FLOW_STEPS: { key: ProjectStatus; label: string }[] = [
 
 const ACTION_LABEL: Record<string, string> = {
   start:                 'Start Project',
+  submit_to_team:        'Submit to Team',
   hold:                  'Put On Hold',
   resume:                'Resume',
-  submit:                'Submit for Approval',
+  submit:                'Submit for Review',
   approve:               'Approve',
-  reject_back:           'Reject Back',
+  approve_rfq:           'Approve RFQ',
+  reject_back:           'Send Back for Rework',
+  reject_rfq:            'Send Back for Revision',
   complete:              'Mark Complete',
   cancel:                'Cancel',
-  cancel_after_approval: 'Cancel (Post-Approval)',
+  cancel_after_approval: 'Cancel Project',
 }
 
-function resolveActionLabel(action: string, status: ProjectStatus): string {
-  if (action === 'start' && status === 'pending') return 'Submit to Team'
+function resolveActionLabel(action: string, _status: ProjectStatus): string {
   return ACTION_LABEL[action] ?? action
 }
 
-const REASON_REQUIRED = new Set(['hold', 'reject_back', 'cancel', 'cancel_after_approval'])
+const REASON_REQUIRED = new Set(['hold', 'reject_back', 'reject_rfq', 'cancel', 'cancel_after_approval'])
 const TIMELINE_ACTIONS = new Set(['start', 'submit'])
 
 const inputStyle = (theme: ThemeTokens): React.CSSProperties => ({
@@ -76,11 +79,14 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
   })
 
   const [startProject]               = useMutation(START_PROJECT)
+  const [submitToTeam]               = useMutation(SUBMIT_TO_TEAM)
   const [holdProject]                = useMutation(HOLD_PROJECT)
   const [resumeProject]              = useMutation(RESUME_PROJECT)
   const [submitProject]              = useMutation(SUBMIT_PROJECT)
   const [approveProject]             = useMutation(APPROVE_PROJECT)
+  const [approveRFQ]                 = useMutation(APPROVE_RFQ)
   const [rejectBackProject]          = useMutation(REJECT_BACK_PROJECT)
+  const [rejectRFQ]                  = useMutation(REJECT_RFQ)
   const [completeProject]            = useMutation(COMPLETE_PROJECT)
   const [cancelProject]              = useMutation(CANCEL_PROJECT)
   const [cancelProjectAfterApproval] = useMutation(CANCEL_PROJECT_AFTER_APPROVAL)
@@ -88,11 +94,14 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
 
   const mutationFor = (action: string) => ({
     start:                 startProject,
+    submit_to_team:        submitToTeam,
     hold:                  holdProject,
     resume:                resumeProject,
     submit:                submitProject,
     approve:               approveProject,
+    approve_rfq:           approveRFQ,
     reject_back:           rejectBackProject,
+    reject_rfq:            rejectRFQ,
     complete:              completeProject,
     cancel:                cancelProject,
     cancel_after_approval: cancelProjectAfterApproval,
@@ -104,8 +113,8 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
     if (REASON_REQUIRED.has(action)) {
       setPendingAction(action); setReason(''); return
     }
-    if (action === 'start') {
-      setPendingAction('start')
+    if (action === 'start' || action === 'submit_to_team') {
+      setPendingAction(action)
       setTimelineForm({
         siteVisitDate:  timeline?.siteVisitDate  ?? '',
         siteVisitTime:  sliceTime(timeline?.siteVisitTime),
@@ -143,7 +152,7 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
     try {
       if (!skip) {
         const input: Record<string, unknown> = {}
-        if (pendingAction === 'start') {
+        if (pendingAction === 'start' || pendingAction === 'submit_to_team') {
           if (timelineForm.siteVisitDate) input['siteVisitDate'] = timelineForm.siteVisitDate
           if (timelineForm.siteVisitTime) input['siteVisitTime'] = timelineForm.siteVisitTime
           if (timelineForm.questionDate)  input['questionDate']  = timelineForm.questionDate
@@ -240,8 +249,8 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
         </div>
       )}
 
-      {/* Timeline modal — Start Project */}
-      {pendingAction === 'start' && (
+      {/* Timeline modal — Submit to Team / Start */}
+      {(pendingAction === 'start' || pendingAction === 'submit_to_team') && (
         <div style={{ background: theme.accentBg, border: `1px solid ${theme.accentBorder}`, borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
             Before starting — confirm the tender schedule
@@ -329,15 +338,17 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
       {!pendingAction && allowedActions.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
           {allowedActions.map(action => {
-            const isDanger = action === 'cancel' || action === 'cancel_after_approval'
+            const isDanger   = action === 'cancel' || action === 'cancel_after_approval'
+            const isApprove  = action === 'approve_rfq' || action === 'approve'
+            const isWarning  = action === 'reject_rfq' || action === 'reject_back'
+            const bg = isDanger ? '#ef4444' : isApprove ? '#16a34a' : isWarning ? '#f59e0b' : theme.accent
             return (
               <button
                 key={action}
                 onClick={() => handleAction(action)}
                 style={{
                   padding: '6px 14px', borderRadius: '7px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', border: 'none',
-                  background: isDanger ? '#ef4444' : theme.accent,
-                  color: '#fff',
+                  background: bg, color: '#fff',
                 }}
               >
                 {resolveActionLabel(action, status)}

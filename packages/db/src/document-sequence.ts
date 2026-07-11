@@ -1,6 +1,8 @@
 import { pool } from './client.js'
 
 export const DOC_TYPES = [
+  { key: 'rfq',               label: 'RFQ Number',        defaultPrefix: 'RFQ' },
+  { key: 'project',           label: 'Project Number',    defaultPrefix: 'PRJ' },
   { key: 'purchase_order',    label: 'Purchase Order',    defaultPrefix: 'PO'  },
   { key: 'project_contract',  label: 'Project Contract',  defaultPrefix: 'CTR' },
   { key: 'project_invoice',   label: 'Project Invoice',   defaultPrefix: 'INV' },
