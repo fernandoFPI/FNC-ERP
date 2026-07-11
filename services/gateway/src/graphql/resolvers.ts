@@ -7535,10 +7535,16 @@ const phase5MutationResolvers = {
     const isAdmin = isAdminGW(auth.role)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
     if (!isAdmin && !isOrganizer) throw new Error('Only the PO organizer or an admin can submit to inventory check')
+    const poRow = await query(`SELECT priority FROM purchase_orders WHERE id = $1`, [args.id])
+    const isEmergency = poRow.rows[0]?.['priority'] === 'emergency'
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await poTransition(client, args.id, 'draft', 'inventory_check', 'submit_to_inventory_check', auth, args.notes)
+      if (isEmergency) {
+        await poTransition(client, args.id, 'draft', 'pending_approval', 'submit_emergency_for_approval', auth, args.notes)
+      } else {
+        await poTransition(client, args.id, 'draft', 'inventory_check', 'submit_to_inventory_check', auth, args.notes)
+      }
       await client.query('COMMIT')
     } catch (e) { await client.query('ROLLBACK'); throw e }
     finally { client.release() }
