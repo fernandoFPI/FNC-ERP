@@ -425,7 +425,10 @@ export default function PurchaseOrderDetail() {
       {/* Status bar */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <StatusBar
-          steps={PO_STATUSES.map((s) => ({ key: s.key, label: s.label }))}
+          steps={(po.priority === 'emergency'
+            ? PO_STATUSES.filter(s => ['draft','pending_approval','approved','goods_received','finance_audit','invoiced','completed'].includes(s.key))
+            : PO_STATUSES
+          ).map((s) => ({ key: s.key, label: s.label }))}
           currentStep={po.status}
           rejectedSteps={['deleted']}
         />
@@ -475,9 +478,20 @@ export default function PurchaseOrderDetail() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '560px' }}>
             {po.status === 'draft' && (
-              <Button variant="primary" loading={anyLoading} onClick={() => void submitToInventory({ variables: { id: po.id, notes: actionNotes || undefined } })}>
-                Submit for inventory check
-              </Button>
+              po.priority === 'emergency' ? (
+                <>
+                  <div style={{ padding: '10px 14px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fdba74', fontSize: '13px', color: '#9a3412' }}>
+                    Emergency PO — skips inventory check, store pricing, and market pricing. Submitting will send directly for approval.
+                  </div>
+                  <Button variant="primary" loading={anyLoading} onClick={() => void submitToInventory({ variables: { id: po.id, notes: actionNotes || undefined } })}>
+                    Submit for Approval
+                  </Button>
+                </>
+              ) : (
+                <Button variant="primary" loading={anyLoading} onClick={() => void submitToInventory({ variables: { id: po.id, notes: actionNotes || undefined } })}>
+                  Submit for inventory check
+                </Button>
+              )
             )}
 
             {po.status === 'inventory_check' && (

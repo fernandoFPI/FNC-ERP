@@ -394,18 +394,29 @@ ordersRouter.delete('/positions/:id', requirePermission('procurement.po.approve'
 
 ordersRouter.post('/:id/submit-to-inventory-check', requirePermission('procurement.po.edit', 'edit'), async (req, res) => {
   const auth = req.auth!
-  const ctx = { userId: auth.userId, companyId: auth.companyId, poId: req.params['id'] as string }
+  const id = req.params['id'] as string
+  const ctx = { userId: auth.userId, companyId: auth.companyId, poId: id }
   try {
-    const [organizer, admin] = await Promise.all([userIsOrganizer(ctx), Promise.resolve(isAdmin(auth.role))])
+    const [organizer, admin, poRow] = await Promise.all([
+      userIsOrganizer(ctx),
+      Promise.resolve(isAdmin(auth.role)),
+      query(`SELECT priority FROM purchase_orders WHERE id = $1 AND company_id = $2`, [id, auth.companyId]),
+    ])
     if (!organizer && !admin) return sendError(res, 403, 'FORBIDDEN', 'Only the organizer can submit this PO')
 
-    await transitionPO(req.params['id'] as string, 'draft', 'inventory_check', 'submit_to_inventory_check', auth)
-    await notifyPositionHolders(req.params['id'] as string, 'store_keeper', {
-      type: 'PO_INVENTORY_CHECK_REQUIRED',
-      title: 'Inventory check required',
-      body: `PO ${req.params['id'] as string} requires an inventory check`,
-    })
-    sendOk(res, { message: 'PO submitted for inventory check' })
+    const isEmergency = poRow.rows[0]?.['priority'] === 'emergency'
+    if (isEmergency) {
+      await transitionPO(id, 'draft', 'pending_approval', 'submit_emergency_for_approval', auth)
+      sendOk(res, { message: 'Emergency PO submitted directly for approval' })
+    } else {
+      await transitionPO(id, 'draft', 'inventory_check', 'submit_to_inventory_check', auth)
+      await notifyPositionHolders(id, 'store_keeper', {
+        type: 'PO_INVENTORY_CHECK_REQUIRED',
+        title: 'Inventory check required',
+        body: `PO ${id} requires an inventory check`,
+      })
+      sendOk(res, { message: 'PO submitted for inventory check' })
+    }
   } catch (err) { handleError(res, err) }
 })
 
