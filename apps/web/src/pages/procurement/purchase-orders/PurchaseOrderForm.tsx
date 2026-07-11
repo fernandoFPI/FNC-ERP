@@ -46,6 +46,7 @@ export default function PurchaseOrderForm() {
     assigned_receiver_id: '',
   })
   const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
+  const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [linkedProjectId, setLinkedProjectId] = useState('')
   const [linkedMoId, setLinkedMoId] = useState('')
   const [lines, setLines] = useState<POLine[]>([emptyLine()])
@@ -154,6 +155,7 @@ export default function PurchaseOrderForm() {
         notes: form.notes || undefined,
         fx_rate: parseFloat(form.fx_rate) || 1,
         purpose,
+        priority,
         assigned_receiver_id: form.assigned_receiver_id || undefined,
         linkedProjectId: purpose === 'project' ? (linkedProjectId || undefined) : undefined,
         linkedMoId: purpose === 'manufacturing' ? (linkedMoId || undefined) : undefined,
@@ -229,7 +231,7 @@ export default function PurchaseOrderForm() {
             <Input label="FX Rate" type="number" step="0.0001" min="0" value={form.fx_rate} onChange={(e) => setForm((f) => ({ ...f, fx_rate: e.target.value }))} />
           </div>
 
-          {/* Row 4: Received By */}
+          {/* Row 4: Received By + Priority */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <SearchableSelect
               label="Received By"
@@ -239,7 +241,44 @@ export default function PurchaseOrderForm() {
               placeholder="Search employee…"
               minDropdownWidth={320}
             />
-            <div />
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, marginBottom: '6px' }}>Priority</div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {(['low', 'high', 'emergency'] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPriority(p)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      border: `1.5px solid ${
+                        priority === p
+                          ? p === 'emergency' ? '#dc2626' : p === 'high' ? '#d97706' : theme.accent
+                          : theme.border
+                      }`,
+                      background: priority === p
+                        ? p === 'emergency' ? '#fef2f2' : p === 'high' ? '#fff7ed' : theme.accentBg ?? '#eff6ff'
+                        : 'transparent',
+                      color: priority === p
+                        ? p === 'emergency' ? '#dc2626' : p === 'high' ? '#d97706' : theme.accent
+                        : theme.textMuted,
+                    }}
+                  >
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {priority === 'emergency' && (
+                <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '5px' }}>
+                  Skips inventory check, store &amp; market pricing — goes direct to approval.
+                </div>
+              )}
+            </div>
           </div>
 
           <Textarea label="Notes" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />

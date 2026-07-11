@@ -3744,7 +3744,7 @@ export const resolvers = {
 
     createPurchaseOrder: async (
       _: unknown,
-      args: { input: { vendor_id?: string; currency_code?: string; analytic_account_id?: string; expected_delivery_date?: string; notes?: string; assigned_to?: string; assigned_receiver_id?: string; fx_rate?: number; purpose?: string; linkedProjectId?: string; linkedMoId?: string; lines: Array<{ product_id?: string; description?: string; qty: number; unit_price: number; uom?: string }> } },
+      args: { input: { vendor_id?: string; currency_code?: string; analytic_account_id?: string; expected_delivery_date?: string; notes?: string; assigned_to?: string; assigned_receiver_id?: string; fx_rate?: number; purpose?: string; priority?: string; linkedProjectId?: string; linkedMoId?: string; lines: Array<{ product_id?: string; description?: string; qty: number; unit_price: number; uom?: string }> } },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -3752,10 +3752,11 @@ export const resolvers = {
       return withTransaction({ companyId: ctx.auth!.companyId, userId: ctx.auth!.userId, role: ctx.auth!.role }, async (client) => {
         const poNum = await nextDocumentNumber(ctx.auth!.companyId, 'purchase_order', 'PO')
         const subtotal = i.lines.reduce((s, l) => s + l.qty * l.unit_price, 0)
+        const priority = ['low', 'high', 'emergency'].includes(i.priority ?? '') ? i.priority : 'low'
         const po = await client.query(
-          `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14) RETURNING *`,
-          [ctx.auth!.companyId, poNum, i.vendor_id || null, i.currency_code ?? 'IQD', i.analytic_account_id ?? null, i.expected_delivery_date ?? null, i.notes ?? null, i.assigned_to ?? null, i.fx_rate ?? 1, subtotal, i.purpose ?? 'stock', i.linkedProjectId ?? null, i.linkedMoId ?? null, ctx.auth!.userId, i.assigned_receiver_id ?? null],
+          `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16) RETURNING *`,
+          [ctx.auth!.companyId, poNum, i.vendor_id || null, i.currency_code ?? 'IQD', i.analytic_account_id ?? null, i.expected_delivery_date ?? null, i.notes ?? null, i.assigned_to ?? null, i.fx_rate ?? 1, subtotal, i.purpose ?? 'stock', i.linkedProjectId ?? null, i.linkedMoId ?? null, ctx.auth!.userId, i.assigned_receiver_id ?? null, priority],
         )
         const poRow = po.rows[0] as Record<string, unknown>
         for (let idx = 0; idx < i.lines.length; idx++) {

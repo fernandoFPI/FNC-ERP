@@ -1630,6 +1630,7 @@ export const typeDefs = `#graphql
     assigned_receiver_id: ID
     fx_rate: Float
     purpose: String
+    priority: String
     linkedProjectId: ID
     linkedMoId: ID
     lines: [POLineInput!]!
