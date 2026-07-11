@@ -194,6 +194,7 @@ export type POStatus =
 
 export type POAction =
   | 'submit_to_inventory_check'
+  | 'submit_emergency_for_approval'
   | 'confirm_inventory_check'
   | 'submit_to_market_pricing'
   | 'submit_to_price_verification'
@@ -222,6 +223,7 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
   transitions: [
     // Phase 1 — internal routing
     { from: 'draft',              to: 'inventory_check',   action: 'submit_to_inventory_check' },
+    { from: 'draft',              to: 'pending_approval',  action: 'submit_emergency_for_approval' },
     { from: 'inventory_check',   to: 'store_pricing',     action: 'confirm_inventory_check' },
     { from: 'inventory_check',   to: 'ready_to_issue',    action: 'confirm_inventory_check' },
     { from: 'ready_to_issue',    to: 'completed',         action: 'approve_stock_issuance' },
