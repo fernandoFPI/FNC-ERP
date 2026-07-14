@@ -223,8 +223,8 @@ filesRouter.get('/attachments', requireAuth(), async (req, res) => {
 
 // ── POST /api/v1/files/attach ──────────────────────────────────
 filesRouter.post('/attach', requireAuth(), async (req, res) => {
-  const { fileId, entityType, entityId, label } = req.body as {
-    fileId?: string; entityType?: string; entityId?: string; label?: string
+  const { fileId, entityType, entityId, label, description } = req.body as {
+    fileId?: string; entityType?: string; entityId?: string; label?: string; description?: string
   }
   if (!fileId || !entityType || !entityId) {
     res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'fileId, entityType, and entityId are required' } })
@@ -240,12 +240,25 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
   }
   try {
     await query(
-      `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, uploaded_by)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, description, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6)
        ON CONFLICT (file_id, entity_type, entity_id) DO NOTHING`,
-      [fileId, entityType, entityId, label ?? null, req.auth!.userId],
+      [fileId, entityType, entityId, label ?? null, description ?? null, req.auth!.userId],
     )
     await query(`UPDATE files SET status='attached' WHERE id=$1`, [fileId])
+    // Log to project activity when attaching to an RFQ phase
+    if (entityType === 'rfq_phase') {
+      const phase = await query<{ project_id: string; phase_type: string }>(
+        `SELECT project_id, phase_type FROM rfq_phases WHERE id=$1`, [entityId],
+      )
+      if (phase.rows[0]) {
+        const phaseLabel = ({ engineering: 'Engineering', pricing: 'Pricing', executing: 'Executing' })[phase.rows[0].phase_type] ?? phase.rows[0].phase_type
+        await query(
+          `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
+          [phase.rows[0].project_id, req.auth!.userId, 'rfq_phase_file', `File uploaded to ${phaseLabel} phase: "${label ?? fileId}"`],
+        )
+      }
+    }
     res.json({ success: true, data: { message: 'File attached' } })
   } catch (err) {
     res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to attach file' } })
@@ -257,8 +270,8 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
 // attachments, removes it from storage and marks it deleted.
 filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res) => {
   const attachmentId = req.params['attachmentId']!
-  const attachment = await query<{ id: string; file_id: string; file_key: string }>(
-    `SELECT da.id, da.file_id, f.file_key
+  const attachment = await query<{ id: string; file_id: string; file_key: string; entity_type: string; entity_id: string; label: string | null }>(
+    `SELECT da.id, da.file_id, f.file_key, da.entity_type, da.entity_id, da.label
      FROM document_attachments da
      JOIN files f ON f.id = da.file_id
      WHERE da.id=$1 AND f.company_id=$2`,
@@ -268,7 +281,7 @@ filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res)
     res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Attachment not found' } })
     return
   }
-  const { file_id: fileId, file_key: fileKey } = attachment.rows[0]
+  const { file_id: fileId, file_key: fileKey, entity_type: entityType, entity_id: entityId, label } = attachment.rows[0]
   try {
     await query('DELETE FROM document_attachments WHERE id=$1', [attachmentId])
     const remaining = await query<{ count: string }>(
@@ -277,6 +290,19 @@ filesRouter.delete('/attachments/:attachmentId', requireAuth(), async (req, res)
     if (parseInt(remaining.rows[0]?.count ?? '0') === 0) {
       try { await deleteFile(fileKey) } catch { /* storage delete best-effort */ }
       await query(`UPDATE files SET status='deleted', deleted_at=NOW() WHERE id=$1`, [fileId])
+    }
+    // Log to project activity when removing from an RFQ phase
+    if (entityType === 'rfq_phase') {
+      const phase = await query<{ project_id: string; phase_type: string }>(
+        `SELECT project_id, phase_type FROM rfq_phases WHERE id=$1`, [entityId],
+      )
+      if (phase.rows[0]) {
+        const phaseLabel = ({ engineering: 'Engineering', pricing: 'Pricing', executing: 'Executing' })[phase.rows[0].phase_type] ?? phase.rows[0].phase_type
+        await query(
+          `INSERT INTO project_activity_log (project_id, actor_id, event_type, summary) VALUES ($1,$2,$3,$4)`,
+          [phase.rows[0].project_id, req.auth!.userId, 'rfq_phase_file_delete', `File removed from ${phaseLabel} phase: "${label ?? fileId}"`],
+        )
+      }
     }
     res.json({ success: true, data: { message: 'Attachment removed' } })
   } catch (err) {

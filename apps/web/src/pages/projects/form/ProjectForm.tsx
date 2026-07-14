@@ -8,6 +8,9 @@ import { Button } from '../../../components/ui/Button'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import { api } from '../../../lib/axios'
+
+interface Employee { id: string; first_name: string; last_name: string; job_title?: string }
 
 const PROJECT_TYPES = [
   { value: 'construction',          label: 'Construction' },
@@ -31,6 +34,7 @@ interface FormState {
   siteVisitDate: string; siteVisitTime: string
   questionDate: string; questionTime: string
   rfqEstimatedCost: string
+  managerId: string
 }
 
 const BLANK: FormState = {
@@ -43,6 +47,7 @@ const BLANK: FormState = {
   siteVisitDate: '', siteVisitTime: '',
   questionDate: '', questionTime: '',
   rfqEstimatedCost: '',
+  managerId: '',
 }
 
 export default function ProjectForm() {
@@ -58,6 +63,7 @@ export default function ProjectForm() {
   const [customTypeMode,    setCustomTypeMode]    = useState(false)
   const [customTypeText,    setCustomTypeText]    = useState('')
   const [customTypeOptions, setCustomTypeOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [employees,         setEmployees]         = useState<Employee[]>([])
 
   const confirmCustomType = () => {
     const raw = customTypeText.trim()
@@ -68,6 +74,12 @@ export default function ProjectForm() {
     setForm(f => ({ ...f, projectType: val }))
     setCustomTypeMode(false)
   }
+  useEffect(() => {
+    api.get<Employee[]>('/hr/employees', { params: { limit: 200, status: 'active' } })
+      .then(r => setEmployees(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {})
+  }, [])
+
   const { data } = useQuery(PROJECT_QUERY, { variables: { id }, skip: !isEdit, fetchPolicy: 'cache-and-network' })
   const [createRFQ,     { loading: creating }] = useMutation(CREATE_RFQ)
   const [updateProject, { loading: updating }] = useMutation(UPDATE_PROJECT)
@@ -97,6 +109,7 @@ export default function ProjectForm() {
       questionDate:    p.questionDate    ?? '',
       questionTime:    p.questionTime    ? String(p.questionTime).slice(0, 5) : '',
       rfqEstimatedCost: p.rfqEstimatedCost != null ? String(p.rfqEstimatedCost) : '',
+      managerId:       p.managerId       ?? '',
     })
   }, [data])
 
@@ -139,6 +152,7 @@ export default function ProjectForm() {
       questionDate:     form.questionDate    || null,
       questionTime:     form.questionTime    || null,
       rfqEstimatedCost: form.rfqEstimatedCost ? Number(form.rfqEstimatedCost) : null,
+      projectManagerId: form.managerId || null,
     }
     try {
       if (isEdit) {
@@ -262,6 +276,24 @@ export default function ProjectForm() {
             {inp('clientName',    'Client Name')}
             {inp('clientContact', 'Client Contact')}
           </div>
+        </div>
+
+        {/* Team */}
+        <div style={{ marginBottom: '28px' }}>
+          <div style={secStyle}>Team</div>
+          <SearchableSelect
+            label="Project Manager"
+            value={form.managerId}
+            onChange={(v) => setForm(f => ({ ...f, managerId: v }))}
+            placeholder="Select project manager…"
+            options={[
+              { value: '', label: '— None —' },
+              ...employees.map(e => ({
+                value: e.id,
+                label: `${e.first_name} ${e.last_name}${e.job_title ? ` — ${e.job_title}` : ''}`,
+              })),
+            ]}
+          />
         </div>
 
         {/* Financials */}

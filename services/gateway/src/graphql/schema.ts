@@ -85,6 +85,14 @@ export const typeDefs = `#graphql
     # File & document management
     fileDownloadUrl(fileId: ID!): DownloadUrlPayload!
     entityAttachments(entityType: String!, entityId: ID!): [DocumentAttachment!]!
+
+    # Variation Orders
+    projectVariationOrders(projectId: ID!): [VariationOrder!]!
+    projectVariationOrder(id: ID!): VariationOrder
+
+    # Meetings / MOM
+    projectMeetings(projectId: ID!): [Meeting!]!
+    projectMeeting(id: ID!): Meeting
   }
 
   type Mutation {
@@ -711,6 +719,10 @@ export const typeDefs = `#graphql
     estimatedUnitCost: Float
     bidUnitPrice: Float
     notes: String
+    discipline: String
+    drawingRef: String
+    engineeringRef: String
+    specSection: String
   }
 
   input RFQLineInput {
@@ -722,6 +734,79 @@ export const typeDefs = `#graphql
     estimatedUnitCost: Float
     bidUnitPrice: Float
     notes: String
+    discipline: String
+    drawingRef: String
+    engineeringRef: String
+    specSection: String
+  }
+
+  # ── Engineering module ───────────────────────────────────────────
+
+  type EngineeringRevision {
+    id: ID!
+    projectId: ID!
+    revisionCode: String!
+    status: String!
+    notes: String
+    issuedByName: String
+    issuedAt: String!
+    itemCount: Int!
+    snapshotData: JSON
+    createdAt: String!
+  }
+
+  type ProjectDrawing {
+    id: ID!
+    projectId: ID!
+    drawingNumber: String!
+    title: String!
+    discipline: String
+    scale: String
+    paperSize: String
+    revision: String
+    status: String!
+    issueDate: String
+    notes: String
+    fileId: ID
+    parentDrawingId: ID
+    uploadedByName: String
+    downloadUrl: String
+    filename: String
+    revisions: [ProjectDrawing!]!
+    createdAt: String!
+  }
+
+  extend type Query {
+    engineeringRevisions(projectId: ID!): [EngineeringRevision!]!
+    projectDrawings(projectId: ID!): [ProjectDrawing!]!
+  }
+
+  extend type Mutation {
+    issueEngineeringRevision(projectId: ID!, revisionCode: String!, notes: String): EngineeringRevision!
+
+    createProjectDrawing(
+      projectId:     ID!
+      fileId:        ID!
+      drawingNumber: String!
+      title:         String!
+      discipline:    String
+      scale:         String
+      paperSize:     String
+      revision:      String
+      status:        String
+      issueDate:     String
+      notes:         String
+    ): ProjectDrawing!
+
+    reviseProjectDrawing(
+      parentDrawingId: ID!
+      fileId:          ID!
+      revision:        String!
+      notes:           String
+    ): ProjectDrawing!
+
+    updateProjectDrawingStatus(id: ID!, status: String!): ProjectDrawing!
+    deleteProjectDrawing(id: ID!): Boolean!
   }
 
   type PaginationMeta {
@@ -2037,6 +2122,87 @@ export const typeDefs = `#graphql
     rfqLines(projectId: ID!): [RFQLine!]!
   }
 
+  type RFQPhaseFile {
+    id: String!
+    fileId: String!
+    filename: String!
+    mimeType: String!
+    sizeBytes: Int!
+    title: String
+    description: String
+    createdAt: String!
+    downloadUrl: String
+  }
+
+  type RFQPhase {
+    id: ID!
+    projectId: ID!
+    phaseType: String!
+    serviceType: String!
+    status: String!
+    notes: String
+    sequence: Int!
+    fileCount: Int!
+    files: [RFQPhaseFile!]!
+  }
+
+  extend type Query {
+    rfqPhases(projectId: ID!): [RFQPhase!]!
+  }
+
+  # ── Client Documents ──────────────────────────────────────────
+
+  type ClientDocument {
+    id:               ID!
+    projectId:        ID!
+    fileId:           ID
+    category:         String!
+    title:            String!
+    documentNumber:   String
+    revision:         String
+    description:      String
+    receivedFrom:     String
+    transmissionDate: String
+    status:           String!
+    parentDocumentId: ID
+    uploadedById:     ID
+    uploadedByName:   String
+    downloadUrl:      String
+    filename:         String
+    mimeType:         String
+    sizeBytes:        Int
+    revisions:        [ClientDocument!]!
+    createdAt:        String!
+  }
+
+  extend type Query {
+    clientDocuments(projectId: ID!, category: String): [ClientDocument!]!
+  }
+
+  extend type Mutation {
+    uploadClientDocument(
+      projectId:        ID!
+      fileId:           ID!
+      category:         String!
+      title:            String!
+      documentNumber:   String
+      revision:         String
+      description:      String
+      receivedFrom:     String
+      transmissionDate: String
+    ): ClientDocument!
+
+    uploadClientDocumentRevision(
+      parentDocumentId: ID!
+      fileId:           ID!
+      revision:         String!
+      description:      String
+    ): ClientDocument!
+
+    updateClientDocumentStatus(id: ID!, status: String!): ClientDocument!
+    deleteClientDocument(id: ID!): Boolean!
+  }
+
   extend type Mutation {
     createProject(input: ProjectCreateInput!): Project!
     createRFQ(input: ProjectCreateInput!): Project!
@@ -2052,6 +2218,7 @@ export const typeDefs = `#graphql
     rejectBackProject(id: ID!, reason: String!): Project!
     completeProject(id: ID!): Project!
     upsertRFQLines(projectId: ID!, lines: [RFQLineInput!]!): [RFQLine!]!
+    updateRFQPhase(id: ID!, status: String, notes: String): RFQPhase!
     cancelProject(id: ID!, reason: String!): Project!
     cancelProjectAfterApproval(id: ID!, reason: String!): Project!
     adminSetProjectStatus(id: ID!, status: String!): Project!
@@ -3157,5 +3324,981 @@ export const typeDefs = `#graphql
     createRoleTemplate(input: RoleTemplateInput!): RoleTemplate!
     updateRoleTemplate(id: ID!, input: RoleTemplateInput!): RoleTemplate!
     deleteRoleTemplate(id: ID!): Boolean!
+  }
+
+  # ── Bidding module ────────────────────────────────────────────────────────
+
+  type BidDeliverable {
+    id:              ID!
+    projectId:       ID!
+    name:            String!
+    deliverableType: String!
+    discipline:      String
+    status:          String!
+    assignedTo:      String
+    dueDate:         String
+    notes:           String
+    sequence:        Int!
+    createdByName:   String
+    fileCount:       Int!
+    files:           [RFQPhaseFile!]!
+    createdAt:       String!
+    updatedAt:       String!
+  }
+
+  input BidCostItemInput {
+    id:           ID
+    costType:     String!
+    description:  String!
+    quantity:     Float
+    unit:         String
+    unitCost:     Float
+    totalCost:    Float
+    currencyCode: String
+    supplierRef:  String
+    notes:        String
+    sequence:     Int
+  }
+
+  type BidCostItem {
+    id:           ID!
+    projectId:    ID!
+    costType:     String!
+    description:  String!
+    quantity:     Float
+    unit:         String
+    unitCost:     Float
+    totalCost:    Float
+    currencyCode: String!
+    supplierRef:  String
+    notes:        String
+    sequence:     Int!
+    createdAt:    String!
+  }
+
+  type BidSupplierQuotation {
+    id:              ID!
+    projectId:       ID!
+    supplierName:    String!
+    itemDescription: String!
+    amount:          Float
+    currencyCode:    String!
+    validityDate:    String
+    fileId:          String
+    downloadUrl:     String
+    filename:        String
+    notes:           String
+    status:          String!
+    createdAt:       String!
+  }
+
+  type BidCommercialSummary {
+    id:                ID
+    projectId:         ID!
+    overheadPct:       Float!
+    marginPct:         Float!
+    discountPct:       Float!
+    contingencyPct:    Float!
+    currencyCode:      String!
+    directCostTotal:   Float!
+    overheadAmount:    Float!
+    contingencyAmount: Float!
+    marginAmount:      Float!
+    discountAmount:    Float!
+    bidPrice:          Float!
+    approvalStatus:    String!
+    submittedByName:   String
+    submittedAt:       String
+    approvedByName:    String
+    approvedAt:        String
+    rejectionReason:   String
+    notes:             String
+    updatedAt:         String
+  }
+
+  extend type Query {
+    bidDeliverables(projectId: ID!): [BidDeliverable!]!
+    bidCostItems(projectId: ID!): [BidCostItem!]!
+    bidSupplierQuotations(projectId: ID!): [BidSupplierQuotation!]!
+    bidCommercialSummary(projectId: ID!): BidCommercialSummary
+  }
+
+  extend type Mutation {
+    createBidDeliverable(projectId: ID!, name: String!, deliverableType: String!, discipline: String, dueDate: String, notes: String): BidDeliverable!
+    updateBidDeliverable(id: ID!, name: String, status: String, assignedTo: String, dueDate: String, notes: String, discipline: String): BidDeliverable!
+    deleteBidDeliverable(id: ID!): Boolean!
+    uploadBidDeliverableFile(deliverableId: ID!, fileId: ID!, title: String, description: String): BidDeliverable!
+    deleteBidDeliverableFile(attachmentId: ID!, deliverableId: ID!): Boolean!
+    upsertBidCostItems(projectId: ID!, items: [BidCostItemInput!]!): [BidCostItem!]!
+    createBidSupplierQuotation(projectId: ID!, supplierName: String!, itemDescription: String!, amount: Float, currencyCode: String, validityDate: String, fileId: ID, notes: String): BidSupplierQuotation!
+    updateBidSupplierQuotation(id: ID!, status: String, supplierName: String, itemDescription: String, amount: Float, validityDate: String, notes: String): BidSupplierQuotation!
+    deleteBidSupplierQuotation(id: ID!): Boolean!
+    updateBidCommercialSummary(projectId: ID!, overheadPct: Float, marginPct: Float, discountPct: Float, contingencyPct: Float, currencyCode: String, notes: String): BidCommercialSummary!
+    submitBidForApproval(projectId: ID!): BidCommercialSummary!
+    approveBid(projectId: ID!): BidCommercialSummary!
+    rejectBid(projectId: ID!, reason: String!): BidCommercialSummary!
+  }
+
+  # ── Execution module ────────────────────────────────────────────────────────
+
+  type ProjectRFI {
+    id:               ID!
+    projectId:        ID!
+    rfiNumber:        String!
+    subject:          String!
+    description:      String
+    drawingRef:       String
+    specRef:          String
+    raisedByName:     String
+    raisedDate:       String!
+    requiredDate:     String
+    respondedDate:    String
+    status:           String!
+    response:         String
+    respondedByName:  String
+    files:            [RFQPhaseFile!]!
+    createdAt:        String!
+    updatedAt:        String!
+  }
+
+  type ProjectSubmittal {
+    id:              ID!
+    projectId:       ID!
+    submittalNumber: String!
+    title:           String!
+    submittalType:   String!
+    revision:        String!
+    submittedDate:   String
+    reviewerName:    String
+    reviewStatus:    String!
+    returnDate:      String
+    remarks:         String
+    files:           [RFQPhaseFile!]!
+    createdAt:       String!
+    updatedAt:       String!
+  }
+
+  type ProjectSiteInstruction {
+    id:                  ID!
+    projectId:           ID!
+    siNumber:            String!
+    subject:             String!
+    description:         String
+    issuedBy:            String
+    issuedDate:          String!
+    acknowledgedByName:  String
+    acknowledgedDate:    String
+    potentialVo:         Boolean!
+    voRef:               String
+    status:              String!
+    files:               [RFQPhaseFile!]!
+    createdAt:           String!
+    updatedAt:           String!
+  }
+
+  type ProjectITPItem {
+    id:                 ID!
+    itpId:              ID!
+    sequence:           Int!
+    activity:           String!
+    inspectionType:     String!
+    contractorRole:     String
+    clientRole:         String
+    referenceDoc:       String
+    acceptanceCriteria: String
+    result:             String
+    inspectorName:      String
+    inspectionDate:     String
+    remarks:            String
+  }
+
+  type ProjectITP {
+    id:             ID!
+    projectId:      ID!
+    title:          String!
+    workPackage:    String
+    discipline:     String
+    revision:       String!
+    status:         String!
+    createdByName:  String
+    items:          [ProjectITPItem!]!
+    createdAt:      String!
+    updatedAt:      String!
+  }
+
+  type ProjectInspectionRequest {
+    id:               ID!
+    projectId:        ID!
+    irNumber:         String!
+    title:            String!
+    itpId:            ID
+    workPackage:      String
+    location:         String
+    requestedDate:    String!
+    requestedByName:  String
+    inspectorName:    String
+    actualDate:       String
+    status:           String!
+    result:           String
+    remarks:          String
+    files:            [RFQPhaseFile!]!
+    createdAt:        String!
+    updatedAt:        String!
+  }
+
+  type ProjectNCR {
+    id:               ID!
+    projectId:        ID!
+    ncrNumber:        String!
+    title:            String!
+    description:      String!
+    workPackage:      String
+    location:         String
+    raisedByName:     String
+    raisedDate:       String!
+    severity:         String!
+    rootCause:        String
+    correctiveAction: String
+    preventiveAction: String
+    dueDate:          String
+    closedDate:       String
+    closedByName:     String
+    status:           String!
+    files:            [RFQPhaseFile!]!
+    createdAt:        String!
+    updatedAt:        String!
+  }
+
+  type ProjectHSERecord {
+    id:                    ID!
+    projectId:             ID!
+    recordType:            String!
+    title:                 String!
+    recordDate:            String!
+    conductedBy:           String
+    location:              String
+    description:           String
+    attendeeCount:         Int
+    attendeeNames:         String
+    incidentType:          String
+    severity:              String
+    injuredPerson:         String
+    rootCause:             String
+    correctiveAction:      String
+    correctiveDueDate:     String
+    correctiveClosedDate:  String
+    observationType:       String
+    ptwType:               String
+    ptwNumber:             String
+    validFrom:             String
+    validTo:               String
+    approvedBy:            String
+    ptwStatus:             String
+    status:                String!
+    createdByName:         String
+    files:                 [RFQPhaseFile!]!
+    createdAt:             String!
+    updatedAt:             String!
+  }
+
+  type ProjectTransmittalItem {
+    id:              ID!
+    transmittalId:   ID!
+    documentTitle:   String!
+    documentNumber:  String
+    revision:        String
+    filename:        String
+    downloadUrl:     String
+    copies:          Int!
+  }
+
+  type ProjectTransmittal {
+    id:                 ID!
+    projectId:          ID!
+    transmittalNumber:  String!
+    title:              String!
+    toCompany:          String
+    toContact:          String
+    fromName:           String
+    sentDate:           String!
+    purpose:            String!
+    acknowledgedDate:   String
+    notes:              String
+    status:             String!
+    items:              [ProjectTransmittalItem!]!
+    createdAt:          String!
+    updatedAt:          String!
+  }
+
+  input ITPItemInput {
+    id:                 ID
+    sequence:           Int!
+    activity:           String!
+    inspectionType:     String!
+    contractorRole:     String
+    clientRole:         String
+    referenceDoc:       String
+    acceptanceCriteria: String
+  }
+
+  input TransmittalItemInput {
+    documentTitle:  String!
+    documentNumber: String
+    revision:       String
+    fileId:         ID
+    copies:         Int
+  }
+
+  extend type Query {
+    projectRFIs(projectId: ID!):               [ProjectRFI!]!
+    projectSubmittals(projectId: ID!):         [ProjectSubmittal!]!
+    projectSiteInstructions(projectId: ID!):   [ProjectSiteInstruction!]!
+    projectITPs(projectId: ID!):               [ProjectITP!]!
+    projectInspectionRequests(projectId: ID!): [ProjectInspectionRequest!]!
+    projectNCRs(projectId: ID!):               [ProjectNCR!]!
+    projectHSERecords(projectId: ID!, recordType: String): [ProjectHSERecord!]!
+    projectTransmittals(projectId: ID!):       [ProjectTransmittal!]!
+  }
+
+  extend type Mutation {
+    # RFIs
+    createProjectRFI(projectId: ID!, rfiNumber: String!, subject: String!, description: String, drawingRef: String, specRef: String, requiredDate: String): ProjectRFI!
+    updateProjectRFI(id: ID!, subject: String, description: String, drawingRef: String, specRef: String, requiredDate: String, status: String): ProjectRFI!
+    respondToRFI(id: ID!, response: String!, respondedDate: String): ProjectRFI!
+    deleteProjectRFI(id: ID!): Boolean!
+    uploadRFIFile(rfiId: ID!, fileId: ID!, title: String): ProjectRFI!
+    deleteRFIFile(attachmentId: ID!, rfiId: ID!): Boolean!
+
+    # Submittals
+    createProjectSubmittal(projectId: ID!, submittalNumber: String!, title: String!, submittalType: String!, revision: String, submittedDate: String, reviewerName: String): ProjectSubmittal!
+    updateProjectSubmittal(id: ID!, title: String, submittalType: String, revision: String, submittedDate: String, reviewerName: String, reviewStatus: String, returnDate: String, remarks: String): ProjectSubmittal!
+    deleteProjectSubmittal(id: ID!): Boolean!
+    uploadSubmittalFile(submittalId: ID!, fileId: ID!, title: String): ProjectSubmittal!
+    deleteSubmittalFile(attachmentId: ID!, submittalId: ID!): Boolean!
+
+    # Site Instructions
+    createSiteInstruction(projectId: ID!, siNumber: String!, subject: String!, description: String, issuedBy: String, issuedDate: String, potentialVo: Boolean): ProjectSiteInstruction!
+    updateSiteInstruction(id: ID!, subject: String, description: String, issuedBy: String, acknowledgedByName: String, acknowledgedDate: String, status: String, potentialVo: Boolean, voRef: String): ProjectSiteInstruction!
+    deleteSiteInstruction(id: ID!): Boolean!
+    uploadSIFile(siId: ID!, fileId: ID!, title: String): ProjectSiteInstruction!
+    deleteSIFile(attachmentId: ID!, siId: ID!): Boolean!
+
+    # ITPs
+    createProjectITP(projectId: ID!, title: String!, workPackage: String, discipline: String): ProjectITP!
+    updateProjectITP(id: ID!, title: String, workPackage: String, discipline: String, revision: String, status: String): ProjectITP!
+    deleteProjectITP(id: ID!): Boolean!
+    upsertITPItems(itpId: ID!, items: [ITPItemInput!]!): ProjectITP!
+    recordITPItemResult(itemId: ID!, result: String!, inspectorName: String, inspectionDate: String, remarks: String): ProjectITPItem!
+
+    # Inspection Requests
+    createInspectionRequest(projectId: ID!, irNumber: String!, title: String!, itpId: ID, workPackage: String, location: String, requestedDate: String!): ProjectInspectionRequest!
+    updateInspectionRequest(id: ID!, title: String, location: String, requestedDate: String, inspectorName: String, actualDate: String, status: String, result: String, remarks: String): ProjectInspectionRequest!
+    deleteInspectionRequest(id: ID!): Boolean!
+    uploadIRFile(irId: ID!, fileId: ID!, title: String): ProjectInspectionRequest!
+    deleteIRFile(attachmentId: ID!, irId: ID!): Boolean!
+
+    # NCRs
+    createProjectNCR(projectId: ID!, ncrNumber: String!, title: String!, description: String!, workPackage: String, location: String, severity: String, dueDate: String): ProjectNCR!
+    updateProjectNCR(id: ID!, title: String, description: String, workPackage: String, location: String, severity: String, rootCause: String, correctiveAction: String, preventiveAction: String, dueDate: String, status: String, closedDate: String, closedByName: String): ProjectNCR!
+    deleteProjectNCR(id: ID!): Boolean!
+    uploadNCRFile(ncrId: ID!, fileId: ID!, title: String): ProjectNCR!
+    deleteNCRFile(attachmentId: ID!, ncrId: ID!): Boolean!
+
+    # HSE Records
+    createHSERecord(projectId: ID!, recordType: String!, title: String!, recordDate: String!, conductedBy: String, location: String, description: String, attendeeCount: Int, attendeeNames: String, incidentType: String, severity: String, injuredPerson: String, observationType: String, ptwType: String, ptwNumber: String, validFrom: String, validTo: String, approvedBy: String): ProjectHSERecord!
+    updateHSERecord(id: ID!, title: String, recordDate: String, conductedBy: String, location: String, description: String, attendeeCount: Int, attendeeNames: String, incidentType: String, severity: String, injuredPerson: String, rootCause: String, correctiveAction: String, correctiveDueDate: String, correctiveClosedDate: String, observationType: String, ptwType: String, ptwNumber: String, validFrom: String, validTo: String, approvedBy: String, ptwStatus: String, status: String): ProjectHSERecord!
+    deleteHSERecord(id: ID!): Boolean!
+    uploadHSEFile(hseId: ID!, fileId: ID!, title: String): ProjectHSERecord!
+    deleteHSEFile(attachmentId: ID!, hseId: ID!): Boolean!
+
+    # Transmittals
+    createProjectTransmittal(projectId: ID!, transmittalNumber: String!, title: String!, toCompany: String, toContact: String, fromName: String, sentDate: String!, purpose: String!, notes: String, items: [TransmittalItemInput!]): ProjectTransmittal!
+    updateProjectTransmittal(id: ID!, title: String, toCompany: String, toContact: String, fromName: String, sentDate: String, purpose: String, acknowledgedDate: String, notes: String, status: String): ProjectTransmittal!
+    deleteProjectTransmittal(id: ID!): Boolean!
+    addTransmittalItem(transmittalId: ID!, documentTitle: String!, documentNumber: String, revision: String, fileId: ID, copies: Int): ProjectTransmittalItem!
+    deleteTransmittalItem(id: ID!): Boolean!
+  }
+
+  # ─── Planning ────────────────────────────────────────────────────────────────
+
+  type WBSNode {
+    id: ID!
+    projectId: ID!
+    parentId: ID
+    wbsCode: String!
+    name: String!
+    description: String
+    level: Int!
+    sequence: Int!
+    budgetAmount: Float!
+    responsible: String
+    children: [WBSNode!]!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type ProjectActivity {
+    id: ID!
+    projectId: ID!
+    wbsId: ID
+    wbsCode: String
+    activityCode: String!
+    name: String!
+    activityType: String!
+    plannedStart: String
+    plannedFinish: String
+    durationDays: Int!
+    baselineStart: String
+    baselineFinish: String
+    baselineDuration: Int
+    actualStart: String
+    actualFinish: String
+    percentComplete: Float!
+    earlyStart: String
+    earlyFinish: String
+    lateStart: String
+    lateFinish: String
+    totalFloat: Int
+    freeFloat: Int
+    isCritical: Boolean!
+    budgetAmount: Float!
+    actualCost: Float!
+    responsible: String
+    location: String
+    remarks: String
+    sequence: Int!
+    predecessors: [ActivityDependency!]!
+    successors: [ActivityDependency!]!
+    resources: [ActivityResourceAssignment!]!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type ActivityDependency {
+    id: ID!
+    predecessorId: ID!
+    successorId: ID!
+    dependencyType: String!
+    lagDays: Int!
+    predecessorCode: String
+    successorCode: String
+  }
+
+  type ProjectBaseline {
+    id: ID!
+    projectId: ID!
+    name: String!
+    description: String
+    baselineDate: String!
+    isActive: Boolean!
+    createdAt: String!
+  }
+
+  type ProjectResource {
+    id: ID!
+    projectId: ID!
+    name: String!
+    resourceType: String!
+    unit: String!
+    maxUnitsPerDay: Float!
+    costPerUnit: Float!
+    currencyCode: String!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type ResourceCalendarDay {
+    id: ID!
+    resourceId: ID!
+    workDate: String!
+    availableUnits: Float!
+    isHoliday: Boolean!
+    note: String
+  }
+
+  type ActivityResourceAssignment {
+    id: ID!
+    activityId: ID!
+    resourceId: ID!
+    resourceName: String
+    unit: String
+    unitsPerDay: Float!
+    totalUnits: Float
+    budgetedCost: Float
+    actualUnits: Float
+    actualCost: Float
+  }
+
+  type ResourceDayLoading {
+    date: String!
+    totalUnits: Float!
+    maxUnits: Float!
+    isOverloaded: Boolean!
+    activities: [String!]!
+  }
+
+  type EVMData {
+    statusDate: String!
+    bac: Float!
+    pv: Float!
+    ev: Float!
+    ac: Float!
+    sv: Float!
+    cv: Float!
+    spi: Float!
+    cpi: Float!
+    eac: Float!
+    etc: Float!
+    vac: Float!
+    tcpi: Float!
+    criticalPathComplete: Float!
+    percentComplete: Float!
+    percentSpent: Float!
+  }
+
+  input ActivityImportInput {
+    activityCode: String!
+    name: String!
+    activityType: String
+    plannedStart: String
+    plannedFinish: String
+    durationDays: Int
+    responsible: String
+    wbsCode: String
+    budgetAmount: Float
+    sequence: Int
+  }
+
+  input DependencyImportInput {
+    predecessorCode: String!
+    successorCode: String!
+    dependencyType: String
+    lagDays: Int
+  }
+
+  extend type Query {
+    projectWBS(projectId: ID!): [WBSNode!]!
+    projectActivities(projectId: ID!): [ProjectActivity!]!
+    projectDependencies(projectId: ID!): [ActivityDependency!]!
+    projectBaselines(projectId: ID!): [ProjectBaseline!]!
+    projectResources(projectId: ID!): [ProjectResource!]!
+    projectResourceCalendar(resourceId: ID!): [ResourceCalendarDay!]!
+    projectResourceLoading(projectId: ID!, resourceId: ID!, startDate: String!, endDate: String!): [ResourceDayLoading!]!
+    projectEVM(projectId: ID!, statusDate: String): EVMData!
+  }
+
+  extend type Mutation {
+    # WBS
+    createWBSNode(projectId: ID!, parentId: ID, wbsCode: String!, name: String!, description: String, level: Int, sequence: Int, budgetAmount: Float, responsible: String): WBSNode!
+    updateWBSNode(id: ID!, wbsCode: String, name: String, description: String, sequence: Int, budgetAmount: Float, responsible: String): WBSNode!
+    deleteWBSNode(id: ID!): Boolean!
+
+    # Activities
+    createActivity(projectId: ID!, wbsId: ID, activityCode: String!, name: String!, activityType: String, plannedStart: String, plannedFinish: String, durationDays: Int, responsible: String, location: String, remarks: String, budgetAmount: Float, sequence: Int): ProjectActivity!
+    updateActivity(id: ID!, wbsId: ID, activityCode: String, name: String, activityType: String, plannedStart: String, plannedFinish: String, durationDays: Int, responsible: String, location: String, remarks: String, budgetAmount: Float, actualCost: Float, sequence: Int): ProjectActivity!
+    updateActivityProgress(id: ID!, percentComplete: Float!, actualStart: String, actualFinish: String): ProjectActivity!
+    deleteActivity(id: ID!): Boolean!
+    bulkImportActivities(projectId: ID!, activities: [ActivityImportInput!]!, dependencies: [DependencyImportInput!], clearExisting: Boolean): Boolean!
+
+    # Dependencies
+    createDependency(projectId: ID!, predecessorId: ID!, successorId: ID!, dependencyType: String, lagDays: Int): ActivityDependency!
+    deleteDependency(id: ID!): Boolean!
+
+    # CPM + Leveling
+    recalculateCPM(projectId: ID!): Boolean!
+    levelResources(projectId: ID!): Boolean!
+
+    # Baselines
+    createBaseline(projectId: ID!, name: String!, description: String): ProjectBaseline!
+    setActiveBaseline(id: ID!): ProjectBaseline!
+    applyBaseline(id: ID!): Boolean!
+    deleteBaseline(id: ID!): Boolean!
+
+    # Resources
+    createResource(projectId: ID!, name: String!, resourceType: String!, unit: String!, maxUnitsPerDay: Float!, costPerUnit: Float!, currencyCode: String): ProjectResource!
+    updateResource(id: ID!, name: String, resourceType: String, unit: String, maxUnitsPerDay: Float, costPerUnit: Float): ProjectResource!
+    deleteResource(id: ID!): Boolean!
+
+    # Resource calendar
+    setCalendarDay(resourceId: ID!, workDate: String!, availableUnits: Float!, isHoliday: Boolean!, note: String): ResourceCalendarDay!
+    deleteCalendarDay(id: ID!): Boolean!
+
+    # Activity-resource assignments
+    assignResource(activityId: ID!, resourceId: ID!, unitsPerDay: Float!, budgetedCost: Float): ActivityResourceAssignment!
+    updateResourceAssignment(id: ID!, unitsPerDay: Float, totalUnits: Float, budgetedCost: Float, actualUnits: Float, actualCost: Float): ActivityResourceAssignment!
+    removeResourceAssignment(id: ID!): Boolean!
+  }
+
+  # ── Cost Control ───────────────────────────────────────────────────────────
+
+  type CostCode {
+    id: ID!
+    projectId: ID!
+    wbsId: ID
+    code: String!
+    name: String!
+    category: String!
+    budgetAmount: Float!
+    sequence: Int!
+    # Computed aggregates
+    committedAmount: Float!
+    actualAmount: Float!
+    forecastEAC: Float!
+    remainingBudget: Float!
+    percentConsumed: Float!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type CommittedCost {
+    id: ID!
+    projectId: ID!
+    costCodeId: ID
+    costCodeName: String
+    commitmentType: String!
+    referenceId: ID
+    referenceNumber: String
+    description: String!
+    vendorName: String
+    committedAmount: Float!
+    invoicedAmount: Float!
+    paidAmount: Float!
+    currencyCode: String!
+    commitmentDate: String
+    expectedInvoiceDate: String
+    status: String!
+    notes: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type CashFlowPeriod {
+    id: ID!
+    projectId: ID!
+    periodYear: Int!
+    periodMonth: Int!
+    label: String!
+    plannedOutflow: Float!
+    actualOutflow: Float!
+    forecastOutflow: Float!
+    plannedInflow: Float!
+    actualInflow: Float!
+    forecastInflow: Float!
+    notes: String
+    updatedAt: String!
+    # Cumulative (computed)
+    cumPlannedOutflow: Float!
+    cumActualOutflow: Float!
+    cumForecastOutflow: Float!
+  }
+
+  type Subcontract {
+    id: ID!
+    projectId: ID!
+    costCodeId: ID
+    subcontractNumber: String!
+    subcontractorName: String!
+    description: String
+    scopeOfWork: String
+    contractValue: Float!
+    revisedValue: Float!
+    retentionPercentage: Float!
+    retentionReleased: Float!
+    certifiedAmount: Float!
+    paidAmount: Float!
+    currencyCode: String!
+    startDate: String
+    endDate: String
+    status: String!
+    createdAt: String!
+    updatedAt: String!
+    billings: [SubcontractBilling!]!
+  }
+
+  type SubcontractBilling {
+    id: ID!
+    subcontractId: ID!
+    billingNumber: String!
+    billingDate: String!
+    grossAmount: Float!
+    retentionAmount: Float!
+    netAmount: Float!
+    certifiedAmount: Float
+    certifiedDate: String
+    paidAmount: Float!
+    paidDate: String
+    status: String!
+    notes: String
+    createdAt: String!
+  }
+
+  type LaborEntry {
+    id: ID!
+    projectId: ID!
+    costCodeId: ID
+    activityId: ID
+    workDate: String!
+    trade: String!
+    workerName: String
+    regularHours: Float!
+    overtimeHours: Float!
+    costPerHour: Float!
+    totalCost: Float!
+    notes: String
+    createdAt: String!
+  }
+
+  type EquipmentLog {
+    id: ID!
+    projectId: ID!
+    costCodeId: ID
+    logDate: String!
+    equipmentName: String!
+    equipmentType: String
+    ownership: String!
+    workingHours: Float!
+    standbyHours: Float!
+    costPerHour: Float!
+    standbyRate: Float!
+    totalCost: Float!
+    notes: String
+    createdAt: String!
+  }
+
+  type CostForecast {
+    id: ID!
+    projectId: ID!
+    costCodeId: ID
+    costCodeName: String
+    forecastDate: String!
+    etcAmount: Float!
+    eacAmount: Float!
+    notes: String
+    createdAt: String!
+  }
+
+  type ClientBilling {
+    id: ID!
+    projectId: ID!
+    billingNumber: String!
+    billingDate: String!
+    periodFrom: String
+    periodTo: String
+    grossAmount: Float!
+    retentionPercentage: Float!
+    retentionAmount: Float!
+    netAmount: Float!
+    certifiedAmount: Float
+    certifiedDate: String
+    paidAmount: Float!
+    paidDate: String
+    status: String!
+    notes: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type CostControlSummary {
+    totalBudget: Float!
+    totalCommitted: Float!
+    totalActual: Float!
+    totalForecastEAC: Float!
+    totalRemaining: Float!
+    totalVariance: Float!
+    percentConsumed: Float!
+    # Client billing summary
+    totalBilled: Float!
+    totalCertified: Float!
+    totalPaidByClient: Float!
+    totalRetentionHeld: Float!
+    outstandingReceivable: Float!
+    # Category breakdown
+    byCategory: [CategoryCostSummary!]!
+  }
+
+  type CategoryCostSummary {
+    category: String!
+    budgetAmount: Float!
+    committedAmount: Float!
+    actualAmount: Float!
+    forecastEAC: Float!
+    variance: Float!
+  }
+
+  extend type Query {
+    projectCostCodes(projectId: ID!): [CostCode!]!
+    projectCommittedCosts(projectId: ID!): [CommittedCost!]!
+    projectCashFlow(projectId: ID!): [CashFlowPeriod!]!
+    projectSubcontracts(projectId: ID!): [Subcontract!]!
+    projectLaborEntries(projectId: ID!, startDate: String, endDate: String): [LaborEntry!]!
+    projectEquipmentLog(projectId: ID!, startDate: String, endDate: String): [EquipmentLog!]!
+    projectCostForecast(projectId: ID!): [CostForecast!]!
+    projectClientBillings(projectId: ID!): [ClientBilling!]!
+    projectCostSummary(projectId: ID!): CostControlSummary!
+  }
+
+  extend type Mutation {
+    # Cost codes
+    createCostCode(projectId: ID!, wbsId: ID, code: String!, name: String!, category: String!, budgetAmount: Float!, sequence: Int): CostCode!
+    updateCostCode(id: ID!, wbsId: ID, code: String, name: String, category: String, budgetAmount: Float, sequence: Int): CostCode!
+    deleteCostCode(id: ID!): Boolean!
+
+    # Committed costs
+    createCommittedCost(projectId: ID!, costCodeId: ID, commitmentType: String!, referenceNumber: String, description: String!, vendorName: String, committedAmount: Float!, currencyCode: String, commitmentDate: String, expectedInvoiceDate: String, notes: String): CommittedCost!
+    updateCommittedCost(id: ID!, costCodeId: ID, description: String, vendorName: String, committedAmount: Float, invoicedAmount: Float, paidAmount: Float, commitmentDate: String, expectedInvoiceDate: String, status: String, notes: String): CommittedCost!
+    deleteCommittedCost(id: ID!): Boolean!
+    syncPOCommitments(projectId: ID!): Boolean!
+
+    # Cash flow
+    upsertCashFlowPeriod(projectId: ID!, periodYear: Int!, periodMonth: Int!, plannedOutflow: Float, actualOutflow: Float, forecastOutflow: Float, plannedInflow: Float, actualInflow: Float, forecastInflow: Float, notes: String): CashFlowPeriod!
+
+    # Subcontracts
+    createSubcontract(projectId: ID!, costCodeId: ID, subcontractNumber: String!, subcontractorName: String!, description: String, scopeOfWork: String, contractValue: Float!, retentionPercentage: Float, currencyCode: String, startDate: String, endDate: String): Subcontract!
+    updateSubcontract(id: ID!, costCodeId: ID, subcontractorName: String, description: String, scopeOfWork: String, contractValue: Float, revisedValue: Float, retentionPercentage: Float, retentionReleased: Float, certifiedAmount: Float, paidAmount: Float, startDate: String, endDate: String, status: String): Subcontract!
+    deleteSubcontract(id: ID!): Boolean!
+    createSubcontractBilling(subcontractId: ID!, billingNumber: String!, billingDate: String!, grossAmount: Float!, retentionAmount: Float!, netAmount: Float!, notes: String): SubcontractBilling!
+    updateSubcontractBilling(id: ID!, certifiedAmount: Float, certifiedDate: String, paidAmount: Float, paidDate: String, status: String, notes: String): SubcontractBilling!
+    deleteSubcontractBilling(id: ID!): Boolean!
+
+    # Labor
+    createLaborEntry(projectId: ID!, costCodeId: ID, activityId: ID, workDate: String!, trade: String!, workerName: String, regularHours: Float!, overtimeHours: Float, costPerHour: Float!, notes: String): LaborEntry!
+    updateLaborEntry(id: ID!, trade: String, workerName: String, regularHours: Float, overtimeHours: Float, costPerHour: Float, notes: String): LaborEntry!
+    deleteLaborEntry(id: ID!): Boolean!
+
+    # Equipment
+    createEquipmentLog(projectId: ID!, costCodeId: ID, logDate: String!, equipmentName: String!, equipmentType: String, ownership: String, workingHours: Float!, standbyHours: Float, costPerHour: Float!, standbyRate: Float, notes: String): EquipmentLog!
+    updateEquipmentLog(id: ID!, equipmentName: String, equipmentType: String, workingHours: Float, standbyHours: Float, costPerHour: Float, standbyRate: Float, notes: String): EquipmentLog!
+    deleteEquipmentLog(id: ID!): Boolean!
+
+    # Forecast
+    upsertCostForecast(projectId: ID!, costCodeId: ID, forecastDate: String!, etcAmount: Float!, eacAmount: Float!, notes: String): CostForecast!
+
+    # Client billing
+    createClientBilling(projectId: ID!, billingNumber: String!, billingDate: String!, periodFrom: String, periodTo: String, grossAmount: Float!, retentionPercentage: Float, retentionAmount: Float, netAmount: Float!, notes: String): ClientBilling!
+    updateClientBilling(id: ID!, billingDate: String, periodFrom: String, periodTo: String, grossAmount: Float, retentionPercentage: Float, retentionAmount: Float, netAmount: Float, certifiedAmount: Float, certifiedDate: String, paidAmount: Float, paidDate: String, status: String, notes: String): ClientBilling!
+    deleteClientBilling(id: ID!): Boolean!
+
+    # Variation Orders
+    createVariationOrder(projectId: ID!, voNumber: String!, title: String!, description: String, changeType: String, initiatedBy: String, instructionDate: String, receivedDate: String, scheduleImpactDays: Int, voValue: Float!, currencyCode: String, clientRef: String, impactAnalysis: String, technicalNotes: String): VariationOrder!
+    updateVariationOrder(id: ID!, title: String, description: String, changeType: String, initiatedBy: String, instructionDate: String, receivedDate: String, scheduleImpactDays: Int, voValue: Float, currencyCode: String, clientRef: String, impactAnalysis: String, technicalNotes: String): VariationOrder!
+    deleteVariationOrder(id: ID!): Boolean!
+    submitVariationOrder(id: ID!): VariationOrder!
+    approveVariationOrder(id: ID!, approvedValue: Float!): VariationOrder!
+    rejectVariationOrder(id: ID!, reason: String!): VariationOrder!
+    setVOStatus(id: ID!, status: String!): VariationOrder!
+    createVOCostItem(voId: ID!, category: String!, description: String!, quantity: Float, unit: String, unitRate: Float!, amount: Float!, notes: String): VOCostItem!
+    updateVOCostItem(id: ID!, category: String, description: String, quantity: Float, unit: String, unitRate: Float, amount: Float, notes: String): VOCostItem!
+    deleteVOCostItem(id: ID!): Boolean!
+    createVOCorrespondence(voId: ID!, correspondenceDate: String!, direction: String!, referenceNumber: String, subject: String!, description: String): VOCorrespondence!
+    deleteVOCorrespondence(id: ID!): Boolean!
+    addVODrawing(voId: ID!, drawingNumber: String!, revision: String, title: String, notes: String): VODrawing!
+    removeVODrawing(id: ID!): Boolean!
+
+    # Meetings / MOM
+    createMeeting(projectId: ID!, meetingNumber: String!, meetingType: String!, title: String!, meetingDate: String!, location: String, chairperson: String, attendees: String, agenda: String, distributionList: String): Meeting!
+    updateMeeting(id: ID!, meetingType: String, title: String, meetingDate: String, location: String, chairperson: String, attendees: String, agenda: String, minutes: String, distributionList: String): Meeting!
+    deleteMeeting(id: ID!): Boolean!
+    issueMeeting(id: ID!): Meeting!
+    closeMeeting(id: ID!): Meeting!
+    createMeetingAction(meetingId: ID!, description: String!, responsiblePerson: String, dueDate: String, priority: String, carryOverFrom: ID): MeetingAction!
+    updateMeetingAction(id: ID!, description: String, responsiblePerson: String, dueDate: String, priority: String, status: String, remarks: String): MeetingAction!
+    deleteMeetingAction(id: ID!): Boolean!
+  }
+
+  type VariationOrder {
+    id: ID!
+    projectId: ID!
+    voNumber: String!
+    title: String!
+    description: String
+    changeType: String!
+    initiatedBy: String!
+    instructionDate: String
+    receivedDate: String
+    scheduleImpactDays: Int!
+    voValue: Float!
+    approvedValue: Float
+    currencyCode: String!
+    clientRef: String
+    impactAnalysis: String
+    technicalNotes: String
+    status: String!
+    submittedAt: String
+    decidedAt: String
+    rejectionReason: String
+    costItems: [VOCostItem!]!
+    correspondence: [VOCorrespondence!]!
+    drawings: [VODrawing!]!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type VOCostItem {
+    id: ID!
+    voId: ID!
+    category: String!
+    description: String!
+    quantity: Float!
+    unit: String
+    unitRate: Float!
+    amount: Float!
+    notes: String
+    createdAt: String!
+  }
+
+  type VOCorrespondence {
+    id: ID!
+    voId: ID!
+    correspondenceDate: String!
+    direction: String!
+    referenceNumber: String
+    subject: String!
+    description: String
+    createdAt: String!
+  }
+
+  type VODrawing {
+    id: ID!
+    voId: ID!
+    drawingNumber: String!
+    revision: String
+    title: String
+    notes: String
+    createdAt: String!
+  }
+
+  type Meeting {
+    id: ID!
+    projectId: ID!
+    meetingNumber: String!
+    meetingType: String!
+    title: String!
+    meetingDate: String!
+    location: String
+    chairperson: String
+    attendees: String
+    agenda: String
+    minutes: String
+    distributionList: String
+    status: String!
+    issuedAt: String
+    actions: [MeetingAction!]!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type MeetingAction {
+    id: ID!
+    meetingId: ID!
+    actionNumber: Int!
+    description: String!
+    responsiblePerson: String
+    dueDate: String
+    priority: String!
+    status: String!
+    closedAt: String
+    remarks: String
+    carryOverFrom: ID
+    createdAt: String!
   }
 `

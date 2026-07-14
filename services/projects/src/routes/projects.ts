@@ -845,14 +845,67 @@ projectsRouter.post('/:id/stages/:stageId/complete', requirePermission('projects
 
 projectsRouter.get('/:id/members', requirePermission('projects.view', 'view'), async (req, res) => {
   try {
-    const result = await query(
+    const projectId = req.params['id']!
+    const membersResult = await query(
       `SELECT pm.*, e.first_name || ' ' || e.last_name AS employee_name, e.job_title, e.employee_number
        FROM project_members pm JOIN employees e ON e.id = pm.employee_id
        WHERE pm.project_id = $1 AND pm.is_active = true ORDER BY e.first_name`,
-      [req.params['id']],
+      [projectId],
     )
-    sendOk(res, result.rows)
+    const members = membersResult.rows as Array<Record<string, unknown>>
+    if (members.length === 0) return sendOk(res, [])
+
+    // Attach per-member permission overrides
+    const memberIds = members.map(m => m['id'] as string)
+    const permsResult = await query(
+      `SELECT member_id, tab_key, access_level FROM project_member_permissions WHERE member_id = ANY($1)`,
+      [memberIds],
+    )
+    const permsMap: Record<string, Record<string, string>> = {}
+    for (const row of permsResult.rows as Array<{ member_id: string; tab_key: string; access_level: string }>) {
+      if (!permsMap[row.member_id]) permsMap[row.member_id] = {}
+      permsMap[row.member_id]![row.tab_key] = row.access_level
+    }
+    const enriched = members.map(m => ({ ...m, permissions: permsMap[m['id'] as string] ?? {} }))
+    sendOk(res, enriched)
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch members', err) }
+})
+
+projectsRouter.put('/:id/members/:memberId/permissions', requirePermission('projects.edit', 'edit'), async (req, res) => {
+  try {
+    const { id, memberId } = req.params as { id: string; memberId: string }
+    const { userId, companyId, role } = req.auth!
+    const canManage = await canManageProject({ userId, companyId, projectId: id }, role)
+    if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
+
+    // Verify member belongs to this project
+    const check = await query(`SELECT id FROM project_members WHERE id=$1 AND project_id=$2`, [memberId, id])
+    if (check.rows.length === 0) return sendError(res, 404, 'NOT_FOUND', 'Member not found')
+
+    const perms = req.body as Record<string, string>
+    const validTabs = ['overview','client_documents','rfq_lines','bidding','team','execution','procurement','cost_control','variation_orders','meetings','planning','attachments']
+    const validLevels = ['none','view','edit']
+
+    // Delete existing overrides then re-insert
+    await query(`DELETE FROM project_member_permissions WHERE member_id=$1`, [memberId])
+    for (const [tab, level] of Object.entries(perms)) {
+      if (!validTabs.includes(tab) || !validLevels.includes(level)) continue
+      await query(
+        `INSERT INTO project_member_permissions (member_id, tab_key, access_level) VALUES ($1,$2,$3)`,
+        [memberId, tab, level],
+      )
+    }
+
+    const updated = await query(
+      `SELECT tab_key, access_level FROM project_member_permissions WHERE member_id=$1`,
+      [memberId],
+    )
+    const result: Record<string, string> = {}
+    for (const row of updated.rows as Array<{ tab_key: string; access_level: string }>) {
+      result[row.tab_key] = row.access_level
+    }
+    sendOk(res, result)
+  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update member permissions', err) }
 })
 
 projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), async (req, res) => {
@@ -863,7 +916,9 @@ projectsRouter.post('/:id/members', requirePermission('projects.edit', 'edit'), 
     if (!canManage) return sendError(res, 403, 'FORBIDDEN', 'Project manager or admin required')
 
     const b = req.body as Record<string, unknown>
-    const memberType = (b['member_type'] === 'commercial') ? 'commercial' : 'technical'
+    const memberType = (['technical', 'commercial', 'both'] as const).includes(b['member_type'] as 'technical' | 'commercial' | 'both')
+      ? (b['member_type'] as string)
+      : 'technical'
     const result = await query(
       `INSERT INTO project_members (project_id, employee_id, role, member_type, allocated_hours, start_date, end_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7)

@@ -305,6 +305,255 @@ async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string):
 
 // ── Project helpers ────────────────────────────────────────────
 
+// ── Cost Control helpers ──────────────────────────────────────
+
+function ccMapCode(r: Record<string, unknown>, committed: number, actual: number, forecastEAC: number) {
+  const budget = Number(r['budget_amount'])
+  const remaining = budget - committed - actual
+  const pct = budget > 0 ? ((committed + actual) / budget) * 100 : 0
+  return { id: r['id'], projectId: r['project_id'], wbsId: r['wbs_id'] ?? null, code: r['code'], name: r['name'], category: r['category'], budgetAmount: budget, sequence: r['sequence'], committedAmount: committed, actualAmount: actual, forecastEAC, remainingBudget: remaining, percentConsumed: Math.round(pct * 10) / 10, createdAt: r['created_at'], updatedAt: r['updated_at'] }
+}
+
+function ccMapCommitted(r: Record<string, unknown>, codeName: string | null) {
+  return { id: r['id'], projectId: r['project_id'], costCodeId: r['cost_code_id'] ?? null, costCodeName: codeName, commitmentType: r['commitment_type'], referenceId: r['reference_id'] ?? null, referenceNumber: r['reference_number'] ?? null, description: r['description'], vendorName: r['vendor_name'] ?? null, committedAmount: Number(r['committed_amount']), invoicedAmount: Number(r['invoiced_amount']), paidAmount: Number(r['paid_amount']), currencyCode: r['currency_code'], commitmentDate: r['commitment_date'] ? String(r['commitment_date']).slice(0, 10) : null, expectedInvoiceDate: r['expected_invoice_date'] ? String(r['expected_invoice_date']).slice(0, 10) : null, status: r['status'], notes: r['notes'] ?? null, createdAt: r['created_at'], updatedAt: r['updated_at'] }
+}
+
+function ccMapCashFlow(r: Record<string, unknown>, cumPlan: number, cumActual: number, cumForecast: number) {
+  const y = Number(r['period_year']); const m = Number(r['period_month'])
+  return { id: r['id'], projectId: r['project_id'], periodYear: y, periodMonth: m, label: `${y}-${String(m).padStart(2, '0')}`, plannedOutflow: Number(r['planned_outflow']), actualOutflow: Number(r['actual_outflow']), forecastOutflow: Number(r['forecast_outflow']), plannedInflow: Number(r['planned_inflow']), actualInflow: Number(r['actual_inflow']), forecastInflow: Number(r['forecast_inflow']), notes: r['notes'] ?? null, updatedAt: r['updated_at'], cumPlannedOutflow: cumPlan, cumActualOutflow: cumActual, cumForecastOutflow: cumForecast }
+}
+
+function ccMapSubcontract(r: Record<string, unknown>) {
+  return { id: r['id'], projectId: r['project_id'], costCodeId: r['cost_code_id'] ?? null, subcontractNumber: r['subcontract_number'], subcontractorName: r['subcontractor_name'], description: r['description'] ?? null, scopeOfWork: r['scope_of_work'] ?? null, contractValue: Number(r['contract_value']), revisedValue: Number(r['revised_value']), retentionPercentage: Number(r['retention_percentage']), retentionReleased: Number(r['retention_released']), certifiedAmount: Number(r['certified_amount']), paidAmount: Number(r['paid_amount']), currencyCode: r['currency_code'], startDate: r['start_date'] ? String(r['start_date']).slice(0, 10) : null, endDate: r['end_date'] ? String(r['end_date']).slice(0, 10) : null, status: r['status'], createdAt: r['created_at'], updatedAt: r['updated_at'] }
+}
+
+function ccMapSCBilling(r: Record<string, unknown>) {
+  return { id: r['id'], subcontractId: r['subcontract_id'], billingNumber: r['billing_number'], billingDate: String(r['billing_date']).slice(0, 10), grossAmount: Number(r['gross_amount']), retentionAmount: Number(r['retention_amount']), netAmount: Number(r['net_amount']), certifiedAmount: r['certified_amount'] != null ? Number(r['certified_amount']) : null, certifiedDate: r['certified_date'] ? String(r['certified_date']).slice(0, 10) : null, paidAmount: Number(r['paid_amount']), paidDate: r['paid_date'] ? String(r['paid_date']).slice(0, 10) : null, status: r['status'], notes: r['notes'] ?? null, createdAt: r['created_at'] }
+}
+
+function ccMapLabor(r: Record<string, unknown>) {
+  return { id: r['id'], projectId: r['project_id'], costCodeId: r['cost_code_id'] ?? null, activityId: r['activity_id'] ?? null, workDate: String(r['work_date']).slice(0, 10), trade: r['trade'], workerName: r['worker_name'] ?? null, regularHours: Number(r['regular_hours']), overtimeHours: Number(r['overtime_hours']), costPerHour: Number(r['cost_per_hour']), totalCost: Number(r['total_cost']), notes: r['notes'] ?? null, createdAt: r['created_at'] }
+}
+
+function ccMapEquipment(r: Record<string, unknown>) {
+  return { id: r['id'], projectId: r['project_id'], costCodeId: r['cost_code_id'] ?? null, logDate: String(r['log_date']).slice(0, 10), equipmentName: r['equipment_name'], equipmentType: r['equipment_type'] ?? null, ownership: r['ownership'], workingHours: Number(r['working_hours']), standbyHours: Number(r['standby_hours']), costPerHour: Number(r['cost_per_hour']), standbyRate: Number(r['standby_rate']), totalCost: Number(r['total_cost']), notes: r['notes'] ?? null, createdAt: r['created_at'] }
+}
+
+function ccMapClientBilling(r: Record<string, unknown>) {
+  return { id: r['id'], projectId: r['project_id'], billingNumber: r['billing_number'], billingDate: String(r['billing_date']).slice(0, 10), periodFrom: r['period_from'] ? String(r['period_from']).slice(0, 10) : null, periodTo: r['period_to'] ? String(r['period_to']).slice(0, 10) : null, grossAmount: Number(r['gross_amount']), retentionPercentage: Number(r['retention_percentage']), retentionAmount: Number(r['retention_amount']), netAmount: Number(r['net_amount']), certifiedAmount: r['certified_amount'] != null ? Number(r['certified_amount']) : null, certifiedDate: r['certified_date'] ? String(r['certified_date']).slice(0, 10) : null, paidAmount: Number(r['paid_amount']), paidDate: r['paid_date'] ? String(r['paid_date']).slice(0, 10) : null, status: r['status'], notes: r['notes'] ?? null, createdAt: r['created_at'], updatedAt: r['updated_at'] }
+}
+
+// ── Planning helpers ──────────────────────────────────────────
+
+function planMapWBS(r: Record<string, unknown>) {
+  return { id: r['id'], projectId: r['project_id'], parentId: r['parent_id'] ?? null, wbsCode: r['wbs_code'], name: r['name'], description: r['description'] ?? null, level: r['level'], sequence: r['sequence'], budgetAmount: r['budget_amount'] ? Number(r['budget_amount']) : 0, responsible: r['responsible'] ?? null, createdAt: r['created_at'], updatedAt: r['updated_at'], children: [] }
+}
+
+function planMapDep(r: Record<string, unknown>) {
+  return { id: r['id'], predecessorId: r['predecessor_id'], successorId: r['successor_id'], dependencyType: r['dependency_type'], lagDays: r['lag_days'] ?? 0, predecessorCode: r['pred_code'] ?? null, successorCode: r['succ_code'] ?? null }
+}
+
+function planMapActivity(r: Record<string, unknown>, deps: Record<string, unknown>[], succs: Record<string, unknown>[], resources: Record<string, unknown>[]) {
+  return {
+    id: r['id'], projectId: r['project_id'], wbsId: r['wbs_id'] ?? null,
+    activityCode: r['activity_code'], name: r['name'], activityType: r['activity_type'],
+    plannedStart: r['planned_start'] ? String(r['planned_start']).slice(0, 10) : null,
+    plannedFinish: r['planned_finish'] ? String(r['planned_finish']).slice(0, 10) : null,
+    durationDays: r['duration_days'] ?? 0,
+    baselineStart: r['baseline_start'] ? String(r['baseline_start']).slice(0, 10) : null,
+    baselineFinish: r['baseline_finish'] ? String(r['baseline_finish']).slice(0, 10) : null,
+    baselineDuration: r['baseline_duration'] ?? null,
+    actualStart: r['actual_start'] ? String(r['actual_start']).slice(0, 10) : null,
+    actualFinish: r['actual_finish'] ? String(r['actual_finish']).slice(0, 10) : null,
+    percentComplete: r['percent_complete'] ? Number(r['percent_complete']) : 0,
+    earlyStart: r['early_start'] ? String(r['early_start']).slice(0, 10) : null,
+    earlyFinish: r['early_finish'] ? String(r['early_finish']).slice(0, 10) : null,
+    lateStart: r['late_start'] ? String(r['late_start']).slice(0, 10) : null,
+    lateFinish: r['late_finish'] ? String(r['late_finish']).slice(0, 10) : null,
+    totalFloat: r['total_float'] ?? null, freeFloat: r['free_float'] ?? null,
+    isCritical: Boolean(r['is_critical']),
+    budgetAmount: r['budget_amount'] ? Number(r['budget_amount']) : 0,
+    actualCost: r['actual_cost'] ? Number(r['actual_cost']) : 0,
+    responsible: r['responsible'] ?? null, location: r['location'] ?? null, remarks: r['remarks'] ?? null,
+    sequence: r['sequence'] ?? 0, createdAt: r['created_at'], updatedAt: r['updated_at'],
+    predecessors: deps.map(planMapDep), successors: succs.map(planMapDep),
+    resources: resources.map(res => ({ id: res['id'], activityId: res['activity_id'], resourceId: res['resource_id'], resourceName: res['resource_name'] ?? null, unit: res['unit'] ?? null, unitsPerDay: Number(res['units_per_day']), totalUnits: res['total_units'] ? Number(res['total_units']) : null, budgetedCost: res['budgeted_cost'] ? Number(res['budgeted_cost']) : null, actualUnits: res['actual_units'] ? Number(res['actual_units']) : null, actualCost: res['actual_cost'] ? Number(res['actual_cost']) : null }))
+  }
+}
+
+function planMapResource(r: Record<string, unknown>) {
+  return { id: r['id'], projectId: r['project_id'], name: r['name'], resourceType: r['resource_type'], unit: r['unit'], maxUnitsPerDay: Number(r['max_units_per_day']), costPerUnit: Number(r['cost_per_unit']), currencyCode: r['currency_code'] ?? 'USD', createdAt: r['created_at'], updatedAt: r['updated_at'] }
+}
+
+async function planCPM(projectId: string) {
+  const actsR = await query(`SELECT id, planned_start, planned_finish, duration_days FROM project_activities WHERE project_id=$1 AND planned_start IS NOT NULL`, [projectId])
+  const depsR = await query(`SELECT predecessor_id, successor_id, dependency_type, lag_days FROM project_activity_dependencies WHERE project_id=$1`, [projectId])
+  type Node = { id: string; es: Date; ef: Date; ls: Date | null; lf: Date | null; dur: number }
+  const nodes = new Map<string, Node>()
+  for (const a of actsR.rows) {
+    const s = new Date(a.planned_start); const f = new Date(a.planned_finish)
+    nodes.set(String(a.id), { id: String(a.id), es: s, ef: f, ls: null, lf: null, dur: Number(a.duration_days) })
+  }
+  const succs = new Map<string, Array<{ to: string; type: string; lag: number }>>()
+  const preds = new Map<string, Array<{ from: string; type: string; lag: number }>>()
+  for (const d of depsR.rows) {
+    const from = String(d.predecessor_id); const to = String(d.successor_id)
+    if (!succs.has(from)) succs.set(from, []); succs.get(from)!.push({ to, type: String(d.dependency_type), lag: Number(d.lag_days) })
+    if (!preds.has(to)) preds.set(to, []); preds.get(to)!.push({ from, type: String(d.dependency_type), lag: Number(d.lag_days) })
+  }
+  // Kahn topological sort
+  const inDeg = new Map<string, number>()
+  for (const id of nodes.keys()) inDeg.set(id, 0)
+  for (const d of depsR.rows) inDeg.set(String(d.successor_id), (inDeg.get(String(d.successor_id)) ?? 0) + 1)
+  const queue: string[] = []; for (const [id, deg] of inDeg) if (deg === 0) queue.push(id)
+  const topo: string[] = []
+  while (queue.length) { const n = queue.shift()!; topo.push(n); for (const s of (succs.get(n) ?? [])) { const nd = (inDeg.get(s.to) ?? 1) - 1; inDeg.set(s.to, nd); if (nd === 0) queue.push(s.to) } }
+  // Forward pass
+  const addDays = (d: Date, n: number) => { const r = new Date(d); r.setDate(r.getDate() + n); return r }
+  for (const id of topo) {
+    const n = nodes.get(id); if (!n) continue
+    const myPreds = preds.get(id) ?? []
+    if (myPreds.length > 0) {
+      let latest = new Date(0)
+      for (const p of myPreds) { const pn = nodes.get(p.from); if (!pn) continue; const t = p.type === 'SS' ? addDays(pn.es, p.lag) : p.type === 'FF' ? addDays(pn.ef, p.lag - n.dur) : p.type === 'SF' ? addDays(pn.ef, p.lag) : addDays(pn.ef, p.lag); if (t > latest) latest = t }
+      n.es = latest; n.ef = addDays(n.es, n.dur)
+    }
+  }
+  // Backward pass
+  let projectEnd = new Date(0); for (const n of nodes.values()) if (n.ef > projectEnd) projectEnd = n.ef
+  for (const n of nodes.values()) { n.ls = null; n.lf = null }
+  for (const id of [...topo].reverse()) {
+    const n = nodes.get(id); if (!n) continue
+    const mySuccs = succs.get(id) ?? []
+    if (mySuccs.length === 0) { n.lf = projectEnd; n.ls = addDays(projectEnd, -n.dur) }
+    else {
+      let earliest: Date | null = null
+      for (const s of mySuccs) { const sn = nodes.get(s.to); if (!sn || sn.ls === null) continue; const t = s.type === 'SS' ? addDays(sn.ls!, -s.lag) : s.type === 'FF' ? addDays(sn.lf!, -s.lag - n.dur) : s.type === 'SF' ? addDays(sn.ls!, s.lag - n.dur) : addDays(sn.ls!, -s.lag - n.dur); if (earliest === null || t < earliest) earliest = t }
+      if (earliest !== null) { n.ls = earliest; n.lf = addDays(earliest, n.dur) }
+    }
+  }
+  // Write results
+  for (const n of nodes.values()) {
+    if (n.ls === null) continue
+    const tf = Math.round((n.ls.getTime() - n.es.getTime()) / 86400000)
+    const isCrit = tf <= 0
+    await query(`UPDATE project_activities SET early_start=$1, early_finish=$2, late_start=$3, late_finish=$4, total_float=$5, is_critical=$6, updated_at=NOW() WHERE id=$7`,
+      [n.es.toISOString().slice(0, 10), n.ef.toISOString().slice(0, 10), n.ls.toISOString().slice(0, 10), n.lf!.toISOString().slice(0, 10), tf, isCrit, n.id])
+  }
+}
+
+// ── Meeting helpers ────────────────────────────────────────────
+
+function momMapAction(r: Record<string, unknown>) {
+  return {
+    id: r['id'], meetingId: r['meeting_id'], actionNumber: Number(r['action_number']),
+    description: r['description'], responsiblePerson: r['responsible_person'] ?? null,
+    dueDate: r['due_date'] ? String(r['due_date']).slice(0, 10) : null,
+    priority: r['priority'], status: r['status'],
+    closedAt: r['closed_at'] ?? null, remarks: r['remarks'] ?? null,
+    carryOverFrom: r['carry_over_from'] ?? null, createdAt: r['created_at'],
+  }
+}
+
+function momMapMeeting(r: Record<string, unknown>, actions: Record<string, unknown>[]) {
+  return {
+    id: r['id'], projectId: r['project_id'], meetingNumber: r['meeting_number'],
+    meetingType: r['meeting_type'], title: r['title'],
+    meetingDate: String(r['meeting_date']).slice(0, 10),
+    location: r['location'] ?? null, chairperson: r['chairperson'] ?? null,
+    attendees: r['attendees'] ?? null, agenda: r['agenda'] ?? null,
+    minutes: r['minutes'] ?? null, distributionList: r['distribution_list'] ?? null,
+    status: r['status'], issuedAt: r['issued_at'] ?? null,
+    actions: actions.map(momMapAction),
+    createdAt: r['created_at'], updatedAt: r['updated_at'],
+  }
+}
+
+async function momNotify(projectId: string, companyId: string, meetingNumber: string, event: string, actorId: string) {
+  try {
+    const recipients = await query(
+      `SELECT DISTINCT u.id FROM users u
+       LEFT JOIN project_members pm ON pm.user_id=u.id AND pm.project_id=$1
+       JOIN companies c ON c.id=u.company_id
+       WHERE u.company_id=$2 AND (u.role='admin' OR pm.id IS NOT NULL) AND u.id!=$3`,
+      [projectId, companyId, actorId]
+    )
+    for (const row of recipients.rows as Record<string, unknown>[]) {
+      void query(
+        `INSERT INTO notifications (company_id, user_id, type, title, body, data) VALUES ($1,$2,$3,$4,$5,$6::jsonb)`,
+        [companyId, row['id'], 'meeting', `MOM ${event}: ${meetingNumber}`, `Meeting ${meetingNumber} has been ${event}.`, JSON.stringify({ meetingNumber, event, projectId })]
+      )
+    }
+  } catch { /* non-blocking */ }
+}
+
+// ── Variation Order helpers ────────────────────────────────────
+
+function voMapCostItem(r: Record<string, unknown>) {
+  return { id: r['id'], voId: r['vo_id'], category: r['category'], description: r['description'], quantity: Number(r['quantity']), unit: r['unit'] ?? null, unitRate: Number(r['unit_rate']), amount: Number(r['amount']), notes: r['notes'] ?? null, createdAt: r['created_at'] }
+}
+
+function voMapCorr(r: Record<string, unknown>) {
+  return { id: r['id'], voId: r['vo_id'], correspondenceDate: String(r['correspondence_date']).slice(0, 10), direction: r['direction'], referenceNumber: r['reference_number'] ?? null, subject: r['subject'], description: r['description'] ?? null, createdAt: r['created_at'] }
+}
+
+function voMapDrawing(r: Record<string, unknown>) {
+  return { id: r['id'], voId: r['vo_id'], drawingNumber: r['drawing_number'], revision: r['revision'] ?? null, title: r['title'] ?? null, notes: r['notes'] ?? null, createdAt: r['created_at'] }
+}
+
+function voMapVO(r: Record<string, unknown>, costItems: object[], correspondence: object[], drawings: object[]) {
+  return {
+    id: r['id'], projectId: r['project_id'], voNumber: r['vo_number'], title: r['title'],
+    description: r['description'] ?? null, changeType: r['change_type'], initiatedBy: r['initiated_by'],
+    instructionDate: r['instruction_date'] ? String(r['instruction_date']).slice(0, 10) : null,
+    receivedDate: r['received_date'] ? String(r['received_date']).slice(0, 10) : null,
+    scheduleImpactDays: Number(r['schedule_impact_days']),
+    voValue: Number(r['vo_value']),
+    approvedValue: r['approved_value'] != null ? Number(r['approved_value']) : null,
+    currencyCode: r['currency_code'], clientRef: r['client_ref'] ?? null,
+    impactAnalysis: r['impact_analysis'] ?? null, technicalNotes: r['technical_notes'] ?? null,
+    status: r['status'],
+    submittedAt: r['submitted_at'] ?? null, decidedAt: r['decided_at'] ?? null,
+    rejectionReason: r['rejection_reason'] ?? null,
+    costItems, correspondence, drawings,
+    createdAt: r['created_at'], updatedAt: r['updated_at'],
+  }
+}
+
+async function voLoadChildren(voIds: string[]) {
+  const [items, corr, draws] = await Promise.all([
+    query(`SELECT * FROM project_vo_cost_items WHERE vo_id = ANY($1) ORDER BY created_at`, [voIds]),
+    query(`SELECT * FROM project_vo_correspondence WHERE vo_id = ANY($1) ORDER BY correspondence_date, created_at`, [voIds]),
+    query(`SELECT * FROM project_vo_drawings WHERE vo_id = ANY($1) ORDER BY created_at`, [voIds]),
+  ])
+  const itemsByVO = new Map<string, object[]>(); const corrByVO = new Map<string, object[]>(); const drawsByVO = new Map<string, object[]>()
+  for (const r of items.rows as Record<string, unknown>[]) { const k = String(r['vo_id']); if (!itemsByVO.has(k)) itemsByVO.set(k, []); itemsByVO.get(k)!.push(voMapCostItem(r)) }
+  for (const r of corr.rows as Record<string, unknown>[])  { const k = String(r['vo_id']); if (!corrByVO.has(k))  corrByVO.set(k, []);  corrByVO.get(k)!.push(voMapCorr(r)) }
+  for (const r of draws.rows as Record<string, unknown>[]) { const k = String(r['vo_id']); if (!drawsByVO.has(k)) drawsByVO.set(k, []); drawsByVO.get(k)!.push(voMapDrawing(r)) }
+  return { itemsByVO, corrByVO, drawsByVO }
+}
+
+async function voNotify(projectId: string, companyId: string, voNumber: string, event: string, actorId: string) {
+  try {
+    const projRes = await query(`SELECT code, name, manager_id FROM projects WHERE id=$1`, [projectId])
+    const proj = projRes.rows[0] as Record<string, unknown> | undefined
+    const projLabel = proj ? `${proj['code']} ${proj['name']}` : ''
+    const managerId = proj?.['manager_id'] as string | undefined
+    const recipients = new Set<string>()
+    const admins = await query(`SELECT id FROM users WHERE company_id=$1 AND role IN ('admin','system_admin') AND is_active=true AND id!=$2`, [companyId, actorId])
+    for (const u of admins.rows as Record<string, unknown>[]) recipients.add(String(u['id']))
+    if (managerId && managerId !== actorId) recipients.add(managerId)
+    for (const uid of recipients) {
+      await query(
+        `INSERT INTO notifications (company_id, user_id, type, title, body, data) VALUES ($1,$2,'variation_order',$3,$4,$5::jsonb)`,
+        [companyId, uid, `VO ${event}`, `Variation Order ${voNumber} has been ${event} — ${projLabel}`, JSON.stringify({ projectId, voNumber })],
+      )
+    }
+  } catch { /* notifications are non-blocking */ }
+}
+
+// ─────────────────────────────────────────────────────────────
+
 async function logActivity(projectId: string, actorId: string | undefined, eventType: string, summary: string) {
   try {
     await query(
@@ -379,6 +628,10 @@ function rfqLineToGQL(row: Record<string, unknown>): Record<string, unknown> {
     estimatedUnitCost: row.estimated_unit_cost != null ? parseFloat(String(row.estimated_unit_cost)) : null,
     bidUnitPrice: row.bid_unit_price != null ? parseFloat(String(row.bid_unit_price)) : null,
     notes: row.notes ?? null,
+    discipline: row.discipline ?? null,
+    drawingRef: row.drawing_ref ?? null,
+    engineeringRef: row.engineering_ref ?? null,
+    specSection: row.spec_section ?? null,
   }
 }
 
@@ -4448,14 +4701,2068 @@ export const resolvers = {
       const results: Record<string, unknown>[] = []
       for (const [idx, line] of args.lines.entries()) {
         const r = await query(
-          `INSERT INTO rfq_lines (project_id, sequence, phase_label, description, quantity, unit, estimated_unit_cost, bid_unit_price, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-          [args.projectId, line['sequence'] ?? idx, line['phaseLabel'] ?? null, line['description'], line['quantity'] ?? null, line['unit'] ?? null, line['estimatedUnitCost'] ?? null, line['bidUnitPrice'] ?? null, line['notes'] ?? null],
+          `INSERT INTO rfq_lines (project_id, sequence, phase_label, description, quantity, unit, estimated_unit_cost, bid_unit_price, notes, discipline, drawing_ref, engineering_ref, spec_section)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          [args.projectId, line['sequence'] ?? idx, line['phaseLabel'] ?? null, line['description'],
+           line['quantity'] ?? null, line['unit'] ?? null, line['estimatedUnitCost'] ?? null,
+           line['bidUnitPrice'] ?? null, line['notes'] ?? null,
+           line['discipline'] ?? null, line['drawingRef'] ?? null,
+           line['engineeringRef'] ?? null, line['specSection'] ?? null],
         )
         results.push(r.rows[0] as Record<string, unknown>)
       }
       return results.map(rfqLineToGQL)
     },
+
+    updateRFQPhase: async (_: unknown, args: { id: string; status?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const phase = await query(
+        `SELECT rp.* FROM rfq_phases rp
+         JOIN projects p ON p.id = rp.project_id
+         WHERE rp.id=$1 AND p.company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!phase.rows[0]) throw new Error('RFQ phase not found')
+      const p = phase.rows[0] as Record<string, unknown>
+      const oldStatus = String(p['status'])
+      const newStatus = args.status ?? oldStatus
+      const newNotes  = args.notes !== undefined ? args.notes : (p['notes'] ?? null)
+      await query(
+        `UPDATE rfq_phases SET status=$1, notes=$2, updated_at=NOW() WHERE id=$3`,
+        [newStatus, newNotes, args.id],
+      )
+      const phaseLabel = ({ engineering: 'Engineering', pricing: 'Pricing', executing: 'Executing' })[String(p['phase_type'])] ?? String(p['phase_type'])
+      const projectId  = String(p['project_id'])
+      if (args.status !== undefined && args.status !== oldStatus) {
+        const statusLabel = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        await logActivity(projectId, ctx.auth.userId, 'rfq_phase_status',
+          `${phaseLabel} phase: ${statusLabel(oldStatus)} → ${statusLabel(newStatus)}`)
+      }
+      if (args.notes !== undefined && args.notes !== (p['notes'] ?? '')) {
+        await logActivity(projectId, ctx.auth.userId, 'rfq_phase_notes',
+          `${phaseLabel} phase notes updated`)
+      }
+      // Re-fetch files to return full object
+      const attachRows = await query(
+        `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key
+         FROM document_attachments da
+         JOIN files f ON f.id = da.file_id
+         WHERE da.entity_type='rfq_phase' AND da.entity_id=$1 AND f.company_id=$2 AND f.status != 'deleted'
+         ORDER BY da.created_at`,
+        [args.id, ctx.auth.companyId],
+      )
+      const files = await Promise.all(attachRows.rows.map(async (row: Record<string, unknown>) => {
+        let downloadUrl: string | null = null
+        try {
+          const dl = await generateDownloadUrl(row['file_key'] as string, row['original_filename'] as string)
+          downloadUrl = dl.downloadUrl
+        } catch { /* best-effort */ }
+        return { id: row['id'], fileId: row['file_id'], filename: row['original_filename'], mimeType: row['mime_type'], sizeBytes: parseInt(String(row['size_bytes'])), title: row['label'] ?? null, description: row['description'] ?? null, createdAt: row['created_at'], downloadUrl }
+      }))
+      return {
+        id: p['id'], projectId: p['project_id'], phaseType: p['phase_type'],
+        serviceType: p['service_type'], status: newStatus, notes: newNotes,
+        sequence: p['sequence'], fileCount: files.length, files,
+      }
+    },
+
+    // ── Client Document mutations ────────────────────────────────────────────
+
+    uploadClientDocument: async (_: unknown, args: {
+      projectId: string; fileId: string; category: string; title: string
+      documentNumber?: string; revision?: string; description?: string
+      receivedFrom?: string; transmissionDate?: string
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const proj = await query(
+        `SELECT p.id, p.name, p.code FROM projects p WHERE p.id=$1 AND p.company_id=$2`,
+        [args.projectId, ctx.auth.companyId],
+      )
+      if (!proj.rows[0]) throw new Error('Project not found')
+      const p = proj.rows[0] as Record<string, unknown>
+
+      // Verify file belongs to this company
+      const fileRow = await query(`SELECT id, original_filename, file_key FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileRow.rows[0]) throw new Error('File not found')
+      const f = fileRow.rows[0] as Record<string, unknown>
+
+      const uploaderRow = await query(`SELECT u.id, e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const uploaderName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+
+      const ins = await query(
+        `INSERT INTO project_client_documents
+           (project_id, file_id, category, title, document_number, revision, description, received_from, transmission_date, uploaded_by_id, uploaded_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING *`,
+        [args.projectId, args.fileId, args.category, args.title,
+         args.documentNumber ?? null, args.revision ?? null, args.description ?? null,
+         args.receivedFrom ?? null, args.transmissionDate ?? null,
+         ctx.auth.userId, uploaderName],
+      )
+      const row = ins.rows[0] as Record<string, unknown>
+
+      await logActivity(args.projectId, ctx.auth.userId, 'client_document_upload',
+        `Document uploaded: "${args.title}"${args.documentNumber ? ` [${args.documentNumber}]` : ''}`)
+
+      // Notify project members (in-app + email via outbox)
+      const membersR = await query(
+        `SELECT pm.id, e.user_id, e.first_name||' '||e.last_name AS full_name, e.email
+         FROM project_members pm
+         JOIN employees e ON e.id=pm.employee_id
+         WHERE pm.project_id=$1 AND e.user_id IS NOT NULL AND e.user_id != $2`,
+        [args.projectId, ctx.auth.userId],
+      )
+      const projectName = String(p['name'] ?? '')
+      const projectCode = String(p['code'] ?? '')
+      const notifTitle  = `New document: ${args.title}`
+      const notifBody   = `A new ${args.category.replace('_',' ')} document was uploaded to ${projectCode} – ${args.title}`
+
+      for (const m of membersR.rows as Record<string, unknown>[]) {
+        const uid = m['user_id'] as string
+        const companyId = ctx.auth.companyId
+        // In-app notification
+        await query(
+          `INSERT INTO notifications (company_id, user_id, type, title, body, data)
+           VALUES ($1,$2,'client_document',$3,$4,$5::jsonb)`,
+          [companyId, uid, notifTitle, notifBody, JSON.stringify({ projectId: args.projectId, documentId: row['id'] })],
+        ).catch(() => { /* non-fatal */ })
+
+        // Email via service_outbox
+        const email = m['email'] as string | null
+        const name  = String(m['full_name'] ?? 'Team Member')
+        if (email) {
+          await query(
+            `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','CLIENT_DOCUMENT_EMAIL',$1::jsonb)`,
+            [JSON.stringify({
+              to: email, recipientName: name, projectName, projectCode,
+              documentTitle: args.title, category: args.category,
+              documentNumber: args.documentNumber ?? null,
+              revision: args.revision ?? null,
+              receivedFrom: args.receivedFrom ?? null,
+              uploadedBy: uploaderName,
+              projectUrl: `${env.FRONTEND_URL}/projects/${args.projectId}?tab=client_documents`,
+            })],
+          ).catch(() => { /* non-fatal */ })
+        }
+      }
+
+      let downloadUrl: string | null = null
+      try {
+        const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string)
+        downloadUrl = dl.downloadUrl
+      } catch { /* best-effort */ }
+
+      return {
+        id: row['id'], projectId: row['project_id'], fileId: row['file_id'],
+        category: row['category'], title: row['title'],
+        documentNumber: row['document_number'] ?? null, revision: row['revision'] ?? null,
+        description: row['description'] ?? null, receivedFrom: row['received_from'] ?? null,
+        transmissionDate: row['transmission_date'] ? String(row['transmission_date']).slice(0, 10) : null,
+        status: row['status'], parentDocumentId: null,
+        uploadedById: row['uploaded_by_id'], uploadedByName: row['uploaded_by_name'],
+        downloadUrl, filename: f['original_filename'], mimeType: null, sizeBytes: null, revisions: [], createdAt: row['created_at'],
+      }
+    },
+
+    uploadClientDocumentRevision: async (_: unknown, args: {
+      parentDocumentId: string; fileId: string; revision: string; description?: string
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const parentR = await query(
+        `SELECT cd.*, p.company_id, p.name AS project_name, p.code AS project_code
+         FROM project_client_documents cd
+         JOIN projects p ON p.id=cd.project_id
+         WHERE cd.id=$1 AND p.company_id=$2`,
+        [args.parentDocumentId, ctx.auth.companyId],
+      )
+      if (!parentR.rows[0]) throw new Error('Parent document not found')
+      const parent = parentR.rows[0] as Record<string, unknown>
+
+      const fileRow = await query(`SELECT id, original_filename, file_key FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileRow.rows[0]) throw new Error('File not found')
+      const f = fileRow.rows[0] as Record<string, unknown>
+
+      const uploaderRow = await query(`SELECT u.id, e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const uploaderName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+
+      // Mark parent (and existing revisions) as superseded
+      await query(`UPDATE project_client_documents SET status='superseded' WHERE id=$1 OR parent_document_id=$1`, [args.parentDocumentId])
+
+      const ins = await query(
+        `INSERT INTO project_client_documents
+           (project_id, file_id, category, title, document_number, revision, description, received_from, transmission_date, status, parent_document_id, uploaded_by_id, uploaded_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active',$10,$11,$12)
+         RETURNING *`,
+        [parent['project_id'], args.fileId, parent['category'], parent['title'],
+         parent['document_number'], args.revision, args.description ?? null,
+         parent['received_from'], parent['transmission_date'],
+         args.parentDocumentId, ctx.auth.userId, uploaderName],
+      )
+      const row = ins.rows[0] as Record<string, unknown>
+      const projectId = String(parent['project_id'])
+
+      await logActivity(projectId, ctx.auth.userId, 'client_document_revision',
+        `New revision "${args.revision}" uploaded for: "${parent['title']}"`)
+
+      let downloadUrl: string | null = null
+      try {
+        const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string)
+        downloadUrl = dl.downloadUrl
+      } catch { /* best-effort */ }
+
+      return {
+        id: row['id'], projectId: row['project_id'], fileId: row['file_id'],
+        category: row['category'], title: row['title'],
+        documentNumber: row['document_number'] ?? null, revision: row['revision'] ?? null,
+        description: row['description'] ?? null, receivedFrom: row['received_from'] ?? null,
+        transmissionDate: row['transmission_date'] ? String(row['transmission_date']).slice(0, 10) : null,
+        status: row['status'], parentDocumentId: args.parentDocumentId,
+        uploadedById: row['uploaded_by_id'], uploadedByName: row['uploaded_by_name'],
+        downloadUrl, filename: f['original_filename'], mimeType: null, sizeBytes: null, revisions: [], createdAt: row['created_at'],
+      }
+    },
+
+    updateClientDocumentStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_client_documents cd SET status=$1
+         FROM projects p WHERE p.id=cd.project_id AND p.company_id=$2 AND cd.id=$3
+         RETURNING cd.*`,
+        [args.status, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Document not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'client_document_status',
+        `Document "${row['title']}" status → ${args.status}`)
+      return {
+        id: row['id'], projectId: row['project_id'], fileId: row['file_id'] ?? null,
+        category: row['category'], title: row['title'],
+        documentNumber: row['document_number'] ?? null, revision: row['revision'] ?? null,
+        description: row['description'] ?? null, receivedFrom: row['received_from'] ?? null,
+        transmissionDate: row['transmission_date'] ? String(row['transmission_date']).slice(0, 10) : null,
+        status: row['status'], parentDocumentId: row['parent_document_id'] ?? null,
+        uploadedById: row['uploaded_by_id'], uploadedByName: row['uploaded_by_name'],
+        downloadUrl: null, filename: null, mimeType: null, sizeBytes: null, revisions: [], createdAt: row['created_at'],
+      }
+    },
+
+    deleteClientDocument: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `DELETE FROM project_client_documents cd
+         USING projects p WHERE p.id=cd.project_id AND p.company_id=$1 AND cd.id=$2
+         RETURNING cd.project_id, cd.title`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Document not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'client_document_delete',
+        `Document deleted: "${row['title']}"`)
+      return true
+    },
+
+    // ── Engineering mutations ─────────────────────────────────────────────────
+
+    issueEngineeringRevision: async (_: unknown, args: { projectId: string; revisionCode: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const proj = await query(`SELECT p.id, p.name, p.code FROM projects p WHERE p.id=$1 AND p.company_id=$2`, [args.projectId, ctx.auth.companyId])
+      if (!proj.rows[0]) throw new Error('Project not found')
+      const p = proj.rows[0] as Record<string, unknown>
+
+      const issuerRow = await query(`SELECT u.id, e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const issuerName = String((issuerRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+
+      // Snapshot current scope items
+      const scopeRows = await query(`SELECT * FROM rfq_lines WHERE project_id=$1 ORDER BY sequence`, [args.projectId])
+      const snapshot = scopeRows.rows.map((r: Record<string, unknown>) => rfqLineToGQL(r))
+      const itemCount = snapshot.length
+
+      // Archive any previously issued revisions
+      await query(`UPDATE engineering_revisions SET status='archived' WHERE project_id=$1 AND status='issued'`, [args.projectId])
+
+      // Insert new revision
+      const ins = await query(
+        `INSERT INTO engineering_revisions (project_id, revision_code, status, notes, issued_by_id, issued_by_name, issued_at, snapshot_data, item_count)
+         VALUES ($1,$2,'issued',$3,$4,$5,NOW(),$6::jsonb,$7) RETURNING *`,
+        [args.projectId, args.revisionCode, args.notes ?? null, ctx.auth.userId, issuerName, JSON.stringify(snapshot), itemCount],
+      )
+      const rev = ins.rows[0] as Record<string, unknown>
+
+      await logActivity(args.projectId, ctx.auth.userId, 'engineering_revision_issued',
+        `Engineering scope issued: ${args.revisionCode} (${itemCount} items)`)
+
+      // Notify all project members
+      const membersR = await query(
+        `SELECT e.user_id, e.first_name||' '||e.last_name AS full_name, e.email
+         FROM project_members pm JOIN employees e ON e.id=pm.employee_id
+         WHERE pm.project_id=$1 AND e.user_id IS NOT NULL AND e.user_id != $2`,
+        [args.projectId, ctx.auth.userId],
+      )
+      const projectName = String(p['name'] ?? '')
+      const projectCode = String(p['code'] ?? '')
+
+      for (const m of membersR.rows as Record<string, unknown>[]) {
+        const uid = m['user_id'] as string
+        await query(
+          `INSERT INTO notifications (company_id,user_id,type,title,body,data) VALUES ($1,$2,'engineering_revision',$3,$4,$5::jsonb)`,
+          [ctx.auth.companyId, uid,
+           `Scope revised: ${args.revisionCode} — ${projectCode}`,
+           `Engineering scope for ${projectCode} has been formally issued at ${args.revisionCode} (${itemCount} items)`,
+           JSON.stringify({ projectId: args.projectId, revisionId: rev['id'] })],
+        ).catch(() => { /* non-fatal */ })
+
+        const email = m['email'] as string | null
+        const name  = String(m['full_name'] ?? 'Team Member')
+        if (email) {
+          await query(
+            `INSERT INTO service_outbox (service,event_type,payload) VALUES ('notifications','ENGINEERING_REVISION_EMAIL',$1::jsonb)`,
+            [JSON.stringify({
+              to: email, recipientName: name, projectName, projectCode,
+              revisionCode: args.revisionCode, notes: args.notes ?? null,
+              itemCount, issuedBy: issuerName,
+              projectUrl: `${env.FRONTEND_URL}/projects/${args.projectId}?tab=rfq_lines`,
+            })],
+          ).catch(() => { /* non-fatal */ })
+        }
+      }
+
+      return {
+        id: rev['id'], projectId: rev['project_id'], revisionCode: rev['revision_code'],
+        status: rev['status'], notes: rev['notes'] ?? null,
+        issuedByName: rev['issued_by_name'], issuedAt: rev['issued_at'],
+        itemCount, snapshotData: snapshot, createdAt: rev['created_at'],
+      }
+    },
+
+    createProjectDrawing: async (_: unknown, args: {
+      projectId: string; fileId: string; drawingNumber: string; title: string
+      discipline?: string; scale?: string; paperSize?: string; revision?: string
+      status?: string; issueDate?: string; notes?: string
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      if (!proj.rows[0]) throw new Error('Project not found')
+      const fileRow = await query(`SELECT id, original_filename, file_key FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileRow.rows[0]) throw new Error('File not found')
+      const f = fileRow.rows[0] as Record<string, unknown>
+      const uploaderRow = await query(`SELECT u.id, e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const uploaderName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+
+      const ins = await query(
+        `INSERT INTO project_drawings (project_id,file_id,drawing_number,title,discipline,scale,paper_size,revision,status,issue_date,notes,uploaded_by_id,uploaded_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        [args.projectId, args.fileId, args.drawingNumber, args.title,
+         args.discipline ?? null, args.scale ?? null, args.paperSize ?? null,
+         args.revision ?? null, args.status ?? 'preliminary',
+         args.issueDate ?? null, args.notes ?? null,
+         ctx.auth.userId, uploaderName],
+      )
+      const row = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'drawing_added', `Drawing added: ${args.drawingNumber} — ${args.title}`)
+
+      let downloadUrl: string | null = null
+      try { const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+
+      return { id: row['id'], projectId: row['project_id'], drawingNumber: row['drawing_number'], title: row['title'], discipline: row['discipline'] ?? null, scale: row['scale'] ?? null, paperSize: row['paper_size'] ?? null, revision: row['revision'] ?? null, status: row['status'], issueDate: row['issue_date'] ? String(row['issue_date']).slice(0,10) : null, notes: row['notes'] ?? null, fileId: row['file_id'], parentDrawingId: null, uploadedByName: uploaderName, downloadUrl, filename: f['original_filename'], revisions: [], createdAt: row['created_at'] }
+    },
+
+    reviseProjectDrawing: async (_: unknown, args: { parentDrawingId: string; fileId: string; revision: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const parentR = await query(`SELECT pd.*, p.company_id FROM project_drawings pd JOIN projects p ON p.id=pd.project_id WHERE pd.id=$1 AND p.company_id=$2`, [args.parentDrawingId, ctx.auth.companyId])
+      if (!parentR.rows[0]) throw new Error('Drawing not found')
+      const parent = parentR.rows[0] as Record<string, unknown>
+      const fileRow = await query(`SELECT id, original_filename, file_key FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileRow.rows[0]) throw new Error('File not found')
+      const f = fileRow.rows[0] as Record<string, unknown>
+      const uploaderRow = await query(`SELECT u.id, e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const uploaderName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+
+      await query(`UPDATE project_drawings SET status='superseded' WHERE id=$1 OR parent_drawing_id=$1`, [args.parentDrawingId])
+
+      const ins = await query(
+        `INSERT INTO project_drawings (project_id,file_id,drawing_number,title,discipline,scale,paper_size,revision,status,issue_date,notes,parent_drawing_id,uploaded_by_id,uploaded_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        [parent['project_id'], args.fileId, parent['drawing_number'], parent['title'],
+         parent['discipline'], parent['scale'], parent['paper_size'],
+         args.revision, parent['status'] === 'superseded' ? 'for_construction' : parent['status'],
+         null, args.notes ?? null,
+         args.parentDrawingId, ctx.auth.userId, uploaderName],
+      )
+      const row = ins.rows[0] as Record<string, unknown>
+      await logActivity(String(parent['project_id']), ctx.auth.userId, 'drawing_revised', `Drawing revised: ${parent['drawing_number']} → Rev ${args.revision}`)
+
+      let downloadUrl: string | null = null
+      try { const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+
+      return { id: row['id'], projectId: row['project_id'], drawingNumber: row['drawing_number'], title: row['title'], discipline: row['discipline'] ?? null, scale: row['scale'] ?? null, paperSize: row['paper_size'] ?? null, revision: row['revision'] ?? null, status: row['status'], issueDate: null, notes: row['notes'] ?? null, fileId: row['file_id'], parentDrawingId: args.parentDrawingId, uploadedByName: uploaderName, downloadUrl, filename: f['original_filename'], revisions: [], createdAt: row['created_at'] }
+    },
+
+    updateProjectDrawingStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`UPDATE project_drawings pd SET status=$1 FROM projects p WHERE p.id=pd.project_id AND p.company_id=$2 AND pd.id=$3 RETURNING pd.*`, [args.status, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Drawing not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'drawing_status', `Drawing ${row['drawing_number']} status → ${args.status}`)
+      return { id: row['id'], projectId: row['project_id'], drawingNumber: row['drawing_number'], title: row['title'], discipline: row['discipline'] ?? null, scale: row['scale'] ?? null, paperSize: row['paper_size'] ?? null, revision: row['revision'] ?? null, status: row['status'], issueDate: null, notes: row['notes'] ?? null, fileId: row['file_id'] ?? null, parentDrawingId: row['parent_drawing_id'] ?? null, uploadedByName: row['uploaded_by_name'] ?? null, downloadUrl: null, filename: null, revisions: [], createdAt: row['created_at'] }
+    },
+
+    deleteProjectDrawing: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_drawings pd USING projects p WHERE p.id=pd.project_id AND p.company_id=$1 AND pd.id=$2 RETURNING pd.project_id, pd.drawing_number, pd.title`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Drawing not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'drawing_deleted', `Drawing deleted: ${row['drawing_number']} — ${row['title']}`)
+      return true
+    },
+
+    // ── Bidding mutations ─────────────────────────────────────────────────────
+
+    createBidDeliverable: async (_: unknown, args: { projectId: string; name: string; deliverableType: string; discipline?: string; dueDate?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+        .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const uploaderRow = await query(`SELECT e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const creatorName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+      const seqR = await query(`SELECT COALESCE(MAX(sequence),0)+1 AS seq FROM bid_deliverables WHERE project_id=$1`, [args.projectId])
+      const seq = Number((seqR.rows[0] as Record<string, unknown>)?.['seq'] ?? 1)
+      const ins = await query(
+        `INSERT INTO bid_deliverables (project_id,name,deliverable_type,discipline,due_date,notes,sequence,created_by_id,created_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [args.projectId, args.name, args.deliverableType, args.discipline ?? null, args.dueDate ?? null, args.notes ?? null, seq, ctx.auth.userId, creatorName],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_deliverable_added', `Bid deliverable added: ${args.name}`)
+      return { id: d['id'], projectId: d['project_id'], name: d['name'], deliverableType: d['deliverable_type'], discipline: d['discipline'] ?? null, status: d['status'], assignedTo: d['assigned_to'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, notes: d['notes'] ?? null, sequence: Number(d['sequence']), createdByName: creatorName, fileCount: 0, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateBidDeliverable: async (_: unknown, args: { id: string; name?: string; status?: string; assignedTo?: string; dueDate?: string; notes?: string; discipline?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const cur = await query(`SELECT bd.*, p.company_id, p.id AS project_id2 FROM bid_deliverables bd JOIN projects p ON p.id=bd.project_id WHERE bd.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+      if (!cur.rows[0]) throw new Error('Deliverable not found')
+      const c = cur.rows[0] as Record<string, unknown>
+      const fields: string[] = []
+      const vals: unknown[] = []
+      let i = 1
+      if (args.name       !== undefined) { fields.push(`name=$${i++}`);         vals.push(args.name) }
+      if (args.status     !== undefined) { fields.push(`status=$${i++}`);       vals.push(args.status) }
+      if (args.assignedTo !== undefined) { fields.push(`assigned_to=$${i++}`);  vals.push(args.assignedTo || null) }
+      if (args.dueDate    !== undefined) { fields.push(`due_date=$${i++}`);     vals.push(args.dueDate || null) }
+      if (args.notes      !== undefined) { fields.push(`notes=$${i++}`);        vals.push(args.notes || null) }
+      if (args.discipline !== undefined) { fields.push(`discipline=$${i++}`);   vals.push(args.discipline || null) }
+      if (fields.length > 0) {
+        fields.push(`updated_at=NOW()`)
+        vals.push(args.id)
+        await query(`UPDATE bid_deliverables SET ${fields.join(',')} WHERE id=$${i}`, vals)
+      }
+      if (args.status && args.status !== c['status'])
+        await logActivity(String(c['project_id']), ctx.auth.userId, 'bid_deliverable_status', `${String(c['name'])} → ${args.status.replace(/_/g, ' ')}`)
+      const upd = await query(`SELECT * FROM bid_deliverables WHERE id=$1`, [args.id])
+      const d = upd.rows[0] as Record<string, unknown>
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='bid_deliverable' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => {
+        let downloadUrl: string | null = null
+        try { const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+        return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: f['description'] ?? null, createdAt: f['created_at'], downloadUrl }
+      }))
+      return { id: d['id'], projectId: d['project_id'], name: d['name'], deliverableType: d['deliverable_type'], discipline: d['discipline'] ?? null, status: d['status'], assignedTo: d['assigned_to'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, notes: d['notes'] ?? null, sequence: Number(d['sequence']), createdByName: d['created_by_name'] ?? null, fileCount: fileList.length, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteBidDeliverable: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM bid_deliverables bd USING projects p WHERE p.id=bd.project_id AND p.company_id=$1 AND bd.id=$2 RETURNING bd.project_id, bd.name`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Deliverable not found')
+      await logActivity(String((r.rows[0] as Record<string, unknown>)['project_id']), ctx.auth.userId, 'bid_deliverable_deleted', `Deliverable deleted: ${String((r.rows[0] as Record<string, unknown>)['name'])}`)
+      return true
+    },
+
+    uploadBidDeliverableFile: async (_: unknown, args: { deliverableId: string; fileId: string; title?: string; description?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const delR = await query(`SELECT bd.*, p.company_id FROM bid_deliverables bd JOIN projects p ON p.id=bd.project_id WHERE bd.id=$1 AND p.company_id=$2`, [args.deliverableId, ctx.auth.companyId])
+      if (!delR.rows[0]) throw new Error('Deliverable not found')
+      const d = delR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(
+        `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, description, uploaded_by) VALUES ($1,'bid_deliverable',$2,$3,$4,$5)`,
+        [args.fileId, args.deliverableId, args.title ?? f['original_filename'], args.description ?? null, ctx.auth.userId],
+      )
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'bid_deliverable_file', `File attached to ${String(d['name'])}: ${String(f['original_filename'])}`)
+      // Return updated deliverable
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='bid_deliverable' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.deliverableId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => {
+        let downloadUrl: string | null = null
+        try { const dl = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+        return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: ff['description'] ?? null, createdAt: ff['created_at'], downloadUrl }
+      }))
+      return { id: d['id'], projectId: d['project_id'], name: d['name'], deliverableType: d['deliverable_type'], discipline: d['discipline'] ?? null, status: d['status'], assignedTo: d['assigned_to'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, notes: d['notes'] ?? null, sequence: Number(d['sequence']), createdByName: d['created_by_name'] ?? null, fileCount: fileList.length, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteBidDeliverableFile: async (_: unknown, args: { attachmentId: string; deliverableId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const delR = await query(`SELECT bd.*, p.company_id FROM bid_deliverables bd JOIN projects p ON p.id=bd.project_id WHERE bd.id=$1 AND p.company_id=$2`, [args.deliverableId, ctx.auth.companyId])
+      if (!delR.rows[0]) throw new Error('Deliverable not found')
+      await query(`DELETE FROM document_attachments WHERE id=$1 AND entity_type='bid_deliverable' AND entity_id=$2`, [args.attachmentId, args.deliverableId])
+      return true
+    },
+
+    upsertBidCostItems: async (_: unknown, args: { projectId: string; items: Array<{ id?: string; costType: string; description: string; quantity?: number; unit?: string; unitCost?: number; totalCost?: number; currencyCode?: string; supplierRef?: string; notes?: string; sequence?: number }> }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+        .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      // Delete all existing and re-insert (simplest consistent approach like rfqLines)
+      await query(`DELETE FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+      const result: Record<string, unknown>[] = []
+      for (const [i, item] of args.items.entries()) {
+        const totalCost = item.totalCost != null ? item.totalCost : (item.quantity != null && item.unitCost != null ? item.quantity * item.unitCost : null)
+        const ins = await query(
+          `INSERT INTO bid_cost_items (project_id,cost_type,description,quantity,unit,unit_cost,total_cost,currency_code,supplier_ref,notes,sequence)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+          [args.projectId, item.costType, item.description, item.quantity ?? null, item.unit ?? null, item.unitCost ?? null, totalCost, item.currencyCode ?? 'USD', item.supplierRef ?? null, item.notes ?? null, item.sequence ?? i],
+        )
+        result.push(ins.rows[0] as Record<string, unknown>)
+      }
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_cost_updated', `Commercial cost items updated (${args.items.length} items)`)
+      return result.map(r => ({
+        id: r['id'], projectId: r['project_id'], costType: r['cost_type'], description: r['description'],
+        quantity: r['quantity'] != null ? Number(r['quantity']) : null, unit: r['unit'] ?? null,
+        unitCost: r['unit_cost'] != null ? Number(r['unit_cost']) : null,
+        totalCost: r['total_cost'] != null ? Number(r['total_cost']) : null,
+        currencyCode: r['currency_code'] ?? 'USD', supplierRef: r['supplier_ref'] ?? null,
+        notes: r['notes'] ?? null, sequence: Number(r['sequence'] ?? 0), createdAt: r['created_at'],
+      }))
+    },
+
+    createBidSupplierQuotation: async (_: unknown, args: { projectId: string; supplierName: string; itemDescription: string; amount?: number; currencyCode?: string; validityDate?: string; fileId?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+        .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const ins = await query(
+        `INSERT INTO bid_supplier_quotations (project_id,supplier_name,item_description,amount,currency_code,validity_date,file_id,notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [args.projectId, args.supplierName, args.itemDescription, args.amount ?? null, args.currencyCode ?? 'USD', args.validityDate ?? null, args.fileId ?? null, args.notes ?? null],
+      )
+      const r = ins.rows[0] as Record<string, unknown>
+      let downloadUrl: string | null = null
+      if (args.fileId) { try { const fR = await query(`SELECT file_key, original_filename FROM files WHERE id=$1`, [args.fileId]); if (fR.rows[0]) { const dl = await generateDownloadUrl((fR.rows[0] as Record<string,unknown>)['file_key'] as string, (fR.rows[0] as Record<string,unknown>)['original_filename'] as string); downloadUrl = dl.downloadUrl } } catch { /* best-effort */ } }
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_quotation_added', `Supplier quotation added: ${args.supplierName}`)
+      return { id: r['id'], projectId: r['project_id'], supplierName: r['supplier_name'], itemDescription: r['item_description'], amount: r['amount'] != null ? Number(r['amount']) : null, currencyCode: r['currency_code'] ?? 'USD', validityDate: r['validity_date'] ? String(r['validity_date']).slice(0, 10) : null, fileId: r['file_id'] ?? null, downloadUrl, filename: null, notes: r['notes'] ?? null, status: r['status'], createdAt: r['created_at'] }
+    },
+
+    updateBidSupplierQuotation: async (_: unknown, args: { id: string; status?: string; supplierName?: string; itemDescription?: string; amount?: number; validityDate?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const curR = await query(`SELECT bsq.*, p.company_id FROM bid_supplier_quotations bsq JOIN projects p ON p.id=bsq.project_id WHERE bsq.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+      if (!curR.rows[0]) throw new Error('Quotation not found')
+      const fields: string[] = []; const vals: unknown[] = []; let i = 1
+      if (args.status          !== undefined) { fields.push(`status=$${i++}`);            vals.push(args.status) }
+      if (args.supplierName    !== undefined) { fields.push(`supplier_name=$${i++}`);     vals.push(args.supplierName) }
+      if (args.itemDescription !== undefined) { fields.push(`item_description=$${i++}`);  vals.push(args.itemDescription) }
+      if (args.amount          !== undefined) { fields.push(`amount=$${i++}`);            vals.push(args.amount) }
+      if (args.validityDate    !== undefined) { fields.push(`validity_date=$${i++}`);     vals.push(args.validityDate || null) }
+      if (args.notes           !== undefined) { fields.push(`notes=$${i++}`);             vals.push(args.notes || null) }
+      if (fields.length > 0) { vals.push(args.id); await query(`UPDATE bid_supplier_quotations SET ${fields.join(',')} WHERE id=$${i}`, vals) }
+      const upd = (await query(`SELECT * FROM bid_supplier_quotations WHERE id=$1`, [args.id])).rows[0] as Record<string, unknown>
+      return { id: upd['id'], projectId: upd['project_id'], supplierName: upd['supplier_name'], itemDescription: upd['item_description'], amount: upd['amount'] != null ? Number(upd['amount']) : null, currencyCode: upd['currency_code'] ?? 'USD', validityDate: upd['validity_date'] ? String(upd['validity_date']).slice(0, 10) : null, fileId: upd['file_id'] ?? null, downloadUrl: null, filename: null, notes: upd['notes'] ?? null, status: upd['status'], createdAt: upd['created_at'] }
+    },
+
+    deleteBidSupplierQuotation: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM bid_supplier_quotations bsq USING projects p WHERE p.id=bsq.project_id AND p.company_id=$1 AND bsq.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    updateBidCommercialSummary: async (_: unknown, args: { projectId: string; overheadPct?: number; marginPct?: number; discountPct?: number; contingencyPct?: number; currencyCode?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+        .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      await query(
+        `INSERT INTO bid_commercial_summary (project_id,overhead_pct,margin_pct,discount_pct,contingency_pct,currency_code,notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (project_id) DO UPDATE SET
+           overhead_pct=$2, margin_pct=$3, discount_pct=$4, contingency_pct=$5,
+           currency_code=COALESCE($6,bid_commercial_summary.currency_code),
+           notes=COALESCE($7,bid_commercial_summary.notes), updated_at=NOW()`,
+        [args.projectId, args.overheadPct ?? 0, args.marginPct ?? 0, args.discountPct ?? 0, args.contingencyPct ?? 0, args.currencyCode ?? 'USD', args.notes ?? null],
+      )
+      // Return via the query resolver logic
+      const summaryR = await query(`SELECT * FROM bid_commercial_summary WHERE project_id=$1`, [args.projectId])
+      const summary = summaryR.rows[0] as Record<string, unknown>
+      const costsR  = await query(`SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
+      const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
+      const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: String(summary['approval_status'] ?? 'draft'), submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: summary['approved_by_name'] ?? null, approvedAt: summary['approved_at'] ?? null, rejectionReason: summary['rejection_reason'] ?? null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+    },
+
+    submitBidForApproval: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+        .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const uploaderRow = await query(`SELECT e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const submitterName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+      await query(
+        `INSERT INTO bid_commercial_summary (project_id,approval_status,submitted_by_id,submitted_by_name,submitted_at)
+         VALUES ($1,'submitted',$2,$3,NOW())
+         ON CONFLICT (project_id) DO UPDATE SET approval_status='submitted',submitted_by_id=$2,submitted_by_name=$3,submitted_at=NOW(),updated_at=NOW()`,
+        [args.projectId, ctx.auth.userId, submitterName],
+      )
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_submitted', 'Commercial bid submitted for approval')
+      // Notify admins
+      const adminsR = await query(`SELECT DISTINCT ucr.user_id AS id FROM user_company_roles ucr WHERE ucr.company_id=$1 AND ucr.role='admin' AND ucr.is_active=true AND ucr.user_id != $2`, [ctx.auth.companyId, ctx.auth.userId])
+      for (const a of adminsR.rows as Record<string, unknown>[]) {
+        await query(`INSERT INTO notifications (company_id,user_id,type,title,body,data) VALUES ($1,$2,'bid_approval_requested','Bid Submitted for Approval','Commercial bid requires your approval.',$3::jsonb)`, [ctx.auth.companyId, a['id'], JSON.stringify({ projectId: args.projectId })]).catch(() => { /* non-fatal */ })
+      }
+      const summaryR = await query(`SELECT * FROM bid_commercial_summary WHERE project_id=$1`, [args.projectId])
+      const summary = summaryR.rows[0] as Record<string, unknown>
+      const costsR = await query(`SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
+      const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
+      const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'submitted', submittedByName: submitterName, submittedAt: summary['submitted_at'], approvedByName: null, approvedAt: null, rejectionReason: null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+    },
+
+    approveBid: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin') throw new Error('Admin only')
+      const uploaderRow = await query(`SELECT e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const approverName = String((uploaderRow.rows[0] as Record<string, unknown>)?.['full_name'] ?? 'Unknown')
+      await query(
+        `UPDATE bid_commercial_summary SET approval_status='approved',approved_by_id=$1,approved_by_name=$2,approved_at=NOW(),rejection_reason=NULL,updated_at=NOW() WHERE project_id=$3`,
+        [ctx.auth.userId, approverName, args.projectId],
+      )
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_approved', `Commercial bid approved by ${approverName}`)
+      const summaryR = await query(`SELECT * FROM bid_commercial_summary WHERE project_id=$1`, [args.projectId])
+      const summary = summaryR.rows[0] as Record<string, unknown>
+      const costsR = await query(`SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
+      const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
+      const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'approved', submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: approverName, approvedAt: summary['approved_at'], rejectionReason: null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+    },
+
+    rejectBid: async (_: unknown, args: { projectId: string; reason: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin') throw new Error('Admin only')
+      await query(
+        `UPDATE bid_commercial_summary SET approval_status='rejected',rejection_reason=$1,updated_at=NOW() WHERE project_id=$2`,
+        [args.reason, args.projectId],
+      )
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_rejected', `Commercial bid rejected: ${args.reason}`)
+      const summaryR = await query(`SELECT * FROM bid_commercial_summary WHERE project_id=$1`, [args.projectId])
+      const summary = summaryR.rows[0] as Record<string, unknown>
+      const costsR = await query(`SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
+      const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
+      const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'rejected', submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: null, approvedAt: null, rejectionReason: args.reason, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+    },
+
+    // ── Execution mutations ───────────────────────────────────────────────────
+
+    createProjectRFI: async (_: unknown, args: { projectId: string; rfiNumber: string; subject: string; description?: string; drawingRef?: string; specRef?: string; requiredDate?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const raisedByName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+      const ins = await query(
+        `INSERT INTO project_rfis (project_id,rfi_number,subject,description,drawing_ref,spec_ref,raised_by_id,raised_by_name,required_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [args.projectId, args.rfiNumber, args.subject, args.description ?? null, args.drawingRef ?? null, args.specRef ?? null, ctx.auth.userId, raisedByName, args.requiredDate ?? null],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'rfi_created', `RFI created: ${args.rfiNumber} — ${args.subject}`)
+      return { id: d['id'], projectId: d['project_id'], rfiNumber: d['rfi_number'], subject: d['subject'], description: d['description'] ?? null, drawingRef: d['drawing_ref'] ?? null, specRef: d['spec_ref'] ?? null, raisedByName, raisedDate: String(d['raised_date']).slice(0, 10), requiredDate: d['required_date'] ? String(d['required_date']).slice(0, 10) : null, respondedDate: null, status: d['status'], response: null, respondedByName: null, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateProjectRFI: async (_: unknown, args: { id: string; subject?: string; description?: string; drawingRef?: string; specRef?: string; requiredDate?: string; status?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.subject !== undefined)     { sets.push(`subject=$${idx++}`);      vals.push(args.subject) }
+      if (args.description !== undefined) { sets.push(`description=$${idx++}`);  vals.push(args.description) }
+      if (args.drawingRef !== undefined)  { sets.push(`drawing_ref=$${idx++}`);  vals.push(args.drawingRef) }
+      if (args.specRef !== undefined)     { sets.push(`spec_ref=$${idx++}`);     vals.push(args.specRef) }
+      if (args.requiredDate !== undefined){ sets.push(`required_date=$${idx++}`);vals.push(args.requiredDate || null) }
+      if (args.status !== undefined)      { sets.push(`status=$${idx++}`);       vals.push(args.status) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_rfis r SET ${sets.join(',')} FROM projects p WHERE p.id=r.project_id AND p.company_id=$${idx} AND r.id=$${idx+1} RETURNING r.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('RFI not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'rfi_updated', `RFI updated: ${String(d['rfi_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='rfi' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], rfiNumber: d['rfi_number'], subject: d['subject'], description: d['description'] ?? null, drawingRef: d['drawing_ref'] ?? null, specRef: d['spec_ref'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), requiredDate: d['required_date'] ? String(d['required_date']).slice(0, 10) : null, respondedDate: d['responded_date'] ? String(d['responded_date']).slice(0, 10) : null, status: d['status'], response: d['response'] ?? null, respondedByName: d['responded_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    respondToRFI: async (_: unknown, args: { id: string; response: string; respondedDate?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const respondedByName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+      const upd = await query(
+        `UPDATE project_rfis r SET response=$1, responded_by_name=$2, responded_date=$3, status='responded', updated_at=NOW() FROM projects p WHERE p.id=r.project_id AND p.company_id=$4 AND r.id=$5 RETURNING r.*`,
+        [args.response, respondedByName, args.respondedDate ?? new Date().toISOString().slice(0, 10), ctx.auth.companyId, args.id],
+      )
+      if (!upd.rows[0]) throw new Error('RFI not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'rfi_responded', `RFI ${String(d['rfi_number'])} response recorded`)
+      return { id: d['id'], projectId: d['project_id'], rfiNumber: d['rfi_number'], subject: d['subject'], description: d['description'] ?? null, drawingRef: d['drawing_ref'] ?? null, specRef: d['spec_ref'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), requiredDate: d['required_date'] ? String(d['required_date']).slice(0, 10) : null, respondedDate: d['responded_date'] ? String(d['responded_date']).slice(0, 10) : null, status: 'responded', response: args.response, respondedByName, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteProjectRFI: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_rfis rfi USING projects p WHERE p.id=rfi.project_id AND p.company_id=$1 AND rfi.id=$2 RETURNING rfi.project_id, rfi.rfi_number`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('RFI not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'rfi_deleted', `RFI deleted: ${String(row['rfi_number'])}`)
+      return true
+    },
+
+    uploadRFIFile: async (_: unknown, args: { rfiId: string; fileId: string; title?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const rfiR = await query(`SELECT rfi.*, p.company_id FROM project_rfis rfi JOIN projects p ON p.id=rfi.project_id WHERE rfi.id=$1 AND p.company_id=$2`, [args.rfiId, ctx.auth.companyId])
+      if (!rfiR.rows[0]) throw new Error('RFI not found')
+      const d = rfiR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'rfi',$2,$3,$4)`, [args.fileId, args.rfiId, args.title ?? f['original_filename'], ctx.auth.userId])
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'rfi_file', `File attached to RFI ${String(d['rfi_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='rfi' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.rfiId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], rfiNumber: d['rfi_number'], subject: d['subject'], description: d['description'] ?? null, drawingRef: d['drawing_ref'] ?? null, specRef: d['spec_ref'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), requiredDate: d['required_date'] ? String(d['required_date']).slice(0, 10) : null, respondedDate: d['responded_date'] ? String(d['responded_date']).slice(0, 10) : null, status: d['status'], response: d['response'] ?? null, respondedByName: d['responded_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteRFIFile: async (_: unknown, args: { attachmentId: string; rfiId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM document_attachments da USING project_rfis rfi JOIN projects p ON p.id=rfi.project_id WHERE rfi.id=da.entity_id AND da.entity_type='rfi' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
+      return true
+    },
+
+    createProjectSubmittal: async (_: unknown, args: { projectId: string; submittalNumber: string; title: string; submittalType: string; revision?: string; submittedDate?: string; reviewerName?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const ins = await query(
+        `INSERT INTO project_submittals (project_id,submittal_number,title,submittal_type,revision,submitted_date,reviewer_name) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [args.projectId, args.submittalNumber, args.title, args.submittalType, args.revision ?? 'A', args.submittedDate ?? null, args.reviewerName ?? null],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'submittal_created', `Submittal created: ${args.submittalNumber} — ${args.title}`)
+      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: null, remarks: null, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateProjectSubmittal: async (_: unknown, args: { id: string; title?: string; submittalType?: string; revision?: string; submittedDate?: string; reviewerName?: string; reviewStatus?: string; returnDate?: string; remarks?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title !== undefined)         { sets.push(`title=$${idx++}`);          vals.push(args.title) }
+      if (args.submittalType !== undefined)  { sets.push(`submittal_type=$${idx++}`); vals.push(args.submittalType || null) }
+      if (args.revision !== undefined)       { sets.push(`revision=$${idx++}`);       vals.push(args.revision) }
+      if (args.submittedDate !== undefined)  { sets.push(`submitted_date=$${idx++}`); vals.push(args.submittedDate || null) }
+      if (args.reviewerName !== undefined)   { sets.push(`reviewer_name=$${idx++}`);  vals.push(args.reviewerName) }
+      if (args.reviewStatus !== undefined)   { sets.push(`review_status=$${idx++}`);  vals.push(args.reviewStatus || null) }
+      if (args.returnDate !== undefined)     { sets.push(`return_date=$${idx++}`);    vals.push(args.returnDate || null) }
+      if (args.remarks !== undefined)        { sets.push(`remarks=$${idx++}`);        vals.push(args.remarks) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_submittals s SET ${sets.join(',')} FROM projects p WHERE p.id=s.project_id AND p.company_id=$${idx} AND s.id=$${idx+1} RETURNING s.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('Submittal not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'submittal_updated', `Submittal updated: ${String(d['submittal_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='submittal' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: d['return_date'] ? String(d['return_date']).slice(0, 10) : null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteProjectSubmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_submittals s USING projects p WHERE p.id=s.project_id AND p.company_id=$1 AND s.id=$2 RETURNING s.project_id, s.submittal_number`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Submittal not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'submittal_deleted', `Submittal deleted: ${String(row['submittal_number'])}`)
+      return true
+    },
+
+    uploadSubmittalFile: async (_: unknown, args: { submittalId: string; fileId: string; title?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sR = await query(`SELECT s.*, p.company_id FROM project_submittals s JOIN projects p ON p.id=s.project_id WHERE s.id=$1 AND p.company_id=$2`, [args.submittalId, ctx.auth.companyId])
+      if (!sR.rows[0]) throw new Error('Submittal not found')
+      const d = sR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'submittal',$2,$3,$4)`, [args.fileId, args.submittalId, args.title ?? f['original_filename'], ctx.auth.userId])
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'submittal_file', `File attached to submittal ${String(d['submittal_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='submittal' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.submittalId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: d['return_date'] ? String(d['return_date']).slice(0, 10) : null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteSubmittalFile: async (_: unknown, args: { attachmentId: string; submittalId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM document_attachments da USING project_submittals s JOIN projects p ON p.id=s.project_id WHERE s.id=da.entity_id AND da.entity_type='submittal' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
+      return true
+    },
+
+    createSiteInstruction: async (_: unknown, args: { projectId: string; siNumber: string; subject: string; description?: string; issuedBy?: string; issuedDate?: string; potentialVo?: boolean }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const ins = await query(
+        `INSERT INTO project_site_instructions (project_id,si_number,subject,description,issued_by,issued_date,potential_vo) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [args.projectId, args.siNumber, args.subject, args.description ?? null, args.issuedBy ?? null, args.issuedDate ?? new Date().toISOString().slice(0, 10), args.potentialVo ?? false],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'si_created', `Site Instruction created: ${args.siNumber} — ${args.subject}`)
+      return { id: d['id'], projectId: d['project_id'], siNumber: d['si_number'], subject: d['subject'], description: d['description'] ?? null, issuedBy: d['issued_by'] ?? null, issuedDate: String(d['issued_date']).slice(0, 10), acknowledgedByName: null, acknowledgedDate: null, potentialVo: Boolean(d['potential_vo']), voRef: null, status: d['status'], files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateSiteInstruction: async (_: unknown, args: { id: string; subject?: string; description?: string; issuedBy?: string; acknowledgedByName?: string; acknowledgedDate?: string; status?: string; potentialVo?: boolean; voRef?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.subject !== undefined)           { sets.push(`subject=$${idx++}`);            vals.push(args.subject) }
+      if (args.description !== undefined)       { sets.push(`description=$${idx++}`);        vals.push(args.description) }
+      if (args.issuedBy !== undefined)          { sets.push(`issued_by=$${idx++}`);          vals.push(args.issuedBy) }
+      if (args.acknowledgedByName !== undefined){ sets.push(`acknowledged_by_name=$${idx++}`);vals.push(args.acknowledgedByName) }
+      if (args.acknowledgedDate !== undefined)  { sets.push(`acknowledged_date=$${idx++}`);  vals.push(args.acknowledgedDate || null) }
+      if (args.status !== undefined)            { sets.push(`status=$${idx++}`);             vals.push(args.status) }
+      if (args.potentialVo !== undefined)       { sets.push(`potential_vo=$${idx++}`);       vals.push(args.potentialVo) }
+      if (args.voRef !== undefined)             { sets.push(`vo_ref=$${idx++}`);             vals.push(args.voRef) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_site_instructions si SET ${sets.join(',')} FROM projects p WHERE p.id=si.project_id AND p.company_id=$${idx} AND si.id=$${idx+1} RETURNING si.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('Site Instruction not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'si_updated', `Site Instruction updated: ${String(d['si_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='site_instruction' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], siNumber: d['si_number'], subject: d['subject'], description: d['description'] ?? null, issuedBy: d['issued_by'] ?? null, issuedDate: String(d['issued_date']).slice(0, 10), acknowledgedByName: d['acknowledged_by_name'] ?? null, acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, potentialVo: Boolean(d['potential_vo']), voRef: d['vo_ref'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteSiteInstruction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_site_instructions si USING projects p WHERE p.id=si.project_id AND p.company_id=$1 AND si.id=$2 RETURNING si.project_id, si.si_number`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('SI not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'si_deleted', `Site Instruction deleted: ${String(row['si_number'])}`)
+      return true
+    },
+
+    uploadSIFile: async (_: unknown, args: { siId: string; fileId: string; title?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const siR = await query(`SELECT si.*, p.company_id FROM project_site_instructions si JOIN projects p ON p.id=si.project_id WHERE si.id=$1 AND p.company_id=$2`, [args.siId, ctx.auth.companyId])
+      if (!siR.rows[0]) throw new Error('SI not found')
+      const d = siR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'site_instruction',$2,$3,$4)`, [args.fileId, args.siId, args.title ?? f['original_filename'], ctx.auth.userId])
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'si_file', `File attached to SI ${String(d['si_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='site_instruction' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.siId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], siNumber: d['si_number'], subject: d['subject'], description: d['description'] ?? null, issuedBy: d['issued_by'] ?? null, issuedDate: String(d['issued_date']).slice(0, 10), acknowledgedByName: d['acknowledged_by_name'] ?? null, acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, potentialVo: Boolean(d['potential_vo']), voRef: d['vo_ref'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteSIFile: async (_: unknown, args: { attachmentId: string; siId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM document_attachments da USING project_site_instructions si JOIN projects p ON p.id=si.project_id WHERE si.id=da.entity_id AND da.entity_type='site_instruction' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
+      return true
+    },
+
+    createProjectITP: async (_: unknown, args: { projectId: string; title: string; workPackage?: string; discipline?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const creatorName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+      const ins = await query(
+        `INSERT INTO project_itps (project_id,title,work_package,discipline,created_by_id,created_by_name) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [args.projectId, args.title, args.workPackage ?? null, args.discipline ?? null, ctx.auth.userId, creatorName],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'itp_created', `ITP created: ${args.title}`)
+      return { id: d['id'], projectId: d['project_id'], title: d['title'], workPackage: d['work_package'] ?? null, discipline: d['discipline'] ?? null, revision: d['revision'], status: d['status'], createdByName: creatorName, items: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateProjectITP: async (_: unknown, args: { id: string; title?: string; workPackage?: string; discipline?: string; revision?: string; status?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title !== undefined)      { sets.push(`title=$${idx++}`);       vals.push(args.title) }
+      if (args.workPackage !== undefined) { sets.push(`work_package=$${idx++}`);vals.push(args.workPackage) }
+      if (args.discipline !== undefined)  { sets.push(`discipline=$${idx++}`);  vals.push(args.discipline) }
+      if (args.revision !== undefined)    { sets.push(`revision=$${idx++}`);    vals.push(args.revision) }
+      if (args.status !== undefined)      { sets.push(`status=$${idx++}`);      vals.push(args.status) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_itps itp SET ${sets.join(',')} FROM projects p WHERE p.id=itp.project_id AND p.company_id=$${idx} AND itp.id=$${idx+1} RETURNING itp.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('ITP not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      const items = await query(`SELECT * FROM project_itp_items WHERE itp_id=$1 ORDER BY sequence`, [args.id])
+      return { id: d['id'], projectId: d['project_id'], title: d['title'], workPackage: d['work_package'] ?? null, discipline: d['discipline'] ?? null, revision: d['revision'], status: d['status'], createdByName: d['created_by_name'] ?? null, items: items.rows.map((it: Record<string, unknown>) => ({ id: it['id'], itpId: it['itp_id'], sequence: it['sequence'], activity: it['activity'], inspectionType: it['inspection_type'], contractorRole: it['contractor_role'] ?? null, clientRole: it['client_role'] ?? null, referenceDoc: it['reference_doc'] ?? null, acceptanceCriteria: it['acceptance_criteria'] ?? null, result: it['result'] ?? null, inspectorName: it['inspector_name'] ?? null, inspectionDate: it['inspection_date'] ? String(it['inspection_date']).slice(0, 10) : null, remarks: it['remarks'] ?? null })), createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteProjectITP: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_itps itp USING projects p WHERE p.id=itp.project_id AND p.company_id=$1 AND itp.id=$2 RETURNING itp.project_id, itp.title`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('ITP not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'itp_deleted', `ITP deleted: ${String(row['title'])}`)
+      return true
+    },
+
+    upsertITPItems: async (_: unknown, args: { itpId: string; items: Array<{ id?: string; sequence: number; activity: string; inspectionType: string; contractorRole?: string; clientRole?: string; referenceDoc?: string; acceptanceCriteria?: string }> }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const itpR = await query(`SELECT itp.*, p.company_id FROM project_itps itp JOIN projects p ON p.id=itp.project_id WHERE itp.id=$1 AND p.company_id=$2`, [args.itpId, ctx.auth.companyId])
+      if (!itpR.rows[0]) throw new Error('ITP not found')
+      const d = itpR.rows[0] as Record<string, unknown>
+      await query(`DELETE FROM project_itp_items WHERE itp_id=$1`, [args.itpId])
+      for (const item of args.items) {
+        await query(
+          `INSERT INTO project_itp_items (itp_id,sequence,activity,inspection_type,contractor_role,client_role,reference_doc,acceptance_criteria) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [args.itpId, item.sequence, item.activity, item.inspectionType, item.contractorRole ?? null, item.clientRole ?? null, item.referenceDoc ?? null, item.acceptanceCriteria ?? null],
+        )
+      }
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'itp_items_saved', `ITP items saved: ${String(d['title'])}`)
+      const items = await query(`SELECT * FROM project_itp_items WHERE itp_id=$1 ORDER BY sequence`, [args.itpId])
+      return { id: d['id'], projectId: d['project_id'], title: d['title'], workPackage: d['work_package'] ?? null, discipline: d['discipline'] ?? null, revision: d['revision'], status: d['status'], createdByName: d['created_by_name'] ?? null, items: items.rows.map((it: Record<string, unknown>) => ({ id: it['id'], itpId: it['itp_id'], sequence: it['sequence'], activity: it['activity'], inspectionType: it['inspection_type'], contractorRole: it['contractor_role'] ?? null, clientRole: it['client_role'] ?? null, referenceDoc: it['reference_doc'] ?? null, acceptanceCriteria: it['acceptance_criteria'] ?? null, result: it['result'] ?? null, inspectorName: it['inspector_name'] ?? null, inspectionDate: it['inspection_date'] ? String(it['inspection_date']).slice(0, 10) : null, remarks: it['remarks'] ?? null })), createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    recordITPItemResult: async (_: unknown, args: { itemId: string; result: string; inspectorName?: string; inspectionDate?: string; remarks?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const upd = await query(
+        `UPDATE project_itp_items SET result=$1, inspector_name=$2, inspection_date=$3, remarks=$4 WHERE id=$5 RETURNING *`,
+        [args.result, args.inspectorName ?? null, args.inspectionDate ?? null, args.remarks ?? null, args.itemId],
+      )
+      if (!upd.rows[0]) throw new Error('ITP item not found')
+      const it = upd.rows[0] as Record<string, unknown>
+      return { id: it['id'], itpId: it['itp_id'], sequence: it['sequence'], activity: it['activity'], inspectionType: it['inspection_type'], contractorRole: it['contractor_role'] ?? null, clientRole: it['client_role'] ?? null, referenceDoc: it['reference_doc'] ?? null, acceptanceCriteria: it['acceptance_criteria'] ?? null, result: it['result'] ?? null, inspectorName: it['inspector_name'] ?? null, inspectionDate: it['inspection_date'] ? String(it['inspection_date']).slice(0, 10) : null, remarks: it['remarks'] ?? null }
+    },
+
+    createInspectionRequest: async (_: unknown, args: { projectId: string; irNumber: string; title: string; itpId?: string; workPackage?: string; location?: string; requestedDate: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const requestedByName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+      const ins = await query(
+        `INSERT INTO project_inspection_requests (project_id,ir_number,title,itp_id,work_package,location,requested_date,requested_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [args.projectId, args.irNumber, args.title, args.itpId || null, args.workPackage || null, args.location || null, args.requestedDate, requestedByName],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'ir_created', `Inspection Request created: ${args.irNumber} — ${args.title}`)
+      return { id: d['id'], projectId: d['project_id'], irNumber: d['ir_number'], title: d['title'], itpId: d['itp_id'] ?? null, workPackage: d['work_package'] ?? null, location: d['location'] ?? null, requestedDate: String(d['requested_date']).slice(0, 10), requestedByName, inspectorName: null, actualDate: null, status: d['status'], result: null, remarks: null, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateInspectionRequest: async (_: unknown, args: { id: string; title?: string; location?: string; requestedDate?: string; inspectorName?: string; actualDate?: string; status?: string; result?: string; remarks?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title !== undefined)         { sets.push(`title=$${idx++}`);          vals.push(args.title) }
+      if (args.location !== undefined)      { sets.push(`location=$${idx++}`);       vals.push(args.location) }
+      if (args.requestedDate !== undefined) { sets.push(`requested_date=$${idx++}`); vals.push(args.requestedDate || null) }
+      if (args.inspectorName !== undefined) { sets.push(`inspector_name=$${idx++}`); vals.push(args.inspectorName) }
+      if (args.actualDate !== undefined)    { sets.push(`actual_date=$${idx++}`);    vals.push(args.actualDate || null) }
+      if (args.status !== undefined)        { sets.push(`status=$${idx++}`);         vals.push(args.status) }
+      if (args.result !== undefined)        { sets.push(`result=$${idx++}`);         vals.push(args.result || null) }
+      if (args.remarks !== undefined)       { sets.push(`remarks=$${idx++}`);        vals.push(args.remarks) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_inspection_requests ir SET ${sets.join(',')} FROM projects p WHERE p.id=ir.project_id AND p.company_id=$${idx} AND ir.id=$${idx+1} RETURNING ir.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('Inspection Request not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'ir_updated', `Inspection Request updated: ${String(d['ir_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='inspection_request' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], irNumber: d['ir_number'], title: d['title'], itpId: d['itp_id'] ?? null, workPackage: d['work_package'] ?? null, location: d['location'] ?? null, requestedDate: String(d['requested_date']).slice(0, 10), requestedByName: d['requested_by_name'] ?? null, inspectorName: d['inspector_name'] ?? null, actualDate: d['actual_date'] ? String(d['actual_date']).slice(0, 10) : null, status: d['status'], result: d['result'] ?? null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteInspectionRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_inspection_requests ir USING projects p WHERE p.id=ir.project_id AND p.company_id=$1 AND ir.id=$2 RETURNING ir.project_id, ir.ir_number`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('IR not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'ir_deleted', `Inspection Request deleted: ${String(row['ir_number'])}`)
+      return true
+    },
+
+    uploadIRFile: async (_: unknown, args: { irId: string; fileId: string; title?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const irR = await query(`SELECT ir.*, p.company_id FROM project_inspection_requests ir JOIN projects p ON p.id=ir.project_id WHERE ir.id=$1 AND p.company_id=$2`, [args.irId, ctx.auth.companyId])
+      if (!irR.rows[0]) throw new Error('IR not found')
+      const d = irR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'inspection_request',$2,$3,$4)`, [args.fileId, args.irId, args.title ?? f['original_filename'], ctx.auth.userId])
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'ir_file', `File attached to IR ${String(d['ir_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='inspection_request' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.irId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], irNumber: d['ir_number'], title: d['title'], itpId: d['itp_id'] ?? null, workPackage: d['work_package'] ?? null, location: d['location'] ?? null, requestedDate: String(d['requested_date']).slice(0, 10), requestedByName: d['requested_by_name'] ?? null, inspectorName: d['inspector_name'] ?? null, actualDate: d['actual_date'] ? String(d['actual_date']).slice(0, 10) : null, status: d['status'], result: d['result'] ?? null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteIRFile: async (_: unknown, args: { attachmentId: string; irId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM document_attachments da USING project_inspection_requests ir JOIN projects p ON p.id=ir.project_id WHERE ir.id=da.entity_id AND da.entity_type='inspection_request' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
+      return true
+    },
+
+    createProjectNCR: async (_: unknown, args: { projectId: string; ncrNumber: string; title: string; description: string; workPackage?: string; location?: string; severity?: string; dueDate?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const raisedByName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+      const ins = await query(
+        `INSERT INTO project_ncrs (project_id,ncr_number,title,description,work_package,location,raised_by_name,severity,due_date) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [args.projectId, args.ncrNumber, args.title, args.description, args.workPackage ?? null, args.location ?? null, raisedByName, args.severity ?? 'minor', args.dueDate ?? null],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'ncr_created', `NCR raised: ${args.ncrNumber} — ${args.title} (${args.severity ?? 'minor'})`)
+      return { id: d['id'], projectId: d['project_id'], ncrNumber: d['ncr_number'], title: d['title'], description: d['description'], workPackage: d['work_package'] ?? null, location: d['location'] ?? null, raisedByName, raisedDate: String(d['raised_date']).slice(0, 10), severity: d['severity'], rootCause: null, correctiveAction: null, preventiveAction: null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, closedDate: null, closedByName: null, status: d['status'], files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateProjectNCR: async (_: unknown, args: { id: string; title?: string; description?: string; workPackage?: string; location?: string; severity?: string; rootCause?: string; correctiveAction?: string; preventiveAction?: string; dueDate?: string; status?: string; closedDate?: string; closedByName?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title !== undefined)            { sets.push(`title=$${idx++}`);             vals.push(args.title) }
+      if (args.description !== undefined)      { sets.push(`description=$${idx++}`);       vals.push(args.description) }
+      if (args.workPackage !== undefined)      { sets.push(`work_package=$${idx++}`);      vals.push(args.workPackage) }
+      if (args.location !== undefined)         { sets.push(`location=$${idx++}`);          vals.push(args.location) }
+      if (args.severity !== undefined)         { sets.push(`severity=$${idx++}`);          vals.push(args.severity || null) }
+      if (args.rootCause !== undefined)        { sets.push(`root_cause=$${idx++}`);        vals.push(args.rootCause) }
+      if (args.correctiveAction !== undefined) { sets.push(`corrective_action=$${idx++}`); vals.push(args.correctiveAction) }
+      if (args.preventiveAction !== undefined) { sets.push(`preventive_action=$${idx++}`); vals.push(args.preventiveAction) }
+      if (args.dueDate !== undefined)          { sets.push(`due_date=$${idx++}`);          vals.push(args.dueDate || null) }
+      if (args.status !== undefined)           { sets.push(`status=$${idx++}`);            vals.push(args.status) }
+      if (args.closedDate !== undefined)       { sets.push(`closed_date=$${idx++}`);       vals.push(args.closedDate || null) }
+      if (args.closedByName !== undefined)     { sets.push(`closed_by_name=$${idx++}`);    vals.push(args.closedByName) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_ncrs n SET ${sets.join(',')} FROM projects p WHERE p.id=n.project_id AND p.company_id=$${idx} AND n.id=$${idx+1} RETURNING n.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('NCR not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'ncr_updated', `NCR updated: ${String(d['ncr_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='ncr' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], ncrNumber: d['ncr_number'], title: d['title'], description: d['description'], workPackage: d['work_package'] ?? null, location: d['location'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), severity: d['severity'], rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, preventiveAction: d['preventive_action'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, closedDate: d['closed_date'] ? String(d['closed_date']).slice(0, 10) : null, closedByName: d['closed_by_name'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteProjectNCR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_ncrs n USING projects p WHERE p.id=n.project_id AND p.company_id=$1 AND n.id=$2 RETURNING n.project_id, n.ncr_number`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('NCR not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'ncr_deleted', `NCR deleted: ${String(row['ncr_number'])}`)
+      return true
+    },
+
+    uploadNCRFile: async (_: unknown, args: { ncrId: string; fileId: string; title?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const ncrR = await query(`SELECT n.*, p.company_id FROM project_ncrs n JOIN projects p ON p.id=n.project_id WHERE n.id=$1 AND p.company_id=$2`, [args.ncrId, ctx.auth.companyId])
+      if (!ncrR.rows[0]) throw new Error('NCR not found')
+      const d = ncrR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'ncr',$2,$3,$4)`, [args.fileId, args.ncrId, args.title ?? f['original_filename'], ctx.auth.userId])
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'ncr_file', `File attached to NCR ${String(d['ncr_number'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='ncr' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.ncrId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], ncrNumber: d['ncr_number'], title: d['title'], description: d['description'], workPackage: d['work_package'] ?? null, location: d['location'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), severity: d['severity'], rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, preventiveAction: d['preventive_action'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, closedDate: d['closed_date'] ? String(d['closed_date']).slice(0, 10) : null, closedByName: d['closed_by_name'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteNCRFile: async (_: unknown, args: { attachmentId: string; ncrId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM document_attachments da USING project_ncrs n JOIN projects p ON p.id=n.project_id WHERE n.id=da.entity_id AND da.entity_type='ncr' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
+      return true
+    },
+
+    createHSERecord: async (_: unknown, args: { projectId: string; recordType: string; title: string; recordDate: string; conductedBy?: string; location?: string; description?: string; attendeeCount?: number; attendeeNames?: string; incidentType?: string; severity?: string; injuredPerson?: string; observationType?: string; ptwType?: string; ptwNumber?: string; validFrom?: string; validTo?: string; approvedBy?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const creatorName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+      const ins = await query(
+        `INSERT INTO project_hse_records (project_id,record_type,title,record_date,conducted_by,location,description,attendee_count,attendee_names,incident_type,severity,injured_person,observation_type,ptw_type,ptw_number,valid_from,valid_to,approved_by,created_by_id,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+        [args.projectId, args.recordType, args.title, args.recordDate, args.conductedBy || null, args.location || null, args.description || null, args.attendeeCount ?? null, args.attendeeNames || null, args.incidentType || null, args.severity || null, args.injuredPerson || null, args.observationType || null, args.ptwType || null, args.ptwNumber || null, args.validFrom || null, args.validTo || null, args.approvedBy || null, ctx.auth.userId, creatorName],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      await logActivity(args.projectId, ctx.auth.userId, 'hse_created', `HSE ${args.recordType.replace('_', ' ')} recorded: ${args.title}`)
+      return { id: d['id'], projectId: d['project_id'], recordType: d['record_type'], title: d['title'], recordDate: String(d['record_date']).slice(0, 10), conductedBy: d['conducted_by'] ?? null, location: d['location'] ?? null, description: d['description'] ?? null, attendeeCount: d['attendee_count'] ?? null, attendeeNames: d['attendee_names'] ?? null, incidentType: d['incident_type'] ?? null, severity: d['severity'] ?? null, injuredPerson: d['injured_person'] ?? null, rootCause: null, correctiveAction: null, correctiveDueDate: null, correctiveClosedDate: null, observationType: d['observation_type'] ?? null, ptwType: d['ptw_type'] ?? null, ptwNumber: d['ptw_number'] ?? null, validFrom: d['valid_from'] ?? null, validTo: d['valid_to'] ?? null, approvedBy: d['approved_by'] ?? null, ptwStatus: d['ptw_status'] ?? null, status: d['status'], createdByName: creatorName, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateHSERecord: async (_: unknown, args: { id: string; title?: string; recordDate?: string; conductedBy?: string; location?: string; description?: string; attendeeCount?: number; attendeeNames?: string; incidentType?: string; severity?: string; injuredPerson?: string; rootCause?: string; correctiveAction?: string; correctiveDueDate?: string; correctiveClosedDate?: string; observationType?: string; ptwType?: string; ptwNumber?: string; validFrom?: string; validTo?: string; approvedBy?: string; ptwStatus?: string; status?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title !== undefined)               { sets.push(`title=$${idx++}`);                  vals.push(args.title) }
+      if (args.recordDate !== undefined)           { sets.push(`record_date=$${idx++}`);            vals.push(args.recordDate || null) }
+      if (args.conductedBy !== undefined)          { sets.push(`conducted_by=$${idx++}`);           vals.push(args.conductedBy) }
+      if (args.location !== undefined)             { sets.push(`location=$${idx++}`);               vals.push(args.location) }
+      if (args.description !== undefined)          { sets.push(`description=$${idx++}`);            vals.push(args.description) }
+      if (args.attendeeCount !== undefined)        { sets.push(`attendee_count=$${idx++}`);         vals.push(args.attendeeCount) }
+      if (args.attendeeNames !== undefined)        { sets.push(`attendee_names=$${idx++}`);         vals.push(args.attendeeNames) }
+      if (args.incidentType !== undefined)         { sets.push(`incident_type=$${idx++}`);          vals.push(args.incidentType || null) }
+      if (args.severity !== undefined)             { sets.push(`severity=$${idx++}`);               vals.push(args.severity || null) }
+      if (args.injuredPerson !== undefined)        { sets.push(`injured_person=$${idx++}`);         vals.push(args.injuredPerson) }
+      if (args.rootCause !== undefined)            { sets.push(`root_cause=$${idx++}`);             vals.push(args.rootCause) }
+      if (args.correctiveAction !== undefined)     { sets.push(`corrective_action=$${idx++}`);      vals.push(args.correctiveAction) }
+      if (args.correctiveDueDate !== undefined)    { sets.push(`corrective_due_date=$${idx++}`);    vals.push(args.correctiveDueDate || null) }
+      if (args.correctiveClosedDate !== undefined) { sets.push(`corrective_closed_date=$${idx++}`); vals.push(args.correctiveClosedDate || null) }
+      if (args.observationType !== undefined)      { sets.push(`observation_type=$${idx++}`);       vals.push(args.observationType || null) }
+      if (args.ptwType !== undefined)              { sets.push(`ptw_type=$${idx++}`);               vals.push(args.ptwType || null) }
+      if (args.ptwNumber !== undefined)            { sets.push(`ptw_number=$${idx++}`);             vals.push(args.ptwNumber) }
+      if (args.validFrom !== undefined)            { sets.push(`valid_from=$${idx++}`);             vals.push(args.validFrom || null) }
+      if (args.validTo !== undefined)              { sets.push(`valid_to=$${idx++}`);               vals.push(args.validTo || null) }
+      if (args.approvedBy !== undefined)           { sets.push(`approved_by=$${idx++}`);            vals.push(args.approvedBy) }
+      if (args.ptwStatus !== undefined)            { sets.push(`ptw_status=$${idx++}`);             vals.push(args.ptwStatus || null) }
+      if (args.status !== undefined)               { sets.push(`status=$${idx++}`);                 vals.push(args.status) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_hse_records h SET ${sets.join(',')} FROM projects p WHERE p.id=h.project_id AND p.company_id=$${idx} AND h.id=$${idx+1} RETURNING h.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('HSE record not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'hse_updated', `HSE record updated: ${String(d['title'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='hse_record' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], recordType: d['record_type'], title: d['title'], recordDate: String(d['record_date']).slice(0, 10), conductedBy: d['conducted_by'] ?? null, location: d['location'] ?? null, description: d['description'] ?? null, attendeeCount: d['attendee_count'] ?? null, attendeeNames: d['attendee_names'] ?? null, incidentType: d['incident_type'] ?? null, severity: d['severity'] ?? null, injuredPerson: d['injured_person'] ?? null, rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, correctiveDueDate: d['corrective_due_date'] ? String(d['corrective_due_date']).slice(0, 10) : null, correctiveClosedDate: d['corrective_closed_date'] ? String(d['corrective_closed_date']).slice(0, 10) : null, observationType: d['observation_type'] ?? null, ptwType: d['ptw_type'] ?? null, ptwNumber: d['ptw_number'] ?? null, validFrom: d['valid_from'] ?? null, validTo: d['valid_to'] ?? null, approvedBy: d['approved_by'] ?? null, ptwStatus: d['ptw_status'] ?? null, status: d['status'], createdByName: d['created_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteHSERecord: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_hse_records h USING projects p WHERE p.id=h.project_id AND p.company_id=$1 AND h.id=$2 RETURNING h.project_id, h.title`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('HSE record not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'hse_deleted', `HSE record deleted: ${String(row['title'])}`)
+      return true
+    },
+
+    uploadHSEFile: async (_: unknown, args: { hseId: string; fileId: string; title?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const hseR = await query(`SELECT h.*, p.company_id FROM project_hse_records h JOIN projects p ON p.id=h.project_id WHERE h.id=$1 AND p.company_id=$2`, [args.hseId, ctx.auth.companyId])
+      if (!hseR.rows[0]) throw new Error('HSE record not found')
+      const d = hseR.rows[0] as Record<string, unknown>
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'hse_record',$2,$3,$4)`, [args.fileId, args.hseId, args.title ?? f['original_filename'], ctx.auth.userId])
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'hse_file', `File attached to HSE record: ${String(d['title'])}`)
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='hse_record' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.hseId, ctx.auth.companyId])
+      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], recordType: d['record_type'], title: d['title'], recordDate: String(d['record_date']).slice(0, 10), conductedBy: d['conducted_by'] ?? null, location: d['location'] ?? null, description: d['description'] ?? null, attendeeCount: d['attendee_count'] ?? null, attendeeNames: d['attendee_names'] ?? null, incidentType: d['incident_type'] ?? null, severity: d['severity'] ?? null, injuredPerson: d['injured_person'] ?? null, rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, correctiveDueDate: d['corrective_due_date'] ? String(d['corrective_due_date']).slice(0, 10) : null, correctiveClosedDate: d['corrective_closed_date'] ? String(d['corrective_closed_date']).slice(0, 10) : null, observationType: d['observation_type'] ?? null, ptwType: d['ptw_type'] ?? null, ptwNumber: d['ptw_number'] ?? null, validFrom: d['valid_from'] ?? null, validTo: d['valid_to'] ?? null, approvedBy: d['approved_by'] ?? null, ptwStatus: d['ptw_status'] ?? null, status: d['status'], createdByName: d['created_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteHSEFile: async (_: unknown, args: { attachmentId: string; hseId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM document_attachments da USING project_hse_records h JOIN projects p ON p.id=h.project_id WHERE h.id=da.entity_id AND da.entity_type='hse_record' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
+      return true
+    },
+
+    createProjectTransmittal: async (_: unknown, args: { projectId: string; transmittalNumber: string; title: string; toCompany?: string; toContact?: string; fromName?: string; sentDate: string; purpose: string; notes?: string; items?: Array<{ documentTitle: string; documentNumber?: string; revision?: string; fileId?: string; copies?: number }> }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const ins = await query(
+        `INSERT INTO project_transmittals (project_id,transmittal_number,title,to_company,to_contact,from_name,sent_date,purpose,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [args.projectId, args.transmittalNumber, args.title, args.toCompany ?? null, args.toContact ?? null, args.fromName ?? null, args.sentDate, args.purpose, args.notes ?? null],
+      )
+      const d = ins.rows[0] as Record<string, unknown>
+      const tId = String(d['id'])
+      const itemRows = []
+      for (const item of (args.items ?? [])) {
+        const iR = await query(
+          `INSERT INTO project_transmittal_items (transmittal_id,document_title,document_number,revision,file_id,copies) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+          [tId, item.documentTitle, item.documentNumber ?? null, item.revision ?? null, item.fileId ?? null, item.copies ?? 1],
+        )
+        itemRows.push(iR.rows[0] as Record<string, unknown>)
+      }
+      await logActivity(args.projectId, ctx.auth.userId, 'transmittal_created', `Transmittal created: ${args.transmittalNumber} — ${args.title}`)
+      const mappedItems = await Promise.all(itemRows.map(async (it: Record<string, unknown>) => {
+        let filename: string | null = null; let downloadUrl: string | null = null
+        if (it['file_id']) {
+          const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']])
+          if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } }
+        }
+        return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
+      }))
+      return { id: d['id'], projectId: d['project_id'], transmittalNumber: d['transmittal_number'], title: d['title'], toCompany: d['to_company'] ?? null, toContact: d['to_contact'] ?? null, fromName: d['from_name'] ?? null, sentDate: String(d['sent_date']).slice(0, 10), purpose: d['purpose'], acknowledgedDate: null, notes: d['notes'] ?? null, status: d['status'], items: mappedItems, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    updateProjectTransmittal: async (_: unknown, args: { id: string; title?: string; toCompany?: string; toContact?: string; fromName?: string; sentDate?: string; purpose?: string; acknowledgedDate?: string; notes?: string; status?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title !== undefined)           { sets.push(`title=$${idx++}`);            vals.push(args.title) }
+      if (args.toCompany !== undefined)       { sets.push(`to_company=$${idx++}`);       vals.push(args.toCompany) }
+      if (args.toContact !== undefined)       { sets.push(`to_contact=$${idx++}`);       vals.push(args.toContact) }
+      if (args.fromName !== undefined)        { sets.push(`from_name=$${idx++}`);        vals.push(args.fromName) }
+      if (args.sentDate !== undefined)        { sets.push(`sent_date=$${idx++}`);        vals.push(args.sentDate || null) }
+      if (args.purpose !== undefined)         { sets.push(`purpose=$${idx++}`);          vals.push(args.purpose || null) }
+      if (args.acknowledgedDate !== undefined){ sets.push(`acknowledged_date=$${idx++}`);vals.push(args.acknowledgedDate || null) }
+      if (args.notes !== undefined)           { sets.push(`notes=$${idx++}`);            vals.push(args.notes) }
+      if (args.status !== undefined)          { sets.push(`status=$${idx++}`);           vals.push(args.status) }
+      sets.push(`updated_at=NOW()`)
+      const upd = await query(`UPDATE project_transmittals t SET ${sets.join(',')} FROM projects p WHERE p.id=t.project_id AND p.company_id=$${idx} AND t.id=$${idx+1} RETURNING t.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!upd.rows[0]) throw new Error('Transmittal not found')
+      const d = upd.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'transmittal_updated', `Transmittal updated: ${String(d['transmittal_number'])}`)
+      const itemsR = await query(`SELECT * FROM project_transmittal_items WHERE transmittal_id=$1 ORDER BY created_at`, [args.id])
+      const mappedItems = await Promise.all(itemsR.rows.map(async (it: Record<string, unknown>) => {
+        let filename: string | null = null; let downloadUrl: string | null = null
+        if (it['file_id']) { const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']]); if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } } }
+        return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
+      }))
+      return { id: d['id'], projectId: d['project_id'], transmittalNumber: d['transmittal_number'], title: d['title'], toCompany: d['to_company'] ?? null, toContact: d['to_contact'] ?? null, fromName: d['from_name'] ?? null, sentDate: String(d['sent_date']).slice(0, 10), purpose: d['purpose'], acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, notes: d['notes'] ?? null, status: d['status'], items: mappedItems, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    },
+
+    deleteProjectTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_transmittals t USING projects p WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 RETURNING t.project_id, t.transmittal_number`, [ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Transmittal not found')
+      const row = r.rows[0] as Record<string, unknown>
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'transmittal_deleted', `Transmittal deleted: ${String(row['transmittal_number'])}`)
+      return true
+    },
+
+    addTransmittalItem: async (_: unknown, args: { transmittalId: string; documentTitle: string; documentNumber?: string; revision?: string; fileId?: string; copies?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT t.id FROM project_transmittals t JOIN projects p ON p.id=t.project_id WHERE t.id=$1 AND p.company_id=$2`, [args.transmittalId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Transmittal not found') })
+      const ins = await query(
+        `INSERT INTO project_transmittal_items (transmittal_id,document_title,document_number,revision,file_id,copies) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [args.transmittalId, args.documentTitle, args.documentNumber ?? null, args.revision ?? null, args.fileId ?? null, args.copies ?? 1],
+      )
+      const it = ins.rows[0] as Record<string, unknown>
+      let filename: string | null = null; let downloadUrl: string | null = null
+      if (it['file_id']) { const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']]); if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } } }
+      return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
+    },
+
+    deleteTransmittalItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_transmittal_items ti USING project_transmittals t JOIN projects p ON p.id=t.project_id WHERE t.id=ti.transmittal_id AND p.company_id=$1 AND ti.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    // ── Planning ─────────────────────────────────────────────────────────────
+
+    createWBSNode: async (_: unknown, args: { projectId: string; parentId?: string; wbsCode: string; name: string; description?: string; level?: number; sequence?: number; budgetAmount?: number; responsible?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const r = await query(`INSERT INTO project_wbs (project_id,parent_id,wbs_code,name,description,level,sequence,budget_amount,responsible) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [args.projectId, args.parentId || null, args.wbsCode, args.name, args.description || null, args.level ?? 1, args.sequence ?? 0, args.budgetAmount ?? 0, args.responsible || null])
+      return planMapWBS(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateWBSNode: async (_: unknown, args: { id: string; wbsCode?: string; name?: string; description?: string; sequence?: number; budgetAmount?: number; responsible?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.wbsCode !== undefined)    { sets.push(`wbs_code=$${idx++}`);    vals.push(args.wbsCode) }
+      if (args.name !== undefined)       { sets.push(`name=$${idx++}`);        vals.push(args.name) }
+      if (args.description !== undefined){ sets.push(`description=$${idx++}`); vals.push(args.description) }
+      if (args.sequence !== undefined)   { sets.push(`sequence=$${idx++}`);    vals.push(args.sequence) }
+      if (args.budgetAmount !== undefined){ sets.push(`budget_amount=$${idx++}`); vals.push(args.budgetAmount) }
+      if (args.responsible !== undefined){ sets.push(`responsible=$${idx++}`); vals.push(args.responsible || null) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_wbs w SET ${sets.join(',')} FROM projects p WHERE p.id=w.project_id AND p.company_id=$${idx} AND w.id=$${idx+1} RETURNING w.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('WBS node not found')
+      return planMapWBS(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteWBSNode: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_wbs w USING projects p WHERE p.id=w.project_id AND p.company_id=$1 AND w.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    createActivity: async (_: unknown, args: { projectId: string; wbsId?: string; activityCode: string; name: string; activityType?: string; plannedStart?: string; plannedFinish?: string; durationDays?: number; responsible?: string; location?: string; remarks?: string; budgetAmount?: number; sequence?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const r = await query(`INSERT INTO project_activities (project_id,wbs_id,activity_code,name,activity_type,planned_start,planned_finish,duration_days,responsible,location,remarks,budget_amount,sequence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        [args.projectId, args.wbsId || null, args.activityCode, args.name, args.activityType || 'task', args.plannedStart || null, args.plannedFinish || null, args.durationDays ?? 0, args.responsible || null, args.location || null, args.remarks || null, args.budgetAmount ?? 0, args.sequence ?? 0])
+      const deps = await query(`SELECT pad.*,pa.activity_code AS pred_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.predecessor_id WHERE pad.successor_id=$1`, [r.rows[0].id])
+      const succs = await query(`SELECT pad.*,pa.activity_code AS succ_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.successor_id WHERE pad.predecessor_id=$1`, [r.rows[0].id])
+      return planMapActivity(r.rows[0] as Record<string, unknown>, deps.rows as Record<string, unknown>[], succs.rows as Record<string, unknown>[], [])
+    },
+
+    updateActivity: async (_: unknown, args: { id: string; wbsId?: string; activityCode?: string; name?: string; activityType?: string; plannedStart?: string; plannedFinish?: string; durationDays?: number; responsible?: string; location?: string; remarks?: string; budgetAmount?: number; actualCost?: number; sequence?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.wbsId !== undefined)        { sets.push(`wbs_id=$${idx++}`);          vals.push(args.wbsId || null) }
+      if (args.activityCode !== undefined) { sets.push(`activity_code=$${idx++}`);   vals.push(args.activityCode) }
+      if (args.name !== undefined)         { sets.push(`name=$${idx++}`);            vals.push(args.name) }
+      if (args.activityType !== undefined) { sets.push(`activity_type=$${idx++}`);   vals.push(args.activityType || null) }
+      if (args.plannedStart !== undefined) { sets.push(`planned_start=$${idx++}`);   vals.push(args.plannedStart || null) }
+      if (args.plannedFinish !== undefined){ sets.push(`planned_finish=$${idx++}`);  vals.push(args.plannedFinish || null) }
+      if (args.durationDays !== undefined) { sets.push(`duration_days=$${idx++}`);   vals.push(args.durationDays) }
+      if (args.responsible !== undefined)  { sets.push(`responsible=$${idx++}`);     vals.push(args.responsible || null) }
+      if (args.location !== undefined)     { sets.push(`location=$${idx++}`);        vals.push(args.location || null) }
+      if (args.remarks !== undefined)      { sets.push(`remarks=$${idx++}`);         vals.push(args.remarks || null) }
+      if (args.budgetAmount !== undefined) { sets.push(`budget_amount=$${idx++}`);   vals.push(args.budgetAmount) }
+      if (args.actualCost !== undefined)   { sets.push(`actual_cost=$${idx++}`);     vals.push(args.actualCost) }
+      if (args.sequence !== undefined)     { sets.push(`sequence=$${idx++}`);        vals.push(args.sequence) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_activities a SET ${sets.join(',')} FROM projects p WHERE p.id=a.project_id AND p.company_id=$${idx} AND a.id=$${idx+1} RETURNING a.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Activity not found')
+      const deps = await query(`SELECT pad.*,pa.activity_code AS pred_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.predecessor_id WHERE pad.successor_id=$1`, [args.id])
+      const succs = await query(`SELECT pad.*,pa.activity_code AS succ_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.successor_id WHERE pad.predecessor_id=$1`, [args.id])
+      const resources = await query(`SELECT par.*,pr.name AS resource_name,pr.unit FROM project_activity_resources par JOIN project_resources pr ON pr.id=par.resource_id WHERE par.activity_id=$1`, [args.id])
+      return planMapActivity(r.rows[0] as Record<string, unknown>, deps.rows as Record<string, unknown>[], succs.rows as Record<string, unknown>[], resources.rows as Record<string, unknown>[])
+    },
+
+    updateActivityProgress: async (_: unknown, args: { id: string; percentComplete: number; actualStart?: string; actualFinish?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`UPDATE project_activities a SET percent_complete=$1, actual_start=COALESCE($2::date,actual_start), actual_finish=COALESCE($3::date,actual_finish), updated_at=NOW() FROM projects p WHERE p.id=a.project_id AND p.company_id=$4 AND a.id=$5 RETURNING a.*`,
+        [args.percentComplete, args.actualStart || null, args.actualFinish || null, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Activity not found')
+      const d = r.rows[0] as Record<string, unknown>
+      await logActivity(String(d['project_id']), ctx.auth.userId, 'activity_progress', `Activity ${String(d['activity_code'])} progress: ${args.percentComplete}%`)
+      const deps = await query(`SELECT pad.*,pa.activity_code AS pred_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.predecessor_id WHERE pad.successor_id=$1`, [args.id])
+      const succs = await query(`SELECT pad.*,pa.activity_code AS succ_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.successor_id WHERE pad.predecessor_id=$1`, [args.id])
+      const resources = await query(`SELECT par.*,pr.name AS resource_name,pr.unit FROM project_activity_resources par JOIN project_resources pr ON pr.id=par.resource_id WHERE par.activity_id=$1`, [args.id])
+      return planMapActivity(r.rows[0] as Record<string, unknown>, deps.rows as Record<string, unknown>[], succs.rows as Record<string, unknown>[], resources.rows as Record<string, unknown>[])
+    },
+
+    deleteActivity: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_activities a USING projects p WHERE p.id=a.project_id AND p.company_id=$1 AND a.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    bulkImportActivities: async (_: unknown, args: { projectId: string; activities: Array<{ activityCode: string; name: string; activityType?: string; plannedStart?: string; plannedFinish?: string; durationDays?: number; responsible?: string; wbsCode?: string; budgetAmount?: number; sequence?: number }>; dependencies?: Array<{ predecessorCode: string; successorCode: string; dependencyType?: string; lagDays?: number }>; clearExisting?: boolean }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      if (args.clearExisting) {
+        await query(`DELETE FROM project_activity_dependencies WHERE project_id=$1`, [args.projectId])
+        await query(`DELETE FROM project_activities WHERE project_id=$1`, [args.projectId])
+      }
+      const codeToId = new Map<string, string>()
+      for (const act of args.activities) {
+        const r = await query(`INSERT INTO project_activities (project_id,activity_code,name,activity_type,planned_start,planned_finish,duration_days,responsible,budget_amount,sequence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (project_id,activity_code) DO UPDATE SET name=EXCLUDED.name, planned_start=EXCLUDED.planned_start, planned_finish=EXCLUDED.planned_finish, duration_days=EXCLUDED.duration_days, updated_at=NOW() RETURNING id`,
+          [args.projectId, act.activityCode, act.name, act.activityType || 'task', act.plannedStart || null, act.plannedFinish || null, act.durationDays ?? 0, act.responsible || null, act.budgetAmount ?? 0, act.sequence ?? 0])
+        codeToId.set(act.activityCode, String(r.rows[0].id))
+      }
+      for (const dep of (args.dependencies ?? [])) {
+        const predId = codeToId.get(dep.predecessorCode); const succId = codeToId.get(dep.successorCode)
+        if (!predId || !succId) continue
+        await query(`INSERT INTO project_activity_dependencies (project_id,predecessor_id,successor_id,dependency_type,lag_days) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+          [args.projectId, predId, succId, dep.dependencyType || 'FS', dep.lagDays ?? 0])
+      }
+      await logActivity(args.projectId, ctx.auth.userId, 'schedule_imported', `Schedule imported: ${args.activities.length} activities`)
+      return true
+    },
+
+    createDependency: async (_: unknown, args: { projectId: string; predecessorId: string; successorId: string; dependencyType?: string; lagDays?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_activity_dependencies (project_id,predecessor_id,successor_id,dependency_type,lag_days) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [args.projectId, args.predecessorId, args.successorId, args.dependencyType || 'FS', args.lagDays ?? 0])
+      const d = r.rows[0] as Record<string, unknown>
+      const predR = await query(`SELECT activity_code FROM project_activities WHERE id=$1`, [args.predecessorId])
+      const succR = await query(`SELECT activity_code FROM project_activities WHERE id=$1`, [args.successorId])
+      return { id: d['id'], predecessorId: d['predecessor_id'], successorId: d['successor_id'], dependencyType: d['dependency_type'], lagDays: d['lag_days'], predecessorCode: predR.rows[0]?.activity_code ?? null, successorCode: succR.rows[0]?.activity_code ?? null }
+    },
+
+    deleteDependency: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_activity_dependencies WHERE id=$1`, [args.id])
+      return true
+    },
+
+    recalculateCPM: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await planCPM(args.projectId)
+      return true
+    },
+
+    levelResources: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await planCPM(args.projectId)
+      const MAX_ITER = 200
+      let iter = 0
+      let overloaded = true
+      while (overloaded && iter < MAX_ITER) {
+        iter++; overloaded = false
+        const acts = await query(`SELECT * FROM project_activities WHERE project_id=$1 AND planned_start IS NOT NULL AND planned_finish IS NOT NULL ORDER BY total_float ASC NULLS LAST, planned_start ASC`, [args.projectId])
+        const resources = await query(`SELECT * FROM project_resources WHERE project_id=$1`, [args.projectId])
+        for (const res of resources.rows) {
+          const asgns = await query(`SELECT par.*, pa.id as act_id, pa.planned_start, pa.planned_finish, pa.is_critical, pa.total_float FROM project_activity_resources par JOIN project_activities pa ON pa.id=par.activity_id WHERE par.resource_id=$1 AND pa.planned_start IS NOT NULL`, [res.id])
+          const dayLoad = new Map<string, { total: number; acts: Array<{ id: string; float: number; critical: boolean }> }>()
+          for (const asgn of asgns.rows) {
+            const s = new Date(asgn.planned_start); const f = new Date(asgn.planned_finish); const d = new Date(s)
+            while (d <= f) {
+              const k = d.toISOString().slice(0, 10)
+              const e = dayLoad.get(k) || { total: 0, acts: [] }
+              e.total += Number(asgn.units_per_day); e.acts.push({ id: asgn.act_id, float: asgn.total_float ?? 999, critical: asgn.is_critical })
+              dayLoad.set(k, e); d.setDate(d.getDate() + 1)
+            }
+          }
+          for (const [, load] of dayLoad) {
+            if (load.total <= Number(res.max_units_per_day)) continue
+            overloaded = true
+            const nonCrit = load.acts.filter(a => !a.critical).sort((a, b) => b.float - a.float)
+            if (nonCrit.length === 0) continue
+            const toShift = nonCrit[0]
+            const cur = acts.rows.find(a => a.id === toShift.id)
+            if (!cur) continue
+            const ns = new Date(cur.planned_start); ns.setDate(ns.getDate() + 1)
+            const nf = new Date(cur.planned_finish); nf.setDate(nf.getDate() + 1)
+            await query(`UPDATE project_activities SET planned_start=$1, planned_finish=$2, updated_at=NOW() WHERE id=$3`, [ns.toISOString().slice(0, 10), nf.toISOString().slice(0, 10), toShift.id])
+            break
+          }
+        }
+      }
+      await planCPM(args.projectId)
+      await logActivity(args.projectId, ctx.auth.userId, 'resources_leveled', `Resource leveling completed (${iter} iterations)`)
+      return true
+    },
+
+    createBaseline: async (_: unknown, args: { projectId: string; name: string; description?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const acts = await query(`SELECT * FROM project_activities WHERE project_id=$1`, [args.projectId])
+      const snapshot = acts.rows.map(a => ({ id: a.id, activityCode: a.activity_code, name: a.name, plannedStart: a.planned_start, plannedFinish: a.planned_finish, durationDays: a.duration_days, percentComplete: a.percent_complete, isCritical: a.is_critical }))
+      await query(`UPDATE project_activities SET baseline_start=planned_start, baseline_finish=planned_finish, baseline_duration=duration_days, updated_at=NOW() WHERE project_id=$1`, [args.projectId])
+      const r = await query(`INSERT INTO project_baselines (project_id,name,description,activity_snapshot,created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [args.projectId, args.name, args.description || null, JSON.stringify(snapshot), ctx.auth.userId])
+      await logActivity(args.projectId, ctx.auth.userId, 'baseline_created', `Baseline created: ${args.name}`)
+      const d = r.rows[0] as Record<string, unknown>
+      return { id: d['id'], projectId: d['project_id'], name: d['name'], description: d['description'] ?? null, baselineDate: String(d['baseline_date']).slice(0, 10), isActive: Boolean(d['is_active']), createdAt: d['created_at'] }
+    },
+
+    setActiveBaseline: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const blR = await query(`SELECT b.* FROM project_baselines b JOIN projects p ON p.id=b.project_id WHERE b.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+      if (!blR.rows[0]) throw new Error('Baseline not found')
+      const bl = blR.rows[0] as Record<string, unknown>
+      await query(`UPDATE project_baselines SET is_active=false WHERE project_id=$1`, [bl['project_id']])
+      const r = await query(`UPDATE project_baselines SET is_active=true WHERE id=$1 RETURNING *`, [args.id])
+      const d = r.rows[0] as Record<string, unknown>
+      return { id: d['id'], projectId: d['project_id'], name: d['name'], description: d['description'] ?? null, baselineDate: String(d['baseline_date']).slice(0, 10), isActive: true, createdAt: d['created_at'] }
+    },
+
+    applyBaseline: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const blR = await query(`SELECT b.* FROM project_baselines b JOIN projects p ON p.id=b.project_id WHERE b.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+      if (!blR.rows[0]) throw new Error('Baseline not found')
+      const snapshot = (blR.rows[0] as Record<string, unknown>)['activity_snapshot'] as Array<{ id: string; plannedStart: string; plannedFinish: string; durationDays: number }> | null
+      if (!snapshot) return true
+      for (const act of snapshot) {
+        await query(`UPDATE project_activities SET planned_start=$1, planned_finish=$2, duration_days=$3, updated_at=NOW() WHERE id=$4`,
+          [act.plannedStart || null, act.plannedFinish || null, act.durationDays, act.id])
+      }
+      return true
+    },
+
+    deleteBaseline: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_baselines b USING projects p WHERE p.id=b.project_id AND p.company_id=$1 AND b.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    createResource: async (_: unknown, args: { projectId: string; name: string; resourceType: string; unit: string; maxUnitsPerDay: number; costPerUnit: number; currencyCode?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_resources (project_id,name,resource_type,unit,max_units_per_day,cost_per_unit,currency_code) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [args.projectId, args.name, args.resourceType, args.unit, args.maxUnitsPerDay, args.costPerUnit, args.currencyCode || 'USD'])
+      return planMapResource(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateResource: async (_: unknown, args: { id: string; name?: string; resourceType?: string; unit?: string; maxUnitsPerDay?: number; costPerUnit?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.name !== undefined)          { sets.push(`name=$${idx++}`);             vals.push(args.name) }
+      if (args.resourceType !== undefined)  { sets.push(`resource_type=$${idx++}`);    vals.push(args.resourceType) }
+      if (args.unit !== undefined)          { sets.push(`unit=$${idx++}`);             vals.push(args.unit) }
+      if (args.maxUnitsPerDay !== undefined){ sets.push(`max_units_per_day=$${idx++}`); vals.push(args.maxUnitsPerDay) }
+      if (args.costPerUnit !== undefined)   { sets.push(`cost_per_unit=$${idx++}`);    vals.push(args.costPerUnit) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_resources res SET ${sets.join(',')} FROM projects p WHERE p.id=res.project_id AND p.company_id=$${idx} AND res.id=$${idx+1} RETURNING res.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Resource not found')
+      return planMapResource(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteResource: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_resources res USING projects p WHERE p.id=res.project_id AND p.company_id=$1 AND res.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    setCalendarDay: async (_: unknown, args: { resourceId: string; workDate: string; availableUnits: number; isHoliday: boolean; note?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_resource_calendars (resource_id,work_date,available_units,is_holiday,note) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (resource_id,work_date) DO UPDATE SET available_units=EXCLUDED.available_units, is_holiday=EXCLUDED.is_holiday, note=EXCLUDED.note RETURNING *`,
+        [args.resourceId, args.workDate, args.availableUnits, args.isHoliday, args.note || null])
+      const d = r.rows[0] as Record<string, unknown>
+      return { id: d['id'], resourceId: d['resource_id'], workDate: String(d['work_date']).slice(0, 10), availableUnits: Number(d['available_units']), isHoliday: Boolean(d['is_holiday']), note: d['note'] ?? null }
+    },
+
+    deleteCalendarDay: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_resource_calendars WHERE id=$1`, [args.id])
+      return true
+    },
+
+    assignResource: async (_: unknown, args: { activityId: string; resourceId: string; unitsPerDay: number; budgetedCost?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_activity_resources (activity_id,resource_id,units_per_day,budgeted_cost) VALUES ($1,$2,$3,$4) ON CONFLICT (activity_id,resource_id) DO UPDATE SET units_per_day=EXCLUDED.units_per_day, budgeted_cost=EXCLUDED.budgeted_cost, updated_at=NOW() RETURNING *`,
+        [args.activityId, args.resourceId, args.unitsPerDay, args.budgetedCost ?? null])
+      const res = await query(`SELECT name, unit FROM project_resources WHERE id=$1`, [args.resourceId])
+      const d = r.rows[0] as Record<string, unknown>
+      return { id: d['id'], activityId: d['activity_id'], resourceId: d['resource_id'], resourceName: res.rows[0]?.name ?? null, unit: res.rows[0]?.unit ?? null, unitsPerDay: Number(d['units_per_day']), totalUnits: d['total_units'] ? Number(d['total_units']) : null, budgetedCost: d['budgeted_cost'] ? Number(d['budgeted_cost']) : null, actualUnits: d['actual_units'] ? Number(d['actual_units']) : null, actualCost: d['actual_cost'] ? Number(d['actual_cost']) : null }
+    },
+
+    updateResourceAssignment: async (_: unknown, args: { id: string; unitsPerDay?: number; totalUnits?: number; budgetedCost?: number; actualUnits?: number; actualCost?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.unitsPerDay !== undefined) { sets.push(`units_per_day=$${idx++}`);  vals.push(args.unitsPerDay) }
+      if (args.totalUnits !== undefined)  { sets.push(`total_units=$${idx++}`);    vals.push(args.totalUnits) }
+      if (args.budgetedCost !== undefined){ sets.push(`budgeted_cost=$${idx++}`);  vals.push(args.budgetedCost) }
+      if (args.actualUnits !== undefined) { sets.push(`actual_units=$${idx++}`);   vals.push(args.actualUnits) }
+      if (args.actualCost !== undefined)  { sets.push(`actual_cost=$${idx++}`);    vals.push(args.actualCost) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_activity_resources SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`, [...vals, args.id])
+      const res = await query(`SELECT pr.name, pr.unit FROM project_resources pr JOIN project_activity_resources par ON par.resource_id=pr.id WHERE par.id=$1`, [args.id])
+      const d = r.rows[0] as Record<string, unknown>
+      return { id: d['id'], activityId: d['activity_id'], resourceId: d['resource_id'], resourceName: res.rows[0]?.name ?? null, unit: res.rows[0]?.unit ?? null, unitsPerDay: Number(d['units_per_day']), totalUnits: d['total_units'] ? Number(d['total_units']) : null, budgetedCost: d['budgeted_cost'] ? Number(d['budgeted_cost']) : null, actualUnits: d['actual_units'] ? Number(d['actual_units']) : null, actualCost: d['actual_cost'] ? Number(d['actual_cost']) : null }
+    },
+
+    removeResourceAssignment: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_activity_resources WHERE id=$1`, [args.id])
+      return true
+    },
+
+    // ── Cost Control ─────────────────────────────────────────────────────────
+
+    createCostCode: async (_: unknown, args: { projectId: string; wbsId?: string; code: string; name: string; category: string; budgetAmount: number; sequence?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+      const r = await query(`INSERT INTO project_cost_codes (project_id,wbs_id,code,name,category,budget_amount,sequence) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [args.projectId, args.wbsId || null, args.code, args.name, args.category, args.budgetAmount, args.sequence ?? 0])
+      return ccMapCode(r.rows[0] as Record<string, unknown>, 0, 0, 0)
+    },
+
+    updateCostCode: async (_: unknown, args: { id: string; wbsId?: string; code?: string; name?: string; category?: string; budgetAmount?: number; sequence?: number }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.wbsId !== undefined)      { sets.push(`wbs_id=$${idx++}`);       vals.push(args.wbsId || null) }
+      if (args.code !== undefined)       { sets.push(`code=$${idx++}`);          vals.push(args.code) }
+      if (args.name !== undefined)       { sets.push(`name=$${idx++}`);          vals.push(args.name) }
+      if (args.category !== undefined)   { sets.push(`category=$${idx++}`);      vals.push(args.category) }
+      if (args.budgetAmount !== undefined){ sets.push(`budget_amount=$${idx++}`); vals.push(args.budgetAmount) }
+      if (args.sequence !== undefined)   { sets.push(`sequence=$${idx++}`);      vals.push(args.sequence) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_cost_codes cc SET ${sets.join(',')} FROM projects p WHERE p.id=cc.project_id AND p.company_id=$${idx} AND cc.id=$${idx+1} RETURNING cc.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Cost code not found')
+      return ccMapCode(r.rows[0] as Record<string, unknown>, 0, 0, 0)
+    },
+
+    deleteCostCode: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_cost_codes cc USING projects p WHERE p.id=cc.project_id AND p.company_id=$1 AND cc.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    createCommittedCost: async (_: unknown, args: { projectId: string; costCodeId?: string; commitmentType: string; referenceNumber?: string; description: string; vendorName?: string; committedAmount: number; currencyCode?: string; commitmentDate?: string; expectedInvoiceDate?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_committed_costs (project_id,cost_code_id,commitment_type,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,expected_invoice_date,notes,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [args.projectId, args.costCodeId || null, args.commitmentType, args.referenceNumber || null, args.description, args.vendorName || null, args.committedAmount, args.currencyCode || 'USD', args.commitmentDate || null, args.expectedInvoiceDate || null, args.notes || null, ctx.auth.userId])
+      return ccMapCommitted(r.rows[0] as Record<string, unknown>, null)
+    },
+
+    updateCommittedCost: async (_: unknown, args: { id: string; costCodeId?: string; description?: string; vendorName?: string; committedAmount?: number; invoicedAmount?: number; paidAmount?: number; commitmentDate?: string; expectedInvoiceDate?: string; status?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.costCodeId !== undefined)        { sets.push(`cost_code_id=$${idx++}`);         vals.push(args.costCodeId || null) }
+      if (args.description !== undefined)       { sets.push(`description=$${idx++}`);          vals.push(args.description) }
+      if (args.vendorName !== undefined)        { sets.push(`vendor_name=$${idx++}`);          vals.push(args.vendorName || null) }
+      if (args.committedAmount !== undefined)   { sets.push(`committed_amount=$${idx++}`);     vals.push(args.committedAmount) }
+      if (args.invoicedAmount !== undefined)    { sets.push(`invoiced_amount=$${idx++}`);      vals.push(args.invoicedAmount) }
+      if (args.paidAmount !== undefined)        { sets.push(`paid_amount=$${idx++}`);          vals.push(args.paidAmount) }
+      if (args.commitmentDate !== undefined)    { sets.push(`commitment_date=$${idx++}`);      vals.push(args.commitmentDate || null) }
+      if (args.expectedInvoiceDate !== undefined){ sets.push(`expected_invoice_date=$${idx++}`); vals.push(args.expectedInvoiceDate || null) }
+      if (args.status !== undefined)            { sets.push(`status=$${idx++}`);               vals.push(args.status) }
+      if (args.notes !== undefined)             { sets.push(`notes=$${idx++}`);                vals.push(args.notes || null) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_committed_costs cc SET ${sets.join(',')} FROM projects p WHERE p.id=cc.project_id AND p.company_id=$${idx} AND cc.id=$${idx+1} RETURNING cc.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Committed cost not found')
+      const codeR = r.rows[0]['cost_code_id'] ? await query(`SELECT name FROM project_cost_codes WHERE id=$1`, [r.rows[0]['cost_code_id']]) : null
+      return ccMapCommitted(r.rows[0] as Record<string, unknown>, codeR?.rows[0]?.name ?? null)
+    },
+
+    deleteCommittedCost: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_committed_costs cc USING projects p WHERE p.id=cc.project_id AND p.company_id=$1 AND cc.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    syncPOCommitments: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+      const pos = await query(`SELECT po.id, po.po_number, po.supplier_name, po.total_amount, po.currency_code, po.created_at FROM purchase_orders po WHERE po.project_id=$1 AND po.status IN ('approved','ordered','partially_received','received','closed')`, [args.projectId])
+      for (const po of pos.rows) {
+        const existing = await query(`SELECT id, invoiced_amount FROM project_committed_costs WHERE project_id=$1 AND reference_id=$2`, [args.projectId, po.id])
+        if (existing.rows[0]) {
+          await query(`UPDATE project_committed_costs SET committed_amount=$1, vendor_name=$2, updated_at=NOW() WHERE id=$3`, [po.total_amount, po.supplier_name, existing.rows[0].id])
+        } else {
+          await query(`INSERT INTO project_committed_costs (project_id,commitment_type,reference_id,reference_number,description,vendor_name,committed_amount,currency_code,commitment_date,created_by) VALUES ($1,'po',$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [args.projectId, po.id, po.po_number, `PO: ${po.po_number}`, po.supplier_name, po.total_amount, po.currency_code || 'USD', String(po.created_at).slice(0, 10), ctx.auth.userId])
+        }
+      }
+      return true
+    },
+
+    upsertCashFlowPeriod: async (_: unknown, args: { projectId: string; periodYear: number; periodMonth: number; plannedOutflow?: number; actualOutflow?: number; forecastOutflow?: number; plannedInflow?: number; actualInflow?: number; forecastInflow?: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_cash_flow (project_id,period_year,period_month,planned_outflow,actual_outflow,forecast_outflow,planned_inflow,actual_inflow,forecast_inflow,notes,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT (project_id,period_year,period_month) DO UPDATE SET planned_outflow=EXCLUDED.planned_outflow, actual_outflow=EXCLUDED.actual_outflow, forecast_outflow=EXCLUDED.forecast_outflow, planned_inflow=EXCLUDED.planned_inflow, actual_inflow=EXCLUDED.actual_inflow, forecast_inflow=EXCLUDED.forecast_inflow, notes=EXCLUDED.notes, updated_by=EXCLUDED.updated_by, updated_at=NOW() RETURNING *`,
+        [args.projectId, args.periodYear, args.periodMonth, args.plannedOutflow ?? 0, args.actualOutflow ?? 0, args.forecastOutflow ?? 0, args.plannedInflow ?? 0, args.actualInflow ?? 0, args.forecastInflow ?? 0, args.notes || null, ctx.auth.userId])
+      return ccMapCashFlow(r.rows[0] as Record<string, unknown>, 0, 0, 0)
+    },
+
+    createSubcontract: async (_: unknown, args: { projectId: string; costCodeId?: string; subcontractNumber: string; subcontractorName: string; description?: string; scopeOfWork?: string; contractValue: number; retentionPercentage?: number; currencyCode?: string; startDate?: string; endDate?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_subcontracts (project_id,cost_code_id,subcontract_number,subcontractor_name,description,scope_of_work,contract_value,revised_value,retention_percentage,currency_code,start_date,end_date,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [args.projectId, args.costCodeId || null, args.subcontractNumber, args.subcontractorName, args.description || null, args.scopeOfWork || null, args.contractValue, args.retentionPercentage ?? 10, args.currencyCode || 'USD', args.startDate || null, args.endDate || null, ctx.auth.userId])
+      return { ...ccMapSubcontract(r.rows[0] as Record<string, unknown>), billings: [] }
+    },
+
+    updateSubcontract: async (_: unknown, args: { id: string; costCodeId?: string; subcontractorName?: string; description?: string; scopeOfWork?: string; contractValue?: number; revisedValue?: number; retentionPercentage?: number; retentionReleased?: number; certifiedAmount?: number; paidAmount?: number; startDate?: string; endDate?: string; status?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.costCodeId !== undefined)       { sets.push(`cost_code_id=$${idx++}`);        vals.push(args.costCodeId || null) }
+      if (args.subcontractorName !== undefined){ sets.push(`subcontractor_name=$${idx++}`);  vals.push(args.subcontractorName) }
+      if (args.description !== undefined)      { sets.push(`description=$${idx++}`);         vals.push(args.description || null) }
+      if (args.scopeOfWork !== undefined)      { sets.push(`scope_of_work=$${idx++}`);       vals.push(args.scopeOfWork || null) }
+      if (args.contractValue !== undefined)    { sets.push(`contract_value=$${idx++}`);      vals.push(args.contractValue) }
+      if (args.revisedValue !== undefined)     { sets.push(`revised_value=$${idx++}`);       vals.push(args.revisedValue) }
+      if (args.retentionPercentage !== undefined){ sets.push(`retention_percentage=$${idx++}`); vals.push(args.retentionPercentage) }
+      if (args.retentionReleased !== undefined){ sets.push(`retention_released=$${idx++}`);  vals.push(args.retentionReleased) }
+      if (args.certifiedAmount !== undefined)  { sets.push(`certified_amount=$${idx++}`);    vals.push(args.certifiedAmount) }
+      if (args.paidAmount !== undefined)       { sets.push(`paid_amount=$${idx++}`);         vals.push(args.paidAmount) }
+      if (args.startDate !== undefined)        { sets.push(`start_date=$${idx++}`);          vals.push(args.startDate || null) }
+      if (args.endDate !== undefined)          { sets.push(`end_date=$${idx++}`);            vals.push(args.endDate || null) }
+      if (args.status !== undefined)           { sets.push(`status=$${idx++}`);              vals.push(args.status) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_subcontracts sc SET ${sets.join(',')} FROM projects p WHERE p.id=sc.project_id AND p.company_id=$${idx} AND sc.id=$${idx+1} RETURNING sc.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Subcontract not found')
+      const billings = await query(`SELECT * FROM project_subcontract_billings WHERE subcontract_id=$1 ORDER BY billing_date DESC`, [args.id])
+      return { ...ccMapSubcontract(r.rows[0] as Record<string, unknown>), billings: billings.rows.map(b => ccMapSCBilling(b as Record<string, unknown>)) }
+    },
+
+    deleteSubcontract: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_subcontracts sc USING projects p WHERE p.id=sc.project_id AND p.company_id=$1 AND sc.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    createSubcontractBilling: async (_: unknown, args: { subcontractId: string; billingNumber: string; billingDate: string; grossAmount: number; retentionAmount: number; netAmount: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_subcontract_billings (subcontract_id,billing_number,billing_date,gross_amount,retention_amount,net_amount,notes) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [args.subcontractId, args.billingNumber, args.billingDate, args.grossAmount, args.retentionAmount, args.netAmount, args.notes || null])
+      return ccMapSCBilling(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateSubcontractBilling: async (_: unknown, args: { id: string; certifiedAmount?: number; certifiedDate?: string; paidAmount?: number; paidDate?: string; status?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.certifiedAmount !== undefined){ sets.push(`certified_amount=$${idx++}`); vals.push(args.certifiedAmount ?? null) }
+      if (args.certifiedDate !== undefined)  { sets.push(`certified_date=$${idx++}`);  vals.push(args.certifiedDate || null) }
+      if (args.paidAmount !== undefined)     { sets.push(`paid_amount=$${idx++}`);     vals.push(args.paidAmount) }
+      if (args.paidDate !== undefined)       { sets.push(`paid_date=$${idx++}`);       vals.push(args.paidDate || null) }
+      if (args.status !== undefined)         { sets.push(`status=$${idx++}`);          vals.push(args.status) }
+      if (args.notes !== undefined)          { sets.push(`notes=$${idx++}`);           vals.push(args.notes || null) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_subcontract_billings SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`, [...vals, args.id])
+      return ccMapSCBilling(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteSubcontractBilling: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_subcontract_billings WHERE id=$1`, [args.id])
+      return true
+    },
+
+    createLaborEntry: async (_: unknown, args: { projectId: string; costCodeId?: string; activityId?: string; workDate: string; trade: string; workerName?: string; regularHours: number; overtimeHours?: number; costPerHour: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const reg = args.regularHours; const ot = args.overtimeHours ?? 0; const rate = args.costPerHour
+      const total = (reg + ot * 1.5) * rate
+      const r = await query(`INSERT INTO project_labor_entries (project_id,cost_code_id,activity_id,work_date,trade,worker_name,regular_hours,overtime_hours,cost_per_hour,total_cost,notes,entered_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [args.projectId, args.costCodeId || null, args.activityId || null, args.workDate, args.trade, args.workerName || null, reg, ot, rate, total, args.notes || null, ctx.auth.userId])
+      return ccMapLabor(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateLaborEntry: async (_: unknown, args: { id: string; trade?: string; workerName?: string; regularHours?: number; overtimeHours?: number; costPerHour?: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const cur = await query(`SELECT regular_hours, overtime_hours, cost_per_hour FROM project_labor_entries le JOIN projects p ON p.id=le.project_id WHERE le.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+      if (!cur.rows[0]) throw new Error('Not found')
+      const reg = args.regularHours ?? Number(cur.rows[0].regular_hours); const ot = args.overtimeHours ?? Number(cur.rows[0].overtime_hours); const rate = args.costPerHour ?? Number(cur.rows[0].cost_per_hour)
+      const total = (reg + ot * 1.5) * rate
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.trade !== undefined)       { sets.push(`trade=$${idx++}`);        vals.push(args.trade) }
+      if (args.workerName !== undefined)  { sets.push(`worker_name=$${idx++}`);  vals.push(args.workerName || null) }
+      sets.push(`regular_hours=$${idx++}`, `overtime_hours=$${idx++}`, `cost_per_hour=$${idx++}`, `total_cost=$${idx++}`)
+      vals.push(reg, ot, rate, total)
+      if (args.notes !== undefined)       { sets.push(`notes=$${idx++}`);        vals.push(args.notes || null) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_labor_entries SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`, [...vals, args.id])
+      return ccMapLabor(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteLaborEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_labor_entries le USING projects p WHERE p.id=le.project_id AND p.company_id=$1 AND le.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    createEquipmentLog: async (_: unknown, args: { projectId: string; costCodeId?: string; logDate: string; equipmentName: string; equipmentType?: string; ownership?: string; workingHours: number; standbyHours?: number; costPerHour: number; standbyRate?: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const wh = args.workingHours; const sh = args.standbyHours ?? 0; const cph = args.costPerHour; const sr = args.standbyRate ?? 0
+      const total = wh * cph + sh * sr
+      const r = await query(`INSERT INTO project_equipment_log (project_id,cost_code_id,log_date,equipment_name,equipment_type,ownership,working_hours,standby_hours,cost_per_hour,standby_rate,total_cost,notes,entered_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        [args.projectId, args.costCodeId || null, args.logDate, args.equipmentName, args.equipmentType || null, args.ownership || 'rented', wh, sh, cph, sr, total, args.notes || null, ctx.auth.userId])
+      return ccMapEquipment(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateEquipmentLog: async (_: unknown, args: { id: string; equipmentName?: string; equipmentType?: string; workingHours?: number; standbyHours?: number; costPerHour?: number; standbyRate?: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const cur = await query(`SELECT working_hours, standby_hours, cost_per_hour, standby_rate FROM project_equipment_log el JOIN projects p ON p.id=el.project_id WHERE el.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+      if (!cur.rows[0]) throw new Error('Not found')
+      const wh = args.workingHours ?? Number(cur.rows[0].working_hours); const sh = args.standbyHours ?? Number(cur.rows[0].standby_hours)
+      const cph = args.costPerHour ?? Number(cur.rows[0].cost_per_hour); const sr = args.standbyRate ?? Number(cur.rows[0].standby_rate)
+      const total = wh * cph + sh * sr
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.equipmentName !== undefined){ sets.push(`equipment_name=$${idx++}`);  vals.push(args.equipmentName) }
+      if (args.equipmentType !== undefined){ sets.push(`equipment_type=$${idx++}`);  vals.push(args.equipmentType || null) }
+      sets.push(`working_hours=$${idx++}`, `standby_hours=$${idx++}`, `cost_per_hour=$${idx++}`, `standby_rate=$${idx++}`, `total_cost=$${idx++}`)
+      vals.push(wh, sh, cph, sr, total)
+      if (args.notes !== undefined)        { sets.push(`notes=$${idx++}`);           vals.push(args.notes || null) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_equipment_log SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`, [...vals, args.id])
+      return ccMapEquipment(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteEquipmentLog: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_equipment_log el USING projects p WHERE p.id=el.project_id AND p.company_id=$1 AND el.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    upsertCostForecast: async (_: unknown, args: { projectId: string; costCodeId?: string; forecastDate: string; etcAmount: number; eacAmount: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_cost_forecast (project_id,cost_code_id,forecast_date,etc_amount,eac_amount,notes,prepared_by) VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (project_id,cost_code_id,forecast_date) DO UPDATE SET etc_amount=EXCLUDED.etc_amount, eac_amount=EXCLUDED.eac_amount, notes=EXCLUDED.notes, prepared_by=EXCLUDED.prepared_by, updated_at=NOW() RETURNING *`,
+        [args.projectId, args.costCodeId || null, args.forecastDate, args.etcAmount, args.eacAmount, args.notes || null, ctx.auth.userId])
+      const codeR = r.rows[0]['cost_code_id'] ? await query(`SELECT name FROM project_cost_codes WHERE id=$1`, [r.rows[0]['cost_code_id']]) : null
+      return { id: r.rows[0]['id'], projectId: r.rows[0]['project_id'], costCodeId: r.rows[0]['cost_code_id'] ?? null, costCodeName: codeR?.rows[0]?.name ?? null, forecastDate: String(r.rows[0]['forecast_date']).slice(0, 10), etcAmount: Number(r.rows[0]['etc_amount']), eacAmount: Number(r.rows[0]['eac_amount']), notes: r.rows[0]['notes'] ?? null, createdAt: r.rows[0]['created_at'] }
+    },
+
+    createClientBilling: async (_: unknown, args: { projectId: string; billingNumber: string; billingDate: string; periodFrom?: string; periodTo?: string; grossAmount: number; retentionPercentage?: number; retentionAmount?: number; netAmount: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`INSERT INTO project_client_billings (project_id,billing_number,billing_date,period_from,period_to,gross_amount,retention_percentage,retention_amount,net_amount,notes,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        [args.projectId, args.billingNumber, args.billingDate, args.periodFrom || null, args.periodTo || null, args.grossAmount, args.retentionPercentage ?? 10, args.retentionAmount ?? 0, args.netAmount, args.notes || null, ctx.auth.userId])
+      return ccMapClientBilling(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateClientBilling: async (_: unknown, args: { id: string; billingDate?: string; periodFrom?: string; periodTo?: string; grossAmount?: number; retentionPercentage?: number; retentionAmount?: number; netAmount?: number; certifiedAmount?: number; certifiedDate?: string; paidAmount?: number; paidDate?: string; status?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.billingDate !== undefined)        { sets.push(`billing_date=$${idx++}`);        vals.push(args.billingDate || null) }
+      if (args.periodFrom !== undefined)         { sets.push(`period_from=$${idx++}`);         vals.push(args.periodFrom || null) }
+      if (args.periodTo !== undefined)           { sets.push(`period_to=$${idx++}`);           vals.push(args.periodTo || null) }
+      if (args.grossAmount !== undefined)        { sets.push(`gross_amount=$${idx++}`);        vals.push(args.grossAmount) }
+      if (args.retentionPercentage !== undefined){ sets.push(`retention_percentage=$${idx++}`); vals.push(args.retentionPercentage) }
+      if (args.retentionAmount !== undefined)    { sets.push(`retention_amount=$${idx++}`);    vals.push(args.retentionAmount) }
+      if (args.netAmount !== undefined)          { sets.push(`net_amount=$${idx++}`);          vals.push(args.netAmount) }
+      if (args.certifiedAmount !== undefined)    { sets.push(`certified_amount=$${idx++}`);    vals.push(args.certifiedAmount ?? null) }
+      if (args.certifiedDate !== undefined)      { sets.push(`certified_date=$${idx++}`);      vals.push(args.certifiedDate || null) }
+      if (args.paidAmount !== undefined)         { sets.push(`paid_amount=$${idx++}`);         vals.push(args.paidAmount) }
+      if (args.paidDate !== undefined)           { sets.push(`paid_date=$${idx++}`);           vals.push(args.paidDate || null) }
+      if (args.status !== undefined)             { sets.push(`status=$${idx++}`);              vals.push(args.status) }
+      if (args.notes !== undefined)              { sets.push(`notes=$${idx++}`);               vals.push(args.notes || null) }
+      sets.push(`updated_at=NOW()`)
+      const r = await query(`UPDATE project_client_billings cb SET ${sets.join(',')} FROM projects p WHERE p.id=cb.project_id AND p.company_id=$${idx} AND cb.id=$${idx+1} RETURNING cb.*`, [...vals, ctx.auth.companyId, args.id])
+      if (!r.rows[0]) throw new Error('Client billing not found')
+      return ccMapClientBilling(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteClientBilling: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_client_billings cb USING projects p WHERE p.id=cb.project_id AND p.company_id=$1 AND cb.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    // ── Variation Orders ──────────────────────────────────────────────────────
+
+    createVariationOrder: async (_: unknown, args: { projectId: string; voNumber: string; title: string; description?: string; changeType?: string; initiatedBy?: string; instructionDate?: string; receivedDate?: string; scheduleImpactDays?: number; voValue: number; currencyCode?: string; clientRef?: string; impactAnalysis?: string; technicalNotes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+      const r = await query(
+        `INSERT INTO project_variation_orders (project_id,vo_number,title,description,change_type,initiated_by,instruction_date,received_date,schedule_impact_days,vo_value,currency_code,client_ref,impact_analysis,technical_notes,created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+        [args.projectId, args.voNumber, args.title, args.description || null, args.changeType || 'additional_work', args.initiatedBy || 'client', args.instructionDate || null, args.receivedDate || null, args.scheduleImpactDays ?? 0, args.voValue, args.currencyCode || 'USD', args.clientRef || null, args.impactAnalysis || null, args.technicalNotes || null, ctx.auth.userId],
+      )
+      void voNotify(args.projectId, ctx.auth.companyId, args.voNumber, 'created', ctx.auth.userId)
+      return voMapVO(r.rows[0] as Record<string, unknown>, [], [], [])
+    },
+
+    updateVariationOrder: async (_: unknown, args: { id: string; title?: string; description?: string; changeType?: string; initiatedBy?: string; instructionDate?: string; receivedDate?: string; scheduleImpactDays?: number; voValue?: number; currencyCode?: string; clientRef?: string; impactAnalysis?: string; technicalNotes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title            !== undefined) { sets.push(`title=$${idx++}`);                vals.push(args.title) }
+      if (args.description      !== undefined) { sets.push(`description=$${idx++}`);          vals.push(args.description || null) }
+      if (args.changeType       !== undefined) { sets.push(`change_type=$${idx++}`);          vals.push(args.changeType) }
+      if (args.initiatedBy      !== undefined) { sets.push(`initiated_by=$${idx++}`);         vals.push(args.initiatedBy) }
+      if (args.instructionDate  !== undefined) { sets.push(`instruction_date=$${idx++}`);     vals.push(args.instructionDate || null) }
+      if (args.receivedDate     !== undefined) { sets.push(`received_date=$${idx++}`);        vals.push(args.receivedDate || null) }
+      if (args.scheduleImpactDays !== undefined) { sets.push(`schedule_impact_days=$${idx++}`); vals.push(args.scheduleImpactDays) }
+      if (args.voValue          !== undefined) { sets.push(`vo_value=$${idx++}`);             vals.push(args.voValue) }
+      if (args.currencyCode     !== undefined) { sets.push(`currency_code=$${idx++}`);        vals.push(args.currencyCode) }
+      if (args.clientRef        !== undefined) { sets.push(`client_ref=$${idx++}`);           vals.push(args.clientRef || null) }
+      if (args.impactAnalysis   !== undefined) { sets.push(`impact_analysis=$${idx++}`);      vals.push(args.impactAnalysis || null) }
+      if (args.technicalNotes   !== undefined) { sets.push(`technical_notes=$${idx++}`);      vals.push(args.technicalNotes || null) }
+      if (sets.length === 0) throw new Error('Nothing to update')
+      sets.push(`updated_at=NOW()`); vals.push(args.id)
+      const r = await query(
+        `UPDATE project_variation_orders pvo SET ${sets.join(',')} FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$${idx} AND pvo.id=$${idx + 1} RETURNING pvo.*`,
+        [...vals, ctx.auth.companyId],
+      )
+      if (!r.rows[0]) throw new Error('Not found or unauthorized')
+      const voId = String(r.rows[0].id); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
+      return voMapVO(r.rows[0] as Record<string, unknown>, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
+    },
+
+    deleteVariationOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
+      await query(`DELETE FROM project_variation_orders pvo USING projects p WHERE p.id=pvo.project_id AND p.company_id=$1 AND pvo.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    submitVariationOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_variation_orders pvo SET status='submitted', submitted_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$1 AND pvo.id=$2 AND pvo.status='draft' RETURNING pvo.*`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('VO not found or not in draft status')
+      const row = r.rows[0] as Record<string, unknown>
+      void voNotify(String(row['project_id']), ctx.auth.companyId, String(row['vo_number']), 'submitted', ctx.auth.userId)
+      const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
+      return voMapVO(row, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
+    },
+
+    approveVariationOrder: async (_: unknown, args: { id: string; approvedValue: number }, ctx: GQLContext) => {
+      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
+      const r = await query(
+        `UPDATE project_variation_orders pvo SET status='approved', approved_value=$1, decided_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$2 AND pvo.id=$3 RETURNING pvo.*`,
+        [args.approvedValue, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('VO not found')
+      const row = r.rows[0] as Record<string, unknown>
+      void voNotify(String(row['project_id']), ctx.auth.companyId, String(row['vo_number']), 'approved', ctx.auth.userId)
+      const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
+      return voMapVO(row, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
+    },
+
+    rejectVariationOrder: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
+      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
+      const r = await query(
+        `UPDATE project_variation_orders pvo SET status='rejected', rejection_reason=$1, decided_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$2 AND pvo.id=$3 RETURNING pvo.*`,
+        [args.reason, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('VO not found')
+      const row = r.rows[0] as Record<string, unknown>
+      void voNotify(String(row['project_id']), ctx.auth.companyId, String(row['vo_number']), 'rejected', ctx.auth.userId)
+      const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
+      return voMapVO(row, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
+    },
+
+    setVOStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
+      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
+      const r = await query(
+        `UPDATE project_variation_orders pvo SET status=$1, updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$2 AND pvo.id=$3 RETURNING pvo.*`,
+        [args.status, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('VO not found')
+      const row = r.rows[0] as Record<string, unknown>
+      const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
+      return voMapVO(row, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
+    },
+
+    createVOCostItem: async (_: unknown, args: { voId: string; category: string; description: string; quantity?: number; unit?: string; unitRate: number; amount: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT pvo.id FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`, [args.voId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+      const r = await query(
+        `INSERT INTO project_vo_cost_items (vo_id,category,description,quantity,unit,unit_rate,amount,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [args.voId, args.category, args.description, args.quantity ?? 1, args.unit || null, args.unitRate, args.amount, args.notes || null],
+      )
+      return voMapCostItem(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateVOCostItem: async (_: unknown, args: { id: string; category?: string; description?: string; quantity?: number; unit?: string; unitRate?: number; amount?: number; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.category    !== undefined) { sets.push(`category=$${idx++}`);    vals.push(args.category) }
+      if (args.description !== undefined) { sets.push(`description=$${idx++}`); vals.push(args.description) }
+      if (args.quantity    !== undefined) { sets.push(`quantity=$${idx++}`);    vals.push(args.quantity) }
+      if (args.unit        !== undefined) { sets.push(`unit=$${idx++}`);        vals.push(args.unit || null) }
+      if (args.unitRate    !== undefined) { sets.push(`unit_rate=$${idx++}`);   vals.push(args.unitRate) }
+      if (args.amount      !== undefined) { sets.push(`amount=$${idx++}`);      vals.push(args.amount) }
+      if (args.notes       !== undefined) { sets.push(`notes=$${idx++}`);       vals.push(args.notes || null) }
+      if (sets.length === 0) throw new Error('Nothing to update')
+      vals.push(args.id)
+      const r = await query(
+        `UPDATE project_vo_cost_items ci SET ${sets.join(',')} FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE ci.vo_id=pvo.id AND p.company_id=$${idx} AND ci.id=$${idx + 1} RETURNING ci.*`,
+        [...vals, ctx.auth.companyId],
+      )
+      if (!r.rows[0]) throw new Error('Not found')
+      return voMapCostItem(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteVOCostItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_vo_cost_items ci USING project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE ci.vo_id=pvo.id AND p.company_id=$1 AND ci.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    createVOCorrespondence: async (_: unknown, args: { voId: string; correspondenceDate: string; direction: string; referenceNumber?: string; subject: string; description?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT pvo.id FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`, [args.voId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+      const r = await query(
+        `INSERT INTO project_vo_correspondence (vo_id,correspondence_date,direction,reference_number,subject,description,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [args.voId, args.correspondenceDate, args.direction, args.referenceNumber || null, args.subject, args.description || null, ctx.auth.userId],
+      )
+      return voMapCorr(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteVOCorrespondence: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_vo_correspondence vc USING project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE vc.vo_id=pvo.id AND p.company_id=$1 AND vc.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    addVODrawing: async (_: unknown, args: { voId: string; drawingNumber: string; revision?: string; title?: string; notes?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT pvo.id FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`, [args.voId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+      const r = await query(
+        `INSERT INTO project_vo_drawings (vo_id,drawing_number,revision,title,notes) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [args.voId, args.drawingNumber, args.revision || null, args.title || null, args.notes || null],
+      )
+      return voMapDrawing(r.rows[0] as Record<string, unknown>)
+    },
+
+    removeVODrawing: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`DELETE FROM project_vo_drawings vd USING project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE vd.vo_id=pvo.id AND p.company_id=$1 AND vd.id=$2`, [ctx.auth.companyId, args.id])
+      return true
+    },
+
+    // ── Meetings / MOM ───────────────────────────────────────────────────────
+
+    createMeeting: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const { projectId, meetingNumber, meetingType, title, meetingDate, location, chairperson, attendees, agenda, distributionList } = args as Record<string, string>
+      const r = await query(
+        `INSERT INTO project_meetings (project_id, meeting_number, meeting_type, title, meeting_date, location, chairperson, attendees, agenda, distribution_list, created_by)
+         SELECT p.id,$2,$3,$4,$5::date,$6,$7,$8,$9,$10,$11 FROM projects p WHERE p.id=$1 AND p.company_id=$12
+         RETURNING *`,
+        [projectId, meetingNumber, meetingType ?? 'site', title, meetingDate, location || null, chairperson || null, attendees || null, agenda || null, distributionList || null, ctx.auth.userId, ctx.auth.companyId]
+      )
+      if (!r.rows[0]) throw new Error('Project not found or access denied')
+      void momNotify(projectId, ctx.auth.companyId, meetingNumber, 'created', ctx.auth.userId)
+      return momMapMeeting(r.rows[0] as Record<string, unknown>, [])
+    },
+
+    updateMeeting: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const { id, meetingType, title, meetingDate, location, chairperson, attendees, agenda, minutes, distributionList } = args as Record<string, string>
+      const sets: string[] = ['updated_at=NOW()']
+      const vals: unknown[] = [ctx.auth.companyId, id]
+      let idx = 3
+      if (meetingType    != null) { sets.push(`meeting_type=$${idx++}`);     vals.push(meetingType) }
+      if (title          != null) { sets.push(`title=$${idx++}`);            vals.push(title) }
+      if (meetingDate    != null) { sets.push(`meeting_date=$${idx++}::date`); vals.push(meetingDate) }
+      if (location       != null) { sets.push(`location=$${idx++}`);         vals.push(location || null) }
+      if (chairperson    != null) { sets.push(`chairperson=$${idx++}`);      vals.push(chairperson || null) }
+      if (attendees      != null) { sets.push(`attendees=$${idx++}`);        vals.push(attendees || null) }
+      if (agenda         != null) { sets.push(`agenda=$${idx++}`);           vals.push(agenda || null) }
+      if (minutes        != null) { sets.push(`minutes=$${idx++}`);          vals.push(minutes || null) }
+      if (distributionList != null) { sets.push(`distribution_list=$${idx++}`); vals.push(distributionList || null) }
+      const r = await query(
+        `UPDATE project_meetings m SET ${sets.join(',')} FROM projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2 RETURNING m.*`,
+        vals
+      )
+      if (!r.rows[0]) throw new Error('Meeting not found')
+      const actions = await query(`SELECT * FROM project_meeting_actions WHERE meeting_id=$1 ORDER BY action_number`, [id])
+      return momMapMeeting(r.rows[0] as Record<string, unknown>, actions.rows as Record<string, unknown>[])
+    },
+
+    deleteMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const role = ctx.auth.role
+      if (role !== 'company_admin' && role !== 'system_admin') throw new Error('Only admins can delete meetings')
+      await query(
+        `DELETE FROM project_meetings m USING projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2 AND m.status='draft'`,
+        [ctx.auth.companyId, args.id]
+      )
+      return true
+    },
+
+    issueMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_meetings m SET status='issued', issued_at=NOW(), updated_at=NOW() FROM projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2 AND m.status='draft' RETURNING m.*`,
+        [ctx.auth.companyId, args.id]
+      )
+      if (!r.rows[0]) throw new Error('Meeting not found or already issued')
+      const row = r.rows[0] as Record<string, unknown>
+      void momNotify(String(row.project_id), ctx.auth.companyId, String(row.meeting_number), 'issued', ctx.auth.userId)
+      const actions = await query(`SELECT * FROM project_meeting_actions WHERE meeting_id=$1 ORDER BY action_number`, [args.id])
+      return momMapMeeting(row, actions.rows as Record<string, unknown>[])
+    },
+
+    closeMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_meetings m SET status='closed', updated_at=NOW() FROM projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2 RETURNING m.*`,
+        [ctx.auth.companyId, args.id]
+      )
+      if (!r.rows[0]) throw new Error('Meeting not found')
+      const actions = await query(`SELECT * FROM project_meeting_actions WHERE meeting_id=$1 ORDER BY action_number`, [args.id])
+      return momMapMeeting(r.rows[0] as Record<string, unknown>, actions.rows as Record<string, unknown>[])
+    },
+
+    createMeetingAction: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const { meetingId, description, responsiblePerson, dueDate, priority, carryOverFrom } = args as Record<string, string>
+      const seqR = await query(`SELECT COALESCE(MAX(action_number),0)+1 AS next FROM project_meeting_actions WHERE meeting_id=$1`, [meetingId])
+      const nextNum = (seqR.rows[0] as Record<string, unknown>).next as number
+      const r = await query(
+        `INSERT INTO project_meeting_actions (meeting_id, action_number, description, responsible_person, due_date, priority, carry_over_from)
+         SELECT pm.id,$2,$3,$4,$5::date,$6,$7 FROM project_meetings pm JOIN projects p ON p.id=pm.project_id WHERE pm.id=$1 AND p.company_id=$8
+         RETURNING *`,
+        [meetingId, nextNum, description, responsiblePerson || null, dueDate || null, priority ?? 'medium', carryOverFrom || null, ctx.auth.companyId]
+      )
+      if (!r.rows[0]) throw new Error('Meeting not found')
+      return momMapAction(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateMeetingAction: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const { id, description, responsiblePerson, dueDate, priority, status, remarks } = args as Record<string, string>
+      const sets: string[] = []
+      const vals: unknown[] = [ctx.auth.companyId, id]
+      let idx = 3
+      if (description       != null) { sets.push(`description=$${idx++}`);        vals.push(description) }
+      if (responsiblePerson != null) { sets.push(`responsible_person=$${idx++}`); vals.push(responsiblePerson || null) }
+      if (dueDate           != null) { sets.push(`due_date=$${idx++}::date`);     vals.push(dueDate || null) }
+      if (priority          != null) { sets.push(`priority=$${idx++}`);           vals.push(priority) }
+      if (remarks           != null) { sets.push(`remarks=$${idx++}`);            vals.push(remarks || null) }
+      if (status            != null) {
+        sets.push(`status=$${idx++}`)
+        vals.push(status)
+        if (status === 'closed') sets.push(`closed_at=NOW()`)
+        else sets.push(`closed_at=NULL`)
+      }
+      if (sets.length === 0) throw new Error('No fields to update')
+      const r = await query(
+        `UPDATE project_meeting_actions ma SET ${sets.join(',')}
+         FROM project_meetings pm JOIN projects p ON p.id=pm.project_id
+         WHERE ma.meeting_id=pm.id AND p.company_id=$1 AND ma.id=$2 RETURNING ma.*`,
+        vals
+      )
+      if (!r.rows[0]) throw new Error('Action not found')
+      return momMapAction(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteMeetingAction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(
+        `DELETE FROM project_meeting_actions ma USING project_meetings pm JOIN projects p ON p.id=pm.project_id WHERE ma.meeting_id=pm.id AND p.company_id=$1 AND ma.id=$2`,
+        [ctx.auth.companyId, args.id]
+      )
+      return true
+    },
+
+    // ────────────────────────────────────────────────────────────────────────
 
     startProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -7373,6 +9680,666 @@ const phase5QueryResolvers = {
       [args.projectId, ctx.auth.companyId],
     )
     return r.rows.map(rfqLineToGQL)
+  },
+
+  rfqPhases: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    // Verify project belongs to this company
+    const proj = await query(
+      `SELECT id FROM projects WHERE id=$1 AND company_id=$2`,
+      [args.projectId, ctx.auth.companyId],
+    )
+    if (!proj.rows[0]) throw new Error('Project not found')
+
+    // Seed the 3 phases lazily if not yet created
+    const existing = await query(
+      `SELECT phase_type FROM rfq_phases WHERE project_id=$1`,
+      [args.projectId],
+    )
+    const existingTypes = new Set(existing.rows.map((r: Record<string, unknown>) => r['phase_type'] as string))
+    const defaults = [
+      { phase_type: 'engineering', service_type: 'technical',  sequence: 0 },
+      { phase_type: 'pricing',     service_type: 'commercial', sequence: 1 },
+      { phase_type: 'executing',   service_type: 'both',       sequence: 2 },
+    ]
+    for (const d of defaults) {
+      if (!existingTypes.has(d.phase_type)) {
+        await query(
+          `INSERT INTO rfq_phases (project_id, phase_type, service_type, sequence) VALUES ($1,$2,$3,$4)`,
+          [args.projectId, d.phase_type, d.service_type, d.sequence],
+        )
+      }
+    }
+
+    const phases = await query(
+      `SELECT * FROM rfq_phases WHERE project_id=$1 ORDER BY sequence`,
+      [args.projectId],
+    )
+
+    // For each phase, fetch attached files with download URLs
+    const result = []
+    for (const phase of phases.rows) {
+      const p = phase as Record<string, unknown>
+      const attachRows = await query(
+        `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key
+         FROM document_attachments da
+         JOIN files f ON f.id = da.file_id
+         WHERE da.entity_type='rfq_phase' AND da.entity_id=$1 AND f.company_id=$2 AND f.status != 'deleted'
+         ORDER BY da.created_at`,
+        [p['id'], ctx.auth.companyId],
+      )
+      const files = await Promise.all(attachRows.rows.map(async (row: Record<string, unknown>) => {
+        let downloadUrl: string | null = null
+        try {
+          const dl = await generateDownloadUrl(row['file_key'] as string, row['original_filename'] as string)
+          downloadUrl = dl.downloadUrl
+        } catch { /* best-effort */ }
+        return {
+          id: row['id'],
+          fileId: row['file_id'],
+          filename: row['original_filename'],
+          mimeType: row['mime_type'],
+          sizeBytes: parseInt(String(row['size_bytes'])),
+          title: row['label'] ?? null,
+          description: row['description'] ?? null,
+          createdAt: row['created_at'],
+          downloadUrl,
+        }
+      }))
+      result.push({
+        id: p['id'],
+        projectId: p['project_id'],
+        phaseType: p['phase_type'],
+        serviceType: p['service_type'],
+        status: p['status'],
+        notes: p['notes'] ?? null,
+        sequence: p['sequence'],
+        fileCount: files.length,
+        files,
+      })
+    }
+    return result
+  },
+
+  // ── Client Documents ─────────────────────────────────────────────────────
+
+  clientDocuments: async (_: unknown, args: { projectId: string; category?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+    if (!proj.rows[0]) throw new Error('Project not found')
+
+    let sql = `SELECT cd.*, f.original_filename, f.mime_type, f.size_bytes, f.file_key
+               FROM project_client_documents cd
+               LEFT JOIN files f ON f.id = cd.file_id
+               WHERE cd.project_id=$1 AND cd.parent_document_id IS NULL`
+    const params: unknown[] = [args.projectId]
+    if (args.category) { sql += ` AND cd.category=$2`; params.push(args.category) }
+    sql += ` ORDER BY cd.created_at DESC`
+
+    const rows = await query(sql, params)
+
+    const toGQL = async (row: Record<string, unknown>, fetchRevisions = true) => {
+      let downloadUrl: string | null = null
+      if (row['file_key']) {
+        try {
+          const dl = await generateDownloadUrl(row['file_key'] as string, row['original_filename'] as string)
+          downloadUrl = dl.downloadUrl
+        } catch { /* best-effort */ }
+      }
+      let revisions: Record<string, unknown>[] = []
+      if (fetchRevisions) {
+        const revRows = await query(
+          `SELECT cd.*, f.original_filename, f.mime_type, f.size_bytes, f.file_key
+           FROM project_client_documents cd
+           LEFT JOIN files f ON f.id = cd.file_id
+           WHERE cd.parent_document_id=$1
+           ORDER BY cd.created_at DESC`,
+          [row['id']],
+        )
+        revisions = await Promise.all(revRows.rows.map((r: Record<string, unknown>) => toGQL(r, false)))
+      }
+      return {
+        id:               row['id'],
+        projectId:        row['project_id'],
+        fileId:           row['file_id'] ?? null,
+        category:         row['category'],
+        title:            row['title'],
+        documentNumber:   row['document_number'] ?? null,
+        revision:         row['revision'] ?? null,
+        description:      row['description'] ?? null,
+        receivedFrom:     row['received_from'] ?? null,
+        transmissionDate: row['transmission_date'] ? String(row['transmission_date']).slice(0, 10) : null,
+        status:           row['status'],
+        parentDocumentId: row['parent_document_id'] ?? null,
+        uploadedById:     row['uploaded_by_id'] ?? null,
+        uploadedByName:   row['uploaded_by_name'] ?? null,
+        downloadUrl,
+        filename:         row['original_filename'] ?? null,
+        mimeType:         row['mime_type'] ?? null,
+        sizeBytes:        row['size_bytes'] ? parseInt(String(row['size_bytes'])) : null,
+        revisions,
+        createdAt:        row['created_at'],
+      }
+    }
+
+    return Promise.all(rows.rows.map((r: Record<string, unknown>) => toGQL(r, true)))
+  },
+
+  // ── Engineering module ───────────────────────────────────────────────────
+
+  engineeringRevisions: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+    if (!proj.rows[0]) throw new Error('Project not found')
+    const r = await query(
+      `SELECT * FROM engineering_revisions WHERE project_id=$1 ORDER BY issued_at DESC`,
+      [args.projectId],
+    )
+    return r.rows.map((row: Record<string, unknown>) => ({
+      id: row['id'], projectId: row['project_id'], revisionCode: row['revision_code'],
+      status: row['status'], notes: row['notes'] ?? null,
+      issuedByName: row['issued_by_name'] ?? null, issuedAt: row['issued_at'],
+      itemCount: parseInt(String(row['item_count'] ?? 0)),
+      snapshotData: row['snapshot_data'] ?? [],
+      createdAt: row['created_at'],
+    }))
+  },
+
+  projectDrawings: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+    if (!proj.rows[0]) throw new Error('Project not found')
+
+    const rows = await query(
+      `SELECT pd.*, f.original_filename, f.file_key
+       FROM project_drawings pd
+       LEFT JOIN files f ON f.id = pd.file_id
+       WHERE pd.project_id=$1 AND pd.parent_drawing_id IS NULL
+       ORDER BY pd.drawing_number, pd.created_at`,
+      [args.projectId],
+    )
+
+    const drawingToGQL = async (row: Record<string, unknown>, fetchRevisions = true): Promise<Record<string, unknown>> => {
+      let downloadUrl: string | null = null
+      if (row['file_key']) {
+        try { const dl = await generateDownloadUrl(row['file_key'] as string, row['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+      }
+      let revisions: Record<string, unknown>[] = []
+      if (fetchRevisions) {
+        const revRows = await query(
+          `SELECT pd.*, f.original_filename, f.file_key FROM project_drawings pd LEFT JOIN files f ON f.id=pd.file_id WHERE pd.parent_drawing_id=$1 ORDER BY pd.created_at DESC`,
+          [row['id']],
+        )
+        revisions = await Promise.all(revRows.rows.map((r: Record<string, unknown>) => drawingToGQL(r, false)))
+      }
+      return {
+        id: row['id'], projectId: row['project_id'], drawingNumber: row['drawing_number'],
+        title: row['title'], discipline: row['discipline'] ?? null, scale: row['scale'] ?? null,
+        paperSize: row['paper_size'] ?? null, revision: row['revision'] ?? null,
+        status: row['status'], issueDate: row['issue_date'] ? String(row['issue_date']).slice(0,10) : null,
+        notes: row['notes'] ?? null, fileId: row['file_id'] ?? null,
+        parentDrawingId: row['parent_drawing_id'] ?? null,
+        uploadedByName: row['uploaded_by_name'] ?? null,
+        downloadUrl, filename: row['original_filename'] ?? null,
+        revisions, createdAt: row['created_at'],
+      }
+    }
+
+    return Promise.all(rows.rows.map((r: Record<string, unknown>) => drawingToGQL(r, true)))
+  },
+
+  // ── Bidding module queries ─────────────────────────────────────────────────
+
+  bidDeliverables: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+    const rows = await query(`SELECT * FROM bid_deliverables WHERE project_id=$1 ORDER BY sequence, created_at`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(
+        `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key
+         FROM document_attachments da JOIN files f ON f.id=da.file_id
+         WHERE da.entity_type='bid_deliverable' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
+         ORDER BY da.created_at`,
+        [d['id'], ctx.auth!.companyId],
+      )
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => {
+        let downloadUrl: string | null = null
+        try { const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+        return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: f['description'] ?? null, createdAt: f['created_at'], downloadUrl }
+      }))
+      return {
+        id: d['id'], projectId: d['project_id'], name: d['name'], deliverableType: d['deliverable_type'],
+        discipline: d['discipline'] ?? null, status: d['status'], assignedTo: d['assigned_to'] ?? null,
+        dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null,
+        notes: d['notes'] ?? null, sequence: d['sequence'], createdByName: d['created_by_name'] ?? null,
+        fileCount: fileList.length, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'],
+      }
+    }))
+  },
+
+  bidCostItems: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+    const rows = await query(`SELECT * FROM bid_cost_items WHERE project_id=$1 ORDER BY cost_type, sequence, created_at`, [args.projectId])
+    return rows.rows.map((r: Record<string, unknown>) => ({
+      id: r['id'], projectId: r['project_id'], costType: r['cost_type'], description: r['description'],
+      quantity: r['quantity'] != null ? Number(r['quantity']) : null,
+      unit: r['unit'] ?? null, unitCost: r['unit_cost'] != null ? Number(r['unit_cost']) : null,
+      totalCost: r['total_cost'] != null ? Number(r['total_cost']) : null,
+      currencyCode: r['currency_code'] ?? 'USD', supplierRef: r['supplier_ref'] ?? null,
+      notes: r['notes'] ?? null, sequence: Number(r['sequence'] ?? 0), createdAt: r['created_at'],
+    }))
+  },
+
+  bidSupplierQuotations: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+    const rows = await query(`SELECT bsq.*, f.original_filename, f.file_key FROM bid_supplier_quotations bsq LEFT JOIN files f ON f.id=bsq.file_id WHERE bsq.project_id=$1 ORDER BY bsq.created_at`, [args.projectId])
+    return Promise.all(rows.rows.map(async (r: Record<string, unknown>) => {
+      let downloadUrl: string | null = null
+      if (r['file_key']) { try { const dl = await generateDownloadUrl(r['file_key'] as string, r['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ } }
+      return {
+        id: r['id'], projectId: r['project_id'], supplierName: r['supplier_name'], itemDescription: r['item_description'],
+        amount: r['amount'] != null ? Number(r['amount']) : null, currencyCode: r['currency_code'] ?? 'USD',
+        validityDate: r['validity_date'] ? String(r['validity_date']).slice(0, 10) : null,
+        fileId: r['file_id'] ?? null, downloadUrl, filename: r['original_filename'] ?? null,
+        notes: r['notes'] ?? null, status: r['status'], createdAt: r['created_at'],
+      }
+    }))
+  },
+
+  bidCommercialSummary: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+    const summaryR = await query(`SELECT * FROM bid_commercial_summary WHERE project_id=$1`, [args.projectId])
+    const summary = summaryR.rows[0] as Record<string, unknown> | undefined
+    const costsR = await query(`SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+    const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
+    const overheadPct     = Number(summary?.['overhead_pct']    ?? 0)
+    const marginPct       = Number(summary?.['margin_pct']      ?? 0)
+    const discountPct     = Number(summary?.['discount_pct']    ?? 0)
+    const contingencyPct  = Number(summary?.['contingency_pct'] ?? 0)
+    const overheadAmount     = directCostTotal * overheadPct / 100
+    const contingencyAmount  = directCostTotal * contingencyPct / 100
+    const subtotal           = directCostTotal + overheadAmount + contingencyAmount
+    const marginAmount       = subtotal * marginPct / 100
+    const discountAmount     = (subtotal + marginAmount) * discountPct / 100
+    const bidPrice           = subtotal + marginAmount - discountAmount
+    return {
+      id: summary?.['id'] ?? null, projectId: args.projectId,
+      overheadPct, marginPct, discountPct, contingencyPct,
+      currencyCode: String(summary?.['currency_code'] ?? 'USD'),
+      directCostTotal, overheadAmount, contingencyAmount, marginAmount, discountAmount, bidPrice,
+      approvalStatus: String(summary?.['approval_status'] ?? 'draft'),
+      submittedByName: summary?.['submitted_by_name'] ?? null, submittedAt: summary?.['submitted_at'] ?? null,
+      approvedByName: summary?.['approved_by_name'] ?? null, approvedAt: summary?.['approved_at'] ?? null,
+      rejectionReason: summary?.['rejection_reason'] ?? null, notes: summary?.['notes'] ?? null,
+      updatedAt: summary?.['updated_at'] ?? null,
+    }
+  },
+
+  // ── Execution module queries ───────────────────────────────────────────────
+
+  projectRFIs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_rfis WHERE project_id=$1 ORDER BY raised_date DESC, created_at DESC`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='rfi' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], rfiNumber: d['rfi_number'], subject: d['subject'], description: d['description'] ?? null, drawingRef: d['drawing_ref'] ?? null, specRef: d['spec_ref'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), requiredDate: d['required_date'] ? String(d['required_date']).slice(0, 10) : null, respondedDate: d['responded_date'] ? String(d['responded_date']).slice(0, 10) : null, status: d['status'], response: d['response'] ?? null, respondedByName: d['responded_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectSubmittals: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_submittals WHERE project_id=$1 ORDER BY submittal_number, revision`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='submittal' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: d['return_date'] ? String(d['return_date']).slice(0, 10) : null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectSiteInstructions: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_site_instructions WHERE project_id=$1 ORDER BY issued_date DESC`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='site_instruction' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], siNumber: d['si_number'], subject: d['subject'], description: d['description'] ?? null, issuedBy: d['issued_by'] ?? null, issuedDate: String(d['issued_date']).slice(0, 10), acknowledgedByName: d['acknowledged_by_name'] ?? null, acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, potentialVo: Boolean(d['potential_vo']), voRef: d['vo_ref'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectITPs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_itps WHERE project_id=$1 ORDER BY created_at`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const items = await query(`SELECT * FROM project_itp_items WHERE itp_id=$1 ORDER BY sequence`, [d['id']])
+      return { id: d['id'], projectId: d['project_id'], title: d['title'], workPackage: d['work_package'] ?? null, discipline: d['discipline'] ?? null, revision: d['revision'], status: d['status'], createdByName: d['created_by_name'] ?? null, items: items.rows.map((it: Record<string, unknown>) => ({ id: it['id'], itpId: it['itp_id'], sequence: it['sequence'], activity: it['activity'], inspectionType: it['inspection_type'], contractorRole: it['contractor_role'] ?? null, clientRole: it['client_role'] ?? null, referenceDoc: it['reference_doc'] ?? null, acceptanceCriteria: it['acceptance_criteria'] ?? null, result: it['result'] ?? null, inspectorName: it['inspector_name'] ?? null, inspectionDate: it['inspection_date'] ? String(it['inspection_date']).slice(0, 10) : null, remarks: it['remarks'] ?? null })), createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectInspectionRequests: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_inspection_requests WHERE project_id=$1 ORDER BY requested_date DESC`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='inspection_request' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], irNumber: d['ir_number'], title: d['title'], itpId: d['itp_id'] ?? null, workPackage: d['work_package'] ?? null, location: d['location'] ?? null, requestedDate: String(d['requested_date']).slice(0, 10), requestedByName: d['requested_by_name'] ?? null, inspectorName: d['inspector_name'] ?? null, actualDate: d['actual_date'] ? String(d['actual_date']).slice(0, 10) : null, status: d['status'], result: d['result'] ?? null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectNCRs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_ncrs WHERE project_id=$1 ORDER BY raised_date DESC`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='ncr' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], ncrNumber: d['ncr_number'], title: d['title'], description: d['description'], workPackage: d['work_package'] ?? null, location: d['location'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), severity: d['severity'], rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, preventiveAction: d['preventive_action'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, closedDate: d['closed_date'] ? String(d['closed_date']).slice(0, 10) : null, closedByName: d['closed_by_name'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectHSERecords: async (_: unknown, args: { projectId: string; recordType?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const sql = args.recordType
+      ? `SELECT * FROM project_hse_records WHERE project_id=$1 AND record_type=$2 ORDER BY record_date DESC`
+      : `SELECT * FROM project_hse_records WHERE project_id=$1 ORDER BY record_date DESC`
+    const params = args.recordType ? [args.projectId, args.recordType] : [args.projectId]
+    const rows = await query(sql, params)
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='hse_record' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
+      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
+      return { id: d['id'], projectId: d['project_id'], recordType: d['record_type'], title: d['title'], recordDate: String(d['record_date']).slice(0, 10), conductedBy: d['conducted_by'] ?? null, location: d['location'] ?? null, description: d['description'] ?? null, attendeeCount: d['attendee_count'] ?? null, attendeeNames: d['attendee_names'] ?? null, incidentType: d['incident_type'] ?? null, severity: d['severity'] ?? null, injuredPerson: d['injured_person'] ?? null, rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, correctiveDueDate: d['corrective_due_date'] ? String(d['corrective_due_date']).slice(0, 10) : null, correctiveClosedDate: d['corrective_closed_date'] ? String(d['corrective_closed_date']).slice(0, 10) : null, observationType: d['observation_type'] ?? null, ptwType: d['ptw_type'] ?? null, ptwNumber: d['ptw_number'] ?? null, validFrom: d['valid_from'] ?? null, validTo: d['valid_to'] ?? null, approvedBy: d['approved_by'] ?? null, ptwStatus: d['ptw_status'] ?? null, status: d['status'], createdByName: d['created_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  projectTransmittals: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_transmittals WHERE project_id=$1 ORDER BY sent_date DESC`, [args.projectId])
+    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
+      const itemsR = await query(`SELECT * FROM project_transmittal_items WHERE transmittal_id=$1 ORDER BY created_at`, [d['id']])
+      const mappedItems = await Promise.all(itemsR.rows.map(async (it: Record<string, unknown>) => {
+        let filename: string | null = null; let downloadUrl: string | null = null
+        if (it['file_id']) { const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']]); if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } } }
+        return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
+      }))
+      return { id: d['id'], projectId: d['project_id'], transmittalNumber: d['transmittal_number'], title: d['title'], toCompany: d['to_company'] ?? null, toContact: d['to_contact'] ?? null, fromName: d['from_name'] ?? null, sentDate: String(d['sent_date']).slice(0, 10), purpose: d['purpose'], acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, notes: d['notes'] ?? null, status: d['status'], items: mappedItems, createdAt: d['created_at'], updatedAt: d['updated_at'] }
+    }))
+  },
+
+  // ── Cost Control Queries ──────────────────────────────────────────────────
+
+  projectCostCodes: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const codes = await query(`SELECT * FROM project_cost_codes WHERE project_id=$1 ORDER BY category, sequence, code`, [args.projectId])
+    const committed = await query(`SELECT cost_code_id, SUM(committed_amount) AS total FROM project_committed_costs WHERE project_id=$1 AND status != 'cancelled' GROUP BY cost_code_id`, [args.projectId])
+    const laborAct  = await query(`SELECT cost_code_id, SUM(total_cost) AS total FROM project_labor_entries WHERE project_id=$1 GROUP BY cost_code_id`, [args.projectId])
+    const equipAct  = await query(`SELECT cost_code_id, SUM(total_cost) AS total FROM project_equipment_log WHERE project_id=$1 GROUP BY cost_code_id`, [args.projectId])
+    const forecasts = await query(`SELECT DISTINCT ON (cost_code_id) cost_code_id, eac_amount FROM project_cost_forecast WHERE project_id=$1 ORDER BY cost_code_id, forecast_date DESC`, [args.projectId])
+    const commMap = new Map<string, number>(); for (const r of committed.rows) commMap.set(String(r.cost_code_id ?? 'null'), Number(r.total))
+    const actMap  = new Map<string, number>(); for (const r of [...laborAct.rows, ...equipAct.rows]) { const k = String(r.cost_code_id ?? 'null'); actMap.set(k, (actMap.get(k) ?? 0) + Number(r.total)) }
+    const fcMap   = new Map<string, number>(); for (const r of forecasts.rows) fcMap.set(String(r.cost_code_id ?? 'null'), Number(r.eac_amount))
+    return codes.rows.map(r => { const k = String(r.id); return ccMapCode(r as Record<string, unknown>, commMap.get(k) ?? 0, actMap.get(k) ?? 0, fcMap.get(k) ?? 0) })
+  },
+
+  projectCommittedCosts: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT cc.*, pcc.name AS cost_code_name FROM project_committed_costs cc LEFT JOIN project_cost_codes pcc ON pcc.id=cc.cost_code_id JOIN projects p ON p.id=cc.project_id WHERE cc.project_id=$1 AND p.company_id=$2 ORDER BY cc.commitment_date DESC NULLS LAST, cc.created_at DESC`, [args.projectId, ctx.auth.companyId])
+    return rows.rows.map(r => ccMapCommitted(r as Record<string, unknown>, r['cost_code_name'] as string | null))
+  },
+
+  projectCashFlow: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT * FROM project_cash_flow WHERE project_id=$1 ORDER BY period_year, period_month`, [args.projectId])
+    let cumPlan = 0, cumActual = 0, cumForecast = 0
+    return rows.rows.map(r => {
+      cumPlan    += Number(r.planned_outflow)
+      cumActual  += Number(r.actual_outflow)
+      cumForecast += Number(r.forecast_outflow)
+      return ccMapCashFlow(r as Record<string, unknown>, cumPlan, cumActual, cumForecast)
+    })
+  },
+
+  projectSubcontracts: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT sc.* FROM project_subcontracts sc JOIN projects p ON p.id=sc.project_id WHERE sc.project_id=$1 AND p.company_id=$2 ORDER BY sc.created_at DESC`, [args.projectId, ctx.auth.companyId])
+    return Promise.all(rows.rows.map(async (sc: Record<string, unknown>) => {
+      const billings = await query(`SELECT * FROM project_subcontract_billings WHERE subcontract_id=$1 ORDER BY billing_date DESC`, [sc['id']])
+      return { ...ccMapSubcontract(sc), billings: billings.rows.map(b => ccMapSCBilling(b as Record<string, unknown>)) }
+    }))
+  },
+
+  projectLaborEntries: async (_: unknown, args: { projectId: string; startDate?: string; endDate?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    let sql = `SELECT le.* FROM project_labor_entries le JOIN projects p ON p.id=le.project_id WHERE le.project_id=$1 AND p.company_id=$2`
+    const params: unknown[] = [args.projectId, ctx.auth.companyId]; let idx = 3
+    if (args.startDate) { sql += ` AND le.work_date >= $${idx++}`; params.push(args.startDate) }
+    if (args.endDate)   { sql += ` AND le.work_date <= $${idx++}`; params.push(args.endDate) }
+    sql += ' ORDER BY le.work_date DESC, le.created_at DESC'
+    const rows = await query(sql, params)
+    return rows.rows.map(r => ccMapLabor(r as Record<string, unknown>))
+  },
+
+  projectEquipmentLog: async (_: unknown, args: { projectId: string; startDate?: string; endDate?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    let sql = `SELECT el.* FROM project_equipment_log el JOIN projects p ON p.id=el.project_id WHERE el.project_id=$1 AND p.company_id=$2`
+    const params: unknown[] = [args.projectId, ctx.auth.companyId]; let idx = 3
+    if (args.startDate) { sql += ` AND el.log_date >= $${idx++}`; params.push(args.startDate) }
+    if (args.endDate)   { sql += ` AND el.log_date <= $${idx++}`; params.push(args.endDate) }
+    sql += ' ORDER BY el.log_date DESC, el.created_at DESC'
+    const rows = await query(sql, params)
+    return rows.rows.map(r => ccMapEquipment(r as Record<string, unknown>))
+  },
+
+  projectCostForecast: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT cf.*, pcc.name AS cost_code_name FROM project_cost_forecast cf LEFT JOIN project_cost_codes pcc ON pcc.id=cf.cost_code_id JOIN projects p ON p.id=cf.project_id WHERE cf.project_id=$1 AND p.company_id=$2 ORDER BY cf.forecast_date DESC, cf.cost_code_id`, [args.projectId, ctx.auth.companyId])
+    return rows.rows.map(r => ({ id: r['id'], projectId: r['project_id'], costCodeId: r['cost_code_id'] ?? null, costCodeName: r['cost_code_name'] ?? null, forecastDate: String(r['forecast_date']).slice(0, 10), etcAmount: Number(r['etc_amount']), eacAmount: Number(r['eac_amount']), notes: r['notes'] ?? null, createdAt: r['created_at'] }))
+  },
+
+  projectClientBillings: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT cb.* FROM project_client_billings cb JOIN projects p ON p.id=cb.project_id WHERE cb.project_id=$1 AND p.company_id=$2 ORDER BY cb.billing_date DESC`, [args.projectId, ctx.auth.companyId])
+    return rows.rows.map(r => ccMapClientBilling(r as Record<string, unknown>))
+  },
+
+  projectCostSummary: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const codes     = await query(`SELECT category, SUM(budget_amount) AS budget FROM project_cost_codes WHERE project_id=$1 GROUP BY category`, [args.projectId])
+    const committed = await query(`SELECT pcc.category, SUM(cc.committed_amount) AS total FROM project_committed_costs cc LEFT JOIN project_cost_codes pcc ON pcc.id=cc.cost_code_id WHERE cc.project_id=$1 AND cc.status != 'cancelled' GROUP BY pcc.category`, [args.projectId])
+    const laborAct  = await query(`SELECT pcc.category, SUM(le.total_cost) AS total FROM project_labor_entries le LEFT JOIN project_cost_codes pcc ON pcc.id=le.cost_code_id WHERE le.project_id=$1 GROUP BY pcc.category`, [args.projectId])
+    const equipAct  = await query(`SELECT pcc.category, SUM(el.total_cost) AS total FROM project_equipment_log el LEFT JOIN project_cost_codes pcc ON pcc.id=el.cost_code_id WHERE el.project_id=$1 GROUP BY pcc.category`, [args.projectId])
+    const forecasts = await query(`SELECT DISTINCT ON (cost_code_id) cost_code_id, eac_amount FROM project_cost_forecast WHERE project_id=$1 ORDER BY cost_code_id, forecast_date DESC`, [args.projectId])
+    const codeForFC = await query(`SELECT id, category FROM project_cost_codes WHERE project_id=$1`, [args.projectId])
+    const billings  = await query(`SELECT SUM(gross_amount) AS total_billed, SUM(COALESCE(certified_amount,0)) AS total_certified, SUM(paid_amount) AS total_paid, SUM(retention_amount) AS total_retention FROM project_client_billings WHERE project_id=$1`, [args.projectId])
+
+    const cats = ['labor','material','equipment','subcontract','overhead','contingency','other']
+    const budgetByCat   = new Map<string, number>(); for (const r of codes.rows) budgetByCat.set(String(r.category ?? 'other'), Number(r.budget))
+    const commByCat     = new Map<string, number>(); for (const r of committed.rows) commByCat.set(String(r.category ?? 'other'), (commByCat.get(String(r.category ?? 'other')) ?? 0) + Number(r.total))
+    const actByCat      = new Map<string, number>()
+    for (const r of [...laborAct.rows, ...equipAct.rows]) { const k = String(r.category ?? 'other'); actByCat.set(k, (actByCat.get(k) ?? 0) + Number(r.total)) }
+    const codeIdToCat   = new Map<string, string>(); for (const r of codeForFC.rows) codeIdToCat.set(String(r.id), String(r.category))
+    const eacByCat      = new Map<string, number>()
+    for (const r of forecasts.rows) { const cat = codeIdToCat.get(String(r.cost_code_id)) ?? 'other'; eacByCat.set(cat, (eacByCat.get(cat) ?? 0) + Number(r.eac_amount)) }
+
+    let totalBudget = 0, totalCommitted = 0, totalActual = 0, totalEAC = 0
+    const byCategory = cats.filter(c => budgetByCat.has(c) || commByCat.has(c) || actByCat.has(c)).map(c => {
+      const b = budgetByCat.get(c) ?? 0; const comm = commByCat.get(c) ?? 0; const act = actByCat.get(c) ?? 0; const eac = eacByCat.get(c) ?? (act + comm)
+      totalBudget += b; totalCommitted += comm; totalActual += act; totalEAC += eac
+      return { category: c, budgetAmount: b, committedAmount: comm, actualAmount: act, forecastEAC: eac, variance: b - eac }
+    })
+
+    const br = billings.rows[0] as Record<string, unknown>
+    const totalBilled = Number(br['total_billed'] ?? 0); const totalCertified = Number(br['total_certified'] ?? 0)
+    const totalPaid = Number(br['total_paid'] ?? 0); const totalRetention = Number(br['total_retention'] ?? 0)
+
+    return { totalBudget, totalCommitted, totalActual, totalForecastEAC: totalEAC, totalRemaining: totalBudget - totalCommitted - totalActual, totalVariance: totalBudget - totalEAC, percentConsumed: totalBudget > 0 ? Math.round(((totalCommitted + totalActual) / totalBudget) * 1000) / 10 : 0, totalBilled, totalCertified, totalPaidByClient: totalPaid, totalRetentionHeld: totalRetention, outstandingReceivable: totalCertified - totalPaid, byCategory }
+  },
+
+  // ── Variation Order Queries ───────────────────────────────────────────────
+
+  projectVariationOrders: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const vos = await query(`SELECT * FROM project_variation_orders WHERE project_id=$1 ORDER BY created_at DESC`, [args.projectId])
+    if (vos.rows.length === 0) return []
+    const voIds = vos.rows.map(r => String(r.id))
+    const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren(voIds)
+    return vos.rows.map((r: Record<string, unknown>) => voMapVO(r, itemsByVO.get(String(r['id'])) ?? [], corrByVO.get(String(r['id'])) ?? [], drawsByVO.get(String(r['id'])) ?? []))
+  },
+
+  projectVariationOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT pvo.* FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) return null
+    const voId = String(r['id'])
+    const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
+    return voMapVO(r, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
+  },
+
+  // ── Meeting Queries ────────────────────────────────────────────────────────
+
+  projectMeetings: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const meetings = await query(`SELECT * FROM project_meetings WHERE project_id=$1 ORDER BY meeting_date DESC, created_at DESC`, [args.projectId])
+    if (meetings.rows.length === 0) return []
+    const ids = (meetings.rows as Record<string, unknown>[]).map(m => String(m['id']))
+    const actions = await query(`SELECT * FROM project_meeting_actions WHERE meeting_id=ANY($1) ORDER BY meeting_id, action_number`, [ids])
+    const actionsByMeeting = new Map<string, Record<string, unknown>[]>()
+    for (const a of actions.rows as Record<string, unknown>[]) {
+      const mid = String(a['meeting_id'])
+      if (!actionsByMeeting.has(mid)) actionsByMeeting.set(mid, [])
+      actionsByMeeting.get(mid)!.push(a)
+    }
+    return (meetings.rows as Record<string, unknown>[]).map(m => momMapMeeting(m, actionsByMeeting.get(String(m['id'])) ?? []))
+  },
+
+  projectMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT pm.* FROM project_meetings pm JOIN projects p ON p.id=pm.project_id WHERE pm.id=$1 AND p.company_id=$2`, [args.id, ctx.auth.companyId])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) return null
+    const actions = await query(`SELECT * FROM project_meeting_actions WHERE meeting_id=$1 ORDER BY action_number`, [args.id])
+    return momMapMeeting(r, actions.rows as Record<string, unknown>[])
+  },
+
+  // ── Planning Queries ──────────────────────────────────────────────────────
+
+  projectWBS: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_wbs WHERE project_id=$1 ORDER BY level, sequence, wbs_code`, [args.projectId])
+    const mapped = rows.rows.map(r => planMapWBS(r as Record<string, unknown>))
+    // Build tree
+    const byId = new Map<string, ReturnType<typeof planMapWBS>>()
+    for (const n of mapped) byId.set(n.id as string, n)
+    const roots: ReturnType<typeof planMapWBS>[] = []
+    for (const n of mapped) { if (!n.parentId) { roots.push(n) } else { const p = byId.get(n.parentId as string); if (p) (p.children as unknown[]).push(n); else roots.push(n) } }
+    return roots
+  },
+
+  projectActivities: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const rows = await query(`SELECT * FROM project_activities WHERE project_id=$1 ORDER BY sequence, planned_start NULLS LAST, activity_code`, [args.projectId])
+    return Promise.all(rows.rows.map(async (a: Record<string, unknown>) => {
+      const deps = await query(`SELECT pad.*,pa.activity_code AS pred_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.predecessor_id WHERE pad.successor_id=$1`, [a['id']])
+      const succs = await query(`SELECT pad.*,pa.activity_code AS succ_code FROM project_activity_dependencies pad JOIN project_activities pa ON pa.id=pad.successor_id WHERE pad.predecessor_id=$1`, [a['id']])
+      const resources = await query(`SELECT par.*,pr.name AS resource_name,pr.unit FROM project_activity_resources par JOIN project_resources pr ON pr.id=par.resource_id WHERE par.activity_id=$1`, [a['id']])
+      return planMapActivity(a, deps.rows as Record<string, unknown>[], succs.rows as Record<string, unknown>[], resources.rows as Record<string, unknown>[])
+    }))
+  },
+
+  projectDependencies: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT pad.*, p.activity_code AS pred_code, s.activity_code AS succ_code FROM project_activity_dependencies pad JOIN project_activities p ON p.id=pad.predecessor_id JOIN project_activities s ON s.id=pad.successor_id WHERE pad.project_id=$1`, [args.projectId])
+    return rows.rows.map(r => planMapDep(r as Record<string, unknown>))
+  },
+
+  projectBaselines: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT * FROM project_baselines WHERE project_id=$1 ORDER BY created_at DESC`, [args.projectId])
+    return rows.rows.map((r: Record<string, unknown>) => ({ id: r['id'], projectId: r['project_id'], name: r['name'], description: r['description'] ?? null, baselineDate: String(r['baseline_date']).slice(0, 10), isActive: Boolean(r['is_active']), createdAt: r['created_at'] }))
+  },
+
+  projectResources: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT * FROM project_resources WHERE project_id=$1 ORDER BY resource_type, name`, [args.projectId])
+    return rows.rows.map(r => planMapResource(r as Record<string, unknown>))
+  },
+
+  projectResourceCalendar: async (_: unknown, args: { resourceId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const rows = await query(`SELECT * FROM project_resource_calendars WHERE resource_id=$1 ORDER BY work_date`, [args.resourceId])
+    return rows.rows.map((r: Record<string, unknown>) => ({ id: r['id'], resourceId: r['resource_id'], workDate: String(r['work_date']).slice(0, 10), availableUnits: Number(r['available_units']), isHoliday: Boolean(r['is_holiday']), note: r['note'] ?? null }))
+  },
+
+  projectResourceLoading: async (_: unknown, args: { projectId: string; startDate: string; endDate: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const resources = await query(`SELECT * FROM project_resources WHERE project_id=$1`, [args.projectId])
+    const result: Array<{ resourceId: string; resourceName: string; unit: string; maxUnitsPerDay: number; days: Array<{ date: string; loadedUnits: number; availableUnits: number; isOverloaded: boolean }> }> = []
+    const start = new Date(args.startDate); const end = new Date(args.endDate)
+    for (const res of resources.rows) {
+      const asgns = await query(`SELECT par.units_per_day, pa.planned_start, pa.planned_finish FROM project_activity_resources par JOIN project_activities pa ON pa.id=par.activity_id WHERE par.resource_id=$1 AND pa.planned_start IS NOT NULL`, [res.id])
+      const cals = await query(`SELECT work_date, available_units, is_holiday FROM project_resource_calendars WHERE resource_id=$1`, [res.id])
+      const calMap = new Map<string, { avail: number; isHol: boolean }>()
+      for (const c of cals.rows) calMap.set(String(c.work_date).slice(0, 10), { avail: Number(c.available_units), isHol: Boolean(c.is_holiday) })
+      const days: Array<{ date: string; loadedUnits: number; availableUnits: number; isOverloaded: boolean }> = []
+      const cur = new Date(start)
+      while (cur <= end) {
+        const k = cur.toISOString().slice(0, 10)
+        let loaded = 0
+        for (const asgn of asgns.rows) {
+          const as = new Date(asgn.planned_start); const af = new Date(asgn.planned_finish)
+          if (cur >= as && cur <= af) loaded += Number(asgn.units_per_day)
+        }
+        const calEntry = calMap.get(k)
+        const avail = calEntry ? (calEntry.isHol ? 0 : calEntry.avail) : Number(res.max_units_per_day)
+        days.push({ date: k, loadedUnits: loaded, availableUnits: avail, isOverloaded: loaded > avail })
+        cur.setDate(cur.getDate() + 1)
+      }
+      result.push({ resourceId: String(res.id), resourceName: String(res.name), unit: String(res.unit), maxUnitsPerDay: Number(res.max_units_per_day), days })
+    }
+    return result
+  },
+
+  projectEVM: async (_: unknown, args: { projectId: string; statusDate?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
+    const acts = await query(`SELECT budget_amount, actual_cost, percent_complete, planned_start, planned_finish, is_critical FROM project_activities WHERE project_id=$1 AND planned_start IS NOT NULL`, [args.projectId])
+    const statusDate = args.statusDate ? new Date(args.statusDate) : new Date()
+    let bac = 0; let pv = 0; let ev = 0; let ac = 0
+    for (const a of acts.rows) {
+      const budget = Number(a.budget_amount)
+      const pct = Number(a.percent_complete) / 100
+      const ps = new Date(a.planned_start); const pf = new Date(a.planned_finish)
+      bac += budget; ev += budget * pct; ac += Number(a.actual_cost)
+      if (statusDate >= pf) pv += budget
+      else if (statusDate > ps) { const dur = Math.max(1, (pf.getTime() - ps.getTime()) / 86400000); const elapsed = (statusDate.getTime() - ps.getTime()) / 86400000; pv += budget * Math.min(1, elapsed / dur) }
+    }
+    const spi = pv > 0 ? ev / pv : 1; const cpi = ac > 0 ? ev / ac : 1
+    const eac = cpi > 0 ? bac / cpi : bac; const etc = eac - ac; const vac = bac - eac
+    const sv = ev - pv; const cv = ev - ac
+    const tcpi = (bac - ev) > 0 ? (bac - ev) / (bac - ac) : 0
+    const critR = acts.rows.filter(a => a.is_critical)
+    let critComplete = 0; if (critR.length > 0) critComplete = critR.reduce((s: number, a: Record<string, unknown>) => s + Number(a['percent_complete']), 0) / critR.length
+    return { bac, pv, ev, ac, sv, cv, spi, cpi, eac, etc, vac, tcpi, criticalPathComplete: critComplete, statusDate: statusDate.toISOString().slice(0, 10) }
   },
 
   // ── Phase 4: Projects (moved from Mutation block) ─────────────────────────

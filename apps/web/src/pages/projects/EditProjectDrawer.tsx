@@ -4,6 +4,9 @@ import { useTheme } from '../../theme/ThemeContext'
 import { PROJECT_QUERY, UPDATE_PROJECT } from '../../graphql/projects'
 import { usePermission } from '../../hooks/usePermission'
 import { SearchableSelect } from '../../components/ui/SearchableSelect'
+import { api } from '../../lib/axios'
+
+interface Employee { id: string; first_name: string; last_name: string; job_title?: string }
 
 const PROJECT_TYPES = [
   { value: 'construction',          label: 'Construction' },
@@ -29,6 +32,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
   const [customTypeMode,    setCustomTypeMode]    = useState(false)
   const [customTypeText,    setCustomTypeText]    = useState('')
   const [customTypeOptions, setCustomTypeOptions] = useState<Array<{ value: string; label: string }>>([])
+  const [employees,         setEmployees]         = useState<Employee[]>([])
 
   const confirmCustomType = () => {
     const raw = customTypeText.trim()
@@ -46,6 +50,13 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
   const [updateProject] = useMutation(UPDATE_PROJECT)
 
   useEffect(() => {
+    if (!open) return
+    api.get<Employee[]>('/hr/employees', { params: { limit: 200, status: 'active' } })
+      .then(r => setEmployees(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {})
+  }, [open])
+
+  useEffect(() => {
     const p = data?.project
     if (!p) return
     setForm({
@@ -61,6 +72,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
       currencyCode:    p.budgetCurrency  ?? 'IQD',
       startDate:       p.plannedStartDate ?? '',
       endDate:         p.plannedEndDate   ?? '',
+      managerId:       p.managerId       ?? '',
     })
   }, [data])
 
@@ -88,6 +100,7 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
             budgetCurrency:   form.currencyCode    || null,
             plannedStartDate: form.startDate       || null,
             plannedEndDate:   form.endDate         || null,
+            projectManagerId: form.managerId       || null,
           },
         },
       })
@@ -165,6 +178,20 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
 
           {field('clientName',    'Client Name')}
           {field('clientContact', 'Client Contact')}
+
+          <SearchableSelect
+            label="Project Manager"
+            value={form.managerId ?? ''}
+            onChange={(v) => setForm(f => ({ ...f, managerId: v }))}
+            placeholder="Select project manager…"
+            options={[
+              { value: '', label: '— None —' },
+              ...employees.map(e => ({
+                value: e.id,
+                label: `${e.first_name} ${e.last_name}${e.job_title ? ` — ${e.job_title}` : ''}`,
+              })),
+            ]}
+          />
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
             {field('projectValue', 'Project Value', 'number')}

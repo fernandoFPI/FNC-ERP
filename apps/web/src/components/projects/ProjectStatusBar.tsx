@@ -28,14 +28,6 @@ interface Props {
   timeline?: ProjectTimeline
 }
 
-const FLOW_STEPS: { key: ProjectStatus; label: string }[] = [
-  { key: 'pending',   label: 'Pending' },
-  { key: 'ongoing',   label: 'Ongoing' },
-  { key: 'submitted', label: 'Submitted' },
-  { key: 'approved',  label: 'Approved' },
-  { key: 'completed', label: 'Completed' },
-]
-
 const ACTION_LABEL: Record<string, string> = {
   start:                 'Start Project',
   submit_to_team:        'Submit to Team',
@@ -175,7 +167,6 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
   }
 
   const isSideState  = ['on_hold', 'cancelled', 'cancelled_after_approval'].includes(status)
-  const activeIndex  = FLOW_STEPS.findIndex(s => s.key === status)
 
   const sideStateLabel: Record<string, string> = {
     on_hold: 'On Hold', cancelled: 'Cancelled', cancelled_after_approval: 'Cancelled After Approval',
@@ -190,32 +181,6 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {/* Flow bar */}
-      <div style={{ display: 'flex', alignItems: 'center' }}>
-        {FLOW_STEPS.map((step, i) => {
-          const isActive = step.key === status && !isSideState
-          const isPast   = !isSideState && activeIndex > i
-          const dotColor = isActive ? theme.accent : isPast ? theme.accent : theme.border
-          const dotBg    = isActive ? theme.accent : isPast ? theme.accentBg : theme.bgCanvas
-          const dotText  = isActive ? '#fff' : isPast ? theme.accent : theme.textMuted
-          return (
-            <React.Fragment key={step.key}>
-              {i > 0 && (
-                <div style={{ flex: 1, height: '2px', background: isPast || isActive ? theme.accent : theme.border }} />
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: `2px solid ${dotColor}`, background: dotBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: dotText }}>
-                  {i + 1}
-                </div>
-                <span style={{ marginTop: '4px', fontSize: '11px', whiteSpace: 'nowrap', color: isActive ? theme.accent : theme.textMuted, fontWeight: isActive ? 600 : 400 }}>
-                  {step.label}
-                </span>
-              </div>
-            </React.Fragment>
-          )
-        })}
-      </div>
-
       {/* Side-state badge */}
       {isSideState && (
         <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '999px', background: sideStateColor[status], color: '#fff', fontSize: '12px', fontWeight: 600, alignSelf: 'flex-start' }}>
