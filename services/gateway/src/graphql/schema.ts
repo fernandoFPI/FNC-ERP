@@ -4919,4 +4919,97 @@ export const typeDefs = `#graphql
     addPunchPhoto(punchId: ID!, url: String, caption: String, uploadedBy: String): PunchPhoto!
     deletePunchPhoto(id: ID!): Boolean!
   }
+
+  # ── Phase 6: Subcontractor Submittal Register ────────────────────────────────
+
+  type SubmittalRevision {
+    id: ID!
+    submittalId: ID!
+    revision: String!
+    submittedDate: String
+    reviewer: String
+    reviewedDate: String
+    reviewStatus: String!
+    reviewComments: String
+    fileId: ID
+    fileUrl: String
+    createdAt: String!
+  }
+
+  type Submittal {
+    id: ID!
+    projectId: ID!
+    submittalNo: String!
+    type: String!
+    discipline: String
+    title: String!
+    description: String
+    subcontractor: String
+    specifiedBy: String
+    specSection: String
+    status: String!
+    requiredDate: String
+    revisions: [SubmittalRevision!]!
+    revisionCount: Int!
+    latestRevision: SubmittalRevision
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  extend type Query {
+    projectSubmittals(
+      projectId: ID!
+      type: String
+      status: String
+      subcontractor: String
+      discipline: String
+    ): [Submittal!]!
+    projectSubmittal(id: ID!): Submittal
+  }
+
+  extend type Mutation {
+    createSubmittal(
+      projectId: ID!
+      type: String!
+      discipline: String
+      title: String!
+      description: String
+      subcontractor: String
+      specifiedBy: String
+      specSection: String
+      requiredDate: String
+    ): Submittal!
+
+    updateSubmittal(
+      id: ID!
+      type: String
+      discipline: String
+      title: String
+      description: String
+      subcontractor: String
+      specifiedBy: String
+      specSection: String
+      requiredDate: String
+      status: String
+    ): Submittal!
+
+    addSubmittalRevision(
+      submittalId: ID!
+      revision: String!
+      submittedDate: String
+      fileUrl: String
+      fileId: ID
+    ): Submittal!
+
+    updateRevisionStatus(
+      id: ID!
+      reviewStatus: String!
+      reviewer: String
+      reviewComments: String
+      reviewedDate: String
+    ): Submittal!
+
+    deleteSubmittal(id: ID!): Boolean!
+    deleteSubmittalRevision(id: ID!): Submittal!
+  }
 `

@@ -18,6 +18,8 @@ import {
   PROJECT_PUNCH_ITEMS_QUERY, CREATE_PUNCH_ITEM, UPDATE_PUNCH_ITEM, UPDATE_PUNCH_STATUS,
   SUPERVISOR_SIGN_PUNCH, PM_SIGN_PUNCH, REOPEN_PUNCH, DELETE_PUNCH_ITEM,
   ADD_PUNCH_PHOTO, DELETE_PUNCH_PHOTO,
+  PRODOM_SUBMITTALS_QUERY, PRODOM_CREATE_SUBMITTAL, PRODOM_UPDATE_SUBMITTAL,
+  PRODOM_ADD_REVISION, PRODOM_UPDATE_REVISION_STATUS, PRODOM_DELETE_SUBMITTAL, PRODOM_DELETE_REVISION,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -102,6 +104,7 @@ const ALL_TABS = [
   { key: 'cdr',              label: 'CDR' },
   { key: 'interfaces',       label: 'Interfaces' },
   { key: 'punch_list',       label: 'Punch List' },
+  { key: 'submittals',       label: 'Submittals' },
   { key: 'bidding',          label: 'Bidding' },
   { key: 'planning',         label: 'Planning' },
   { key: 'team',             label: 'Team' },
@@ -900,6 +903,14 @@ export default function ProjectDetail() {
 
         {tab === 'punch_list' && (
           <PunchListTab
+            projectId={id!}
+            theme={theme}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {tab === 'submittals' && (
+          <SubmittalsTab
             projectId={id!}
             theme={theme}
             isAdmin={isAdmin}
@@ -7929,6 +7940,501 @@ function PunchListTab({ projectId, theme, isAdmin }: { projectId: string; theme:
                 style={{ padding: '8px 22px', borderRadius: 8, background: signModal.step === 'supervisor' ? '#5b21b6' : '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 {signModal.step === 'supervisor' ? 'Sign Off' : 'Counter-Sign & Close'}
               </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SUBMITTALS TAB — Subcontractor Submittal Register (PRODOM Phase 6)
+// Tracks shop drawings, material submittals, method statements, ITPs, etc.
+// Each submittal has a revision cycle: R0 → review → R1 → review → ...
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface SubmittalRevision {
+  id: string; submittalId: string; revision: string
+  submittedDate: string | null; reviewer: string | null; reviewedDate: string | null
+  reviewStatus: string; reviewComments: string | null
+  fileId: string | null; fileUrl: string | null; createdAt: string
+}
+
+interface Submittal {
+  id: string; projectId: string; submittalNo: string; type: string
+  discipline: string | null; title: string; description: string | null
+  subcontractor: string | null; specifiedBy: string | null; specSection: string | null
+  status: string; requiredDate: string | null
+  revisions: SubmittalRevision[]; revisionCount: number
+  latestRevision: SubmittalRevision | null
+  createdAt: string; updatedAt: string
+}
+
+const SUBMITTAL_TYPES: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  shop_drawing:         { label: 'Shop Drawing',      color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  material_submittal:   { label: 'Material Submittal', color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe' },
+  method_statement:     { label: 'Method Statement',   color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+  inspection_test_plan: { label: 'ITP',                color: '#0369a1', bg: '#f0f9ff', border: '#bae6fd' },
+  quality_plan:         { label: 'Quality Plan',       color: '#065f46', bg: '#f0fdf4', border: '#bbf7d0' },
+  other:                { label: 'Other',              color: '#4b5563', bg: '#f9fafb', border: '#e5e7eb' },
+}
+
+const SUBMITTAL_STATUSES: Record<string, { label: string; text: string; bg: string }> = {
+  pending:                { label: 'Pending',            text: '#6b7280', bg: '#f3f4f6' },
+  submitted:              { label: 'Submitted',          text: '#92400e', bg: '#fffbeb' },
+  under_review:           { label: 'Under Review',       text: '#1d4ed8', bg: '#eff6ff' },
+  approved:               { label: 'Approved',           text: '#15803d', bg: '#f0fdf4' },
+  approved_with_comments: { label: 'Approved w/ Cmts',   text: '#065f46', bg: '#d1fae5' },
+  rejected:               { label: 'Rejected',           text: '#dc2626', bg: '#fee2e2' },
+  resubmit:               { label: 'Resubmit Required',  text: '#9333ea', bg: '#faf5ff' },
+  closed:                 { label: 'Closed',             text: '#4b5563', bg: '#f1f5f9' },
+}
+
+const REVISION_REVIEW_STATUSES: Record<string, { label: string; color: string; bg: string }> = {
+  pending:                { label: 'Pending',    color: '#6b7280', bg: '#f3f4f6' },
+  approved:               { label: 'Approved',   color: '#15803d', bg: '#f0fdf4' },
+  approved_with_comments: { label: 'Appr. w/C',  color: '#065f46', bg: '#d1fae5' },
+  rejected:               { label: 'Rejected',   color: '#dc2626', bg: '#fee2e2' },
+  resubmit:               { label: 'Resubmit',   color: '#9333ea', bg: '#faf5ff' },
+}
+
+const SUBMITTAL_DISCIPLINES = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation', 'Piping', 'Architecture', 'Process', 'General']
+
+const NEXT_REVISION = (revisions: SubmittalRevision[]): string => {
+  if (revisions.length === 0) return 'R0'
+  const last = revisions[revisions.length - 1].revision
+  const match = last.match(/^R(\d+)$/)
+  return match ? `R${Number(match[1]) + 1}` : `R${revisions.length}`
+}
+
+function SubmittalsTab({ projectId, theme, isAdmin }: { projectId: string; theme: ReturnType<typeof useTheme>['theme']; isAdmin?: boolean }) {
+  const addToast = useToastStore((s) => s.addToast)
+
+  const [typeFilter,   setTypeFilter]   = React.useState<string>('all')
+  const [statusFilter, setStatusFilter] = React.useState<string>('all')
+  const [expandedId,   setExpandedId]   = React.useState<string | null>(null)
+  const [showModal,    setShowModal]     = React.useState(false)
+  const [editItem,     setEditItem]      = React.useState<Submittal | null>(null)
+  const [reviewModal,  setReviewModal]   = React.useState<{ revision: SubmittalRevision; submittalId: string } | null>(null)
+  const [revisionModal, setRevisionModal] = React.useState<Submittal | null>(null)
+
+  const emptyForm = {
+    type: 'shop_drawing', discipline: '', title: '', description: '',
+    subcontractor: '', specifiedBy: '', specSection: '', requiredDate: '',
+  }
+  const [form, setForm] = React.useState(emptyForm)
+
+  const [revForm, setRevForm] = React.useState({ revision: 'R0', submittedDate: '', fileUrl: '' })
+  const [reviewForm, setReviewForm] = React.useState({ reviewStatus: 'pending', reviewer: '', reviewComments: '', reviewedDate: '' })
+
+  const { data, loading, refetch } = useQuery(PRODOM_SUBMITTALS_QUERY, {
+    variables: {
+      projectId,
+      type:   typeFilter   === 'all' ? undefined : typeFilter,
+      status: statusFilter === 'all' ? undefined : statusFilter,
+    },
+    skip: !projectId, fetchPolicy: 'cache-and-network',
+  })
+  const items: Submittal[] = data?.projectSubmittals ?? []
+
+  const [createSubmittal]       = useMutation(PRODOM_CREATE_SUBMITTAL)
+  const [updateSubmittal]       = useMutation(PRODOM_UPDATE_SUBMITTAL)
+  const [addRevision]           = useMutation(PRODOM_ADD_REVISION)
+  const [updateRevisionStatus]  = useMutation(PRODOM_UPDATE_REVISION_STATUS)
+  const [deleteSubmittal]       = useMutation(PRODOM_DELETE_SUBMITTAL)
+  const [deleteRevision]        = useMutation(PRODOM_DELETE_REVISION)
+
+  // KPIs
+  const kpi = {
+    total:      items.length,
+    pending:    items.filter(i => i.status === 'pending').length,
+    submitted:  items.filter(i => i.status === 'submitted' || i.status === 'under_review').length,
+    approved:   items.filter(i => i.status === 'approved' || i.status === 'approved_with_comments').length,
+    rejected:   items.filter(i => i.status === 'rejected').length,
+    resubmit:   items.filter(i => i.status === 'resubmit').length,
+  }
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { addToast({ type: 'error', message: 'Title is required' }); return }
+    try {
+      const vars = {
+        projectId, type: form.type, discipline: form.discipline || null,
+        title: form.title, description: form.description || null,
+        subcontractor: form.subcontractor || null, specifiedBy: form.specifiedBy || null,
+        specSection: form.specSection || null, requiredDate: form.requiredDate || null,
+      }
+      if (editItem) { await updateSubmittal({ variables: { id: editItem.id, ...vars } }); addToast({ type: 'success', message: 'Submittal updated' }) }
+      else          { await createSubmittal({ variables: vars }); addToast({ type: 'success', message: 'Submittal registered' }) }
+      setShowModal(false); setEditItem(null); setForm(emptyForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleAddRevision = async () => {
+    if (!revisionModal) return
+    if (!revForm.revision.trim()) { addToast({ type: 'error', message: 'Revision code is required (e.g. R0)' }); return }
+    try {
+      await addRevision({ variables: { submittalId: revisionModal.id, revision: revForm.revision, submittedDate: revForm.submittedDate || null, fileUrl: revForm.fileUrl || null } })
+      addToast({ type: 'success', message: `Revision ${revForm.revision} submitted` })
+      setRevisionModal(null); setRevForm({ revision: 'R0', submittedDate: '', fileUrl: '' }); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleReview = async () => {
+    if (!reviewModal) return
+    try {
+      await updateRevisionStatus({ variables: {
+        id: reviewModal.revision.id, reviewStatus: reviewForm.reviewStatus,
+        reviewer: reviewForm.reviewer || null, reviewComments: reviewForm.reviewComments || null,
+        reviewedDate: reviewForm.reviewedDate || null,
+      }})
+      addToast({ type: 'success', message: 'Review recorded' })
+      setReviewModal(null); setReviewForm({ reviewStatus: 'pending', reviewer: '', reviewComments: '', reviewedDate: '' }); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const typeBadge = (type: string) => {
+    const t = SUBMITTAL_TYPES[type] ?? SUBMITTAL_TYPES['other']
+    return <span style={{ padding: '2px 8px', borderRadius: 4, background: t.bg, border: `1px solid ${t.border}`, color: t.color, fontSize: 10, fontWeight: 700 }}>{t.label}</span>
+  }
+
+  const statusPill = (s: string) => {
+    const c = SUBMITTAL_STATUSES[s] ?? { label: s, text: '#475569', bg: '#f1f5f9' }
+    return <span style={{ padding: '3px 10px', borderRadius: 999, background: c.bg, fontSize: 11, fontWeight: 600, color: c.text, whiteSpace: 'nowrap' as const }}>{c.label}</span>
+  }
+
+  const revStatusChip = (s: string) => {
+    const c = REVISION_REVIEW_STATUSES[s] ?? { label: s, color: '#6b7280', bg: '#f3f4f6' }
+    return <span style={{ padding: '2px 7px', borderRadius: 4, background: c.bg, fontSize: 10, fontWeight: 600, color: c.color }}>{c.label}</span>
+  }
+
+  const inp = (v: string, fn: (x: string) => void, ph?: string, type = 'text') => (
+    <input type={type} value={v} placeholder={ph} onChange={e => fn(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
+  )
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 10, marginBottom: 20 }}>
+        {[
+          { label: 'Total',       value: kpi.total,     color: theme.textPrimary, bg: theme.bgSurface,  border: theme.border },
+          { label: 'Pending',     value: kpi.pending,   color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+          { label: 'In Review',   value: kpi.submitted, color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+          { label: 'Approved',    value: kpi.approved,  color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+          { label: 'Rejected',    value: kpi.rejected,  color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+          { label: 'Resubmit',    value: kpi.resubmit,  color: '#9333ea', bg: '#faf5ff', border: '#ddd6fe' },
+        ].map(k => (
+          <div key={k.label} style={{ padding: '12px 14px', borderRadius: 10, background: k.bg, border: `1px solid ${k.border}`, textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.color, fontVariantNumeric: 'tabular-nums' }}>{k.value}</div>
+            <div style={{ fontSize: 10, color: k.color, opacity: 0.8, fontWeight: 600, marginTop: 2 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {/* Type filter */}
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all', ...Object.keys(SUBMITTAL_TYPES)] as const).map((t, i, arr) => {
+            const cfg = t !== 'all' ? SUBMITTAL_TYPES[t] : null
+            return (
+              <button key={t} onClick={() => setTypeFilter(t)}
+                style={{ padding: '7px 11px', background: typeFilter === t ? (cfg?.color ?? theme.accent) : theme.bgCanvas, color: typeFilter === t ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: typeFilter === t ? 700 : 400, borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none', whiteSpace: 'nowrap' }}>
+                {t === 'all' ? 'All Types' : (cfg?.label ?? t)}
+              </button>
+            )
+          })}
+        </div>
+        {/* Status filter */}
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          style={{ padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>
+          <option value="all">All Statuses</option>
+          {Object.entries(SUBMITTAL_STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => { setEditItem(null); setForm(emptyForm); setShowModal(true) }}
+          style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          Register Submittal
+        </button>
+      </div>
+
+      {/* Items */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+          Loading…
+        </div>
+      ) : items.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No Submittals Registered</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, maxWidth: 400, margin: '0 auto 24px' }}>
+            Register subcontractor submittals — shop drawings, material data sheets, method statements, and ITPs — to track review cycles and approvals.
+          </div>
+          <button onClick={() => { setEditItem(null); setForm(emptyForm); setShowModal(true) }}
+            style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Register First Submittal
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {items.map(item => {
+            const isExpanded = expandedId === item.id
+            const typeConf = SUBMITTAL_TYPES[item.type] ?? SUBMITTAL_TYPES['other']
+
+            return (
+              <div key={item.id} style={{ border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden', background: theme.bgCanvas }}>
+                {/* Row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : item.id)}>
+                  {/* Type stripe */}
+                  <div style={{ width: 3, height: 40, borderRadius: 2, background: typeConf.color, flexShrink: 0 }} />
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: theme.textMuted, background: theme.bgSurface, padding: '1px 6px', borderRadius: 4, border: `1px solid ${theme.border}` }}>{item.submittalNo}</span>
+                      {typeBadge(item.type)}
+                      {item.discipline && <span style={{ fontSize: 10, color: theme.textMuted, background: theme.bgSurface, padding: '1px 6px', borderRadius: 4, border: `1px solid ${theme.border}` }}>{item.discipline}</span>}
+                      {item.revisionCount > 0 && (
+                        <span style={{ fontSize: 10, color: theme.textMuted }}>
+                          {item.revisionCount} rev{item.revisionCount > 1 ? 's' : ''} · latest: {item.latestRevision?.revision}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                      {item.subcontractor && `Sub: ${item.subcontractor}`}
+                      {item.specSection && ` · Spec: ${item.specSection}`}
+                      {item.requiredDate && ` · Required: ${item.requiredDate}`}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                    {statusPill(item.status)}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Expanded */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px 18px', background: theme.bgSurface }}>
+                    {/* Metadata */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px 20px', marginBottom: 14 }}>
+                      {[
+                        { label: 'Subcontractor', value: item.subcontractor ?? '—' },
+                        { label: 'Specified By',  value: item.specifiedBy  ?? '—' },
+                        { label: 'Spec Section',  value: item.specSection  ?? '—' },
+                        { label: 'Required Date', value: item.requiredDate ?? '—' },
+                      ].map(m => (
+                        <div key={m.label}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 1 }}>{m.label}</div>
+                          <div style={{ fontSize: 12, color: theme.textPrimary }}>{m.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {item.description && (
+                      <div style={{ marginBottom: 14, padding: '10px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, color: theme.textPrimary, lineHeight: 1.6 }}>
+                        {item.description}
+                      </div>
+                    )}
+
+                    {/* Revision History */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          Revision History ({item.revisionCount})
+                        </div>
+                        <button onClick={() => { setRevisionModal(item); setRevForm({ revision: NEXT_REVISION(item.revisions), submittedDate: '', fileUrl: '' }) }}
+                          style={{ padding: '3px 10px', borderRadius: 6, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 11, cursor: 'pointer' }}>
+                          + Submit Revision
+                        </button>
+                      </div>
+
+                      {item.revisions.length === 0 ? (
+                        <div style={{ padding: '12px 16px', border: `1px dashed ${theme.border}`, borderRadius: 8, textAlign: 'center', fontSize: 12, color: theme.textMuted }}>No revisions submitted yet</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                          {/* Header */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '70px 110px 130px 130px 1fr 90px', gap: 0, padding: '6px 12px', background: theme.bgCanvas, borderBottom: `1px solid ${theme.border}` }}>
+                            {['Rev', 'Submitted', 'Reviewer', 'Reviewed', 'Comments', 'Status'].map(h => (
+                              <div key={h} style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</div>
+                            ))}
+                          </div>
+                          {item.revisions.map((rev, idx) => (
+                            <div key={rev.id} style={{ display: 'grid', gridTemplateColumns: '70px 110px 130px 130px 1fr 90px', gap: 0, padding: '10px 12px', background: idx % 2 === 0 ? theme.bgSurface : theme.bgCanvas, borderBottom: idx < item.revisions.length - 1 ? `1px solid ${theme.border}` : 'none', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: theme.textPrimary }}>{rev.revision}</span>
+                                {rev.fileUrl && <a href={rev.fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: theme.accent }}>File</a>}
+                              </div>
+                              <div style={{ fontSize: 12, color: theme.textSecondary }}>{rev.submittedDate ?? '—'}</div>
+                              <div style={{ fontSize: 12, color: theme.textSecondary }}>{rev.reviewer ?? '—'}</div>
+                              <div style={{ fontSize: 12, color: theme.textSecondary }}>{rev.reviewedDate ?? '—'}</div>
+                              <div style={{ fontSize: 11, color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{rev.reviewComments ?? '—'}</div>
+                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                {revStatusChip(rev.reviewStatus)}
+                                {rev.reviewStatus === 'pending' && (
+                                  <button onClick={() => { setReviewModal({ revision: rev, submittalId: item.id }); setReviewForm({ reviewStatus: 'approved', reviewer: '', reviewComments: '', reviewedDate: '' }) }}
+                                    style={{ padding: '2px 6px', borderRadius: 4, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textMuted, fontSize: 9, cursor: 'pointer' }}>Review</button>
+                                )}
+                                <button onClick={() => { if (window.confirm(`Delete revision ${rev.revision}?`)) void deleteRevision({ variables: { id: rev.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                                  style={{ padding: '2px 5px', borderRadius: 4, background: 'transparent', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 9, cursor: 'pointer' }}>✕</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+                      <button onClick={() => {
+                        setEditItem(item)
+                        setForm({ type: item.type, discipline: item.discipline??'', title: item.title, description: item.description??'', subcontractor: item.subcontractor??'', specifiedBy: item.specifiedBy??'', specSection: item.specSection??'', requiredDate: item.requiredDate??'' })
+                        setShowModal(true)
+                      }}
+                        style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Edit</button>
+
+                      {item.status !== 'closed' && (
+                        <button onClick={() => void updateSubmittal({ variables: { id: item.id, status: 'closed' } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message }))}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569', fontSize: 12, cursor: 'pointer' }}>Mark Closed</button>
+                      )}
+
+                      <button onClick={() => { if (window.confirm(`Delete submittal ${item.submittalNo}? All revision history will be lost.`)) void deleteSubmittal({ variables: { id: item.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                        style={{ padding: '6px 13px', borderRadius: 7, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Create / Edit Modal ── */}
+      {showModal && (
+        <Modal open={true} size="lg" title={editItem ? `Edit ${editItem.submittalNo}` : 'Register Submittal'} onClose={() => { setShowModal(false); setEditItem(null); setForm(emptyForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              {lbl('Type', true)}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {Object.entries(SUBMITTAL_TYPES).map(([k, v]) => (
+                  <button key={k} onClick={() => setForm(f => ({...f, type: k}))}
+                    style={{ padding: '8px 6px', borderRadius: 8, border: `2px solid ${form.type === k ? v.color : theme.border}`, background: form.type === k ? v.bg : theme.bgCanvas, cursor: 'pointer', textAlign: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: 11, color: form.type === k ? v.color : theme.textMuted }}>{v.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('Title', true)}{inp(form.title, v => setForm(f => ({...f, title: v})), 'Drawing title or document name')}</div>
+              <div>
+                {lbl('Discipline')}
+                <select value={form.discipline} onChange={e => setForm(f => ({...f, discipline: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— Select —</option>
+                  {SUBMITTAL_DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>{lbl('Subcontractor')}{inp(form.subcontractor, v => setForm(f => ({...f, subcontractor: v})), 'Company name')}</div>
+              <div>{lbl('Specified By')}{inp(form.specifiedBy, v => setForm(f => ({...f, specifiedBy: v})), 'Engineer / Spec reference')}</div>
+              <div>{lbl('Spec Section')}{inp(form.specSection, v => setForm(f => ({...f, specSection: v})), 'e.g. 03 30 00')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('Required Date')}{inp(form.requiredDate, v => setForm(f => ({...f, requiredDate: v})), '', 'date')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description')}
+                <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Scope, purpose, or notes…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 64, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowModal(false); setEditItem(null); setForm(emptyForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!form.title.trim()} onClick={() => void handleSave()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.title.trim() ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title.trim() ? 'pointer' : 'not-allowed' }}>
+                {editItem ? 'Save Changes' : 'Register'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Submit Revision Modal ── */}
+      {revisionModal && (
+        <Modal open={true} title={`Submit Revision — ${revisionModal.submittalNo}`} onClose={() => { setRevisionModal(null); setRevForm({ revision: 'R0', submittedDate: '', fileUrl: '' }) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ padding: '10px 14px', background: theme.bgSurface, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary }}>{revisionModal.title}</div>
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{SUBMITTAL_TYPES[revisionModal.type]?.label ?? revisionModal.type} · {revisionModal.subcontractor ?? ''}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                {lbl('Revision Code', true)}
+                {inp(revForm.revision, v => setRevForm(f => ({...f, revision: v})), 'R0, R1, R2 …')}
+              </div>
+              <div>
+                {lbl('Submitted Date')}
+                {inp(revForm.submittedDate, v => setRevForm(f => ({...f, submittedDate: v})), '', 'date')}
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('File URL (optional)')}
+                {inp(revForm.fileUrl, v => setRevForm(f => ({...f, fileUrl: v})), 'Link to the submitted document')}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+              <button onClick={() => { setRevisionModal(null); setRevForm({ revision: 'R0', submittedDate: '', fileUrl: '' }) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleAddRevision()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Submit Revision</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Review Modal ── */}
+      {reviewModal && (
+        <Modal open={true} title={`Review ${reviewModal.revision.revision}`} onClose={() => { setReviewModal(null); setReviewForm({ reviewStatus: 'approved', reviewer: '', reviewComments: '', reviewedDate: '' }) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Review status selector */}
+            <div>
+              {lbl('Review Decision', true)}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {(['approved','approved_with_comments','rejected','resubmit'] as const).map(s => {
+                  const c = REVISION_REVIEW_STATUSES[s]
+                  return (
+                    <button key={s} onClick={() => setReviewForm(f => ({...f, reviewStatus: s}))}
+                      style={{ padding: '9px 8px', borderRadius: 8, border: `2px solid ${reviewForm.reviewStatus === s ? c.color : theme.border}`, background: reviewForm.reviewStatus === s ? c.bg : theme.bgCanvas, cursor: 'pointer' }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: reviewForm.reviewStatus === s ? c.color : theme.textMuted }}>{c.label}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>{lbl('Reviewer Name')}{inp(reviewForm.reviewer, v => setReviewForm(f => ({...f, reviewer: v})), 'Engineer / consultant name')}</div>
+              <div>{lbl('Review Date')}{inp(reviewForm.reviewedDate, v => setReviewForm(f => ({...f, reviewedDate: v})), '', 'date')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Comments')}
+                <textarea value={reviewForm.reviewComments} onChange={e => setReviewForm(f => ({...f, reviewComments: e.target.value}))} placeholder="Review notes, required changes, conditions of approval…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 72, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+              <button onClick={() => { setReviewModal(null); setReviewForm({ reviewStatus: 'approved', reviewer: '', reviewComments: '', reviewedDate: '' }) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleReview()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Record Review</button>
             </div>
           </div>
         </Modal>

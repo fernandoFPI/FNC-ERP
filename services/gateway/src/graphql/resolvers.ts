@@ -813,6 +813,50 @@ async function punchItemToGQL(row: Record<string, unknown>): Promise<Record<stri
   }
 }
 
+function submittalRevisionToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: row['id'],
+    submittalId: row['submittal_id'],
+    revision: row['revision'],
+    submittedDate: row['submitted_date'] ?? null,
+    reviewer: row['reviewer'] ?? null,
+    reviewedDate: row['reviewed_date'] ?? null,
+    reviewStatus: row['review_status'],
+    reviewComments: row['review_comments'] ?? null,
+    fileId: row['file_id'] ?? null,
+    fileUrl: row['file_url'] ?? null,
+    createdAt: row['created_at'],
+  }
+}
+
+async function submittalToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const revRes = await query(
+    `SELECT * FROM project_submittal_revisions WHERE submittal_id=$1 ORDER BY created_at ASC`,
+    [row['id']],
+  )
+  const revisions = revRes.rows.map(r => submittalRevisionToGQL(r as Record<string, unknown>))
+  const latestRevision = revisions.length > 0 ? revisions[revisions.length - 1] : null
+  return {
+    id: row['id'],
+    projectId: row['project_id'],
+    submittalNo: row['submittal_no'],
+    type: row['type'],
+    discipline: row['discipline'] ?? null,
+    title: row['title'],
+    description: row['description'] ?? null,
+    subcontractor: row['subcontractor'] ?? null,
+    specifiedBy: row['specified_by'] ?? null,
+    specSection: row['spec_section'] ?? null,
+    status: row['status'],
+    requiredDate: row['required_date'] ?? null,
+    revisions,
+    revisionCount: revisions.length,
+    latestRevision,
+    createdAt: row['created_at'],
+    updatedAt: row['updated_at'],
+  }
+}
+
 function actionToGQL(row: Record<string, unknown>): Record<string, unknown> {
   const due = row['due_date'] ? new Date(String(row['due_date'])) : null
   const status = String(row['status'])
@@ -14289,6 +14333,159 @@ Object.assign(resolvers.Mutation, {
     if (!ctx.auth) throw new Error('Unauthorized')
     await query(`DELETE FROM project_punch_photos WHERE id=$1`, [args.id])
     return true
+  },
+
+  // ── Phase 6: Subcontractor Submittal Register ──────────────────────────────
+
+  projectSubmittals: async (
+    _: unknown,
+    args: { projectId: string; type?: string; status?: string; subcontractor?: string; discipline?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions: string[] = ['project_id=$1']
+    const params: unknown[] = [args.projectId]
+    let idx = 2
+    if (args.type)          { conditions.push(`type=$${idx++}`);               params.push(args.type) }
+    if (args.status)        { conditions.push(`status=$${idx++}`);             params.push(args.status) }
+    if (args.subcontractor) { conditions.push(`subcontractor ILIKE $${idx++}`); params.push(`%${args.subcontractor}%`) }
+    if (args.discipline)    { conditions.push(`discipline=$${idx++}`);          params.push(args.discipline) }
+    const res = await query(
+      `SELECT * FROM project_submittals WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+      params,
+    )
+    return Promise.all(res.rows.map(r => submittalToGQL(r as Record<string, unknown>)))
+  },
+
+  projectSubmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [args.id])
+    if (!res.rows[0]) return null
+    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  createSubmittal: async (
+    _: unknown,
+    args: {
+      projectId: string; type: string; discipline?: string; title: string
+      description?: string; subcontractor?: string; specifiedBy?: string
+      specSection?: string; requiredDate?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const now = new Date()
+    const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
+    const countRes = await query(`SELECT COUNT(*) FROM project_submittals WHERE project_id=$1`, [args.projectId])
+    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count'] ?? 0) + 1).padStart(3, '0')
+    const submittalNo = `SUB-${ym}-${seq}`
+    const res = await query(
+      `INSERT INTO project_submittals
+         (project_id,submittal_no,type,discipline,title,description,subcontractor,
+          specified_by,spec_section,required_date,created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [
+        args.projectId, submittalNo, args.type, args.discipline ?? null, args.title,
+        args.description ?? null, args.subcontractor ?? null,
+        args.specifiedBy ?? null, args.specSection ?? null,
+        args.requiredDate ?? null, ctx.auth.userId,
+      ],
+    )
+    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateSubmittal: async (
+    _: unknown,
+    args: {
+      id: string; type?: string; discipline?: string; title?: string; description?: string
+      subcontractor?: string; specifiedBy?: string; specSection?: string
+      requiredDate?: string; status?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const sets: string[] = ['updated_at=NOW()']
+    const params: unknown[] = []
+    let idx = 1
+    if (args.type          !== undefined) { sets.push(`type=$${idx++}`);           params.push(args.type) }
+    if (args.discipline    !== undefined) { sets.push(`discipline=$${idx++}`);      params.push(args.discipline) }
+    if (args.title         !== undefined) { sets.push(`title=$${idx++}`);           params.push(args.title) }
+    if (args.description   !== undefined) { sets.push(`description=$${idx++}`);     params.push(args.description) }
+    if (args.subcontractor !== undefined) { sets.push(`subcontractor=$${idx++}`);   params.push(args.subcontractor) }
+    if (args.specifiedBy   !== undefined) { sets.push(`specified_by=$${idx++}`);    params.push(args.specifiedBy) }
+    if (args.specSection   !== undefined) { sets.push(`spec_section=$${idx++}`);    params.push(args.specSection) }
+    if (args.requiredDate  !== undefined) { sets.push(`required_date=$${idx++}`);   params.push(args.requiredDate) }
+    if (args.status        !== undefined) { sets.push(`status=$${idx++}`);          params.push(args.status) }
+    params.push(args.id)
+    const res = await query(
+      `UPDATE project_submittals SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
+      params,
+    )
+    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  addSubmittalRevision: async (
+    _: unknown,
+    args: { submittalId: string; revision: string; submittedDate?: string; fileUrl?: string; fileId?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(
+      `INSERT INTO project_submittal_revisions (submittal_id,revision,submitted_date,file_url,file_id)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [args.submittalId, args.revision, args.submittedDate ?? null, args.fileUrl ?? null, args.fileId ?? null],
+    )
+    await query(
+      `UPDATE project_submittals SET status='submitted', updated_at=NOW() WHERE id=$1`,
+      [args.submittalId],
+    )
+    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [args.submittalId])
+    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateRevisionStatus: async (
+    _: unknown,
+    args: { id: string; reviewStatus: string; reviewer?: string; reviewComments?: string; reviewedDate?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const revRes = await query(
+      `UPDATE project_submittal_revisions
+       SET review_status=$1, reviewer=$2, review_comments=$3, reviewed_date=$4
+       WHERE id=$5 RETURNING submittal_id`,
+      [args.reviewStatus, args.reviewer ?? null, args.reviewComments ?? null, args.reviewedDate ?? null, args.id],
+    )
+    if (!revRes.rows[0]) throw new Error('Revision not found')
+    const submittalId = (revRes.rows[0] as Record<string, unknown>)['submittal_id'] as string
+    const statusMap: Record<string, string> = {
+      approved: 'approved', approved_with_comments: 'approved_with_comments',
+      rejected: 'rejected', resubmit: 'resubmit', pending: 'under_review',
+    }
+    const newStatus = statusMap[args.reviewStatus] ?? 'under_review'
+    await query(
+      `UPDATE project_submittals SET status=$1, updated_at=NOW() WHERE id=$2`,
+      [newStatus, submittalId],
+    )
+    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [submittalId])
+    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deleteSubmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`DELETE FROM project_submittals WHERE id=$1`, [args.id])
+    return true
+  },
+
+  deleteSubmittalRevision: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const revRes = await query(
+      `DELETE FROM project_submittal_revisions WHERE id=$1 RETURNING submittal_id`,
+      [args.id],
+    )
+    if (!revRes.rows[0]) throw new Error('Revision not found')
+    const submittalId = (revRes.rows[0] as Record<string, unknown>)['submittal_id'] as string
+    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [submittalId])
+    return submittalToGQL(res.rows[0] as Record<string, unknown>)
   },
 })
 

@@ -1949,3 +1949,99 @@ export const ADD_PUNCH_PHOTO = gql`
 export const DELETE_PUNCH_PHOTO = gql`
   mutation DeletePunchPhoto($id: ID!) { deletePunchPhoto(id: $id) }
 `
+
+// ── Phase 6: PRODOM Subcontractor Submittal Register ─────────────────────────
+// Distinct from Execution submittals (single-rev). These support full revision
+// cycles (R0 → R1 → R2) with per-revision review decisions.
+
+const PRODOM_SUB_REV_FIELDS = `
+  id submittalId revision submittedDate
+  reviewer reviewedDate reviewStatus reviewComments
+  fileId fileUrl createdAt
+`
+
+const PRODOM_SUB_FIELDS = `
+  id projectId submittalNo type discipline title description
+  subcontractor specifiedBy specSection status requiredDate
+  revisionCount createdAt updatedAt
+  revisions { ${PRODOM_SUB_REV_FIELDS} }
+  latestRevision { ${PRODOM_SUB_REV_FIELDS} }
+`
+
+export const PRODOM_SUBMITTALS_QUERY = gql`
+  query ProdomSubmittals(
+    $projectId: ID!
+    $type: String
+    $status: String
+    $subcontractor: String
+    $discipline: String
+  ) {
+    projectSubmittals(
+      projectId: $projectId
+      type: $type
+      status: $status
+      subcontractor: $subcontractor
+      discipline: $discipline
+    ) { ${PRODOM_SUB_FIELDS} }
+  }
+`
+
+export const PRODOM_CREATE_SUBMITTAL = gql`
+  mutation ProdomCreateSubmittal(
+    $projectId: ID! $type: String! $discipline: String $title: String!
+    $description: String $subcontractor: String $specifiedBy: String
+    $specSection: String $requiredDate: String
+  ) {
+    createSubmittal(
+      projectId: $projectId type: $type discipline: $discipline title: $title
+      description: $description subcontractor: $subcontractor specifiedBy: $specifiedBy
+      specSection: $specSection requiredDate: $requiredDate
+    ) { ${PRODOM_SUB_FIELDS} }
+  }
+`
+
+export const PRODOM_UPDATE_SUBMITTAL = gql`
+  mutation ProdomUpdateSubmittal(
+    $id: ID! $type: String $discipline: String $title: String $description: String
+    $subcontractor: String $specifiedBy: String $specSection: String
+    $requiredDate: String $status: String
+  ) {
+    updateSubmittal(
+      id: $id type: $type discipline: $discipline title: $title description: $description
+      subcontractor: $subcontractor specifiedBy: $specifiedBy specSection: $specSection
+      requiredDate: $requiredDate status: $status
+    ) { ${PRODOM_SUB_FIELDS} }
+  }
+`
+
+export const PRODOM_ADD_REVISION = gql`
+  mutation ProdomAddRevision(
+    $submittalId: ID! $revision: String! $submittedDate: String $fileUrl: String $fileId: ID
+  ) {
+    addSubmittalRevision(
+      submittalId: $submittalId revision: $revision submittedDate: $submittedDate
+      fileUrl: $fileUrl fileId: $fileId
+    ) { ${PRODOM_SUB_FIELDS} }
+  }
+`
+
+export const PRODOM_UPDATE_REVISION_STATUS = gql`
+  mutation ProdomUpdateRevisionStatus(
+    $id: ID! $reviewStatus: String! $reviewer: String $reviewComments: String $reviewedDate: String
+  ) {
+    updateRevisionStatus(
+      id: $id reviewStatus: $reviewStatus reviewer: $reviewer
+      reviewComments: $reviewComments reviewedDate: $reviewedDate
+    ) { ${PRODOM_SUB_FIELDS} }
+  }
+`
+
+export const PRODOM_DELETE_SUBMITTAL = gql`
+  mutation ProdomDeleteSubmittal($id: ID!) { deleteSubmittal(id: $id) }
+`
+
+export const PRODOM_DELETE_REVISION = gql`
+  mutation ProdomDeleteRevision($id: ID!) {
+    deleteSubmittalRevision(id: $id) { ${PRODOM_SUB_FIELDS} }
+  }
+`
