@@ -2320,6 +2320,119 @@ export const typeDefs = `#graphql
     deleteDistributionEntry(id: ID!): Boolean!
   }
 
+  # ── Engineering Transmittals (Phase 2) ───────────────────────
+
+  type EngTransmittalItem {
+    id:             ID!
+    transmittalId:  ID!
+    documentId:     ID
+    extRefNumber:   String
+    extTitle:       String
+    revision:       String
+    copies:         Int!
+    format:         String!
+    purposeOfIssue: String
+    remarks:        String
+    createdAt:      String!
+    # Denormalized from engineering_documents
+    refNumber:      String
+    title:          String
+    discipline:     String
+    docType:        String
+    downloadUrl:    String
+  }
+
+  type EngTransmittal {
+    id:             ID!
+    projectId:      ID!
+    transmittalNo:  String!
+    direction:      String!
+    title:          String!
+    subject:        String
+    toCompany:      String!
+    toContact:      String
+    toEmail:        String
+    fromCompany:    String
+    fromContact:    String
+    status:         String!
+    sentDate:       String
+    receivedDate:   String
+    acknowledgedAt: String
+    acknowledgedBy: String
+    dueDate:        String
+    notes:          String
+    createdByName:  String
+    createdAt:      String!
+    items:          [EngTransmittalItem!]!
+    itemCount:      Int!
+    isOverdue:      Boolean!
+  }
+
+  input EngTransmittalItemInput {
+    documentId:     ID
+    extRefNumber:   String
+    extTitle:       String
+    revision:       String
+    copies:         Int
+    format:         String
+    purposeOfIssue: String
+    remarks:        String
+  }
+
+  extend type Query {
+    engTransmittals(projectId: ID!, direction: String): [EngTransmittal!]!
+    engTransmittal(id: ID!): EngTransmittal
+  }
+
+  extend type Mutation {
+    createEngTransmittal(
+      projectId:   ID!
+      direction:   String!
+      title:       String!
+      subject:     String
+      toCompany:   String!
+      toContact:   String
+      toEmail:     String
+      fromCompany: String
+      fromContact: String
+      dueDate:     String
+      notes:       String
+      items:       [EngTransmittalItemInput!]
+    ): EngTransmittal!
+
+    updateEngTransmittal(
+      id:          ID!
+      title:       String
+      subject:     String
+      toCompany:   String
+      toContact:   String
+      toEmail:     String
+      fromCompany: String
+      fromContact: String
+      dueDate:     String
+      notes:       String
+    ): EngTransmittal!
+
+    issueEngTransmittal(id: ID!): EngTransmittal!
+    markEngTransmittalReceived(id: ID!): EngTransmittal!
+    acknowledgeEngTransmittal(id: ID!, acknowledgedBy: String): EngTransmittal!
+    deleteEngTransmittal(id: ID!): Boolean!
+
+    addEngTransmittalItem(
+      transmittalId:  ID!
+      documentId:     ID
+      extRefNumber:   String
+      extTitle:       String
+      revision:       String
+      copies:         Int
+      format:         String
+      purposeOfIssue: String
+      remarks:        String
+    ): EngTransmittalItem!
+
+    removeEngTransmittalItem(id: ID!): Boolean!
+  }
+
   # ── Client Documents ──────────────────────────────────────────
 
   type ClientDocument {

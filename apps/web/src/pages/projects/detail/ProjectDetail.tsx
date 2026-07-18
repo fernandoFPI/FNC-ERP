@@ -8,6 +8,9 @@ import {
   ENG_DOCS_QUERY, CREATE_ENG_DOC, REVISE_ENG_DOC, UPDATE_ENG_DOC_STATUS, DELETE_ENG_DOC, UPDATE_ENG_DOC_META,
   DOC_COMMENTS_QUERY, ADD_DOC_COMMENT, RESPOND_TO_COMMENT, DELETE_DOC_COMMENT,
   DOC_DISTRIBUTION_QUERY, UPSERT_DISTRIBUTION_ENTRY, DELETE_DISTRIBUTION_ENTRY,
+  ENG_TRANSMITTALS_QUERY, CREATE_ENG_TRANSMITTAL, UPDATE_ENG_TRANSMITTAL,
+  ISSUE_ENG_TRANSMITTAL, MARK_ENG_TRANSMITTAL_RECEIVED, ACKNOWLEDGE_ENG_TRANSMITTAL,
+  DELETE_ENG_TRANSMITTAL, ADD_ENG_TRANSMITTAL_ITEM, REMOVE_ENG_TRANSMITTAL_ITEM,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -87,6 +90,7 @@ const ALL_TABS = [
   { key: 'overview',         label: 'Overview' },
   { key: 'client_documents', label: 'Client Documents' },
   { key: 'rfq_lines',        label: 'Engineering' },
+  { key: 'transmittals',     label: 'Transmittals' },
   { key: 'bidding',          label: 'Bidding' },
   { key: 'planning',         label: 'Planning' },
   { key: 'team',             label: 'Team' },
@@ -843,6 +847,15 @@ export default function ProjectDetail() {
         {(teamLoading || projectRole !== 'none') && <>
         {tab === 'rfq_lines' && (
           <EngineeringTab
+            projectId={id!}
+            projectCode={String(p?.rfqNumber ?? p?.code ?? '')}
+            theme={theme}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {tab === 'transmittals' && (
+          <TransmittalsTab
             projectId={id!}
             projectCode={String(p?.rfqNumber ?? p?.code ?? '')}
             theme={theme}
@@ -5421,6 +5434,655 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
                 style={{ padding: '8px 22px', borderRadius: 8, background: ddmForm.companyName ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: ddmForm.companyName ? 'pointer' : 'not-allowed' }}>
                 {editDDM ? 'Update Entry' : 'Add Entry'}
               </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TRANSMITTALS TAB — Phase 2 of PRODOM Document Control
+// Outgoing: issue document packages to recipients (Draft → Sent → Acknowledged)
+// Incoming: log documents received from client/subcontractor (Received → Acknowledged)
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface EngTransmittalItem {
+  id: string; transmittalId: string; documentId: string | null
+  extRefNumber: string | null; extTitle: string | null
+  revision: string | null; copies: number; format: string
+  purposeOfIssue: string | null; remarks: string | null; createdAt: string
+  refNumber: string | null; title: string | null; discipline: string | null; docType: string | null; downloadUrl: string | null
+}
+interface EngTransmittal {
+  id: string; projectId: string; transmittalNo: string; direction: string; title: string; subject: string | null
+  toCompany: string; toContact: string | null; toEmail: string | null
+  fromCompany: string | null; fromContact: string | null
+  status: string; sentDate: string | null; receivedDate: string | null
+  acknowledgedAt: string | null; acknowledgedBy: string | null
+  dueDate: string | null; notes: string | null
+  createdByName: string | null; createdAt: string
+  items: EngTransmittalItem[]; itemCount: number; isOverdue: boolean
+}
+
+const TR_STATUS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
+  draft:        { label: 'Draft',        dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  sent:         { label: 'Sent',         dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  received:     { label: 'Received',     dot: '#a78bfa', text: '#5b21b6', bg: '#ede9fe' },
+  acknowledged: { label: 'Acknowledged', dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
+}
+
+const TR_PURPOSES = ['IFA','IFR','IFI','IFC','AFC','For Record','For Information'] as const
+
+function TransmittalsTab({ projectId, projectCode, theme, isAdmin }: {
+  projectId: string; projectCode: string
+  theme: ReturnType<typeof useTheme>['theme']; isAdmin?: boolean
+}) {
+  const addToast = useToastStore((s) => s.addToast)
+
+  const [dirFilter, setDirFilter]     = React.useState<'all' | 'outgoing' | 'incoming'>('all')
+  const [expandedId, setExpandedId]   = React.useState<string | null>(null)
+  const [showModal, setShowModal]     = React.useState(false)
+  const [editTr, setEditTr]           = React.useState<EngTransmittal | null>(null)
+  const [showPrint, setShowPrint]     = React.useState<EngTransmittal | null>(null)
+  const [ackModal, setAckModal]       = React.useState<EngTransmittal | null>(null)
+  const [ackBy, setAckBy]             = React.useState('')
+  const [addItemTr, setAddItemTr]     = React.useState<EngTransmittal | null>(null)
+
+  const emptyForm = {
+    direction: 'outgoing' as 'outgoing' | 'incoming',
+    title: '', subject: '',
+    toCompany: '', toContact: '', toEmail: '',
+    fromCompany: '', fromContact: '',
+    dueDate: '', notes: '',
+    items: [] as { documentId: string; extRefNumber: string; extTitle: string; revision: string; copies: number; format: string; purposeOfIssue: string; remarks: string }[],
+  }
+  const [form, setForm] = React.useState(emptyForm)
+  const emptyItemForm = { documentId: '', extRefNumber: '', extTitle: '', revision: '', copies: 1, format: 'PDF', purposeOfIssue: '', remarks: '' }
+  const [itemForm, setItemForm] = React.useState(emptyItemForm)
+
+  // queries
+  const { data, loading, refetch } = useQuery(ENG_TRANSMITTALS_QUERY, {
+    variables: { projectId, direction: dirFilter === 'all' ? undefined : dirFilter },
+    skip: !projectId, fetchPolicy: 'cache-and-network',
+  })
+  const { data: docsData } = useQuery(ENG_DOCS_QUERY, {
+    variables: { projectId }, skip: !projectId, fetchPolicy: 'cache-first',
+  })
+
+  const transmittals: EngTransmittal[] = data?.engTransmittals ?? []
+  const allDocs: EngDoc[]              = docsData?.engineeringDocuments ?? []
+
+  // mutations
+  const [createTr]      = useMutation(CREATE_ENG_TRANSMITTAL)
+  const [updateTr]      = useMutation(UPDATE_ENG_TRANSMITTAL)
+  const [issueTr]       = useMutation(ISSUE_ENG_TRANSMITTAL)
+  const [receivedTr]    = useMutation(MARK_ENG_TRANSMITTAL_RECEIVED)
+  const [ackTr]         = useMutation(ACKNOWLEDGE_ENG_TRANSMITTAL)
+  const [deleteTr]      = useMutation(DELETE_ENG_TRANSMITTAL)
+  const [addItem]       = useMutation(ADD_ENG_TRANSMITTAL_ITEM)
+  const [removeItem]    = useMutation(REMOVE_ENG_TRANSMITTAL_ITEM)
+
+  // kpi
+  const draft        = transmittals.filter(t => t.status === 'draft').length
+  const sent         = transmittals.filter(t => t.status === 'sent').length
+  const received     = transmittals.filter(t => t.status === 'received').length
+  const acknowledged = transmittals.filter(t => t.status === 'acknowledged').length
+  const overdue      = transmittals.filter(t => t.isOverdue).length
+
+  const handleCreate = async () => {
+    if (!form.title || !form.toCompany) { addToast({ type: 'error', message: 'Title and recipient are required' }); return }
+    try {
+      const items = form.items.map(it => ({
+        documentId: it.documentId || null,
+        extRefNumber: it.extRefNumber || null, extTitle: it.extTitle || null,
+        revision: it.revision || null, copies: it.copies, format: it.format,
+        purposeOfIssue: it.purposeOfIssue || null, remarks: it.remarks || null,
+      }))
+      if (editTr) {
+        await updateTr({ variables: { id: editTr.id, title: form.title, subject: form.subject || null, toCompany: form.toCompany, toContact: form.toContact || null, toEmail: form.toEmail || null, fromCompany: form.fromCompany || null, fromContact: form.fromContact || null, dueDate: form.dueDate || null, notes: form.notes || null }})
+        addToast({ type: 'success', message: 'Transmittal updated' })
+      } else {
+        await createTr({ variables: { projectId, direction: form.direction, title: form.title, subject: form.subject || null, toCompany: form.toCompany, toContact: form.toContact || null, toEmail: form.toEmail || null, fromCompany: form.fromCompany || null, fromContact: form.fromContact || null, dueDate: form.dueDate || null, notes: form.notes || null, items: items.length ? items : undefined }})
+        addToast({ type: 'success', message: 'Transmittal created' })
+      }
+      setShowModal(false); setEditTr(null); setForm(emptyForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleIssue = async (tr: EngTransmittal) => {
+    if (tr.itemCount === 0) { addToast({ type: 'error', message: 'Add documents before issuing' }); return }
+    if (!window.confirm(`Issue ${tr.transmittalNo}? Status will change to Sent.`)) return
+    try { await issueTr({ variables: { id: tr.id }}); void refetch(); addToast({ type: 'success', message: 'Transmittal issued' }) }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleMarkReceived = async (tr: EngTransmittal) => {
+    try { await receivedTr({ variables: { id: tr.id }}); void refetch(); addToast({ type: 'success', message: 'Marked as received' }) }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleAcknowledge = async () => {
+    if (!ackModal) return
+    try { await ackTr({ variables: { id: ackModal.id, acknowledgedBy: ackBy || null }}); void refetch(); setAckModal(null); setAckBy(''); addToast({ type: 'success', message: 'Transmittal acknowledged' }) }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleDelete = async (tr: EngTransmittal) => {
+    if (!window.confirm(`Delete ${tr.transmittalNo}?`)) return
+    try { await deleteTr({ variables: { id: tr.id }}); void refetch() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleAddItem = async () => {
+    if (!addItemTr) return
+    const hasDoc = !!itemForm.documentId
+    const hasExt = !!itemForm.extTitle
+    if (!hasDoc && !hasExt) { addToast({ type: 'error', message: 'Select a document or enter an external reference' }); return }
+    try {
+      await addItem({ variables: { transmittalId: addItemTr.id, documentId: itemForm.documentId || null, extRefNumber: itemForm.extRefNumber || null, extTitle: itemForm.extTitle || null, revision: itemForm.revision || null, copies: itemForm.copies, format: itemForm.format, purposeOfIssue: itemForm.purposeOfIssue || null, remarks: itemForm.remarks || null }})
+      addToast({ type: 'success', message: 'Document added' }); setAddItemTr(null); setItemForm(emptyItemForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleRemoveItem = async (item: EngTransmittalItem) => {
+    if (!window.confirm(`Remove ${item.refNumber ?? item.extRefNumber ?? item.extTitle} from transmittal?`)) return
+    try { await removeItem({ variables: { id: item.id }}); void refetch() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const inp = (value: string, onChange: (v: string) => void, placeholder?: string, type = 'text') => (
+    <input type={type} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
+  )
+
+  const statusPill = (s: string) => {
+    const cfg = TR_STATUS[s] ?? TR_STATUS['draft']!
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, background: cfg.bg, fontSize: 11, fontWeight: 600, color: cfg.text, whiteSpace: 'nowrap' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+        {cfg.label}
+      </span>
+    )
+  }
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+
+      {/* KPI strip */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Draft',        value: draft,        color: '#94a3b8', bg: '#f1f5f9' },
+          { label: 'Sent',         value: sent,         color: '#1d4ed8', bg: '#eff6ff' },
+          { label: 'Received',     value: received,     color: '#5b21b6', bg: '#ede9fe' },
+          { label: 'Acknowledged', value: acknowledged, color: '#15803d', bg: '#f0fdf4' },
+          { label: 'Overdue',      value: overdue,      color: '#dc2626', bg: '#fee2e2' },
+        ].map(k => (
+          <div key={k.label} style={{ padding: '10px 18px', borderRadius: 10, background: k.bg, border: `1px solid ${k.color}20`, textAlign: 'center', minWidth: 90 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.color, fontVariantNumeric: 'tabular-nums' }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: k.color, fontWeight: 600, marginTop: 2 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {/* Direction filter */}
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all','outgoing','incoming'] as const).map(d => (
+            <button key={d} onClick={() => setDirFilter(d)}
+              style={{ padding: '7px 14px', background: dirFilter === d ? theme.accent : theme.bgCanvas, color: dirFilter === d ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: dirFilter === d ? 600 : 400, borderRight: d !== 'incoming' ? `1px solid ${theme.border}` : 'none' }}>
+              {d === 'all' ? 'All' : d === 'outgoing' ? '↑ Outgoing' : '↓ Incoming'}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => { setEditTr(null); setForm(emptyForm); setShowModal(true) }}
+          style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          New Transmittal
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+          Loading…
+        </div>
+      ) : transmittals.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, margin: '0 auto 16px', display: 'block' }}>
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.23h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.06 6.06l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No transmittals yet</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}>
+            Create outgoing transmittals to formally issue documents, or log incoming transmittals from clients and subcontractors.
+          </div>
+          <button onClick={() => { setEditTr(null); setForm(emptyForm); setShowModal(true) }}
+            style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Create First Transmittal
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {transmittals.map(tr => {
+            const isExpanded = expandedId === tr.id
+            const stCfg = TR_STATUS[tr.status] ?? TR_STATUS['draft']!
+            return (
+              <div key={tr.id} style={{ border: `1px solid ${tr.isOverdue ? '#fca5a5' : theme.border}`, borderRadius: 12, overflow: 'hidden', background: tr.isOverdue ? '#fff5f5' : theme.bgCanvas }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', cursor: 'pointer' }}
+                  onClick={() => setExpandedId(isExpanded ? null : tr.id)}>
+                  {/* Direction badge */}
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: tr.direction === 'outgoing' ? '#eff6ff' : '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {tr.direction === 'outgoing'
+                      ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M22 2L15 22l-4-9-9-4 20-7z" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      : <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="#15803d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="#15803d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="#15803d" strokeWidth="2" strokeLinecap="round"/></svg>
+                    }
+                  </div>
+
+                  {/* Main info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: theme.accent, background: theme.accentBg, padding: '1px 7px', borderRadius: 4 }}>{tr.transmittalNo}</span>
+                      {tr.isOverdue && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fee2e2', color: '#dc2626' }}>OVERDUE</span>}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tr.title}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                      {tr.direction === 'outgoing' ? `To: ${tr.toCompany}` : `From: ${tr.fromCompany ?? tr.toCompany}`}
+                      {tr.dueDate && ` · Due: ${tr.dueDate}`}
+                      {' · '}{tr.itemCount} doc{tr.itemCount !== 1 ? 's' : ''}
+                    </div>
+                  </div>
+
+                  {/* Status + chevron */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {statusPill(tr.status)}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px 18px', background: theme.bgSurface }}>
+                    {/* Metadata grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 24px', marginBottom: 14 }}>
+                      {[
+                        { label: 'Direction',    value: tr.direction === 'outgoing' ? '↑ Outgoing' : '↓ Incoming' },
+                        { label: 'To',           value: tr.toCompany + (tr.toContact ? ` — ${tr.toContact}` : '') },
+                        { label: tr.direction === 'outgoing' ? 'Sent Date' : 'Received Date',
+                          value: tr.sentDate ? new Date(tr.sentDate).toLocaleDateString() : tr.receivedDate ? new Date(tr.receivedDate).toLocaleDateString() : '—' },
+                        { label: 'Acknowledged', value: tr.acknowledgedAt ? `${new Date(tr.acknowledgedAt).toLocaleDateString()}${tr.acknowledgedBy ? ` by ${tr.acknowledgedBy}` : ''}` : '—' },
+                        { label: 'Due Date',     value: tr.dueDate ?? '—' },
+                        { label: 'Created By',   value: tr.createdByName ?? '—' },
+                      ].map(m => (
+                        <div key={m.label}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{m.label}</div>
+                          <div style={{ fontSize: 12, color: theme.textPrimary }}>{m.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {tr.subject && <div style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 14, padding: '8px 12px', background: theme.bgCanvas, borderRadius: 7, border: `1px solid ${theme.border}` }}>{tr.subject}</div>}
+
+                    {/* Items table */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Documents ({tr.items.length})</div>
+                      {tr.items.length === 0 ? (
+                        <div style={{ padding: '20px 16px', textAlign: 'center', border: `1px dashed ${theme.border}`, borderRadius: 8, fontSize: 12, color: theme.textMuted }}>
+                          No documents attached yet
+                        </div>
+                      ) : (
+                        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: theme.bgCanvas }}>
+                                {['Ref #','Title','Rev','Purpose','Copies','Format',''].map((h, i) => (
+                                  <th key={i} style={{ padding: '7px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tr.items.map((it, idx) => (
+                                <tr key={it.id} style={{ borderBottom: idx < tr.items.length - 1 ? `1px solid ${theme.border}` : 'none', background: idx % 2 === 0 ? 'transparent' : theme.bgSurface }}>
+                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: theme.accent }}>
+                                    {it.refNumber ?? it.extRefNumber ?? '—'}
+                                  </td>
+                                  <td style={{ padding: '8px 12px', color: theme.textPrimary, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {it.title ?? it.extTitle ?? '—'}
+                                  </td>
+                                  <td style={{ padding: '8px 12px', color: theme.textSecondary }}>{it.revision ?? '—'}</td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    {it.purposeOfIssue
+                                      ? <span style={{ padding: '2px 7px', borderRadius: 4, background: theme.accentBg, color: theme.accent, fontSize: 10, fontWeight: 700 }}>{it.purposeOfIssue}</span>
+                                      : <span style={{ color: theme.textMuted }}>—</span>}
+                                  </td>
+                                  <td style={{ padding: '8px 12px', color: theme.textSecondary, textAlign: 'center' }}>{it.copies}</td>
+                                  <td style={{ padding: '8px 12px', color: theme.textSecondary }}>{it.format}</td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
+                                      {it.downloadUrl && (
+                                        <button onClick={() => window.open(it.downloadUrl!, '_blank')}
+                                          style={{ padding: '3px 8px', borderRadius: 5, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.accent, fontSize: 11, cursor: 'pointer' }}>↓</button>
+                                      )}
+                                      {tr.status === 'draft' && (
+                                        <button onClick={() => void handleRemoveItem(it)}
+                                          style={{ padding: '3px 8px', borderRadius: 5, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 11, cursor: 'pointer' }}>✕</button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {tr.status === 'draft' && (
+                        <>
+                          <button onClick={() => { setEditTr(tr); setForm({ direction: tr.direction as 'outgoing'|'incoming', title: tr.title, subject: tr.subject??'', toCompany: tr.toCompany, toContact: tr.toContact??'', toEmail: tr.toEmail??'', fromCompany: tr.fromCompany??'', fromContact: tr.fromContact??'', dueDate: tr.dueDate??'', notes: tr.notes??'', items: [] }); setShowModal(true) }}
+                            style={{ padding: '7px 14px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Edit</button>
+                          <button onClick={() => { setAddItemTr(tr); setItemForm(emptyItemForm) }}
+                            style={{ padding: '7px 14px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>+ Add Document</button>
+                          <button onClick={() => void handleIssue(tr)}
+                            style={{ padding: '7px 16px', borderRadius: 7, background: '#1d4ed8', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                            ↑ Issue Transmittal
+                          </button>
+                          <button onClick={() => void handleDelete(tr)}
+                            style={{ padding: '7px 14px', borderRadius: 7, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                        </>
+                      )}
+                      {tr.status === 'sent' && (
+                        <>
+                          <button onClick={() => { setAddItemTr(tr); setItemForm(emptyItemForm) }}
+                            style={{ padding: '7px 14px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>+ Add Document</button>
+                          <button onClick={() => void handleMarkReceived(tr)}
+                            style={{ padding: '7px 16px', borderRadius: 7, background: '#5b21b6', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark Received</button>
+                          <button onClick={() => { setAckModal(tr); setAckBy('') }}
+                            style={{ padding: '7px 16px', borderRadius: 7, background: '#15803d', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Acknowledge</button>
+                        </>
+                      )}
+                      {tr.status === 'received' && (
+                        <button onClick={() => { setAckModal(tr); setAckBy('') }}
+                          style={{ padding: '7px 16px', borderRadius: 7, background: '#15803d', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Acknowledge</button>
+                      )}
+                      <button onClick={() => setShowPrint(tr)}
+                        style={{ padding: '7px 14px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer', marginLeft: 'auto' }}>
+                        🖨 Print Cover Sheet
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Create / Edit Modal ── */}
+      {showModal && (
+        <Modal open={true} size="lg" title={editTr ? `Edit ${editTr.transmittalNo}` : 'New Transmittal'} onClose={() => { setShowModal(false); setEditTr(null); setForm(emptyForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {!editTr && (
+              <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden', alignSelf: 'flex-start' }}>
+                {(['outgoing','incoming'] as const).map(d => (
+                  <button key={d} onClick={() => setForm(f => ({...f, direction: d}))}
+                    style={{ padding: '8px 20px', background: form.direction === d ? theme.accent : theme.bgCanvas, color: form.direction === d ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: form.direction === d ? 600 : 400, borderRight: d === 'outgoing' ? `1px solid ${theme.border}` : 'none' }}>
+                    {d === 'outgoing' ? '↑ Outgoing' : '↓ Incoming'}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{ padding: '8px 12px', borderRadius: 7, background: theme.bgSurface, border: `1px solid ${theme.border}`, fontSize: 12, color: theme.textMuted }}>
+              {form.direction === 'outgoing'
+                ? 'Outgoing — issuing documents from your organization to an external recipient'
+                : 'Incoming — logging documents received from a client or subcontractor'}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Title', true)}
+                {inp(form.title, v => setForm(f => ({...f, title: v})), 'e.g. Structural Drawings for Approval')}
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Subject / Description')}
+                <textarea value={form.subject} onChange={e => setForm(f => ({...f, subject: e.target.value}))} placeholder="Optional cover note or description…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 60, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+              <div>
+                {lbl(form.direction === 'outgoing' ? 'To Company' : 'From Company', true)}
+                {inp(form.toCompany, v => setForm(f => ({...f, toCompany: v})), 'Company name')}
+              </div>
+              <div>
+                {lbl('Contact')}
+                {inp(form.direction === 'outgoing' ? form.toContact : form.fromContact,
+                  v => form.direction === 'outgoing' ? setForm(f => ({...f, toContact: v})) : setForm(f => ({...f, fromContact: v})),
+                  'Contact name')}
+              </div>
+              <div>
+                {lbl('Email')}
+                {inp(form.toEmail, v => setForm(f => ({...f, toEmail: v})), 'contact@company.com', 'email')}
+              </div>
+              <div>
+                {lbl('Due Date for Response')}
+                {inp(form.dueDate, v => setForm(f => ({...f, dueDate: v})), '', 'date')}
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Notes')}
+                {inp(form.notes, v => setForm(f => ({...f, notes: v})), 'Optional notes')}
+              </div>
+            </div>
+
+            {!editTr && form.direction === 'outgoing' && allDocs.length > 0 && (
+              <div>
+                {lbl('Add Documents from Register')}
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: `1px solid ${theme.border}`, borderRadius: 8 }}>
+                  {allDocs.map(doc => {
+                    const selected = form.items.some(i => i.documentId === doc.id)
+                    return (
+                      <label key={doc.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', background: selected ? theme.accentBg : 'transparent' }}>
+                        <input type="checkbox" checked={selected}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setForm(f => ({ ...f, items: [...f.items, { documentId: doc.id, extRefNumber: '', extTitle: '', revision: doc.revision ?? '', copies: 1, format: 'PDF', purposeOfIssue: '', remarks: '' }] }))
+                            } else {
+                              setForm(f => ({ ...f, items: f.items.filter(i => i.documentId !== doc.id) }))
+                            }
+                          }}
+                          style={{ flexShrink: 0 }} />
+                        <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: theme.accent, background: theme.accentBg, padding: '1px 6px', borderRadius: 3 }}>{doc.refNumber}</span>
+                        <span style={{ fontSize: 12, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.title}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.textMuted, flexShrink: 0 }}>Rev {doc.revision ?? '—'}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {form.items.length > 0 && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: theme.accent, fontWeight: 600 }}>{form.items.length} document{form.items.length !== 1 ? 's' : ''} selected</div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowModal(false); setEditTr(null); setForm(emptyForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!form.title || !form.toCompany} onClick={() => void handleCreate()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.title && form.toCompany ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title && form.toCompany ? 'pointer' : 'not-allowed' }}>
+                {editTr ? 'Save Changes' : 'Create Transmittal'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Add Item Modal ── */}
+      {addItemTr && (
+        <Modal open={true} title={`Add Document — ${addItemTr.transmittalNo}`} onClose={() => { setAddItemTr(null); setItemForm(emptyItemForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ padding: '8px 12px', borderRadius: 7, background: theme.bgSurface, border: `1px solid ${theme.border}`, fontSize: 12, color: theme.textMuted }}>
+              Select a document from the register, or enter an external reference manually.
+            </div>
+            <div>
+              {lbl('Document from Register')}
+              <select value={itemForm.documentId} onChange={e => {
+                const doc = allDocs.find(d => d.id === e.target.value)
+                setItemForm(f => ({ ...f, documentId: e.target.value, revision: doc?.revision ?? '' }))
+              }}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                <option value="">— Select document —</option>
+                {allDocs.map(doc => <option key={doc.id} value={doc.id}>{doc.refNumber} — {doc.title} (Rev {doc.revision ?? '—'})</option>)}
+              </select>
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 11, color: theme.textMuted }}>— or enter manually —</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>{lbl('External Ref #')}{inp(itemForm.extRefNumber, v => setItemForm(f => ({...f, extRefNumber: v})), 'e.g. SUB-A-DRG-001')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('External Title')}{inp(itemForm.extTitle, v => setItemForm(f => ({...f, extTitle: v})), 'Document title')}</div>
+              <div>{lbl('Revision')}{inp(itemForm.revision, v => setItemForm(f => ({...f, revision: v})), 'e.g. A, 0')}</div>
+              <div>
+                {lbl('Purpose of Issue')}
+                <select value={itemForm.purposeOfIssue} onChange={e => setItemForm(f => ({...f, purposeOfIssue: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— None —</option>
+                  {TR_PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Format')}
+                <select value={itemForm.format} onChange={e => setItemForm(f => ({...f, format: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  {(['PDF','DWG','Native','Hard Copy'] as const).map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Copies')}
+                <input type="number" min={1} value={itemForm.copies} onChange={e => setItemForm(f => ({...f, copies: parseInt(e.target.value)||1}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('Remarks')}{inp(itemForm.remarks, v => setItemForm(f => ({...f, remarks: v})), 'Optional remarks')}</div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setAddItemTr(null); setItemForm(emptyItemForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleAddItem()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Add Document</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Acknowledge Modal ── */}
+      {ackModal && (
+        <Modal open={true} title={`Acknowledge ${ackModal.transmittalNo}`} onClose={() => { setAckModal(null); setAckBy('') }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 13, color: '#15803d' }}>
+              Acknowledging confirms receipt of all {ackModal.itemCount} document{ackModal.itemCount !== 1 ? 's' : ''} in this transmittal.
+            </div>
+            <div>
+              {lbl('Acknowledged By')}
+              <input value={ackBy} onChange={e => setAckBy(e.target.value)} placeholder="Name (optional)"
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => { setAckModal(null); setAckBy('') }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleAcknowledge()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Confirm Acknowledgement</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Print Cover Sheet ── */}
+      {showPrint && (
+        <Modal open={true} size="lg" title={`Cover Sheet — ${showPrint.transmittalNo}`} onClose={() => setShowPrint(null)}>
+          <div>
+            <div id="tr-cover-print" style={{ fontFamily: 'Arial, sans-serif', color: '#111', fontSize: 12 }}>
+              {/* Header */}
+              <div style={{ borderBottom: '3px solid #1d4ed8', paddingBottom: 12, marginBottom: 16, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#1d4ed8', letterSpacing: '-0.5px' }}>{projectCode}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>DOCUMENT TRANSMITTAL</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: '#1d4ed8' }}>{showPrint.transmittalNo}</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{showPrint.sentDate ? new Date(showPrint.sentDate).toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' }) : new Date(showPrint.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' })}</div>
+                </div>
+              </div>
+              {/* To/From */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16, padding: '12px 14px', background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                    {showPrint.direction === 'outgoing' ? 'To' : 'From'}
+                  </div>
+                  <div style={{ fontWeight: 700 }}>{showPrint.toCompany}</div>
+                  {showPrint.toContact && <div style={{ color: '#475569' }}>{showPrint.toContact}</div>}
+                  {showPrint.toEmail && <div style={{ color: '#475569' }}>{showPrint.toEmail}</div>}
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Status</div>
+                  <div style={{ fontWeight: 700 }}>{showPrint.status.toUpperCase()}</div>
+                  {showPrint.dueDate && <div style={{ color: '#dc2626', fontSize: 11 }}>Response due: {showPrint.dueDate}</div>}
+                </div>
+              </div>
+              {/* Title */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Subject</div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{showPrint.title}</div>
+                {showPrint.subject && <div style={{ color: '#475569', marginTop: 4, lineHeight: 1.5 }}>{showPrint.subject}</div>}
+              </div>
+              {/* Documents table */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 16 }}>
+                <thead>
+                  <tr style={{ background: '#1d4ed8', color: '#fff' }}>
+                    {['#','Document Ref','Title','Rev','Purpose','Copies','Format'].map((h, i) => (
+                      <th key={i} style={{ padding: '7px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, letterSpacing: '0.04em' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {showPrint.items.map((it, idx) => (
+                    <tr key={it.id} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px 10px', color: '#64748b', fontSize: 11 }}>{idx+1}</td>
+                      <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 700, color: '#1d4ed8', fontSize: 11 }}>{it.refNumber ?? it.extRefNumber ?? '—'}</td>
+                      <td style={{ padding: '6px 10px', maxWidth: 220 }}>{it.title ?? it.extTitle ?? '—'}</td>
+                      <td style={{ padding: '6px 10px', color: '#64748b' }}>{it.revision ?? '—'}</td>
+                      <td style={{ padding: '6px 10px', fontWeight: 600 }}>{it.purposeOfIssue ?? '—'}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'center' }}>{it.copies}</td>
+                      <td style={{ padding: '6px 10px', color: '#64748b' }}>{it.format}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {/* Footer */}
+              {showPrint.notes && <div style={{ padding: '8px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, marginBottom: 16 }}><strong>Notes: </strong>{showPrint.notes}</div>}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 24 }}>
+                {['Prepared By','Checked By','Authorized By'].map(label => (
+                  <div key={label} style={{ borderTop: '1px solid #94a3b8', paddingTop: 6 }}>
+                    <div style={{ fontSize: 9, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+                    <div style={{ height: 24 }} />
+                    <div style={{ borderTop: '1px solid #cbd5e1', fontSize: 9, color: '#94a3b8', paddingTop: 3 }}>Name / Date / Signature</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20, paddingTop: 16, borderTop: `1px solid ${theme.border}` }}>
+              <button onClick={() => setShowPrint(null)}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Close</button>
+              <button onClick={() => window.print()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🖨 Print</button>
             </div>
           </div>
         </Modal>

@@ -705,6 +705,65 @@ function ddmToGQL(row: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+function engTransmittalItemToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  const dueDate  = row['due_date'] as string | null
+  return {
+    id:             row['id'],
+    transmittalId:  row['transmittal_id'],
+    documentId:     row['document_id'] ?? null,
+    extRefNumber:   row['ext_ref_number'] ?? null,
+    extTitle:       row['ext_title'] ?? null,
+    revision:       row['revision'] ?? null,
+    copies:         Number(row['copies'] ?? 1),
+    format:         row['format'] ?? 'PDF',
+    purposeOfIssue: row['purpose_of_issue'] ?? null,
+    remarks:        row['remarks'] ?? null,
+    createdAt:      row['created_at'],
+    // denormalized from engineering_documents JOIN
+    refNumber:      row['ref_number'] ?? null,
+    title:          row['doc_title'] ?? null,
+    discipline:     row['discipline'] ?? null,
+    docType:        row['doc_type'] ?? null,
+    downloadUrl:    row['download_url'] ?? null,
+  }
+}
+
+function engTransmittalToGQL(row: Record<string, unknown>, items: Record<string, unknown>[]): Record<string, unknown> {
+  const dueDate    = row['due_date'] ? String(row['due_date']).slice(0,10) : null
+  const sentDate   = row['sent_date'] ?? null
+  const recvDate   = row['received_date'] ?? null
+  const ackAt      = row['acknowledged_at'] ?? null
+  const now        = new Date()
+  const isOverdue  = dueDate != null &&
+                     !['acknowledged'].includes(String(row['status'])) &&
+                     new Date(dueDate) < now
+  return {
+    id:             row['id'],
+    projectId:      row['project_id'],
+    transmittalNo:  row['transmittal_no'],
+    direction:      row['direction'],
+    title:          row['title'],
+    subject:        row['subject'] ?? null,
+    toCompany:      row['to_company'],
+    toContact:      row['to_contact'] ?? null,
+    toEmail:        row['to_email'] ?? null,
+    fromCompany:    row['from_company'] ?? null,
+    fromContact:    row['from_contact'] ?? null,
+    status:         row['status'],
+    sentDate:       sentDate,
+    receivedDate:   recvDate,
+    acknowledgedAt: ackAt,
+    acknowledgedBy: row['acknowledged_by'] ?? null,
+    dueDate:        dueDate,
+    notes:          row['notes'] ?? null,
+    createdByName:  row['created_by_name'] ?? null,
+    createdAt:      row['created_at'],
+    items:          items.map(engTransmittalItemToGQL),
+    itemCount:      items.length,
+    isOverdue:      isOverdue,
+  }
+}
+
 function rfqLineToGQL(row: Record<string, unknown>): Record<string, unknown> {
   return {
     id: row.id,
@@ -5452,6 +5511,198 @@ export const resolvers = {
     deleteDistributionEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const r = await query(`DELETE FROM project_doc_distribution_matrix WHERE id=$1 RETURNING id`, [args.id])
+      return r.rows.length > 0
+    },
+
+    // ── Engineering Transmittal mutations (Phase 2) ───────────────────────────
+
+    createEngTransmittal: async (_: unknown, args: {
+      projectId: string; direction: string; title: string; subject?: string
+      toCompany: string; toContact?: string; toEmail?: string
+      fromCompany?: string; fromContact?: string
+      dueDate?: string; notes?: string
+      items?: { documentId?: string; extRefNumber?: string; extTitle?: string; revision?: string; copies?: number; format?: string; purposeOfIssue?: string; remarks?: string }[]
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      if (!proj.rows[0]) throw new Error('Project not found')
+      // auto-number
+      const dir    = args.direction === 'incoming' ? 'IN' : 'OUT'
+      const ym     = new Date().toISOString().slice(0,7).replace('-','')
+      const cnt    = await query(`SELECT COUNT(*)+1 AS n FROM project_eng_transmittals WHERE project_id=$1 AND direction=$2`, [args.projectId, args.direction])
+      const seq    = String(Number((cnt.rows[0] as Record<string,unknown>)['n'] ?? 1)).padStart(3,'0')
+      const trsNo  = `TRS-${dir}-${ym}-${seq}`
+      // created_by_name from user
+      const user   = await query(`SELECT full_name FROM users WHERE id=$1`, [ctx.auth.userId])
+      const byName = (user.rows[0] as Record<string,unknown>)?.['full_name'] ?? null
+      const ins = await query(
+        `INSERT INTO project_eng_transmittals
+           (project_id,transmittal_no,direction,title,subject,to_company,to_contact,to_email,from_company,from_contact,due_date,notes,created_by_id,created_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+        [args.projectId, trsNo, args.direction, args.title, args.subject??null,
+         args.toCompany, args.toContact??null, args.toEmail??null,
+         args.fromCompany??null, args.fromContact??null,
+         args.dueDate??null, args.notes??null, ctx.auth.userId, byName],
+      )
+      const trs = ins.rows[0] as Record<string,unknown>
+      const addedItems: Record<string,unknown>[] = []
+      if (args.items?.length) {
+        for (const it of args.items) {
+          const ir = await query(
+            `INSERT INTO project_eng_transmittal_items
+               (transmittal_id,document_id,ext_ref_number,ext_title,revision,copies,format,purpose_of_issue,remarks)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+            [trs['id'], it.documentId??null, it.extRefNumber??null, it.extTitle??null,
+             it.revision??null, it.copies??1, it.format??'PDF', it.purposeOfIssue??null, it.remarks??null],
+          )
+          if (ir.rows[0]) addedItems.push(ir.rows[0] as Record<string,unknown>)
+        }
+      }
+      return engTransmittalToGQL(trs, addedItems)
+    },
+
+    updateEngTransmittal: async (_: unknown, args: {
+      id: string; title?: string; subject?: string
+      toCompany?: string; toContact?: string; toEmail?: string
+      fromCompany?: string; fromContact?: string
+      dueDate?: string; notes?: string
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const fields: string[] = []; const vals: unknown[] = []; let idx = 1
+      if (args.title      != null) { fields.push(`title=$${idx++}`);       vals.push(args.title) }
+      if (args.subject    != null) { fields.push(`subject=$${idx++}`);     vals.push(args.subject) }
+      if (args.toCompany  != null) { fields.push(`to_company=$${idx++}`);  vals.push(args.toCompany) }
+      if (args.toContact  != null) { fields.push(`to_contact=$${idx++}`);  vals.push(args.toContact) }
+      if (args.toEmail    != null) { fields.push(`to_email=$${idx++}`);    vals.push(args.toEmail) }
+      if (args.fromCompany!= null) { fields.push(`from_company=$${idx++}`);vals.push(args.fromCompany) }
+      if (args.fromContact!= null) { fields.push(`from_contact=$${idx++}`);vals.push(args.fromContact) }
+      if (args.dueDate    != null) { fields.push(`due_date=$${idx++}`);    vals.push(args.dueDate) }
+      if (args.notes      != null) { fields.push(`notes=$${idx++}`);       vals.push(args.notes) }
+      if (!fields.length) throw new Error('No fields to update')
+      const r = await query(
+        `UPDATE project_eng_transmittals t SET ${fields.join(',')}
+         FROM projects p WHERE p.id=t.project_id AND p.company_id=$${idx} AND t.id=$${idx+1} RETURNING t.*`,
+        [...vals, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Transmittal not found')
+      const items = await query(
+        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
+         FROM project_eng_transmittal_items ti
+         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
+         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
+        [args.id],
+      )
+      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
+    },
+
+    issueEngTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_eng_transmittals t SET status='sent', sent_date=NOW()
+         FROM projects p WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 AND t.status='draft' RETURNING t.*`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Transmittal not found or not in draft status')
+      const items = await query(
+        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
+         FROM project_eng_transmittal_items ti
+         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
+         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
+        [args.id],
+      )
+      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
+    },
+
+    markEngTransmittalReceived: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_eng_transmittals t SET status='received', received_date=NOW()
+         FROM projects p WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 AND t.status='sent' RETURNING t.*`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Transmittal not found or not in sent status')
+      const items = await query(
+        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
+         FROM project_eng_transmittal_items ti
+         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
+         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
+        [args.id],
+      )
+      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
+    },
+
+    acknowledgeEngTransmittal: async (_: unknown, args: { id: string; acknowledgedBy?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE project_eng_transmittals t SET status='acknowledged', acknowledged_at=NOW(), acknowledged_by=$1
+         FROM projects p WHERE p.id=t.project_id AND p.company_id=$2 AND t.id=$3
+         AND t.status IN ('sent','received') RETURNING t.*`,
+        [args.acknowledgedBy??null, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Transmittal not found or already acknowledged')
+      const items = await query(
+        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
+         FROM project_eng_transmittal_items ti
+         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
+         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
+        [args.id],
+      )
+      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
+    },
+
+    deleteEngTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `DELETE FROM project_eng_transmittals t USING projects p
+         WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 AND t.status='draft' RETURNING t.id`,
+        [ctx.auth.companyId, args.id],
+      )
+      if (!r.rows.length) throw new Error('Transmittal not found or cannot delete (only draft transmittals can be deleted)')
+      return true
+    },
+
+    addEngTransmittalItem: async (_: unknown, args: {
+      transmittalId: string; documentId?: string; extRefNumber?: string; extTitle?: string
+      revision?: string; copies?: number; format?: string; purposeOfIssue?: string; remarks?: string
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const trs = await query(
+        `SELECT t.id FROM project_eng_transmittals t JOIN projects p ON p.id=t.project_id
+         WHERE t.id=$1 AND p.company_id=$2`,
+        [args.transmittalId, ctx.auth.companyId],
+      )
+      if (!trs.rows[0]) throw new Error('Transmittal not found')
+      const r = await query(
+        `INSERT INTO project_eng_transmittal_items
+           (transmittal_id,document_id,ext_ref_number,ext_title,revision,copies,format,purpose_of_issue,remarks)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (transmittal_id,document_id) DO UPDATE
+           SET revision=$5, copies=$6, format=$7, purpose_of_issue=$8, remarks=$9
+         RETURNING *`,
+        [args.transmittalId, args.documentId??null, args.extRefNumber??null, args.extTitle??null,
+         args.revision??null, args.copies??1, args.format??'PDF', args.purposeOfIssue??null, args.remarks??null],
+      )
+      // fetch joined doc info
+      const row = r.rows[0] as Record<string,unknown>
+      if (row['document_id']) {
+        const docRow = await query(`SELECT ref_number, title, discipline, doc_type, file_id FROM engineering_documents WHERE id=$1`, [row['document_id']])
+        if (docRow.rows[0]) {
+          const d = docRow.rows[0] as Record<string,unknown>
+          const fileRow = d['file_id'] ? await query(`SELECT download_url FROM files WHERE id=$1`, [d['file_id']]) : { rows: [] }
+          return engTransmittalItemToGQL({ ...row, ref_number: d['ref_number'], doc_title: d['title'], discipline: d['discipline'], doc_type: d['doc_type'], download_url: fileRow.rows[0] ? (fileRow.rows[0] as Record<string,unknown>)['download_url'] : null })
+        }
+      }
+      return engTransmittalItemToGQL(row)
+    },
+
+    removeEngTransmittalItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `DELETE FROM project_eng_transmittal_items ti
+         USING project_eng_transmittals t JOIN projects p ON p.id=t.project_id
+         WHERE t.id=ti.transmittal_id AND p.company_id=$1 AND ti.id=$2 RETURNING ti.id`,
+        [ctx.auth.companyId, args.id],
+      )
       return r.rows.length > 0
     },
 
@@ -10734,6 +10985,52 @@ const phase5QueryResolvers = {
       [args.projectId],
     )
     return r.rows.map((row: Record<string, unknown>) => ddmToGQL(row))
+  },
+
+  // ── Engineering Transmittals (Phase 2) ────────────────────────────────────
+
+  engTransmittals: async (_: unknown, args: { projectId: string; direction?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+    if (!proj.rows[0]) throw new Error('Project not found')
+    let sql = `SELECT t.* FROM project_eng_transmittals t WHERE t.project_id=$1`
+    const params: unknown[] = [args.projectId]
+    if (args.direction) { sql += ` AND t.direction=$2`; params.push(args.direction) }
+    sql += ` ORDER BY t.created_at DESC`
+    const rows = await query(sql, params)
+    const results: Record<string, unknown>[] = []
+    for (const row of rows.rows as Record<string, unknown>[]) {
+      const items = await query(
+        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
+         FROM project_eng_transmittal_items ti
+         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
+         LEFT JOIN files f ON f.id = ed.file_id
+         WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
+        [row['id']],
+      )
+      results.push(engTransmittalToGQL(row, items.rows as Record<string, unknown>[]))
+    }
+    return results
+  },
+
+  engTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `SELECT t.* FROM project_eng_transmittals t
+       JOIN projects p ON p.id = t.project_id
+       WHERE t.id=$1 AND p.company_id=$2`,
+      [args.id, ctx.auth.companyId],
+    )
+    if (!r.rows[0]) throw new Error('Transmittal not found')
+    const items = await query(
+      `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
+       FROM project_eng_transmittal_items ti
+       LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
+       LEFT JOIN files f ON f.id = ed.file_id
+       WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
+      [args.id],
+    )
+    return engTransmittalToGQL(r.rows[0] as Record<string, unknown>, items.rows as Record<string, unknown>[])
   },
 
   // ── Engineering module ───────────────────────────────────────────────────

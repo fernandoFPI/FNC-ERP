@@ -1538,3 +1538,102 @@ export const CANCEL_MATERIAL_ISSUE = gql`
     cancelMaterialIssue(id: $id) { ${MI_FIELDS} }
   }
 `
+
+// ── Engineering Transmittals (Phase 2) ─────────────────────────────────────
+
+const ENG_TR_ITEM_FIELDS = `
+  id transmittalId documentId extRefNumber extTitle
+  revision copies format purposeOfIssue remarks createdAt
+  refNumber title discipline docType downloadUrl
+`
+
+const ENG_TR_FIELDS = `
+  id projectId transmittalNo direction title subject
+  toCompany toContact toEmail fromCompany fromContact
+  status sentDate receivedDate acknowledgedAt acknowledgedBy
+  dueDate notes createdByName createdAt itemCount isOverdue
+  items { ${ENG_TR_ITEM_FIELDS} }
+`
+
+export const ENG_TRANSMITTALS_QUERY = gql`
+  query EngTransmittals($projectId: ID!, $direction: String) {
+    engTransmittals(projectId: $projectId, direction: $direction) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const ENG_TRANSMITTAL_QUERY = gql`
+  query EngTransmittal($id: ID!) {
+    engTransmittal(id: $id) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const CREATE_ENG_TRANSMITTAL = gql`
+  mutation CreateEngTransmittal(
+    $projectId: ID! $direction: String! $title: String! $subject: String
+    $toCompany: String! $toContact: String $toEmail: String
+    $fromCompany: String $fromContact: String
+    $dueDate: String $notes: String $items: [EngTransmittalItemInput!]
+  ) {
+    createEngTransmittal(
+      projectId: $projectId direction: $direction title: $title subject: $subject
+      toCompany: $toCompany toContact: $toContact toEmail: $toEmail
+      fromCompany: $fromCompany fromContact: $fromContact
+      dueDate: $dueDate notes: $notes items: $items
+    ) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const UPDATE_ENG_TRANSMITTAL = gql`
+  mutation UpdateEngTransmittal(
+    $id: ID! $title: String $subject: String
+    $toCompany: String $toContact: String $toEmail: String
+    $fromCompany: String $fromContact: String
+    $dueDate: String $notes: String
+  ) {
+    updateEngTransmittal(
+      id: $id title: $title subject: $subject
+      toCompany: $toCompany toContact: $toContact toEmail: $toEmail
+      fromCompany: $fromCompany fromContact: $fromContact
+      dueDate: $dueDate notes: $notes
+    ) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const ISSUE_ENG_TRANSMITTAL = gql`
+  mutation IssueEngTransmittal($id: ID!) {
+    issueEngTransmittal(id: $id) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const MARK_ENG_TRANSMITTAL_RECEIVED = gql`
+  mutation MarkEngTransmittalReceived($id: ID!) {
+    markEngTransmittalReceived(id: $id) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const ACKNOWLEDGE_ENG_TRANSMITTAL = gql`
+  mutation AcknowledgeEngTransmittal($id: ID!, $acknowledgedBy: String) {
+    acknowledgeEngTransmittal(id: $id, acknowledgedBy: $acknowledgedBy) { ${ENG_TR_FIELDS} }
+  }
+`
+
+export const DELETE_ENG_TRANSMITTAL = gql`
+  mutation DeleteEngTransmittal($id: ID!) { deleteEngTransmittal(id: $id) }
+`
+
+export const ADD_ENG_TRANSMITTAL_ITEM = gql`
+  mutation AddEngTransmittalItem(
+    $transmittalId: ID! $documentId: ID $extRefNumber: String $extTitle: String
+    $revision: String $copies: Int $format: String $purposeOfIssue: String $remarks: String
+  ) {
+    addEngTransmittalItem(
+      transmittalId: $transmittalId documentId: $documentId extRefNumber: $extRefNumber
+      extTitle: $extTitle revision: $revision copies: $copies format: $format
+      purposeOfIssue: $purposeOfIssue remarks: $remarks
+    ) { ${ENG_TR_ITEM_FIELDS} }
+  }
+`
+
+export const REMOVE_ENG_TRANSMITTAL_ITEM = gql`
+  mutation RemoveEngTransmittalItem($id: ID!) { removeEngTransmittalItem(id: $id) }
+`
