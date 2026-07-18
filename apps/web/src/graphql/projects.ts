@@ -1637,3 +1637,144 @@ export const ADD_ENG_TRANSMITTAL_ITEM = gql`
 export const REMOVE_ENG_TRANSMITTAL_ITEM = gql`
   mutation RemoveEngTransmittalItem($id: ID!) { removeEngTransmittalItem(id: $id) }
 `
+
+// ── Phase 3: Technical Queries ───────────────────────────────────────────────
+
+const TQ_FIELDS = `
+  id projectId tqNumber discipline priority subject description
+  raisedBy raisedDate documentId documentRef documentRevision
+  status response responseBy responseDate dueDate closedAt
+  createdAt updatedAt isOverdue
+`
+
+export const PROJECT_TQS_QUERY = gql`
+  query ProjectTQs($projectId: ID!, $status: String, $discipline: String, $priority: String) {
+    projectTQs(projectId: $projectId, status: $status, discipline: $discipline, priority: $priority) {
+      ${TQ_FIELDS}
+    }
+  }
+`
+
+export const CREATE_TQ = gql`
+  mutation CreateTQ(
+    $projectId: ID! $discipline: String $priority: String $subject: String!
+    $description: String $raisedBy: String $raisedDate: String
+    $documentId: ID $documentRef: String $documentRevision: String $dueDate: String
+  ) {
+    createTQ(
+      projectId: $projectId discipline: $discipline priority: $priority subject: $subject
+      description: $description raisedBy: $raisedBy raisedDate: $raisedDate
+      documentId: $documentId documentRef: $documentRef documentRevision: $documentRevision
+      dueDate: $dueDate
+    ) { ${TQ_FIELDS} }
+  }
+`
+
+export const UPDATE_TQ = gql`
+  mutation UpdateTQ(
+    $id: ID! $discipline: String $priority: String $subject: String
+    $description: String $raisedBy: String $raisedDate: String
+    $documentId: ID $documentRef: String $documentRevision: String $dueDate: String
+  ) {
+    updateTQ(
+      id: $id discipline: $discipline priority: $priority subject: $subject
+      description: $description raisedBy: $raisedBy raisedDate: $raisedDate
+      documentId: $documentId documentRef: $documentRef documentRevision: $documentRevision
+      dueDate: $dueDate
+    ) { ${TQ_FIELDS} }
+  }
+`
+
+export const REVIEW_TQ = gql`
+  mutation ReviewTQ($id: ID!) { reviewTQ(id: $id) { ${TQ_FIELDS} } }
+`
+
+export const RESPOND_TO_TQ = gql`
+  mutation RespondToTQ($id: ID!, $response: String!, $responseBy: String) {
+    respondToTQ(id: $id, response: $response, responseBy: $responseBy) { ${TQ_FIELDS} }
+  }
+`
+
+export const CLOSE_TQ = gql`
+  mutation CloseTQ($id: ID!) { closeTQ(id: $id) { ${TQ_FIELDS} } }
+`
+
+export const DELETE_TQ = gql`
+  mutation DeleteTQ($id: ID!) { deleteTQ(id: $id) }
+`
+
+// ── Phase 3: Contractor Deviation Requests ───────────────────────────────────
+
+const CDR_APPROVAL_FIELDS = `id cdrId stepOrder approverRole approverName status comments actionedAt createdAt`
+
+const CDR_FIELDS = `
+  id projectId cdrNumber discipline title description
+  documentRef clauseRef technicalImpact commercialImpact proposedAlternative
+  status submittedAt decidedAt decisionBy decisionNotes currentStep
+  createdAt updatedAt
+  approvalSteps { ${CDR_APPROVAL_FIELDS} }
+`
+
+export const PROJECT_CDRS_QUERY = gql`
+  query ProjectCDRs($projectId: ID!, $status: String, $discipline: String) {
+    projectCDRs(projectId: $projectId, status: $status, discipline: $discipline) {
+      ${CDR_FIELDS}
+    }
+  }
+`
+
+export const CREATE_CDR = gql`
+  mutation CreateCDR(
+    $projectId: ID! $discipline: String $title: String!
+    $description: String $documentRef: String $clauseRef: String
+    $technicalImpact: String $commercialImpact: String $proposedAlternative: String
+  ) {
+    createCDR(
+      projectId: $projectId discipline: $discipline title: $title
+      description: $description documentRef: $documentRef clauseRef: $clauseRef
+      technicalImpact: $technicalImpact commercialImpact: $commercialImpact
+      proposedAlternative: $proposedAlternative
+    ) { ${CDR_FIELDS} }
+  }
+`
+
+export const UPDATE_CDR = gql`
+  mutation UpdateCDR(
+    $id: ID! $discipline: String $title: String
+    $description: String $documentRef: String $clauseRef: String
+    $technicalImpact: String $commercialImpact: String $proposedAlternative: String
+  ) {
+    updateCDR(
+      id: $id discipline: $discipline title: $title
+      description: $description documentRef: $documentRef clauseRef: $clauseRef
+      technicalImpact: $technicalImpact commercialImpact: $commercialImpact
+      proposedAlternative: $proposedAlternative
+    ) { ${CDR_FIELDS} }
+  }
+`
+
+export const SUBMIT_CDR = gql`
+  mutation SubmitCDR($id: ID!, $approverRoles: [String!]) {
+    submitCDR(id: $id, approverRoles: $approverRoles) { ${CDR_FIELDS} }
+  }
+`
+
+export const APPROVE_CDR_STEP = gql`
+  mutation ApproveCDRStep($id: ID!, $stepOrder: Int!, $approverName: String, $comments: String) {
+    approveCDRStep(id: $id, stepOrder: $stepOrder, approverName: $approverName, comments: $comments) { ${CDR_FIELDS} }
+  }
+`
+
+export const REJECT_CDR_STEP = gql`
+  mutation RejectCDRStep($id: ID!, $stepOrder: Int!, $approverName: String, $comments: String!) {
+    rejectCDRStep(id: $id, stepOrder: $stepOrder, approverName: $approverName, comments: $comments) { ${CDR_FIELDS} }
+  }
+`
+
+export const WITHDRAW_CDR = gql`
+  mutation WithdrawCDR($id: ID!) { withdrawCDR(id: $id) { ${CDR_FIELDS} } }
+`
+
+export const DELETE_CDR = gql`
+  mutation DeleteCDR($id: ID!) { deleteCDR(id: $id) }
+`

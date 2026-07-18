@@ -4603,4 +4603,144 @@ export const typeDefs = `#graphql
     carryOverFrom: ID
     createdAt: String!
   }
+
+  # ── Phase 3: Technical Queries ────────────────────────────────────────────────
+
+  type ProjectTQ {
+    id: ID!
+    projectId: ID!
+    tqNumber: String!
+    discipline: String
+    priority: String!
+    subject: String!
+    description: String
+    raisedBy: String
+    raisedDate: String
+    documentId: ID
+    documentRef: String
+    documentRevision: String
+    status: String!
+    response: String
+    responseBy: String
+    responseDate: String
+    dueDate: String
+    closedAt: String
+    createdAt: String!
+    updatedAt: String!
+    isOverdue: Boolean!
+  }
+
+  extend type Query {
+    projectTQs(projectId: ID!, status: String, discipline: String, priority: String): [ProjectTQ!]!
+    projectTQ(id: ID!): ProjectTQ
+  }
+
+  extend type Mutation {
+    createTQ(
+      projectId: ID!
+      discipline: String
+      priority: String
+      subject: String!
+      description: String
+      raisedBy: String
+      raisedDate: String
+      documentId: ID
+      documentRef: String
+      documentRevision: String
+      dueDate: String
+    ): ProjectTQ!
+
+    updateTQ(
+      id: ID!
+      discipline: String
+      priority: String
+      subject: String
+      description: String
+      raisedBy: String
+      raisedDate: String
+      documentId: ID
+      documentRef: String
+      documentRevision: String
+      dueDate: String
+    ): ProjectTQ!
+
+    reviewTQ(id: ID!): ProjectTQ!
+    respondToTQ(id: ID!, response: String!, responseBy: String): ProjectTQ!
+    closeTQ(id: ID!): ProjectTQ!
+    deleteTQ(id: ID!): Boolean!
+  }
+
+  # ── Phase 3: Contractor Deviation Requests ────────────────────────────────────
+
+  type CdrApprovalStep {
+    id: ID!
+    cdrId: ID!
+    stepOrder: Int!
+    approverRole: String!
+    approverName: String
+    status: String!
+    comments: String
+    actionedAt: String
+    createdAt: String!
+  }
+
+  type ProjectCDR {
+    id: ID!
+    projectId: ID!
+    cdrNumber: String!
+    discipline: String
+    title: String!
+    description: String
+    documentRef: String
+    clauseRef: String
+    technicalImpact: String
+    commercialImpact: String
+    proposedAlternative: String
+    status: String!
+    submittedAt: String
+    decidedAt: String
+    decisionBy: String
+    decisionNotes: String
+    approvalSteps: [CdrApprovalStep!]!
+    createdAt: String!
+    updatedAt: String!
+    currentStep: Int
+  }
+
+  extend type Query {
+    projectCDRs(projectId: ID!, status: String, discipline: String): [ProjectCDR!]!
+    projectCDR(id: ID!): ProjectCDR
+  }
+
+  extend type Mutation {
+    createCDR(
+      projectId: ID!
+      discipline: String
+      title: String!
+      description: String
+      documentRef: String
+      clauseRef: String
+      technicalImpact: String
+      commercialImpact: String
+      proposedAlternative: String
+    ): ProjectCDR!
+
+    updateCDR(
+      id: ID!
+      discipline: String
+      title: String
+      description: String
+      documentRef: String
+      clauseRef: String
+      technicalImpact: String
+      commercialImpact: String
+      proposedAlternative: String
+    ): ProjectCDR!
+
+    submitCDR(id: ID!, approverRoles: [String!]): ProjectCDR!
+    approveCDRStep(id: ID!, stepOrder: Int!, approverName: String, comments: String): ProjectCDR!
+    rejectCDRStep(id: ID!, stepOrder: Int!, approverName: String, comments: String!): ProjectCDR!
+    withdrawCDR(id: ID!): ProjectCDR!
+    deleteCDR(id: ID!): Boolean!
+  }
 `

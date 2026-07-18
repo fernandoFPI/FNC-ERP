@@ -764,6 +764,77 @@ function engTransmittalToGQL(row: Record<string, unknown>, items: Record<string,
   }
 }
 
+function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  const dueDate  = row['due_date'] ? new Date(String(row['due_date'])) : null
+  const status   = String(row['status'])
+  const isOverdue = dueDate != null && status !== 'closed' && dueDate < new Date()
+  return {
+    id:               row['id'],
+    projectId:        row['project_id'],
+    tqNumber:         row['tq_number'],
+    discipline:       row['discipline']         ?? null,
+    priority:         row['priority']           ?? 'normal',
+    subject:          row['subject'],
+    description:      row['description']        ?? null,
+    raisedBy:         row['raised_by']          ?? null,
+    raisedDate:       row['raised_date']        ?? null,
+    documentId:       row['document_id']        ?? null,
+    documentRef:      row['document_ref']       ?? null,
+    documentRevision: row['document_revision']  ?? null,
+    status:           status,
+    response:         row['response']           ?? null,
+    responseBy:       row['response_by']        ?? null,
+    responseDate:     row['response_date']      ?? null,
+    dueDate:          row['due_date']           ?? null,
+    closedAt:         row['closed_at']          ?? null,
+    createdAt:        row['created_at'],
+    updatedAt:        row['updated_at'],
+    isOverdue,
+  }
+}
+
+async function cdrToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const stepsRes = await query(
+    `SELECT * FROM project_cdr_approvals WHERE cdr_id=$1 ORDER BY step_order`,
+    [row['id']],
+  )
+  const steps = stepsRes.rows.map((s: Record<string, unknown>) => ({
+    id:           s['id'],
+    cdrId:        s['cdr_id'],
+    stepOrder:    Number(s['step_order']),
+    approverRole: s['approver_role'],
+    approverName: s['approver_name'] ?? null,
+    status:       s['status'],
+    comments:     s['comments'] ?? null,
+    actionedAt:   s['actioned_at'] ?? null,
+    createdAt:    s['created_at'],
+  }))
+  // current step = first pending step
+  const currentStep = steps.find(s => s['status'] === 'pending')?.['stepOrder'] ?? null
+  return {
+    id:                  row['id'],
+    projectId:           row['project_id'],
+    cdrNumber:           row['cdr_number'],
+    discipline:          row['discipline']           ?? null,
+    title:               row['title'],
+    description:         row['description']          ?? null,
+    documentRef:         row['document_ref']         ?? null,
+    clauseRef:           row['clause_ref']           ?? null,
+    technicalImpact:     row['technical_impact']     ?? null,
+    commercialImpact:    row['commercial_impact']    ?? null,
+    proposedAlternative: row['proposed_alternative'] ?? null,
+    status:              row['status'],
+    submittedAt:         row['submitted_at']         ?? null,
+    decidedAt:           row['decided_at']           ?? null,
+    decisionBy:          row['decision_by']          ?? null,
+    decisionNotes:       row['decision_notes']       ?? null,
+    approvalSteps:       steps,
+    createdAt:           row['created_at'],
+    updatedAt:           row['updated_at'],
+    currentStep,
+  }
+}
+
 function rfqLineToGQL(row: Record<string, unknown>): Record<string, unknown> {
   return {
     id: row.id,
@@ -13448,6 +13519,336 @@ Object.assign(resolvers.Mutation, {
     if (r['is_system']) throw new Error('Cannot delete system templates')
     await query(`DELETE FROM role_template_permissions WHERE template_id=$1`, [args.id])
     await query(`DELETE FROM role_templates WHERE id=$1`, [args.id])
+    return true
+  },
+
+  // ── Phase 3: Technical Queries ──────────────────────────────────────────────
+
+  projectTQs: async (
+    _: unknown,
+    args: { projectId: string; status?: string; discipline?: string; priority?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions = [`project_id = $1`]
+    const params: unknown[] = [args.projectId]
+    if (args.status)     { conditions.push(`status = $${params.length + 1}`);     params.push(args.status) }
+    if (args.discipline) { conditions.push(`discipline = $${params.length + 1}`); params.push(args.discipline) }
+    if (args.priority)   { conditions.push(`priority = $${params.length + 1}`);   params.push(args.priority) }
+    const res = await query(
+      `SELECT * FROM project_tqs WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+      params,
+    )
+    return res.rows.map(tqToGQL)
+  },
+
+  projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_tqs WHERE id = $1`, [args.id])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('TQ not found')
+    return tqToGQL(r)
+  },
+
+  createTQ: async (
+    _: unknown,
+    args: {
+      projectId: string; discipline?: string; priority?: string; subject: string
+      description?: string; raisedBy?: string; raisedDate?: string
+      documentId?: string; documentRef?: string; documentRevision?: string; dueDate?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
+    const countRes = await query(
+      `SELECT COUNT(*) FROM project_tqs WHERE project_id=$1 AND tq_number LIKE $2`,
+      [args.projectId, `TQ-${ym}-%`],
+    )
+    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
+    const tqNumber = `TQ-${ym}-${seq}`
+    const res = await query(
+      `INSERT INTO project_tqs
+        (project_id,tq_number,discipline,priority,subject,description,raised_by,raised_date,
+         document_id,document_ref,document_revision,due_date,created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [
+        args.projectId, tqNumber,
+        args.discipline ?? null, args.priority ?? 'normal',
+        args.subject, args.description ?? null,
+        args.raisedBy ?? null, args.raisedDate ?? null,
+        args.documentId ?? null, args.documentRef ?? null, args.documentRevision ?? null,
+        args.dueDate ?? null, ctx.auth.userId,
+      ],
+    )
+    return tqToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateTQ: async (
+    _: unknown,
+    args: {
+      id: string; discipline?: string; priority?: string; subject?: string
+      description?: string; raisedBy?: string; raisedDate?: string
+      documentId?: string; documentRef?: string; documentRevision?: string; dueDate?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_tqs WHERE id=$1`, [args.id])
+    const r0 = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r0) throw new Error('TQ not found')
+    if (r0['status'] === 'closed') throw new Error('Cannot edit a closed TQ')
+    const res = await query(
+      `UPDATE project_tqs SET
+        discipline=$2, priority=COALESCE($3,priority), subject=COALESCE($4,subject),
+        description=$5, raised_by=$6, raised_date=$7,
+        document_id=$8, document_ref=$9, document_revision=$10, due_date=$11,
+        updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [
+        args.id, args.discipline ?? null, args.priority ?? null, args.subject ?? null,
+        args.description ?? null, args.raisedBy ?? null, args.raisedDate ?? null,
+        args.documentId ?? null, args.documentRef ?? null, args.documentRevision ?? null,
+        args.dueDate ?? null,
+      ],
+    )
+    return tqToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  reviewTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_tqs SET status='under_review', updated_at=NOW() WHERE id=$1 AND status='open' RETURNING *`,
+      [args.id],
+    )
+    if (!res.rows[0]) throw new Error('TQ not found or not in open status')
+    return tqToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  respondToTQ: async (
+    _: unknown,
+    args: { id: string; response: string; responseBy?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_tqs SET status='responded', response=$2, response_by=$3,
+        response_date=CURRENT_DATE, updated_at=NOW()
+       WHERE id=$1 AND status IN ('open','under_review') RETURNING *`,
+      [args.id, args.response, args.responseBy ?? null],
+    )
+    if (!res.rows[0]) throw new Error('TQ not found or already responded/closed')
+    return tqToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  closeTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_tqs SET status='closed', closed_at=NOW(), updated_at=NOW()
+       WHERE id=$1 AND status != 'closed' RETURNING *`,
+      [args.id],
+    )
+    if (!res.rows[0]) throw new Error('TQ not found or already closed')
+    return tqToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deleteTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_tqs WHERE id=$1`, [args.id])
+    const r = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('TQ not found')
+    if (r['status'] !== 'open') throw new Error('Only open TQs can be deleted')
+    await query(`DELETE FROM project_tqs WHERE id=$1`, [args.id])
+    return true
+  },
+
+  // ── Phase 3: Contractor Deviation Requests ──────────────────────────────────
+
+  projectCDRs: async (
+    _: unknown,
+    args: { projectId: string; status?: string; discipline?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions = [`c.project_id = $1`]
+    const params: unknown[] = [args.projectId]
+    if (args.status)     { conditions.push(`c.status = $${params.length + 1}`);     params.push(args.status) }
+    if (args.discipline) { conditions.push(`c.discipline = $${params.length + 1}`); params.push(args.discipline) }
+    const res = await query(
+      `SELECT c.* FROM project_cdrs c WHERE ${conditions.join(' AND ')} ORDER BY c.created_at DESC`,
+      params,
+    )
+    return Promise.all(res.rows.map(r => cdrToGQL(r as Record<string, unknown>)))
+  },
+
+  projectCDR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_cdrs WHERE id=$1`, [args.id])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('CDR not found')
+    return cdrToGQL(r)
+  },
+
+  createCDR: async (
+    _: unknown,
+    args: {
+      projectId: string; discipline?: string; title: string; description?: string
+      documentRef?: string; clauseRef?: string; technicalImpact?: string
+      commercialImpact?: string; proposedAlternative?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
+    const countRes = await query(
+      `SELECT COUNT(*) FROM project_cdrs WHERE project_id=$1 AND cdr_number LIKE $2`,
+      [args.projectId, `CDR-${ym}-%`],
+    )
+    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
+    const cdrNumber = `CDR-${ym}-${seq}`
+    const res = await query(
+      `INSERT INTO project_cdrs
+        (project_id,cdr_number,discipline,title,description,document_ref,clause_ref,
+         technical_impact,commercial_impact,proposed_alternative,created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [
+        args.projectId, cdrNumber, args.discipline ?? null, args.title,
+        args.description ?? null, args.documentRef ?? null, args.clauseRef ?? null,
+        args.technicalImpact ?? null, args.commercialImpact ?? null,
+        args.proposedAlternative ?? null, ctx.auth.userId,
+      ],
+    )
+    return cdrToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateCDR: async (
+    _: unknown,
+    args: {
+      id: string; discipline?: string; title?: string; description?: string
+      documentRef?: string; clauseRef?: string; technicalImpact?: string
+      commercialImpact?: string; proposedAlternative?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_cdrs WHERE id=$1`, [args.id])
+    const r0 = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r0) throw new Error('CDR not found')
+    if (!['draft','submitted'].includes(String(r0['status']))) throw new Error('Cannot edit CDR in current status')
+    const res = await query(
+      `UPDATE project_cdrs SET
+        discipline=$2, title=COALESCE($3,title), description=$4,
+        document_ref=$5, clause_ref=$6, technical_impact=$7,
+        commercial_impact=$8, proposed_alternative=$9, updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [
+        args.id, args.discipline ?? null, args.title ?? null, args.description ?? null,
+        args.documentRef ?? null, args.clauseRef ?? null, args.technicalImpact ?? null,
+        args.commercialImpact ?? null, args.proposedAlternative ?? null,
+      ],
+    )
+    return cdrToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  submitCDR: async (
+    _: unknown,
+    args: { id: string; approverRoles?: string[] },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_cdrs WHERE id=$1`, [args.id])
+    const r0 = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r0) throw new Error('CDR not found')
+    if (r0['status'] !== 'draft') throw new Error('Only draft CDRs can be submitted')
+    // Create approval chain
+    const roles = args.approverRoles ?? ['Project Engineer', 'Project Manager', 'Client Representative']
+    for (let i = 0; i < roles.length; i++) {
+      await query(
+        `INSERT INTO project_cdr_approvals (cdr_id, step_order, approver_role) VALUES ($1,$2,$3)
+         ON CONFLICT (cdr_id, step_order) DO UPDATE SET approver_role=$3`,
+        [args.id, i + 1, roles[i]],
+      )
+    }
+    const res = await query(
+      `UPDATE project_cdrs SET status='submitted', submitted_at=NOW(), updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [args.id],
+    )
+    return cdrToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  approveCDRStep: async (
+    _: unknown,
+    args: { id: string; stepOrder: number; approverName?: string; comments?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    // Update the step
+    await query(
+      `UPDATE project_cdr_approvals SET status='approved', approver_name=$3, comments=$4, actioned_at=NOW()
+       WHERE cdr_id=$1 AND step_order=$2`,
+      [args.id, args.stepOrder, args.approverName ?? null, args.comments ?? null],
+    )
+    // Check if all steps approved
+    const stepsRes = await query(
+      `SELECT status FROM project_cdr_approvals WHERE cdr_id=$1 ORDER BY step_order`,
+      [args.id],
+    )
+    const allApproved = stepsRes.rows.every(r => (r as Record<string, unknown>)['status'] === 'approved')
+    let newStatus = 'under_review'
+    let decidedAt: string | null = null
+    if (allApproved) { newStatus = 'approved'; decidedAt = 'NOW()' }
+    const res = await query(
+      decidedAt
+        ? `UPDATE project_cdrs SET status=$2, decided_at=NOW(), decision_by=$3, updated_at=NOW() WHERE id=$1 RETURNING *`
+        : `UPDATE project_cdrs SET status=$2, decision_by=$3, updated_at=NOW() WHERE id=$1 RETURNING *`,
+      [args.id, newStatus, args.approverName ?? null],
+    )
+    return cdrToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  rejectCDRStep: async (
+    _: unknown,
+    args: { id: string; stepOrder: number; approverName?: string; comments: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(
+      `UPDATE project_cdr_approvals SET status='rejected', approver_name=$3, comments=$4, actioned_at=NOW()
+       WHERE cdr_id=$1 AND step_order=$2`,
+      [args.id, args.stepOrder, args.approverName ?? null, args.comments],
+    )
+    // Mark remaining pending steps as skipped
+    await query(
+      `UPDATE project_cdr_approvals SET status='skipped' WHERE cdr_id=$1 AND step_order>$2 AND status='pending'`,
+      [args.id, args.stepOrder],
+    )
+    const res = await query(
+      `UPDATE project_cdrs SET status='rejected', decided_at=NOW(), decision_by=$2, decision_notes=$3, updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [args.id, args.approverName ?? null, args.comments],
+    )
+    return cdrToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  withdrawCDR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_cdrs SET status='withdrawn', updated_at=NOW()
+       WHERE id=$1 AND status NOT IN ('approved','withdrawn') RETURNING *`,
+      [args.id],
+    )
+    if (!res.rows[0]) throw new Error('CDR not found or cannot be withdrawn in current status')
+    return cdrToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deleteCDR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_cdrs WHERE id=$1`, [args.id])
+    const r = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('CDR not found')
+    if (r['status'] !== 'draft') throw new Error('Only draft CDRs can be deleted')
+    await query(`DELETE FROM project_cdrs WHERE id=$1`, [args.id])
     return true
   },
 })

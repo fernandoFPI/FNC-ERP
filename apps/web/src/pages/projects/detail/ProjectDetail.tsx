@@ -11,6 +11,8 @@ import {
   ENG_TRANSMITTALS_QUERY, CREATE_ENG_TRANSMITTAL, UPDATE_ENG_TRANSMITTAL,
   ISSUE_ENG_TRANSMITTAL, MARK_ENG_TRANSMITTAL_RECEIVED, ACKNOWLEDGE_ENG_TRANSMITTAL,
   DELETE_ENG_TRANSMITTAL, ADD_ENG_TRANSMITTAL_ITEM, REMOVE_ENG_TRANSMITTAL_ITEM,
+  PROJECT_TQS_QUERY, CREATE_TQ, UPDATE_TQ, REVIEW_TQ, RESPOND_TO_TQ, CLOSE_TQ, DELETE_TQ,
+  PROJECT_CDRS_QUERY, CREATE_CDR, UPDATE_CDR, SUBMIT_CDR, APPROVE_CDR_STEP, REJECT_CDR_STEP, WITHDRAW_CDR, DELETE_CDR,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -91,6 +93,8 @@ const ALL_TABS = [
   { key: 'client_documents', label: 'Client Documents' },
   { key: 'rfq_lines',        label: 'Engineering' },
   { key: 'transmittals',     label: 'Transmittals' },
+  { key: 'tq',               label: 'TQ' },
+  { key: 'cdr',              label: 'CDR' },
   { key: 'bidding',          label: 'Bidding' },
   { key: 'planning',         label: 'Planning' },
   { key: 'team',             label: 'Team' },
@@ -858,6 +862,22 @@ export default function ProjectDetail() {
           <TransmittalsTab
             projectId={id!}
             projectCode={String(p?.rfqNumber ?? p?.code ?? '')}
+            theme={theme}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {tab === 'tq' && (
+          <TQTab
+            projectId={id!}
+            theme={theme}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {tab === 'cdr' && (
+          <CDRTab
+            projectId={id!}
             theme={theme}
             isAdmin={isAdmin}
           />
@@ -6083,6 +6103,797 @@ function TransmittalsTab({ projectId, projectCode, theme, isAdmin }: {
                 style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Close</button>
               <button onClick={() => window.print()}
                 style={{ padding: '8px 22px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>🖨 Print</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TQ TAB — Technical Query Register (PRODOM Phase 3)
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface ProjectTQ {
+  id: string; projectId: string; tqNumber: string; discipline: string | null
+  priority: string; subject: string; description: string | null
+  raisedBy: string | null; raisedDate: string | null
+  documentId: string | null; documentRef: string | null; documentRevision: string | null
+  status: string; response: string | null; responseBy: string | null; responseDate: string | null
+  dueDate: string | null; closedAt: string | null; createdAt: string; updatedAt: string; isOverdue: boolean
+}
+
+const TQ_STATUS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
+  open:         { label: 'Open',         dot: '#f59e0b', text: '#92400e', bg: '#fffbeb' },
+  under_review: { label: 'Under Review', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  responded:    { label: 'Responded',    dot: '#8b5cf6', text: '#5b21b6', bg: '#ede9fe' },
+  closed:       { label: 'Closed',       dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
+}
+
+const TQ_PRIORITY: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  urgent: { label: 'URGENT', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5' },
+  normal: { label: 'Normal', color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  low:    { label: 'Low',    color: '#64748b', bg: '#f1f5f9', border: '#cbd5e1' },
+}
+
+const TQ_DISCIPLINES = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation', 'Piping', 'HSE', 'Architecture', 'Process', 'General']
+
+function TQTab({ projectId, theme, isAdmin }: { projectId: string; theme: ReturnType<typeof useTheme>['theme']; isAdmin?: boolean }) {
+  const addToast = useToastStore((s) => s.addToast)
+
+  const [statusFilter, setStatusFilter]   = React.useState<string>('all')
+  const [expandedId, setExpandedId]       = React.useState<string | null>(null)
+  const [showModal, setShowModal]         = React.useState(false)
+  const [editTQ, setEditTQ]               = React.useState<ProjectTQ | null>(null)
+  const [respondId, setRespondId]         = React.useState<string | null>(null)
+  const [responseText, setResponseText]   = React.useState('')
+  const [responseBy, setResponseBy]       = React.useState('')
+
+  const emptyForm = {
+    discipline: '', priority: 'normal', subject: '', description: '',
+    raisedBy: '', raisedDate: '', documentRef: '', documentRevision: '', dueDate: '',
+  }
+  const [form, setForm] = React.useState(emptyForm)
+
+  const { data, loading, refetch } = useQuery(PROJECT_TQS_QUERY, {
+    variables: { projectId, status: statusFilter === 'all' ? undefined : statusFilter },
+    skip: !projectId, fetchPolicy: 'cache-and-network',
+  })
+  const tqs: ProjectTQ[] = data?.projectTQs ?? []
+
+  const [createTQ]    = useMutation(CREATE_TQ)
+  const [updateTQ]    = useMutation(UPDATE_TQ)
+  const [reviewTQM]   = useMutation(REVIEW_TQ)
+  const [respondTQM]  = useMutation(RESPOND_TO_TQ)
+  const [closeTQM]    = useMutation(CLOSE_TQ)
+  const [deleteTQM]   = useMutation(DELETE_TQ)
+
+  const kpi = {
+    open:         tqs.filter(t => t.status === 'open').length,
+    under_review: tqs.filter(t => t.status === 'under_review').length,
+    responded:    tqs.filter(t => t.status === 'responded').length,
+    closed:       tqs.filter(t => t.status === 'closed').length,
+    overdue:      tqs.filter(t => t.isOverdue).length,
+  }
+
+  const handleSave = async () => {
+    if (!form.subject.trim()) { addToast({ type: 'error', message: 'Subject is required' }); return }
+    try {
+      const vars = {
+        projectId, discipline: form.discipline || null, priority: form.priority,
+        subject: form.subject, description: form.description || null,
+        raisedBy: form.raisedBy || null, raisedDate: form.raisedDate || null,
+        documentRef: form.documentRef || null, documentRevision: form.documentRevision || null,
+        dueDate: form.dueDate || null,
+      }
+      if (editTQ) { await updateTQ({ variables: { id: editTQ.id, ...vars } }); addToast({ type: 'success', message: 'TQ updated' }) }
+      else        { await createTQ({ variables: vars }); addToast({ type: 'success', message: 'TQ created' }) }
+      setShowModal(false); setEditTQ(null); setForm(emptyForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleRespond = async () => {
+    if (!respondId || !responseText.trim()) return
+    try {
+      await respondTQM({ variables: { id: respondId, response: responseText, responseBy: responseBy || null } })
+      addToast({ type: 'success', message: 'Response recorded' })
+      setRespondId(null); setResponseText(''); setResponseBy(''); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const inp = (v: string, fn: (x: string) => void, ph?: string, type = 'text') => (
+    <input type={type} value={v} placeholder={ph} onChange={e => fn(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
+  )
+  const statusPill = (s: string) => {
+    const c = TQ_STATUS[s] ?? TQ_STATUS['open']!
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, background: c.bg, fontSize: 11, fontWeight: 600, color: c.text, whiteSpace: 'nowrap' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.dot, flexShrink: 0 }} />{c.label}
+      </span>
+    )
+  }
+  const priorityBadge = (p: string) => {
+    const c = TQ_PRIORITY[p] ?? TQ_PRIORITY['normal']!
+    return (
+      <span style={{ padding: '2px 8px', borderRadius: 4, background: c.bg, border: `1px solid ${c.border}`, color: c.color, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em' }}>{c.label}</span>
+    )
+  }
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+      {/* KPI */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Open',         value: kpi.open,         color: '#92400e', bg: '#fffbeb' },
+          { label: 'Under Review', value: kpi.under_review, color: '#1d4ed8', bg: '#eff6ff' },
+          { label: 'Responded',    value: kpi.responded,    color: '#5b21b6', bg: '#ede9fe' },
+          { label: 'Closed',       value: kpi.closed,       color: '#15803d', bg: '#f0fdf4' },
+          { label: 'Overdue',      value: kpi.overdue,      color: '#dc2626', bg: '#fee2e2' },
+        ].map(k => (
+          <div key={k.label} style={{ padding: '10px 18px', borderRadius: 10, background: k.bg, border: `1px solid ${k.color}20`, textAlign: 'center', minWidth: 90 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.color, fontVariantNumeric: 'tabular-nums' }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: k.color, fontWeight: 600, marginTop: 2 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all','open','under_review','responded','closed'] as const).map((s, i, arr) => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              style={{ padding: '7px 13px', background: statusFilter === s ? theme.accent : theme.bgCanvas, color: statusFilter === s ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: statusFilter === s ? 600 : 400, borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+              {s === 'all' ? 'All' : (TQ_STATUS[s]?.label ?? s)}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => { setEditTQ(null); setForm(emptyForm); setShowModal(true) }}
+          style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          Raise TQ
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+          Loading…
+        </div>
+      ) : tqs.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>❓</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No Technical Queries</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}>
+            Raise a TQ when a question against a specific document or specification needs a formal tracked response.
+          </div>
+          <button onClick={() => { setEditTQ(null); setForm(emptyForm); setShowModal(true) }}
+            style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Raise First TQ
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {tqs.map(tq => {
+            const isExpanded = expandedId === tq.id
+            return (
+              <div key={tq.id} style={{ border: `1px solid ${tq.isOverdue ? '#fca5a5' : theme.border}`, borderRadius: 12, overflow: 'hidden', background: tq.isOverdue ? '#fff5f5' : theme.bgCanvas }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : tq.id)}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: theme.accent, background: theme.accentBg, padding: '1px 7px', borderRadius: 4 }}>{tq.tqNumber}</span>
+                      {priorityBadge(tq.priority)}
+                      {tq.discipline && <span style={{ fontSize: 10, color: theme.textMuted, background: theme.bgSurface, padding: '1px 6px', borderRadius: 4, border: `1px solid ${theme.border}` }}>{tq.discipline}</span>}
+                      {tq.isOverdue && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fee2e2', color: '#dc2626' }}>OVERDUE</span>}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary }}>{tq.subject}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                      {tq.raisedBy && `By: ${tq.raisedBy}`}
+                      {tq.dueDate && ` · Due: ${tq.dueDate}`}
+                      {tq.documentRef && ` · Ref: ${tq.documentRef}`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {statusPill(tq.status)}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Expanded */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px 18px', background: theme.bgSurface }}>
+                    {tq.description && (
+                      <div style={{ marginBottom: 14, padding: '10px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, color: theme.textPrimary, lineHeight: 1.6 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Description</div>
+                        {tq.description}
+                      </div>
+                    )}
+
+                    {/* Document reference */}
+                    {(tq.documentRef || tq.documentRevision) && (
+                      <div style={{ marginBottom: 14, display: 'flex', gap: 16 }}>
+                        {tq.documentRef && (
+                          <div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>Document Ref</div>
+                            <div style={{ fontSize: 12, color: theme.textPrimary, fontFamily: 'monospace' }}>{tq.documentRef}{tq.documentRevision ? ` Rev ${tq.documentRevision}` : ''}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Response section */}
+                    {tq.response && (
+                      <div style={{ marginBottom: 14, padding: '12px 14px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                          Response{tq.responseBy ? ` — ${tq.responseBy}` : ''}{tq.responseDate ? `, ${tq.responseDate}` : ''}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#14532d', lineHeight: 1.6 }}>{tq.response}</div>
+                      </div>
+                    )}
+
+                    {/* Respond inline panel */}
+                    {respondId === tq.id && (
+                      <div style={{ marginBottom: 14, padding: '12px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', marginBottom: 10 }}>Write Response</div>
+                        <textarea value={responseText} onChange={e => setResponseText(e.target.value)} placeholder="Enter formal response…"
+                          style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgSurface, color: theme.textPrimary, fontSize: 13, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none', marginBottom: 8 }} />
+                        <input value={responseBy} onChange={e => setResponseBy(e.target.value)} placeholder="Responded by (name)"
+                          style={{ width: '100%', padding: '7px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgSurface, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none', marginBottom: 10 }} />
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button onClick={() => { setRespondId(null); setResponseText(''); setResponseBy('') }}
+                            style={{ padding: '6px 14px', borderRadius: 7, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                          <button onClick={() => void handleRespond()}
+                            style={{ padding: '6px 14px', borderRadius: 7, background: '#8b5cf6', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Submit Response</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {tq.status === 'open' && (
+                        <>
+                          <button onClick={() => { setEditTQ(tq); setForm({ discipline: tq.discipline??'', priority: tq.priority, subject: tq.subject, description: tq.description??'', raisedBy: tq.raisedBy??'', raisedDate: tq.raisedDate??'', documentRef: tq.documentRef??'', documentRevision: tq.documentRevision??'', dueDate: tq.dueDate??'' }); setShowModal(true) }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Edit</button>
+                          <button onClick={() => { void reviewTQM({ variables: { id: tq.id } }).then(() => { addToast({ type: 'success', message: 'TQ under review' }); void refetch() }).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1d4ed8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark Under Review</button>
+                          <button onClick={() => { setRespondId(tq.id); setResponseText(''); setResponseBy('') }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: '#ede9fe', border: '1px solid #c4b5fd', color: '#5b21b6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Respond</button>
+                          <button onClick={() => { if (window.confirm(`Delete ${tq.tqNumber}?`)) void deleteTQM({ variables: { id: tq.id } }).then(() => { void refetch() }).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                        </>
+                      )}
+                      {tq.status === 'under_review' && (
+                        <button onClick={() => { setRespondId(tq.id); setResponseText(''); setResponseBy('') }}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#ede9fe', border: '1px solid #c4b5fd', color: '#5b21b6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Respond</button>
+                      )}
+                      {(tq.status === 'responded' || tq.status === 'under_review') && (
+                        <button onClick={() => void closeTQM({ variables: { id: tq.id } }).then(() => { addToast({ type: 'success', message: 'TQ closed' }); void refetch() }).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message }))}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Close TQ</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <Modal open={true} title={editTQ ? `Edit ${editTQ.tqNumber}` : 'Raise Technical Query'} onClose={() => { setShowModal(false); setEditTQ(null); setForm(emptyForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Subject', true)}
+                {inp(form.subject, v => setForm(f => ({...f, subject: v})), 'Brief description of the query')}
+              </div>
+              <div>
+                {lbl('Discipline')}
+                <select value={form.discipline} onChange={e => setForm(f => ({...f, discipline: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— Select —</option>
+                  {TQ_DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Priority')}
+                <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="urgent">Urgent</option>
+                  <option value="normal">Normal</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description')}
+                <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Detailed description of the question or clarification needed…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+              <div>{lbl('Raised By')}{inp(form.raisedBy, v => setForm(f => ({...f, raisedBy: v})), 'Name of person raising TQ')}</div>
+              <div>{lbl('Date Raised')}{inp(form.raisedDate, v => setForm(f => ({...f, raisedDate: v})), '', 'date')}</div>
+              <div>{lbl('Document / Spec Ref')}{inp(form.documentRef, v => setForm(f => ({...f, documentRef: v})), 'e.g. FNC-CIV-DRG-0001')}</div>
+              <div>{lbl('Revision')}{inp(form.documentRevision, v => setForm(f => ({...f, documentRevision: v})), 'e.g. Rev A')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('Response Due Date')}{inp(form.dueDate, v => setForm(f => ({...f, dueDate: v})), '', 'date')}</div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowModal(false); setEditTQ(null); setForm(emptyForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!form.subject.trim()} onClick={() => void handleSave()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.subject.trim() ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.subject.trim() ? 'pointer' : 'not-allowed' }}>
+                {editTQ ? 'Save Changes' : 'Raise TQ'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CDR TAB — Contractor Deviation Requests (PRODOM Phase 3)
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface CdrApprovalStep {
+  id: string; cdrId: string; stepOrder: number; approverRole: string
+  approverName: string | null; status: string; comments: string | null; actionedAt: string | null; createdAt: string
+}
+
+interface ProjectCDR {
+  id: string; projectId: string; cdrNumber: string; discipline: string | null
+  title: string; description: string | null; documentRef: string | null; clauseRef: string | null
+  technicalImpact: string | null; commercialImpact: string | null; proposedAlternative: string | null
+  status: string; submittedAt: string | null; decidedAt: string | null
+  decisionBy: string | null; decisionNotes: string | null
+  approvalSteps: CdrApprovalStep[]; createdAt: string; updatedAt: string; currentStep: number | null
+}
+
+const CDR_STATUS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
+  draft:        { label: 'Draft',        dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  submitted:    { label: 'Submitted',    dot: '#f59e0b', text: '#92400e', bg: '#fffbeb' },
+  under_review: { label: 'Under Review', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  approved:     { label: 'Approved',     dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
+  rejected:     { label: 'Rejected',     dot: '#ef4444', text: '#dc2626', bg: '#fee2e2' },
+  withdrawn:    { label: 'Withdrawn',    dot: '#9ca3af', text: '#6b7280', bg: '#f3f4f6' },
+}
+
+const CDR_STEP_COLORS: Record<string, string> = {
+  pending:  '#f59e0b',
+  approved: '#22c55e',
+  rejected: '#ef4444',
+  skipped:  '#9ca3af',
+}
+
+const DEFAULT_APPROVER_ROLES = ['Project Engineer', 'Project Manager', 'Client Representative']
+
+function CDRTab({ projectId, theme, isAdmin }: { projectId: string; theme: ReturnType<typeof useTheme>['theme']; isAdmin?: boolean }) {
+  const addToast = useToastStore((s) => s.addToast)
+
+  const [statusFilter, setStatusFilter]   = React.useState<string>('all')
+  const [expandedId, setExpandedId]       = React.useState<string | null>(null)
+  const [showModal, setShowModal]         = React.useState(false)
+  const [editCDR, setEditCDR]             = React.useState<ProjectCDR | null>(null)
+  const [showSubmitModal, setShowSubmitModal] = React.useState<ProjectCDR | null>(null)
+  const [approverRoles, setApproverRoles] = React.useState<string[]>(DEFAULT_APPROVER_ROLES)
+  const [actionModal, setActionModal]     = React.useState<{ cdr: ProjectCDR; step: CdrApprovalStep; action: 'approve' | 'reject' } | null>(null)
+  const [actionName, setActionName]       = React.useState('')
+  const [actionComments, setActionComments] = React.useState('')
+
+  const emptyForm = {
+    discipline: '', title: '', description: '', documentRef: '', clauseRef: '',
+    technicalImpact: '', commercialImpact: '', proposedAlternative: '',
+  }
+  const [form, setForm] = React.useState(emptyForm)
+
+  const { data, loading, refetch } = useQuery(PROJECT_CDRS_QUERY, {
+    variables: { projectId, status: statusFilter === 'all' ? undefined : statusFilter },
+    skip: !projectId, fetchPolicy: 'cache-and-network',
+  })
+  const cdrs: ProjectCDR[] = data?.projectCDRs ?? []
+
+  const [createCDRM]   = useMutation(CREATE_CDR)
+  const [updateCDRM]   = useMutation(UPDATE_CDR)
+  const [submitCDRM]   = useMutation(SUBMIT_CDR)
+  const [approveCDRM]  = useMutation(APPROVE_CDR_STEP)
+  const [rejectCDRM]   = useMutation(REJECT_CDR_STEP)
+  const [withdrawCDRM] = useMutation(WITHDRAW_CDR)
+  const [deleteCDRM]   = useMutation(DELETE_CDR)
+
+  const kpi = {
+    draft:        cdrs.filter(c => c.status === 'draft').length,
+    submitted:    cdrs.filter(c => c.status === 'submitted').length,
+    under_review: cdrs.filter(c => c.status === 'under_review').length,
+    approved:     cdrs.filter(c => c.status === 'approved').length,
+    rejected:     cdrs.filter(c => c.status === 'rejected').length,
+  }
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { addToast({ type: 'error', message: 'Title is required' }); return }
+    try {
+      const vars = {
+        projectId, discipline: form.discipline || null, title: form.title,
+        description: form.description || null, documentRef: form.documentRef || null,
+        clauseRef: form.clauseRef || null, technicalImpact: form.technicalImpact || null,
+        commercialImpact: form.commercialImpact || null, proposedAlternative: form.proposedAlternative || null,
+      }
+      if (editCDR) { await updateCDRM({ variables: { id: editCDR.id, ...vars } }); addToast({ type: 'success', message: 'CDR updated' }) }
+      else         { await createCDRM({ variables: vars }); addToast({ type: 'success', message: 'CDR created' }) }
+      setShowModal(false); setEditCDR(null); setForm(emptyForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleSubmit = async () => {
+    if (!showSubmitModal) return
+    try {
+      await submitCDRM({ variables: { id: showSubmitModal.id, approverRoles: approverRoles.filter(Boolean) } })
+      addToast({ type: 'success', message: 'CDR submitted for approval' })
+      setShowSubmitModal(null); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleAction = async () => {
+    if (!actionModal) return
+    try {
+      if (actionModal.action === 'approve') {
+        await approveCDRM({ variables: { id: actionModal.cdr.id, stepOrder: actionModal.step.stepOrder, approverName: actionName || null, comments: actionComments || null } })
+        addToast({ type: 'success', message: 'Step approved' })
+      } else {
+        if (!actionComments.trim()) { addToast({ type: 'error', message: 'Comments required when rejecting' }); return }
+        await rejectCDRM({ variables: { id: actionModal.cdr.id, stepOrder: actionModal.step.stepOrder, approverName: actionName || null, comments: actionComments } })
+        addToast({ type: 'success', message: 'CDR rejected' })
+      }
+      setActionModal(null); setActionName(''); setActionComments(''); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const inp = (v: string, fn: (x: string) => void, ph?: string, type = 'text') => (
+    <input type={type} value={v} placeholder={ph} onChange={e => fn(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const ta = (v: string, fn: (x: string) => void, ph?: string) => (
+    <textarea value={v} placeholder={ph} onChange={e => fn(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 72, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
+  )
+  const statusPill = (s: string) => {
+    const c = CDR_STATUS[s] ?? CDR_STATUS['draft']!
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, background: c.bg, fontSize: 11, fontWeight: 600, color: c.text, whiteSpace: 'nowrap' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.dot, flexShrink: 0 }} />{c.label}
+      </span>
+    )
+  }
+
+  // Approval chain progress bar
+  const ApprovalChain = ({ cdr }: { cdr: ProjectCDR }) => {
+    if (cdr.approvalSteps.length === 0) return null
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Approval Chain</div>
+        <div style={{ display: 'flex', gap: 0, alignItems: 'stretch' }}>
+          {cdr.approvalSteps.map((step, idx) => {
+            const color = CDR_STEP_COLORS[step.status] ?? '#94a3b8'
+            const isActive = cdr.currentStep === step.stepOrder
+            return (
+              <React.Fragment key={step.id}>
+                <div style={{ flex: 1, padding: '10px 12px', background: isActive ? '#fffbeb' : (step.status === 'approved' ? '#f0fdf4' : step.status === 'rejected' ? '#fee2e2' : theme.bgCanvas), border: `1px solid ${color}40`, borderRadius: idx === 0 ? '8px 0 0 8px' : idx === cdr.approvalSteps.length - 1 ? '0 8px 8px 0' : '0', borderLeft: idx > 0 ? 'none' : undefined }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>Step {step.stepOrder}</span>
+                    {isActive && <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#fef9c3', color: '#713f12' }}>CURRENT</span>}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: theme.textPrimary, marginBottom: 2 }}>{step.approverRole}</div>
+                  {step.approverName && <div style={{ fontSize: 10, color: theme.textMuted }}>{step.approverName}</div>}
+                  {step.status !== 'pending' && (
+                    <div style={{ fontSize: 10, color, fontWeight: 600, marginTop: 2, textTransform: 'capitalize' }}>{step.status}</div>
+                  )}
+                  {step.comments && <div style={{ fontSize: 10, color: theme.textMuted, marginTop: 3, fontStyle: 'italic' }}>"{step.comments}"</div>}
+                  {/* Approve/Reject buttons for current pending step */}
+                  {step.status === 'pending' && isActive && (
+                    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                      <button onClick={e => { e.stopPropagation(); setActionModal({ cdr, step, action: 'approve' }); setActionName(''); setActionComments('') }}
+                        style={{ padding: '3px 8px', borderRadius: 5, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Approve</button>
+                      <button onClick={e => { e.stopPropagation(); setActionModal({ cdr, step, action: 'reject' }); setActionName(''); setActionComments('') }}
+                        style={{ padding: '3px 8px', borderRadius: 5, background: '#fee2e2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Reject</button>
+                    </div>
+                  )}
+                </div>
+                {idx < cdr.approvalSteps.length - 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', zIndex: 1, margin: '0 -1px' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ color: '#cbd5e1' }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                )}
+              </React.Fragment>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+      {/* KPI */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Draft',        value: kpi.draft,        color: '#475569', bg: '#f1f5f9' },
+          { label: 'Submitted',    value: kpi.submitted,    color: '#92400e', bg: '#fffbeb' },
+          { label: 'Under Review', value: kpi.under_review, color: '#1d4ed8', bg: '#eff6ff' },
+          { label: 'Approved',     value: kpi.approved,     color: '#15803d', bg: '#f0fdf4' },
+          { label: 'Rejected',     value: kpi.rejected,     color: '#dc2626', bg: '#fee2e2' },
+        ].map(k => (
+          <div key={k.label} style={{ padding: '10px 18px', borderRadius: 10, background: k.bg, border: `1px solid ${k.color}20`, textAlign: 'center', minWidth: 90 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: k.color, fontVariantNumeric: 'tabular-nums' }}>{k.value}</div>
+            <div style={{ fontSize: 11, color: k.color, fontWeight: 600, marginTop: 2 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all','draft','submitted','under_review','approved','rejected','withdrawn'] as const).map((s, i, arr) => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              style={{ padding: '7px 11px', background: statusFilter === s ? theme.accent : theme.bgCanvas, color: statusFilter === s ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: statusFilter === s ? 600 : 400, borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+              {s === 'all' ? 'All' : (CDR_STATUS[s]?.label ?? s)}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => { setEditCDR(null); setForm(emptyForm); setShowModal(true) }}
+          style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          New CDR
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+          Loading…
+        </div>
+      ) : cdrs.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>📋</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No Deviation Requests</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}>
+            Raise a CDR when work needs to deviate from an approved specification, drawing, or standard.
+          </div>
+          <button onClick={() => { setEditCDR(null); setForm(emptyForm); setShowModal(true) }}
+            style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Raise First CDR
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {cdrs.map(cdr => {
+            const isExpanded = expandedId === cdr.id
+            return (
+              <div key={cdr.id} style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden', background: theme.bgCanvas }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : cdr.id)}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: theme.accent, background: theme.accentBg, padding: '1px 7px', borderRadius: 4 }}>{cdr.cdrNumber}</span>
+                      {cdr.discipline && <span style={{ fontSize: 10, color: theme.textMuted, background: theme.bgSurface, padding: '1px 6px', borderRadius: 4, border: `1px solid ${theme.border}` }}>{cdr.discipline}</span>}
+                      {cdr.documentRef && <span style={{ fontSize: 10, color: theme.textMuted, fontFamily: 'monospace' }}>Ref: {cdr.documentRef}</span>}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary }}>{cdr.title}</div>
+                    {cdr.clauseRef && <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>Clause: {cdr.clauseRef}</div>}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    {statusPill(cdr.status)}
+                    {cdr.approvalSteps.length > 0 && (
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        {cdr.approvalSteps.map(s => (
+                          <div key={s.id} title={`${s.approverRole}: ${s.status}`}
+                            style={{ width: 8, height: 8, borderRadius: '50%', background: CDR_STEP_COLORS[s.status] ?? '#94a3b8' }} />
+                        ))}
+                      </div>
+                    )}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Expanded */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px 18px', background: theme.bgSurface }}>
+                    {/* Description */}
+                    {cdr.description && (
+                      <div style={{ marginBottom: 14 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Description of Deviation</div>
+                        <div style={{ fontSize: 13, color: theme.textPrimary, lineHeight: 1.6, padding: '10px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}` }}>{cdr.description}</div>
+                      </div>
+                    )}
+
+                    {/* Impact grid */}
+                    {(cdr.technicalImpact || cdr.commercialImpact) && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                        {cdr.technicalImpact && (
+                          <div style={{ padding: '10px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Technical Impact</div>
+                            <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.5 }}>{cdr.technicalImpact}</div>
+                          </div>
+                        )}
+                        {cdr.commercialImpact && (
+                          <div style={{ padding: '10px 12px', background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Commercial Impact</div>
+                            <div style={{ fontSize: 12, color: '#1e3a8a', lineHeight: 1.5 }}>{cdr.commercialImpact}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {cdr.proposedAlternative && (
+                      <div style={{ marginBottom: 14, padding: '10px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>Proposed Alternative</div>
+                        <div style={{ fontSize: 12, color: '#14532d', lineHeight: 1.5 }}>{cdr.proposedAlternative}</div>
+                      </div>
+                    )}
+
+                    {/* Decision */}
+                    {cdr.decisionNotes && (
+                      <div style={{ marginBottom: 14, padding: '10px 12px', background: cdr.status === 'approved' ? '#f0fdf4' : '#fee2e2', borderRadius: 8, border: `1px solid ${cdr.status === 'approved' ? '#bbf7d0' : '#fca5a5'}` }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: cdr.status === 'approved' ? '#15803d' : '#dc2626', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                          Decision{cdr.decisionBy ? ` by ${cdr.decisionBy}` : ''}
+                        </div>
+                        <div style={{ fontSize: 12, color: theme.textPrimary, lineHeight: 1.5 }}>{cdr.decisionNotes}</div>
+                      </div>
+                    )}
+
+                    {/* Approval chain */}
+                    {cdr.approvalSteps.length > 0 && <ApprovalChain cdr={cdr} />}
+
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+                      {cdr.status === 'draft' && (
+                        <>
+                          <button onClick={() => { setEditCDR(cdr); setForm({ discipline: cdr.discipline??'', title: cdr.title, description: cdr.description??'', documentRef: cdr.documentRef??'', clauseRef: cdr.clauseRef??'', technicalImpact: cdr.technicalImpact??'', commercialImpact: cdr.commercialImpact??'', proposedAlternative: cdr.proposedAlternative??'' }); setShowModal(true) }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Edit</button>
+                          <button onClick={() => { setShowSubmitModal(cdr); setApproverRoles([...DEFAULT_APPROVER_ROLES]) }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: '#f59e0b', color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Submit for Approval</button>
+                          <button onClick={() => { if (window.confirm(`Delete ${cdr.cdrNumber}?`)) void deleteCDRM({ variables: { id: cdr.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                            style={{ padding: '6px 13px', borderRadius: 7, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                        </>
+                      )}
+                      {['submitted','under_review'].includes(cdr.status) && (
+                        <button onClick={() => { if (window.confirm(`Withdraw ${cdr.cdrNumber}?`)) void withdrawCDRM({ variables: { id: cdr.id } }).then(() => { addToast({ type: 'success', message: 'CDR withdrawn' }); void refetch() }).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Withdraw</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <Modal open={true} size="lg" title={editCDR ? `Edit ${editCDR.cdrNumber}` : 'New Contractor Deviation Request'} onClose={() => { setShowModal(false); setEditCDR(null); setForm(emptyForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Title', true)}
+                {inp(form.title, v => setForm(f => ({...f, title: v})), 'Brief title of the deviation request')}
+              </div>
+              <div>
+                {lbl('Discipline')}
+                <select value={form.discipline} onChange={e => setForm(f => ({...f, discipline: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— Select —</option>
+                  {TQ_DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>{lbl('Document / Spec Ref')}{inp(form.documentRef, v => setForm(f => ({...f, documentRef: v})), 'e.g. Project Spec Rev B')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('Clause Reference')}{inp(form.clauseRef, v => setForm(f => ({...f, clauseRef: v})), 'e.g. Section 4.2.1')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description of Deviation')}
+                {ta(form.description, v => setForm(f => ({...f, description: v})), 'Describe what deviation is being requested and why…')}
+              </div>
+              <div>
+                {lbl('Technical Impact')}
+                {ta(form.technicalImpact, v => setForm(f => ({...f, technicalImpact: v})), 'Technical consequences of the deviation…')}
+              </div>
+              <div>
+                {lbl('Commercial Impact')}
+                {ta(form.commercialImpact, v => setForm(f => ({...f, commercialImpact: v})), 'Cost / schedule impact…')}
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Proposed Alternative')}
+                {ta(form.proposedAlternative, v => setForm(f => ({...f, proposedAlternative: v})), 'What is being proposed instead…')}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowModal(false); setEditCDR(null); setForm(emptyForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!form.title.trim()} onClick={() => void handleSave()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.title.trim() ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title.trim() ? 'pointer' : 'not-allowed' }}>
+                {editCDR ? 'Save Changes' : 'Create CDR'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Submit / Configure Approval Chain Modal */}
+      {showSubmitModal && (
+        <Modal open={true} title={`Submit ${showSubmitModal.cdrNumber} for Approval`} onClose={() => setShowSubmitModal(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 13, color: '#92400e' }}>
+              Configure the approval chain before submitting. Drag to reorder or edit each approver's role label.
+            </div>
+            {approverRoles.map((role, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 24, height: 24, borderRadius: '50%', background: theme.accentBg, color: theme.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{idx + 1}</span>
+                <input value={role} onChange={e => { const r = [...approverRoles]; r[idx] = e.target.value; setApproverRoles(r) }}
+                  style={{ flex: 1, padding: '7px 12px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, outline: 'none' }} />
+                <button onClick={() => setApproverRoles(r => r.filter((_, i) => i !== idx))}
+                  style={{ padding: '4px 8px', borderRadius: 5, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>✕</button>
+              </div>
+            ))}
+            <button onClick={() => setApproverRoles(r => [...r, ''])}
+              style={{ alignSelf: 'flex-start', padding: '6px 14px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>+ Add Step</button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => setShowSubmitModal(null)}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleSubmit()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: '#f59e0b', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Submit for Approval</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Approve / Reject Step Modal */}
+      {actionModal && (
+        <Modal open={true} title={`${actionModal.action === 'approve' ? 'Approve' : 'Reject'} — ${actionModal.cdr.cdrNumber} Step ${actionModal.step.stepOrder}`} onClose={() => { setActionModal(null); setActionName(''); setActionComments('') }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: actionModal.action === 'approve' ? '#f0fdf4' : '#fee2e2', border: `1px solid ${actionModal.action === 'approve' ? '#bbf7d0' : '#fca5a5'}`, fontSize: 13, color: actionModal.action === 'approve' ? '#15803d' : '#dc2626' }}>
+              {actionModal.action === 'approve'
+                ? `Approving as: ${actionModal.step.approverRole}`
+                : `Rejecting as: ${actionModal.step.approverRole}. This will close the CDR as Rejected.`}
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Your Name</div>
+              <input value={actionName} onChange={e => setActionName(e.target.value)} placeholder={`Name of ${actionModal.step.approverRole}`}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Comments{actionModal.action === 'reject' && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+              </div>
+              <textarea value={actionComments} onChange={e => setActionComments(e.target.value)} placeholder={actionModal.action === 'reject' ? 'Reason for rejection (required)…' : 'Optional comments…'}
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => { setActionModal(null); setActionName(''); setActionComments('') }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleAction()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: actionModal.action === 'approve' ? '#15803d' : '#dc2626', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Confirm {actionModal.action === 'approve' ? 'Approval' : 'Rejection'}
+              </button>
             </div>
           </div>
         </Modal>
