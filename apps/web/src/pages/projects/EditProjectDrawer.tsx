@@ -132,7 +132,11 @@ export function EditProjectDrawer({ projectId, open, onClose, onSaved }: Props) 
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {field('name',            'Project Name')}
-          {field('rfqNumber',       'RFQ Number')}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={labelStyle}>RFQ Number</label>
+            <input type="text" style={inputStyle} value={form['rfqNumber'] ?? ''} onChange={set('rfqNumber')} />
+            <span style={{ fontSize: 11, color: theme.textMuted }}>Auto-derived from Project No on creation. Edit here to override.</span>
+          </div>
           {field('contractName',    'Contract Name / Number')}
           {field('projectLocation', 'Project Location')}
 

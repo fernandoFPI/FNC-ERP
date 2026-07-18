@@ -205,9 +205,25 @@ export default function PurchaseOrderDetail() {
   const [editRequestNotes, setEditRequestNotes] = useState('')
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [adminPoStatus, setAdminPoStatus] = useState('')
+  const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [confirmDeletePO, setConfirmDeletePO] = useState(false)
   const [lineComments, setLineComments] = useState<Record<string, LineComment[]>>({})
   const [commentModal, setCommentModal] = useState<{ lineId: string; description: string } | null>(null)
+  // Per-line flags for approval review — key=lineId, value=note text
+  const [lineFlagNotes, setLineFlagNotes] = useState<Record<string, string>>({})
+
+  const flaggedLineIds  = Object.keys(lineFlagNotes)
+  const hasFlaggedLines = flaggedLineIds.length > 0
+
+  function flagLine(lineId: string) {
+    setLineFlagNotes(prev => ({ ...prev, [lineId]: prev[lineId] ?? '' }))
+  }
+  function clearFlag(lineId: string) {
+    setLineFlagNotes(prev => { const n = { ...prev }; delete n[lineId]; return n })
+  }
+  function setFlagNote(lineId: string, note: string) {
+    setLineFlagNotes(prev => ({ ...prev, [lineId]: note }))
+  }
   const [newComment, setNewComment] = useState('')
   const [newFlag, setNewFlag] = useState<'' | 'info' | 'warning' | 'dispute'>('')
   const [addingComment, setAddingComment] = useState(false)
@@ -252,6 +268,17 @@ export default function PurchaseOrderDetail() {
 
   const { data, loading, refetch } = useQuery(PO_LIFECYCLE_QUERY, { variables: { id }, fetchPolicy: 'cache-and-network' })
   const po: PO | undefined = data?.purchaseOrder
+
+  // Derived rejection reason — built from per-line flag notes when approving
+  const flagAutoReason = po
+    ? flaggedLineIds.map(id => {
+        const line = po.lines.find(l => l.id === id)
+        const name = line?.description || line?.product_name || 'Unknown item'
+        const note = lineFlagNotes[id]
+        return note.trim() ? `• ${name}: ${note.trim()}` : `• ${name}: flagged for review`
+      }).join('\n')
+    : ''
+  const effectiveRejectReason = rejectReason || flagAutoReason
 
   useEffect(() => {
     if (!id) return
@@ -418,6 +445,98 @@ export default function PurchaseOrderDetail() {
                 Delete
               </Button>
             )}
+            {/* Actions dropdown — Cancel + Admin Override */}
+            {(!['cancelled', 'deleted'].includes(po.status) || isSystemLevel) && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowActionsPanel(v => !v)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 12px', borderRadius: '7px', border: `1px solid ${theme.border}`, background: showActionsPanel ? theme.accent : theme.bgCanvas, color: showActionsPanel ? '#fff' : theme.textPrimary, fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}
+                >
+                  Actions
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ transition: 'transform 0.15s', transform: showActionsPanel ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                    <polyline points="6 9 12 15 18 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+
+                {showActionsPanel && (
+                  <>
+                    <div onClick={() => setShowActionsPanel(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+                    <div style={{ position: 'absolute', top: 'calc(100% + 10px)', right: 0, zIndex: 200, width: 380, background: theme.bgCanvas, border: `1px solid ${theme.border}`, borderRadius: '12px', boxShadow: '0 12px 32px rgba(0,0,0,0.14)', overflow: 'hidden' }}>
+                      {/* header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: theme.textPrimary, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Actions</span>
+                        <button onClick={() => setShowActionsPanel(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '18px', lineHeight: 1, padding: '0 2px' }}>×</button>
+                      </div>
+                      {/* Cancel */}
+                      {!['cancelled', 'deleted'].includes(po.status) && (
+                        <div style={{ padding: '14px 16px', borderBottom: isSystemLevel ? `1px solid ${theme.border}` : 'none' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>Cancel this PO</div>
+                          <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>This action cannot be undone without admin override.</div>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => {
+                              const reason = window.prompt('Cancel reason (optional):') ?? ''
+                              void cancelPO({ variables: { id: po.id, reason: reason || undefined } })
+                              setShowActionsPanel(false)
+                            }}
+                          >
+                            Cancel PO
+                          </Button>
+                        </div>
+                      )}
+                      {/* Admin override */}
+                      {isSystemLevel && (
+                        <div style={{ padding: '14px 16px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={theme.danger} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: theme.danger, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Admin Override</span>
+                            <span style={{ fontSize: '11px', color: theme.danger, opacity: 0.6, marginLeft: 'auto' }}>Bypasses workflow</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <select
+                              value={adminPoStatus || po.status}
+                              disabled={adminSetting}
+                              onChange={(e) => setAdminPoStatus(e.target.value)}
+                              style={{ flex: 1, fontSize: '13px', padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.dangerBorder}`, background: theme.bgSurface, color: theme.textPrimary, cursor: 'pointer', outline: 'none' }}
+                            >
+                              {[
+                                { value: 'draft',              label: 'Draft' },
+                                { value: 'inventory_check',    label: 'Inventory Check' },
+                                { value: 'store_pricing',      label: 'Store Pricing' },
+                                { value: 'market_pricing',     label: 'Market Pricing' },
+                                { value: 'price_verification', label: 'Price Verification' },
+                                { value: 'pending_approval',   label: 'Pending Approval' },
+                                { value: 'approved',           label: 'Approved' },
+                                { value: 'ready_to_issue',     label: 'Ready to Issue' },
+                                { value: 'goods_received',     label: 'Goods Received' },
+                                { value: 'finance_audit',      label: 'Finance Audit' },
+                                { value: 'invoiced',           label: 'Invoiced' },
+                                { value: 'completed',          label: 'Completed' },
+                                { value: 'rejected',           label: 'Rejected' },
+                                { value: 'cancelled',          label: 'Cancelled' },
+                                { value: 'deleted',            label: 'Deleted' },
+                              ].map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              disabled={!adminPoStatus || adminPoStatus === po.status}
+                              loading={adminSetting}
+                              onClick={() => void adminSetPOStatus({ variables: { id: po.id, status: adminPoStatus } }).then(() => setShowActionsPanel(false))}
+                            >
+                              Apply
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         }
       />
@@ -476,7 +595,7 @@ export default function PurchaseOrderDetail() {
             <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '560px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {po.status === 'draft' && (
               po.priority === 'emergency' ? (
                 <>
@@ -749,30 +868,232 @@ export default function PurchaseOrderDetail() {
               )
             })()}
 
-            {po.status === 'pending_approval' && (
-              <>
-                <Button variant="primary" loading={anyLoading} onClick={() => void approvePO({ variables: { id: po.id } })}>
-                  Approve PO
-                </Button>
-                <div>
-                  <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Rejection reason (required for any rejection)</label>
-                  <input
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Enter reason…"
-                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px' }}
-                  />
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <Button variant="danger" disabled={!rejectReason} onClick={() => void rejectPO({ variables: { id: po.id, reason: rejectReason } })}>
-                      Reject PO
-                    </Button>
-                    <Button variant="ghost" disabled={!rejectReason} onClick={() => void rejectToMarket({ variables: { id: po.id, reason: rejectReason } })}>
-                      Reject to market pricing
-                    </Button>
+            {po.status === 'pending_approval' && (() => {
+              const fmtN = (n: number | string) => parseFloat(String(n)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+              return (
+                <>
+                  {/* ── Line review panel ─────────────────────────────────────── */}
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+                    Review Lines
+                    {hasFlaggedLines && (
+                      <span style={{ marginLeft: '8px', padding: '2px 8px', borderRadius: '10px', background: theme.warningBg, border: `1px solid ${theme.warningBorder}`, color: theme.warning, fontWeight: 600, fontSize: '10px', textTransform: 'none', letterSpacing: 0 }}>
+                        {flaggedLineIds.length} flagged
+                      </span>
+                    )}
                   </div>
-                </div>
-              </>
-            )}
+
+                  <div style={{ border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden', marginBottom: '14px' }}>
+                    {/* Table header */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 110px 110px 80px', padding: '7px 12px', background: theme.bgCanvas, borderBottom: `1px solid ${theme.border}` }}>
+                      {['Item', 'Qty', 'Market Price', 'Store Price', 'Total', ''].map((h, i) => (
+                        <div key={i} style={{ fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</div>
+                      ))}
+                    </div>
+
+                    {/* Lines */}
+                    {po.lines.map((line) => {
+                      const isFlagged = lineFlagNotes[line.id] !== undefined
+                      const rowBg = isFlagged ? theme.warningBg : 'transparent'
+                      const rowBorder = isFlagged ? theme.warningBorder : theme.border
+                      const _fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+                      const _totalQty  = parseFloat(String(line.qty ?? 0))
+                      const _toBuy     = Math.max(0, _totalQty - _fromStock)
+                      const _sp        = parseFloat(String(line.store_price  ?? 0))
+                      const _mp        = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
+                      const _stockCost = _fromStock > 0 && _sp > 0 ? _fromStock * _sp : 0
+                      const _buyCost   = _toBuy * (_mp || parseFloat(String(line.unit_price ?? 0)))
+                      const lineEffectiveTotal = _stockCost + _buyCost || parseFloat(String(line.total ?? 0))
+                      return (
+                        <div key={line.id}
+                          style={{ borderBottom: `1px solid ${rowBorder}`, background: rowBg, transition: 'background 0.15s' }}>
+                          {/* Main row */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 110px 110px 80px', padding: '10px 12px', alignItems: 'center' }}>
+                            <div>
+                              <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: isFlagged ? 600 : 400 }}>
+                                {line.description || line.product_name || '—'}
+                              </div>
+                              {isFlagged && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill={theme.warning} stroke="none">
+                                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>
+                                  </svg>
+                                  <span style={{ fontSize: '10px', color: theme.warning, fontWeight: 600 }}>Flagged</span>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '13px', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                              {fmtN(line.qty)} {line.uom}
+                            </div>
+                            <div style={{ fontSize: '13px', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                              {fmtN(line.unit_price)} {po.currency_code}
+                            </div>
+                            <div style={{ fontSize: '13px', color: _sp > 0 ? theme.success : theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+                              {_sp > 0 ? `${fmtN(_sp)} ${line.store_price_currency ?? po.currency_code}` : '—'}
+                            </div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+                              {fmtN(lineEffectiveTotal)} {po.currency_code}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              {isFlagged ? (
+                                <button
+                                  onClick={() => clearFlag(line.id)}
+                                  title="Clear flag"
+                                  style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.warningBorder}`, background: 'transparent', color: theme.warning, cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                                  Clear
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => flagLine(line.id)}
+                                  title="Flag this line"
+                                  style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '5px', border: `1px solid ${theme.border}`, background: 'transparent', color: theme.textMuted, cursor: 'pointer', fontSize: '11px', fontWeight: 500 }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = theme.warning; e.currentTarget.style.color = theme.warning }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textMuted }}>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>
+                                  </svg>
+                                  Flag
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Pricing & stock breakdown strip */}
+                          {(() => {
+                            const fromStock  = parseFloat(String(line.qty_from_stock ?? 0))
+                            const totalQty   = parseFloat(String(line.qty ?? 0))
+                            const toBuy      = Math.max(0, totalQty - fromStock)
+                            const hasStock   = fromStock > 0
+                            const hasBuy     = toBuy > 0
+                            const sp         = parseFloat(String(line.store_price  ?? 0))
+                            const mp         = parseFloat(String(line.market_price ?? 0))
+                            if (!hasStock && !hasBuy && sp === 0 && mp === 0) return null
+                            const chipBase: React.CSSProperties = {
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              padding: '2px 8px', borderRadius: '10px', fontSize: '11px',
+                              fontWeight: 500, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+                            }
+                            return (
+                              <div style={{ padding: '0 12px 10px', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                {hasStock && (
+                                  <span style={{ ...chipBase, background: theme.successBg, border: `1px solid ${theme.successBorder}`, color: theme.success }}>
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                                    {fmtN(fromStock)} {line.uom} from inventory
+                                  </span>
+                                )}
+                                {hasBuy && (
+                                  <span style={{ ...chipBase, background: theme.infoBg, border: `1px solid ${theme.infoBorder}`, color: theme.info }}>
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                                    {fmtN(toBuy)} {line.uom} to purchase
+                                  </span>
+                                )}
+                                {mp > 0 && (
+                                  <span style={{ ...chipBase, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                                    Market price: {fmtN(mp)} {line.market_price_currency ?? po.currency_code}
+                                  </span>
+                                )}
+                              </div>
+                            )
+                          })()}
+
+                          {/* Flag note input — only shown when flagged */}
+                          {isFlagged && (
+                            <div style={{ padding: '0 12px 10px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={theme.warning} strokeWidth="2">
+                                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                </svg>
+                                <span style={{ fontSize: '11px', color: theme.warning, fontWeight: 600 }}>Reason for flagging (will appear in rejection note)</span>
+                              </div>
+                              <textarea
+                                value={lineFlagNotes[line.id]}
+                                onChange={e => setFlagNote(line.id, e.target.value)}
+                                placeholder={`e.g. Price is higher than market rate, quantity exceeds project requirement…`}
+                                rows={2}
+                                autoFocus
+                                style={{
+                                  width: '100%', padding: '8px 10px', fontSize: '12px', resize: 'vertical',
+                                  border: `1px solid ${theme.warningBorder}`, borderRadius: '6px',
+                                  background: 'transparent', color: theme.textPrimary,
+                                  fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+                                }}
+                                onFocus={e => { e.currentTarget.style.borderColor = theme.warning }}
+                                onBlur={e => { e.currentTarget.style.borderColor = theme.warningBorder }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {/* Totals footer */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 110px 110px 80px', padding: '8px 12px', background: theme.bgCanvas }}>
+                      <div style={{ gridColumn: '1 / 5', fontSize: '11px', color: theme.textMuted }}>
+                        {po.lines.length} line{po.lines.length !== 1 ? 's' : ''}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtN(po.lines.reduce((sum, l) => {
+                          const fs = parseFloat(String(l.qty_from_stock ?? 0))
+                          const tb = Math.max(0, parseFloat(String(l.qty ?? 0)) - fs)
+                          const sp = parseFloat(String(l.store_price ?? 0))
+                          const mp = parseFloat(String(l.market_price ?? l.unit_price ?? 0))
+                          return sum + (fs > 0 && sp > 0 ? fs * sp : 0) + tb * (mp || parseFloat(String(l.unit_price ?? 0)))
+                        }, 0) || po.total_amount)} {po.currency_code}
+                      </div>
+                      <div />
+                    </div>
+                  </div>
+
+                  {/* Flagged banner */}
+                  {hasFlaggedLines && (
+                    <div style={{ padding: '10px 14px', borderRadius: '8px', background: theme.warningBg, border: `1px solid ${theme.warningBorder}`, marginBottom: '14px', fontSize: '12px', color: theme.warning, fontWeight: 500 }}>
+                      {flaggedLineIds.length} line{flaggedLineIds.length !== 1 ? 's' : ''} flagged — clear all flags to approve, or reject with the reason below.
+                    </div>
+                  )}
+
+                  {/* ── Approve ───────────────────────────────────────────────── */}
+                  <Button
+                    variant="primary"
+                    loading={anyLoading}
+                    disabled={hasFlaggedLines}
+                    onClick={() => void approvePO({ variables: { id: po.id } })}
+                  >
+                    Approve PO
+                  </Button>
+
+                  {/* ── Reject ────────────────────────────────────────────────── */}
+                  <div style={{ paddingTop: '12px', borderTop: `1px dashed ${theme.border}` }}>
+                    <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>
+                      Rejection reason {hasFlaggedLines ? '(pre-filled from flags — edit as needed)' : '(required to reject)'}
+                    </label>
+                    <textarea
+                      value={effectiveRejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      placeholder="Enter reason…"
+                      rows={hasFlaggedLines ? 3 : 2}
+                      style={{
+                        width: '100%', padding: '8px', borderRadius: '6px', resize: 'vertical',
+                        border: `1px solid ${effectiveRejectReason ? theme.warningBorder : theme.border}`,
+                        background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px',
+                        fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+                      }}
+                      onFocus={e => { e.currentTarget.style.borderColor = theme.accent }}
+                      onBlur={e => { e.currentTarget.style.borderColor = effectiveRejectReason ? theme.warningBorder : theme.border }}
+                    />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <Button variant="danger" disabled={!effectiveRejectReason}
+                        onClick={() => void rejectPO({ variables: { id: po.id, reason: effectiveRejectReason } })}>
+                        Reject PO
+                      </Button>
+                      <Button variant="ghost" disabled={!effectiveRejectReason}
+                        onClick={() => void rejectToMarket({ variables: { id: po.id, reason: effectiveRejectReason } })}>
+                        Reject to market pricing
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
 
             {po.status === 'approved' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -798,15 +1119,25 @@ export default function PurchaseOrderDetail() {
                     ))}
                   </div>
                   {po.lines.map((line) => {
-                    const rcv = line.qty_received ?? 0
-                    const ord = line.qty ?? 0
-                    const pct = ord > 0 ? Math.min(100, Math.round((rcv / ord) * 100)) : 0
-                    const color = rcv >= ord ? '#16a34a' : rcv > 0 ? '#d97706' : '#dc2626'
+                    const fmtQ = (n: number | string) => parseFloat(String(n)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+                    const rcv      = parseFloat(String(line.qty_received ?? 0))
+                    const fromStk  = parseFloat(String(line.qty_from_stock ?? 0))
+                    const ord      = parseFloat(String(line.qty ?? 0))
+                    const fulfilled = Math.min(ord, rcv + fromStk)
+                    const pct      = ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
+                    const color    = fulfilled >= ord ? '#16a34a' : fulfilled > 0 ? '#d97706' : '#dc2626'
                     return (
                       <div key={line.id} style={{ display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px', padding: '8px 12px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center' }}>
                         <span style={{ fontSize: '13px', color: theme.textPrimary }}>{line.description || line.product_name || '—'}</span>
-                        <span style={{ fontSize: '13px', color: theme.textMuted, fontFamily: 'monospace' }}>{ord} {line.uom}</span>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color, fontFamily: 'monospace' }}>{rcv} {line.uom}</span>
+                        <span style={{ fontSize: '13px', color: theme.textMuted, fontFamily: 'monospace' }}>{fmtQ(ord)} {line.uom}</span>
+                        <div>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color, fontFamily: 'monospace' }}>{fmtQ(fulfilled)} {line.uom}</span>
+                          {fromStk > 0 && (
+                            <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '1px' }}>
+                              {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
+                            </div>
+                          )}
+                        </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: theme.border, overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: '3px' }} />
@@ -854,23 +1185,33 @@ export default function PurchaseOrderDetail() {
                           </div>
                         </div>
 
-                        {/* Qty received vs ordered */}
+                        {/* Qty fulfilled vs ordered (received + from stock) */}
                         {(() => {
-                          const rcv = line.qty_received ?? 0
-                          const ord = line.qty ?? 0
-                          const pct = ord > 0 ? Math.min(100, Math.round((rcv / ord) * 100)) : 0
-                          const short = rcv < ord
-                          const over = rcv > ord
+                          const fmtQ = (n: number | string) => parseFloat(String(n)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+                          const rcv      = parseFloat(String(line.qty_received ?? 0))
+                          const fromStk  = parseFloat(String(line.qty_from_stock ?? 0))
+                          const ord      = parseFloat(String(line.qty ?? 0))
+                          const fulfilled = Math.min(ord, rcv + fromStk)
+                          const pct      = ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
+                          const short    = fulfilled < ord
+                          const over     = rcv > ord
                           const qtyColor = over ? '#d97706' : short ? '#dc2626' : '#16a34a'
                           return (
                             <div style={{ marginTop: '8px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                                <span style={{ fontSize: '12px', color: theme.textMuted }}>Qty received / ordered</span>
-                                <span style={{ fontSize: '13px', fontWeight: 700, color: qtyColor, fontFamily: 'monospace' }}>
-                                  {rcv} / {ord} {line.uom}
-                                  {short && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '6px', color: '#dc2626' }}>({ord - rcv} short)</span>}
-                                  {over && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '6px', color: '#d97706' }}>(over by {rcv - ord})</span>}
-                                </span>
+                                <span style={{ fontSize: '12px', color: theme.textMuted }}>Fulfilled / ordered</span>
+                                <div style={{ textAlign: 'right' }}>
+                                  <span style={{ fontSize: '13px', fontWeight: 700, color: qtyColor, fontFamily: 'monospace' }}>
+                                    {fmtQ(fulfilled)} / {fmtQ(ord)} {line.uom}
+                                    {short && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '6px', color: '#dc2626' }}>({fmtQ(ord - fulfilled)} short)</span>}
+                                    {over && <span style={{ fontSize: '11px', fontWeight: 400, marginLeft: '6px', color: '#d97706' }}>(over by {fmtQ(rcv - ord)})</span>}
+                                  </span>
+                                  {fromStk > 0 && (
+                                    <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '1px' }}>
+                                      {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                               <div style={{ height: '6px', borderRadius: '3px', background: theme.border, overflow: 'hidden' }}>
                                 <div style={{ height: '100%', width: `${pct}%`, borderRadius: '3px', background: qtyColor, transition: 'width 0.3s' }} />
@@ -881,56 +1222,69 @@ export default function PurchaseOrderDetail() {
 
                         {/* Price comparison */}
                         {(() => {
-                          const poPrice = line.unit_price ?? 0
-                          const actualPrice = line.actual_unit_price ?? null
-                          const variance = actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
+                          const fmtN = (n: number | string) => parseFloat(String(n)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+                          const poPrice    = parseFloat(String(line.unit_price ?? 0))
+                          const actualPrice = line.actual_unit_price != null ? parseFloat(String(line.actual_unit_price)) : null
+                          const fromStock  = parseFloat(String(line.qty_from_stock ?? 0))
+                          const totalQty   = parseFloat(String(line.qty ?? 0))
+                          const toBuy      = Math.max(0, totalQty - fromStock)
+                          const variance   = actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
                           const variancePct = variance != null && poPrice > 0 ? (variance / poPrice) * 100 : null
-                          const varColor = variance == null || variance === 0 ? theme.textMuted : variance > 0 ? '#dc2626' : '#16a34a'
-                          const rcv = line.qty_received ?? 0
-                          const fromStock = line.qty_from_stock ?? 0
+                          const varColor   = variance == null || variance === 0 ? theme.textMuted : variance > 0 ? '#dc2626' : '#16a34a'
+                          const purchaseTotal = toBuy * (actualPrice ?? poPrice)
                           return (
                             <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
-                              {/* PO Price */}
+                              {/* PO Price (market price per unit) */}
                               <div style={{ padding: '8px 10px', borderRadius: '6px', background: theme.bgSurface, border: `1px solid ${theme.border}` }}>
                                 <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>PO Price</div>
                                 <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary, fontFamily: 'monospace' }}>
-                                  {poPrice > 0 ? poPrice.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'}
+                                  {poPrice > 0 ? fmtN(poPrice) : '—'}
                                 </div>
+                                {toBuy > 0 && <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>for {fmtN(toBuy)} {line.uom} to buy</div>}
                               </div>
-                              {/* Actual Price */}
-                              <div style={{ padding: '8px 10px', borderRadius: '6px', background: actualPrice == null ? '#fff7ed' : variance === 0 ? '#f0fdf4' : variance! > 0 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}` }}>
-                                <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>Actual Price</div>
-                                {actualPrice != null ? (
-                                  <>
-                                    <div style={{ fontSize: '14px', fontWeight: 700, color: varColor, fontFamily: 'monospace' }}>
-                                      {actualPrice.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                              {/* Actual Price — for purchased qty only */}
+                              {toBuy > 0 && (
+                                <div style={{ padding: '8px 10px', borderRadius: '6px', background: actualPrice == null ? '#fff7ed' : variance === 0 ? '#f0fdf4' : variance! > 0 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}` }}>
+                                  <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>
+                                    Actual Price <span style={{ fontWeight: 400, textTransform: 'none', fontSize: '10px' }}>({fmtN(toBuy)} {line.uom} purchased)</span>
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    placeholder="Enter actual price…"
+                                    value={actualPrices[line.id] ?? (actualPrice != null ? String(actualPrice) : '')}
+                                    onChange={(e) => setActualPrices((p) => ({ ...p, [line.id]: e.target.value }))}
+                                    onBlur={(e) => {
+                                      const val = parseFloat(e.target.value)
+                                      void setLineActualPrice({ variables: { poId: po.id, lineId: line.id, actualUnitPrice: isNaN(val) ? null : val } })
+                                    }}
+                                    style={{ width: '100%', padding: '4px 6px', borderRadius: '4px', border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`, background: 'transparent', color: varColor, fontSize: '14px', fontFamily: 'monospace', fontWeight: 700, boxSizing: 'border-box' as const, outline: 'none' }}
+                                  />
+                                  {variancePct != null && Math.abs(variancePct) > 0.01 && (
+                                    <div style={{ fontSize: '11px', fontWeight: 600, color: varColor, marginTop: '3px' }}>
+                                      {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}{variancePct.toFixed(1)}% vs PO
                                     </div>
-                                    {variancePct != null && Math.abs(variancePct) > 0.01 && (
-                                      <div style={{ fontSize: '11px', fontWeight: 600, color: varColor, marginTop: '2px' }}>
-                                        {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}{variancePct.toFixed(1)}% vs PO
-                                      </div>
-                                    )}
-                                  </>
-                                ) : (
-                                  <div style={{ fontSize: '12px', color: '#d97706', fontWeight: 600 }}>Not recorded</div>
-                                )}
-                              </div>
-                              {/* Line Total */}
-                              <div style={{ padding: '8px 10px', borderRadius: '6px', background: theme.bgSurface, border: `1px solid ${theme.border}` }}>
-                                <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>Line Total</div>
-                                <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary, fontFamily: 'monospace' }}>
-                                  {((actualPrice ?? poPrice) * rcv).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                  )}
                                 </div>
-                                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                                  {rcv} {line.uom} × {(actualPrice ?? poPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              )}
+                              {/* Purchase Total (only purchased qty) */}
+                              {toBuy > 0 && (
+                                <div style={{ padding: '8px 10px', borderRadius: '6px', background: theme.bgSurface, border: `1px solid ${theme.border}` }}>
+                                  <div style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>Purchase Total</div>
+                                  <div style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary, fontFamily: 'monospace' }}>
+                                    {fmtN(purchaseTotal)}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                                    {fmtN(toBuy)} {line.uom} × {fmtN(actualPrice ?? poPrice)}
+                                  </div>
                                 </div>
-                              </div>
-                              {/* From Stock (only if > 0) */}
+                              )}
+                              {/* From Stock */}
                               {fromStock > 0 && (
                                 <div style={{ padding: '8px 10px', borderRadius: '6px', background: '#f0fdf4', border: '1px solid #86efac' }}>
                                   <div style={{ fontSize: '10px', fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>From Inventory</div>
                                   <div style={{ fontSize: '14px', fontWeight: 700, color: '#166534', fontFamily: 'monospace' }}>
-                                    {fromStock} {line.uom}
+                                    {fmtN(fromStock)} {line.uom}
                                   </div>
                                   <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '2px' }}>No cost — issued from stock</div>
                                 </div>
@@ -1067,7 +1421,7 @@ export default function PurchaseOrderDetail() {
               </div>
             )}
 
-            {!['rejected', 'goods_received', 'finance_audit'].includes(po.status) && (
+            {!['rejected', 'goods_received', 'finance_audit', 'pending_approval'].includes(po.status) && (
               <div style={{ paddingTop: '8px', borderTop: `1px dashed ${theme.border}` }}>
                 <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>Action notes (optional)</label>
                 <textarea
@@ -1083,76 +1437,6 @@ export default function PurchaseOrderDetail() {
         </Card>
       )}
 
-      {/* Cancel PO — visible for all statuses except already cancelled/deleted */}
-      {!['cancelled', 'deleted'].includes(po.status) && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 14px', borderRadius: '8px', background: '#fef2f2', border: '1px solid #fca5a5', marginBottom: '16px' }}>
-          <div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#991b1b' }}>Cancel this PO</div>
-            <div style={{ fontSize: '12px', color: '#dc2626', marginTop: '2px' }}>This action cannot be undone without admin override.</div>
-          </div>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => {
-              const reason = window.prompt('Cancel reason (optional):') ?? ''
-              void cancelPO({ variables: { id: po.id, reason: reason || undefined } })
-            }}
-          >
-            Cancel PO
-          </Button>
-        </div>
-      )}
-
-      {/* Admin override — always visible to system admins regardless of PO status */}
-      {isSystemLevel && (
-        <Card style={{ marginBottom: '16px', padding: '0', overflow: 'hidden', border: `1px solid ${theme.dangerBorder}` }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '8px 16px',
-            background: theme.dangerBg,
-            borderBottom: `1px solid ${theme.dangerBorder}`,
-          }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={theme.danger} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: theme.danger, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Admin Override</span>
-            <span style={{ fontSize: '11px', color: theme.danger, opacity: 0.7, marginLeft: 'auto' }}>Force-set status — bypasses workflow</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px' }}>
-            <SearchableSelect
-              value={adminPoStatus}
-              onChange={setAdminPoStatus}
-              placeholder="Select target status…"
-              options={[
-                { value: 'draft', label: 'Draft' },
-                { value: 'inventory_check', label: 'Inventory Check' },
-                { value: 'store_pricing', label: 'Store Pricing' },
-                { value: 'market_pricing', label: 'Market Pricing' },
-                { value: 'price_verification', label: 'Price Verification' },
-                { value: 'pending_approval', label: 'Pending Approval' },
-                { value: 'approved', label: 'Approved' },
-                { value: 'ready_to_issue', label: 'Ready to Issue' },
-                { value: 'goods_received', label: 'Goods Received' },
-                { value: 'finance_audit', label: 'Finance Audit' },
-                { value: 'invoiced', label: 'Invoiced' },
-                { value: 'completed', label: 'Completed' },
-                { value: 'rejected', label: 'Rejected' },
-                { value: 'cancelled', label: 'Cancelled' },
-                { value: 'deleted', label: 'Deleted' },
-              ]}
-            />
-            <Button
-              variant="danger"
-              size="sm"
-              disabled={!adminPoStatus || adminPoStatus === po.status}
-              loading={adminSetting}
-              onClick={() => void adminSetPOStatus({ variables: { id: po.id, status: adminPoStatus } })}
-            >
-              Apply
-            </Button>
-          </div>
-        </Card>
-      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0', borderBottom: `2px solid ${theme.border}`, marginBottom: '16px', overflowX: 'auto' }}>
@@ -1195,6 +1479,8 @@ export default function PurchaseOrderDetail() {
         }
         const FLAG_PRIORITY = ['dispute', 'warning', 'info']
 
+        const fmtN = (n: number | string) => parseFloat(String(n)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+
         const getLineFlag = (lineId: string): string | null => {
           const comments = lineComments[lineId] ?? []
           const unresolved = comments.filter(c => c.flag && !c.resolved).map(c => c.flag as string)
@@ -1208,7 +1494,7 @@ export default function PurchaseOrderDetail() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['Item', 'Qty', 'Unit price', 'Actual price', 'Total', 'Received', 'Notes'].map((h) => (
+                {['Item', 'Qty', 'Market Price', 'Store Price', 'Total', 'Received', 'Notes'].map((h) => (
                   <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -1236,26 +1522,31 @@ export default function PurchaseOrderDetail() {
                       {line.description && <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: line.product_name ? '2px' : 0 }}>{line.description}</div>}
                       {!line.product_name && !line.description && <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>}
                     </td>
-                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textPrimary, whiteSpace: 'nowrap' }}>{line.qty} {line.uom}</td>
-                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textPrimary }}><AmountDisplay amount={line.unit_price} currency={po.currency_code} /></td>
-                    <td style={{ padding: '6px 12px' }}>
-                      <input
-                        type="number"
-                        min={0}
-                        placeholder="—"
-                        value={actualPrices[line.id] ?? (line.actual_unit_price != null ? String(line.actual_unit_price) : '')}
-                        onChange={(e) => setActualPrices((p) => ({ ...p, [line.id]: e.target.value }))}
-                        onBlur={(e) => {
-                          const val = parseFloat(e.target.value)
-                          void setLineActualPrice({ variables: { poId: po.id, lineId: line.id, actualUnitPrice: isNaN(val) ? null : val } })
-                        }}
-                        style={{ width: '110px', padding: '5px 8px', borderRadius: '5px', border: `1px solid ${theme.border}`, background: theme.bgCanvas, color: theme.textPrimary, fontSize: '12px' }}
-                      />
+                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textPrimary, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtN(line.qty)} {line.uom}</td>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                      {fmtN(line.unit_price)} {po.currency_code}
                     </td>
-                    <td style={{ padding: '10px 12px', fontSize: '13px', color: theme.textPrimary }}><AmountDisplay amount={line.total} currency={po.currency_code} /></td>
-                    <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', fontVariantNumeric: 'tabular-nums' }}>
+                      {(() => {
+                        const sp = parseFloat(String(line.store_price ?? 0))
+                        return sp > 0
+                          ? <span style={{ color: theme.success }}>{fmtN(sp)} {line.store_price_currency ?? po.currency_code}</span>
+                          : <span style={{ color: theme.textMuted }}>—</span>
+                      })()}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: 600, color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+                      {(() => {
+                        const fs = parseFloat(String(line.qty_from_stock ?? 0))
+                        const tb = Math.max(0, parseFloat(String(line.qty ?? 0)) - fs)
+                        const sp = parseFloat(String(line.store_price ?? 0))
+                        const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
+                        const blended = (fs > 0 && sp > 0 ? fs * sp : 0) + tb * (mp || parseFloat(String(line.unit_price ?? 0)))
+                        return `${fmtN(blended || line.total)} ${po.currency_code}`
+                      })()}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                       <span style={{ color: received ? theme.accent : theme.textMuted }}>
-                        {line.qty_received}/{line.qty}
+                        {fmtN(line.qty_received)}/{fmtN(line.qty)}
                       </span>
                       {received && <span style={{ marginLeft: '5px', fontSize: '11px', color: theme.accent }}>✓</span>}
                     </td>

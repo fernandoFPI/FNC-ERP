@@ -73,7 +73,7 @@ export const typeDefs = `#graphql
     projectContract(id: ID!): ProjectContract
     projectInvoices(projectId: ID, contractId: ID, status: String): [ProjectInvoice!]!
     projectInvoice(id: ID!): ProjectInvoice
-    materialIssues(projectId: ID!): [MaterialIssue!]!
+    materialIssues(projectId: ID, status: String): [MaterialIssue!]!
     availableInvoiceCosts(invoiceId: ID!, sourceType: String): AvailableCosts!
 
     # Interco stock transfers
@@ -698,6 +698,10 @@ export const typeDefs = `#graphql
 
     allowedActions: [String!]
 
+    lifecyclePhase: String
+    clientDocCount: Int
+    rfqLineCount: Int
+
     isRfq: Boolean!
     rfqEstimatedCost: Float
     rfqOutcome: String
@@ -1042,12 +1046,21 @@ export const typeDefs = `#graphql
     issueNumber: String!
     issueDate: String!
     status: String!
+    notes: String
+    poId: ID
+    poNumber: String
+    projectCode: String
+    projectName: String
+    issuedByName: String
+    createdAt: String!
     lines: [MaterialIssueLine!]!
   }
 
   type MaterialIssueLine {
     id: ID!
     productId: ID!
+    productName: String
+    poLineId: ID
     qtyIssued: Float!
     unitCost: Float!
     totalCost: Float!
@@ -2150,6 +2163,65 @@ export const typeDefs = `#graphql
     rfqPhases(projectId: ID!): [RFQPhase!]!
   }
 
+  # ── Engineering Documents ─────────────────────────────────────
+
+  type EngineeringDoc {
+    id:              ID!
+    projectId:       ID!
+    refNumber:       String!
+    discipline:      String!
+    docType:         String!
+    seqNo:           Int!
+    title:           String!
+    description:     String
+    scale:           String
+    paperSize:       String
+    revision:        String
+    status:          String!
+    issueDate:       String
+    notes:           String
+    fileId:          ID
+    docGroupId:      ID!
+    isCurrent:       Boolean!
+    uploadedByName:  String
+    downloadUrl:     String
+    filename:        String
+    history:         [EngineeringDoc!]!
+    createdAt:       String!
+  }
+
+  extend type Query {
+    engineeringDocuments(projectId: ID!, discipline: String, docType: String): [EngineeringDoc!]!
+  }
+
+  extend type Mutation {
+    createEngineeringDoc(
+      projectId:   ID!
+      discipline:  String!
+      docType:     String!
+      title:       String!
+      fileId:      ID
+      revision:    String
+      description: String
+      scale:       String
+      paperSize:   String
+      issueDate:   String
+      notes:       String
+    ): EngineeringDoc!
+
+    reviseEngineeringDoc(
+      id:        ID!
+      fileId:    ID
+      revision:  String!
+      notes:     String
+      issueDate: String
+    ): EngineeringDoc!
+
+    updateEngineeringDocStatus(id: ID!, status: String!): EngineeringDoc!
+
+    deleteEngineeringDoc(id: ID!): Boolean!
+  }
+
   # ── Client Documents ──────────────────────────────────────────
 
   type ClientDocument {
@@ -2199,6 +2271,17 @@ export const typeDefs = `#graphql
       description:      String
     ): ClientDocument!
 
+    updateClientDocument(
+      id:               ID!
+      title:            String
+      category:         String
+      documentNumber:   String
+      revision:         String
+      description:      String
+      receivedFrom:     String
+      transmissionDate: String
+    ): ClientDocument!
+
     updateClientDocumentStatus(id: ID!, status: String!): ClientDocument!
     deleteClientDocument(id: ID!): Boolean!
   }
@@ -2222,6 +2305,13 @@ export const typeDefs = `#graphql
     cancelProject(id: ID!, reason: String!): Project!
     cancelProjectAfterApproval(id: ID!, reason: String!): Project!
     adminSetProjectStatus(id: ID!, status: String!): Project!
+    adminSetPhase(id: ID!, phase: String!): Project!
+    advancePhase(id: ID!, targetPhase: String!): Project!
+    createMaterialIssue(projectId: ID!, poId: ID, issueDate: String!, notes: String): MaterialIssue!
+    addMaterialIssueLine(issueId: ID!, productId: ID!, poLineId: ID, qtyIssued: Float!, unitCost: Float!): MaterialIssueLine!
+    deleteMaterialIssueLine(id: ID!, issueId: ID!): Boolean!
+    issueMaterialIssue(id: ID!): MaterialIssue!
+    cancelMaterialIssue(id: ID!): MaterialIssue!
     createProjectStage(projectId: ID!, input: StageInput!): ProjectStage!
     updateProjectStage(projectId: ID!, stageId: ID!, input: UpdateStageInput!): ProjectStage!
     addProjectMember(projectId: ID!, input: MemberInput!): ProjectMember!
@@ -3935,6 +4025,7 @@ export const typeDefs = `#graphql
     id: ID!
     projectId: ID!
     wbsId: ID
+    analyticAccountId: ID
     code: String!
     name: String!
     category: String!
@@ -4139,8 +4230,8 @@ export const typeDefs = `#graphql
 
   extend type Mutation {
     # Cost codes
-    createCostCode(projectId: ID!, wbsId: ID, code: String!, name: String!, category: String!, budgetAmount: Float!, sequence: Int): CostCode!
-    updateCostCode(id: ID!, wbsId: ID, code: String, name: String, category: String, budgetAmount: Float, sequence: Int): CostCode!
+    createCostCode(projectId: ID!, wbsId: ID, analyticAccountId: ID, code: String, name: String, category: String!, budgetAmount: Float!, sequence: Int): CostCode!
+    updateCostCode(id: ID!, wbsId: ID, analyticAccountId: ID, code: String, name: String, category: String, budgetAmount: Float, sequence: Int): CostCode!
     deleteCostCode(id: ID!): Boolean!
 
     # Committed costs
@@ -4195,7 +4286,7 @@ export const typeDefs = `#graphql
     removeVODrawing(id: ID!): Boolean!
 
     # Meetings / MOM
-    createMeeting(projectId: ID!, meetingNumber: String!, meetingType: String!, title: String!, meetingDate: String!, location: String, chairperson: String, attendees: String, agenda: String, distributionList: String): Meeting!
+    createMeeting(projectId: ID!, meetingType: String!, title: String!, meetingDate: String!, location: String, chairperson: String, attendees: String, agenda: String, distributionList: String): Meeting!
     updateMeeting(id: ID!, meetingType: String, title: String, meetingDate: String, location: String, chairperson: String, attendees: String, agenda: String, minutes: String, distributionList: String): Meeting!
     deleteMeeting(id: ID!): Boolean!
     issueMeeting(id: ID!): Meeting!

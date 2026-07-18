@@ -186,6 +186,7 @@ const NotificationsPage = lazy(() => import('../pages/notifications/Notification
 
 // Inventory
 const InventoryLayout = lazy(() => import('../pages/inventory/InventoryLayout'))
+const StoreOutPage = lazy(() => import('../pages/inventory/store-out/StoreOutPage'))
 const StockBalancesPage = lazy(() => import('../pages/inventory/balances/StockBalancesPage'))
 const ProductsPage = lazy(() => import('../pages/inventory/products/ProductsPage'))
 const ProductDetail = lazy(() => import('../pages/inventory/products/ProductDetail'))
@@ -369,6 +370,7 @@ export const router = createBrowserRouter([
           { path: 'lots', element: withPerm('inventory.lots.view', <LotsPage />) },
           { path: 'lots/:id', element: withPerm('inventory.lots.view', <LotTraceability />) },
           { path: 'adjust', element: withPerm('inventory.stock_moves.edit', <StockAdjustmentForm />, 'edit') },
+          { path: 'store-out', element: withPerm('inventory.stock_moves.view', <StoreOutPage />) },
         ],
       },
 

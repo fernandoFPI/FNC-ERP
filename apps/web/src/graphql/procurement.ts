@@ -50,7 +50,7 @@ export const PURCHASE_ORDER_QUERY = gql`
       fx_rate pdf_path assigned_to_email assigned_receiver_name
       lines {
         id product_id product_name description qty unit_price total
-        uom qty_received
+        uom qty_received qty_from_stock
       }
       receipts {
         id receipt_date location_id location_name notes received_by_email received_by_name location_notes created_at

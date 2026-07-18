@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
-  PROJECT_QUERY, ADMIN_SET_PROJECT_STATUS, RFQ_LINES_QUERY, UPSERT_RFQ_LINES, RFQ_PHASES_QUERY, UPDATE_RFQ_PHASE,
+  PROJECT_QUERY, ADMIN_SET_PROJECT_STATUS, ADMIN_SET_PHASE, RFQ_LINES_QUERY, UPSERT_RFQ_LINES, RFQ_PHASES_QUERY, UPDATE_RFQ_PHASE,
   CLIENT_DOCUMENTS_QUERY, UPLOAD_CLIENT_DOCUMENT, UPLOAD_CLIENT_DOCUMENT_REVISION,
-  UPDATE_CLIENT_DOCUMENT_STATUS, DELETE_CLIENT_DOCUMENT,
+  UPDATE_CLIENT_DOCUMENT, UPDATE_CLIENT_DOCUMENT_STATUS, DELETE_CLIENT_DOCUMENT,
+  ENG_DOCS_QUERY, CREATE_ENG_DOC, REVISE_ENG_DOC, UPDATE_ENG_DOC_STATUS, DELETE_ENG_DOC,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -50,6 +51,8 @@ import {
   PROJECT_MEETINGS_QUERY,
   CREATE_MEETING, UPDATE_MEETING, DELETE_MEETING, ISSUE_MEETING, CLOSE_MEETING,
   CREATE_MEETING_ACTION, UPDATE_MEETING_ACTION, DELETE_MEETING_ACTION,
+  MATERIAL_ISSUES_QUERY,
+  UPDATE_PROJECT_STAGE,
 } from '../../../graphql/projects'
 import { MANUFACTURING_REQUESTS_QUERY } from '../../../graphql/manufacturing-requests'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -98,19 +101,21 @@ const ALL_TABS = [
 const RFQ_POST_DECISION = new Set(['approved', 'ongoing', 'completed', 'on_hold', 'cancelled', 'cancelled_after_approval'])
 
 const LIFECYCLE_STAGES = [
-  { key: 'enquiry',   label: 'Client Enquiry'  },
-  { key: 'scope',     label: 'Scope Review'    },
-  { key: 'bidding',   label: 'Bidding'         },
-  { key: 'approval',  label: 'Client Approval' },
-  { key: 'execution', label: 'Execution'       },
-  { key: 'closeout',  label: 'Closeout'        },
+  { key: 'enquiry',         label: 'Client Enquiry'  },
+  { key: 'scope_review',    label: 'Scope Review'    },
+  { key: 'bidding',         label: 'Bidding'         },
+  { key: 'client_approval', label: 'Client Approval' },
+  { key: 'execution',       label: 'Execution'       },
+  { key: 'closeout',        label: 'Closeout'        },
 ]
 
-function lifecycleIdx(status: string): number {
-  if (status === 'completed') return 5
-  if (status === 'approved' || status === 'ongoing' || status === 'on_hold' || status === 'cancelled' || status === 'cancelled_after_approval') return 4
-  if (status === 'submitted') return 3
-  return 0
+const PHASE_ORDER = ['enquiry', 'scope_review', 'bidding', 'client_approval', 'execution', 'closeout']
+const phaseGte = (phase: string, min: string) =>
+  PHASE_ORDER.indexOf(phase) >= PHASE_ORDER.indexOf(min)
+
+function lifecycleIdx(phase: string): number {
+  const idx = LIFECYCLE_STAGES.findIndex(s => s.key === phase)
+  return idx >= 0 ? idx : 0
 }
 
 function lifecycleBadgeVariant(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
@@ -139,15 +144,21 @@ export default function ProjectDetail() {
     : ''
   const addToast = useToastStore((s) => s.addToast)
   const [adminStatus, setAdminStatus] = useState('')
+  const [adminPhase,  setAdminPhase]  = useState('')
   const [adminSetProjectStatus, { loading: adminSetting }] = useMutation(ADMIN_SET_PROJECT_STATUS, {
     onCompleted: () => { setAdminStatus(''); addToast({ type: 'success', message: 'Status updated' }); void refetch() },
+    onError: (e) => addToast({ type: 'error', message: e.message }),
+  })
+  const [adminSetPhase, { loading: adminPhaseSetting }] = useMutation(ADMIN_SET_PHASE, {
+    onCompleted: () => { setAdminPhase(''); addToast({ type: 'success', message: 'Phase updated' }); void refetch() },
     onError: (e) => addToast({ type: 'error', message: e.message }),
   })
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [tab, setTab]               = useState('overview')
   const [bidSection, setBidSection] = useState<'technical' | 'commercial'>('technical')
-  const [procSection, setProcSection] = useState<'purchase_orders' | 'manufacturing'>('purchase_orders')
+  const [procSection, setProcSection] = useState<'purchase_orders' | 'manufacturing' | 'store_out'>('purchase_orders')
   const [editStage, setEditStage]   = useState<Stage | null>(null)
+  const [quickUpdateStage] = useMutation(UPDATE_PROJECT_STAGE, { onCompleted: () => void refetch(), onError: (e) => addToast({ type: 'error', message: e.message }) })
   const [stageDrawer, setStageDrawer] = useState(false)
   const [showMRForm, setShowMRForm] = useState(false)
 
@@ -234,6 +245,11 @@ export default function ProjectDetail() {
     skip: !id || tab !== 'procurement',
     fetchPolicy: 'cache-and-network',
   })
+  const { data: miData, refetch: refetchMIs } = useQuery(MATERIAL_ISSUES_QUERY, {
+    variables: { projectId: id },
+    skip: !id || tab !== 'procurement' || procSection !== 'store_out',
+    fetchPolicy: 'cache-and-network',
+  })
   const { data: rfqLinesData, refetch: refetchRFQLines } = useQuery(RFQ_LINES_QUERY, {
     variables: { projectId: id },
     skip: !id || (tab !== 'rfq_lines' && tab !== 'execution'),
@@ -243,35 +259,10 @@ export default function ProjectDetail() {
     onCompleted: () => { addToast({ type: 'success', message: 'Scope of work saved' }); void refetchRFQLines() },
     onError: (e) => addToast({ type: 'error', message: e.message }),
   })
-  const { data: engRevisionsData, refetch: refetchEngRevisions } = useQuery(ENGINEERING_REVISIONS_QUERY, {
-    variables: { projectId: id },
-    skip: !id || tab !== 'rfq_lines',
-    fetchPolicy: 'cache-and-network',
-  })
   const { data: drawingsData, refetch: refetchDrawings } = useQuery(PROJECT_DRAWINGS_QUERY, {
     variables: { projectId: id },
-    skip: !id || (tab !== 'rfq_lines' && tab !== 'execution'),
+    skip: !id || tab !== 'execution',
     fetchPolicy: 'cache-and-network',
-  })
-  const [issueEngineeringRevision, { loading: issuingRevision }] = useMutation(ISSUE_ENGINEERING_REVISION, {
-    onCompleted: () => { addToast({ type: 'success', message: 'Engineering revision issued' }); void refetchEngRevisions(); void refetchRFQLines() },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
-  })
-  const [createProjectDrawing, { loading: creatingDrawing }] = useMutation(CREATE_PROJECT_DRAWING, {
-    onCompleted: () => { addToast({ type: 'success', message: 'Drawing added' }); void refetchDrawings() },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
-  })
-  const [reviseProjectDrawing, { loading: revisingDrawing }] = useMutation(REVISE_PROJECT_DRAWING, {
-    onCompleted: () => { addToast({ type: 'success', message: 'Drawing revision uploaded' }); void refetchDrawings() },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
-  })
-  const [updateProjectDrawingStatus] = useMutation(UPDATE_PROJECT_DRAWING_STATUS, {
-    onCompleted: () => { void refetchDrawings() },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
-  })
-  const [deleteProjectDrawing] = useMutation(DELETE_PROJECT_DRAWING, {
-    onCompleted: () => { addToast({ type: 'success', message: 'Drawing deleted' }); void refetchDrawings() },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
   })
 
   // ── Bidding hooks ──────────────────────────────────────────────────────────
@@ -462,45 +453,12 @@ export default function ProjectDetail() {
 
   // ── Cost Control queries ───────────────────────────────────────────────────
   const skipCC = !id || tab !== 'cost_control'
-  const ccStart = React.useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return d.toISOString().slice(0, 10) }, [])
-  const ccEnd   = React.useMemo(() => { const d = new Date(); d.setMonth(d.getMonth() + 6); return d.toISOString().slice(0, 10) }, [])
-  const { data: ccCodesData,     refetch: refetchCCCodes }     = useQuery(PROJECT_COST_CODES_QUERY,      { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccCommitData,    refetch: refetchCCCommit }    = useQuery(PROJECT_COMMITTED_COSTS_QUERY, { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccCashFlowData,  refetch: refetchCCCashFlow }  = useQuery(PROJECT_CASH_FLOW_QUERY,       { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccSubconData,    refetch: refetchCCSubcon }    = useQuery(PROJECT_SUBCONTRACTS_QUERY,    { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccLaborData,     refetch: refetchCCLabor }     = useQuery(PROJECT_LABOR_ENTRIES_QUERY,   { variables: { projectId: id, startDate: ccStart, endDate: ccEnd }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccEquipData,     refetch: refetchCCEquip }     = useQuery(PROJECT_EQUIPMENT_LOG_QUERY,   { variables: { projectId: id, startDate: ccStart, endDate: ccEnd }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccForecastData,  refetch: refetchCCForecast }  = useQuery(PROJECT_COST_FORECAST_QUERY,   { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccBillingData,   refetch: refetchCCBilling }   = useQuery(PROJECT_CLIENT_BILLINGS_QUERY, { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-  const { data: ccSummaryData,   refetch: refetchCCSummary }   = useQuery(PROJECT_COST_SUMMARY_QUERY,    { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
-
-  // ── Cost Control mutations ─────────────────────────────────────────────────
-  const ccRefreshAll = () => { void refetchCCCodes(); void refetchCCCommit(); void refetchCCCashFlow(); void refetchCCSubcon(); void refetchCCLabor(); void refetchCCEquip(); void refetchCCForecast(); void refetchCCBilling(); void refetchCCSummary() }
+  const { data: ccCodesData,   refetch: refetchCCCodes }   = useQuery(PROJECT_COST_CODES_QUERY,   { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccSummaryData, refetch: refetchCCSummary } = useQuery(PROJECT_COST_SUMMARY_QUERY, { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
   const ccError = (e: Error) => addToast({ type: 'error', message: e.message })
-  const [createCostCode]          = useMutation(CREATE_COST_CODE,          { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
-  const [updateCostCode]          = useMutation(UPDATE_COST_CODE,          { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
-  const [deleteCostCode]          = useMutation(DELETE_COST_CODE,          { onCompleted: () => ccRefreshAll(), onError: ccError })
-  const [createCommittedCost]     = useMutation(CREATE_COMMITTED_COST,     { onCompleted: () => { void refetchCCCommit(); void refetchCCSummary() }, onError: ccError })
-  const [updateCommittedCost]     = useMutation(UPDATE_COMMITTED_COST,     { onCompleted: () => { void refetchCCCommit(); void refetchCCSummary() }, onError: ccError })
-  const [deleteCommittedCost]     = useMutation(DELETE_COMMITTED_COST,     { onCompleted: () => { void refetchCCCommit(); void refetchCCSummary() }, onError: ccError })
-  const [syncPOCommitments]       = useMutation(SYNC_PO_COMMITMENTS,       { onCompleted: () => { void refetchCCCommit(); void refetchCCSummary(); addToast({ type: 'success', message: 'PO commitments synced' }) }, onError: ccError })
-  const [upsertCashFlowPeriod]    = useMutation(UPSERT_CASH_FLOW_PERIOD,   { onCompleted: () => void refetchCCCashFlow(), onError: ccError })
-  const [createSubcontract]       = useMutation(CREATE_SUBCONTRACT,        { onCompleted: () => { void refetchCCSubcon(); void refetchCCSummary() }, onError: ccError })
-  const [updateSubcontract]       = useMutation(UPDATE_SUBCONTRACT,        { onCompleted: () => { void refetchCCSubcon(); void refetchCCSummary() }, onError: ccError })
-  const [deleteSubcontract]       = useMutation(DELETE_SUBCONTRACT,        { onCompleted: () => { void refetchCCSubcon(); void refetchCCSummary() }, onError: ccError })
-  const [createSubcontractBilling]= useMutation(CREATE_SUBCONTRACT_BILLING,{ onCompleted: () => void refetchCCSubcon(), onError: ccError })
-  const [updateSubcontractBilling]= useMutation(UPDATE_SUBCONTRACT_BILLING,{ onCompleted: () => void refetchCCSubcon(), onError: ccError })
-  const [deleteSubcontractBilling]= useMutation(DELETE_SUBCONTRACT_BILLING,{ onCompleted: () => void refetchCCSubcon(), onError: ccError })
-  const [createLaborEntry]        = useMutation(CREATE_LABOR_ENTRY,        { onCompleted: () => { void refetchCCLabor(); void refetchCCSummary() }, onError: ccError })
-  const [updateLaborEntry]        = useMutation(UPDATE_LABOR_ENTRY,        { onCompleted: () => { void refetchCCLabor(); void refetchCCSummary() }, onError: ccError })
-  const [deleteLaborEntry]        = useMutation(DELETE_LABOR_ENTRY,        { onCompleted: () => { void refetchCCLabor(); void refetchCCSummary() }, onError: ccError })
-  const [createEquipmentLog]      = useMutation(CREATE_EQUIPMENT_LOG,      { onCompleted: () => { void refetchCCEquip(); void refetchCCSummary() }, onError: ccError })
-  const [updateEquipmentLog]      = useMutation(UPDATE_EQUIPMENT_LOG,      { onCompleted: () => { void refetchCCEquip(); void refetchCCSummary() }, onError: ccError })
-  const [deleteEquipmentLog]      = useMutation(DELETE_EQUIPMENT_LOG,      { onCompleted: () => { void refetchCCEquip(); void refetchCCSummary() }, onError: ccError })
-  const [upsertCostForecast]      = useMutation(UPSERT_COST_FORECAST,      { onCompleted: () => { void refetchCCForecast(); void refetchCCSummary() }, onError: ccError })
-  const [createClientBilling]     = useMutation(CREATE_CLIENT_BILLING,     { onCompleted: () => { void refetchCCBilling(); void refetchCCSummary() }, onError: ccError })
-  const [updateClientBilling]     = useMutation(UPDATE_CLIENT_BILLING,     { onCompleted: () => { void refetchCCBilling(); void refetchCCSummary() }, onError: ccError })
-  const [deleteClientBilling]     = useMutation(DELETE_CLIENT_BILLING,     { onCompleted: () => { void refetchCCBilling(); void refetchCCSummary() }, onError: ccError })
+  const [createCostCode] = useMutation(CREATE_COST_CODE, { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
+  const [updateCostCode] = useMutation(UPDATE_COST_CODE, { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
+  const [deleteCostCode] = useMutation(DELETE_COST_CODE, { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
 
   // ── Variation Orders ───────────────────────────────────────────────────────
   const skipVO = !id || tab !== 'variation_orders'
@@ -600,12 +558,17 @@ export default function ProjectDetail() {
     variationOrders:resolve('variation_orders', isPM).canView,
   }
 
+  const phase = p.lifecyclePhase ?? 'enquiry'
+
   const TABS = ALL_TABS
     .filter(() => teamLoading || isMember || Object.values(myOverrides).some(v => v !== 'none'))
-    .filter(t => t.key !== 'rfq_lines'        || p.isRfq)
+    .filter(t => t.key !== 'rfq_lines'        || (p.isRfq && phaseGte(phase, 'scope_review')))
     .filter(t => t.key !== 'bidding'          || p.isRfq)
-    .filter(t => t.key !== 'cost_control'     || canView.costControl)
-    .filter(t => t.key !== 'variation_orders' || canView.variationOrders)
+    .filter(t => t.key !== 'execution'        || phaseGte(phase, 'execution'))
+    .filter(t => t.key !== 'procurement'      || phaseGte(phase, 'scope_review'))
+    .filter(t => t.key !== 'meetings'         || phaseGte(phase, 'scope_review'))
+    .filter(t => t.key !== 'cost_control'     || (canView.costControl && phaseGte(phase, 'scope_review')))
+    .filter(t => t.key !== 'variation_orders' || (canView.variationOrders && phaseGte(phase, 'execution')))
 
   const parse = (v: unknown): unknown[] => { try { return Array.isArray(v) ? v : JSON.parse(String(v ?? '[]')) } catch { return [] } }
   const stages        = parse(p.stages)        as Stage[]
@@ -666,7 +629,7 @@ export default function ProjectDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <h1 style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary, margin: 0, lineHeight: 1.2 }}>{p.name}</h1>
               <Badge variant={lifecycleBadgeVariant(p.status)}>
-                {LIFECYCLE_STAGES[lifecycleIdx(p.status)]?.label ?? p.status.replace(/_/g, ' ')}
+                {LIFECYCLE_STAGES[lifecycleIdx(p.lifecyclePhase ?? 'enquiry')]?.label ?? p.status.replace(/_/g, ' ')}
               </Badge>
               {p.isRfq && isRfqPhase && <Badge variant="info">RFQ</Badge>}
             </div>
@@ -703,7 +666,11 @@ export default function ProjectDetail() {
                         <ProjectStatusBar
                           projectId={id!}
                           status={p.status}
+                          lifecyclePhase={p.lifecyclePhase ?? 'enquiry'}
                           allowedActions={p.allowedActions ?? []}
+                          clientDocCount={p.clientDocCount ?? 0}
+                          rfqLineCount={p.rfqLineCount ?? 0}
+                          isRfq={p.isRfq ?? false}
                           onTransitioned={() => { void refetch(); setShowActionsPanel(false) }}
                           timeline={{ siteVisitDate: p.siteVisitDate, siteVisitTime: p.siteVisitTime, questionDate: p.questionDate, questionTime: p.questionTime, submissionDate: p.submissionDate, submissionTime: p.submissionTime }}
                         />
@@ -739,6 +706,25 @@ export default function ProjectDetail() {
                               Apply
                             </Button>
                           </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px 10px', background: theme.bgCanvas }}>
+                            <SearchableSelect
+                              value={adminPhase}
+                              onChange={setAdminPhase}
+                              placeholder="Select lifecycle phase…"
+                              options={[
+                                { value: 'enquiry',         label: 'Client Enquiry' },
+                                { value: 'scope_review',    label: 'Scope Review' },
+                                { value: 'bidding',         label: 'Bidding' },
+                                { value: 'client_approval', label: 'Client Approval' },
+                                { value: 'execution',       label: 'Execution' },
+                                { value: 'closeout',        label: 'Closeout' },
+                              ]}
+                            />
+                            <Button variant="danger" size="sm" disabled={!adminPhase || adminPhase === (p.lifecyclePhase ?? 'enquiry')} loading={adminPhaseSetting}
+                              onClick={() => void adminSetPhase({ variables: { id: id!, phase: adminPhase } })}>
+                              Apply
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -750,7 +736,7 @@ export default function ProjectDetail() {
         </div>
         {/* Meta info row */}
         <div style={{ display: 'flex', gap: isPhone ? '10px' : '24px', flexWrap: 'wrap', fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>
-          {([['Project No', p.code], ['Client', p.clientName], ['Contract No', p.contractName], ['Project Manager', p.managerName]] as [string,string|null|undefined][]).filter(([,v]) => v).map(([label, value]) => (
+          {([['Project No', p.code], ['RFQ No', p.rfqNumber], ['Client', p.clientName], ['Contract No', p.contractName], ['Project Manager', p.managerName]] as [string,string|null|undefined][]).filter(([,v]) => v).map(([label, value]) => (
             <span key={label}>{label}: <strong style={{ color: theme.textPrimary }}>{String(value)}</strong></span>
           ))}
         </div>
@@ -758,7 +744,7 @@ export default function ProjectDetail() {
         {/* Lifecycle progress bar */}
         <div style={{ display: 'flex', alignItems: 'center', paddingBottom: '16px' }}>
           {LIFECYCLE_STAGES.map((stage, idx) => {
-            const cur = lifecycleIdx(p.status)
+            const cur = lifecycleIdx(p.lifecyclePhase ?? 'enquiry')
             const isActive = idx === cur
             const isPast   = idx < cur
             return (
@@ -856,19 +842,7 @@ export default function ProjectDetail() {
         {tab === 'rfq_lines' && (
           <EngineeringTab
             projectId={id!}
-            lines={rfqLinesData?.rfqLines ?? []}
-            isEditable={isRfqPhase || canEdit.engineering}
-            saving={savingLines}
-            onSaveLines={(lines) => void upsertRFQLines({ variables: { projectId: id!, lines } })}
-            revisions={engRevisionsData?.engineeringRevisions ?? []}
-            issuingRevision={issuingRevision}
-            onIssueRevision={(revisionCode, notes) => void issueEngineeringRevision({ variables: { projectId: id!, revisionCode, notes } })}
-            drawings={drawingsData?.projectDrawings ?? []}
-            creatingDrawing={creatingDrawing || revisingDrawing}
-            onCreateDrawing={(vars) => void createProjectDrawing({ variables: vars })}
-            onReviseDrawing={(vars) => void reviseProjectDrawing({ variables: vars })}
-            onUpdateDrawingStatus={(id2, status) => void updateProjectDrawingStatus({ variables: { id: id2, status } })}
-            onDeleteDrawing={(id2) => void deleteProjectDrawing({ variables: { id: id2 } })}
+            projectCode={String(p?.rfqNumber ?? p?.code ?? '')}
             theme={theme}
             isAdmin={isAdmin}
           />
@@ -879,6 +853,7 @@ export default function ProjectDetail() {
           const ovCcy       = String(cs?.['currencyCode'] ?? p.budgetCurrency ?? 'USD')
           const ovActual    = Number(cs?.['actualCosts']    ?? 0)
           const ovCommitted = Number(cs?.['committedCosts'] ?? 0)
+          const ovStoreCosts = Number(cs?.['storeCosts']   ?? 0)
           const ovBudget    = Number(cs?.['budgetAmount']   ?? p.budgetAmount ?? 0)
           const ovRemaining = Number(cs?.['budgetRemaining'] ?? (ovBudget - ovActual - ovCommitted))
           const ovUtilPct   = ovBudget > 0 ? Math.round((ovActual / ovBudget) * 100) : 0
@@ -1002,7 +977,7 @@ export default function ProjectDetail() {
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {/* Status banners */}
-              {p.holdReason && (
+              {p.status === 'on_hold' && p.holdReason && (
                 <div style={{ padding: '10px 14px', borderRadius: '8px', background: '#fef3c7', border: '1px solid #f59e0b', fontSize: '13px', color: '#92400e' }}>
                   <strong>On Hold:</strong> {p.holdReason}
                 </div>
@@ -1047,10 +1022,11 @@ export default function ProjectDetail() {
                       </thead>
                       <tbody>
                         {[
-                          { label: 'Approved Budget',            val: ovBudget,      color: theme.textPrimary, bold: false },
-                          { label: 'Actual Cost',                val: ovActual,      color: theme.textPrimary, bold: false },
-                          { label: 'Committed Cost',             val: ovCommitted,   color: theme.textPrimary, bold: false },
-                          { label: 'Remaining Budget',           val: ovRemaining,   color: ovRemaining < 0 ? '#ef4444' : '#22c55e', bold: true },
+                          { label: 'Approved Budget',            val: ovBudget,       color: theme.textPrimary, bold: false },
+                          { label: 'Actual Cost',                val: ovActual,       color: theme.textPrimary, bold: false },
+                          { label: 'Committed Cost (incl. store)',val: ovCommitted,   color: theme.textPrimary, bold: false },
+                          ...(ovStoreCosts > 0 ? [{ label: '  · Store Price Component', val: ovStoreCosts, color: theme.textMuted, bold: false }] : []),
+                          { label: 'Remaining Budget',           val: ovRemaining,    color: ovRemaining < 0 ? '#ef4444' : '#22c55e', bold: true },
                           { label: 'Forecast Cost at Completion',val: ovEAC,         color: theme.textPrimary, bold: false },
                           { label: 'Expected Profit',            val: ovProfit,      color: ovProfit >= 0 ? '#22c55e' : '#ef4444', bold: false },
                           { label: 'Profit Margin',              val: null,          color: ovProfit >= 0 ? '#22c55e' : '#ef4444', bold: true, text: `${ovMarginPct.toFixed(1)}%` },
@@ -1333,31 +1309,43 @@ export default function ProjectDetail() {
               isPhone ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {[...stages].sort((a, b) => a.sequence - b.sequence).map(s => (
-                    <div key={s.id} onClick={() => { setEditStage(s); setStageDrawer(true) }}
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '12px 14px', cursor: 'pointer' }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = theme.accent)} onMouseLeave={e => (e.currentTarget.style.borderColor = theme.border)}>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: theme.accent, flexShrink: 0 }}>{s.sequence}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, color: theme.textPrimary, fontSize: '13px' }}>{s.name}</div>
-                        {s.plannedStartDate && <div style={{ fontSize: '11px', color: theme.textMuted }}>{s.plannedStartDate} → {s.plannedEndDate ?? '—'}</div>}
+                    <div key={s.id} style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+                      <div onClick={() => { setEditStage(s); setStageDrawer(true) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', cursor: 'pointer' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = theme.bgCanvas)} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: theme.accent, flexShrink: 0 }}>{s.sequence}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, color: theme.textPrimary, fontSize: '13px' }}>{s.name}</div>
+                          {s.plannedStartDate && <div style={{ fontSize: '11px', color: theme.textMuted }}>{s.plannedStartDate} → {s.plannedEndDate ?? '—'}</div>}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{s.completionPct}%</div>
+                          <Badge variant={s.status === 'completed' ? 'success' : (s.status === 'active' || s.status === 'in_progress') ? 'info' : 'neutral'}>{s.status.replace('_', ' ')}</Badge>
+                        </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{s.completionPct}%</div>
-                        <Badge variant={s.status === 'completed' ? 'success' : (s.status === 'active' || s.status === 'in_progress') ? 'info' : 'neutral'}>{s.status.replace('_', ' ')}</Badge>
-                      </div>
+                      {s.status !== 'completed' && s.status !== 'cancelled' && (
+                        <div style={{ padding: '8px 14px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => void quickUpdateStage({ variables: { projectId: id!, stageId: s.id, input: { name: s.name, status: s.status === 'pending' ? 'active' : 'completed', completionPct: s.status === 'pending' ? s.completionPct : 100, plannedStartDate: s.plannedStartDate || null, plannedEndDate: s.plannedEndDate || null, actualStartDate: s.actualStartDate || (s.status === 'pending' ? new Date().toISOString().slice(0, 10) : null), actualEndDate: s.status !== 'pending' ? new Date().toISOString().slice(0, 10) : null, notes: s.notes || null, assignedTo: s.assignedTo || null } } })}
+                            style={{ padding: '5px 14px', borderRadius: 6, border: 'none', background: s.status === 'pending' ? theme.accent : '#22c55e', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            {s.status === 'pending' ? '▶ Start' : '✓ Complete'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               ) : (
                 <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '44px 1fr 160px 140px 120px 100px 32px', padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, background: theme.bgCanvas }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '44px 1fr 160px 140px 120px 100px 120px', padding: '8px 16px', borderBottom: `1px solid ${theme.border}`, background: theme.bgCanvas }}>
                     {['#', 'Stage', 'Dates', 'Assigned To', 'Progress', 'Status', ''].map((h, i) => (
                       <div key={i} style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 4 ? 'center' : 'left' }}>{h}</div>
                     ))}
                   </div>
                   {[...stages].sort((a, b) => a.sequence - b.sequence).map((s, i) => (
                     <div key={s.id} onClick={() => { setEditStage(s); setStageDrawer(true) }}
-                      style={{ display: 'grid', gridTemplateColumns: '44px 1fr 160px 140px 120px 100px 32px', alignItems: 'center', padding: '10px 16px', borderBottom: i < stages.length - 1 ? `1px solid ${theme.border}` : 'none', cursor: 'pointer' }}
+                      style={{ display: 'grid', gridTemplateColumns: '44px 1fr 160px 140px 120px 100px 120px', alignItems: 'center', padding: '10px 16px', borderBottom: i < stages.length - 1 ? `1px solid ${theme.border}` : 'none', cursor: 'pointer' }}
                       onMouseEnter={e => (e.currentTarget.style.background = theme.bgCanvas)} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                       <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: theme.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: theme.accent }}>{s.sequence}</div>
                       <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>{s.name}</div>
@@ -1370,8 +1358,16 @@ export default function ProjectDetail() {
                         <div style={{ fontSize: '11px', color: theme.textMuted, textAlign: 'center', marginTop: '2px' }}>{s.completionPct}%</div>
                       </div>
                       <div><Badge variant={s.status === 'completed' ? 'success' : (s.status === 'active' || s.status === 'in_progress') ? 'info' : 'neutral'}>{s.status.replace('_', ' ')}</Badge></div>
-                      <div style={{ color: theme.textMuted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                      <div onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        {s.status !== 'completed' && s.status !== 'cancelled' && (
+                          <button
+                            onClick={() => void quickUpdateStage({ variables: { projectId: id!, stageId: s.id, input: { name: s.name, status: s.status === 'pending' ? 'active' : 'completed', completionPct: s.status === 'pending' ? s.completionPct : 100, plannedStartDate: s.plannedStartDate || null, plannedEndDate: s.plannedEndDate || null, actualStartDate: s.actualStartDate || (s.status === 'pending' ? new Date().toISOString().slice(0, 10) : null), actualEndDate: s.status !== 'pending' ? new Date().toISOString().slice(0, 10) : null, notes: s.notes || null, assignedTo: s.assignedTo || null } } })}
+                            style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: s.status === 'pending' ? theme.accent : '#22c55e', color: '#fff', fontSize: '11px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            {s.status === 'pending' ? '▶ Start' : '✓ Complete'}
+                          </button>
+                        )}
+                        {s.status === 'completed' && <span style={{ fontSize: '11px', color: '#22c55e', fontWeight: 600 }}>✓ Done</span>}
                       </div>
                     </div>
                   ))}
@@ -1666,38 +1662,12 @@ export default function ProjectDetail() {
             isEditable={canEdit.costControl}
             isAdmin={canEdit.costControl}
             costCodes={ccCodesData?.projectCostCodes ?? []}
-            committedCosts={ccCommitData?.projectCommittedCosts ?? []}
-            cashFlow={ccCashFlowData?.projectCashFlow ?? []}
-            subcontracts={ccSubconData?.projectSubcontracts ?? []}
-            laborEntries={ccLaborData?.projectLaborEntries ?? []}
-            equipmentLog={ccEquipData?.projectEquipmentLog ?? []}
-            forecasts={ccForecastData?.projectCostForecast ?? []}
-            clientBillings={ccBillingData?.projectClientBillings ?? []}
             summary={ccSummaryData?.projectCostSummary ?? null}
             onCreateCostCode={(v) => void createCostCode({ variables: v })}
             onUpdateCostCode={(v) => void updateCostCode({ variables: v })}
             onDeleteCostCode={(id) => void deleteCostCode({ variables: { id } })}
-            onCreateCommitted={(v) => void createCommittedCost({ variables: v })}
-            onUpdateCommitted={(v) => void updateCommittedCost({ variables: v })}
-            onDeleteCommitted={(id) => void deleteCommittedCost({ variables: { id } })}
-            onSyncPOs={() => void syncPOCommitments({ variables: { projectId: id } })}
-            onUpsertCashFlow={(v) => void upsertCashFlowPeriod({ variables: v })}
-            onCreateSubcontract={(v) => void createSubcontract({ variables: v })}
-            onUpdateSubcontract={(v) => void updateSubcontract({ variables: v })}
-            onDeleteSubcontract={(id) => void deleteSubcontract({ variables: { id } })}
-            onCreateSCBilling={(v) => void createSubcontractBilling({ variables: v })}
-            onUpdateSCBilling={(v) => void updateSubcontractBilling({ variables: v })}
-            onDeleteSCBilling={(id) => void deleteSubcontractBilling({ variables: { id } })}
-            onCreateLabor={(v) => void createLaborEntry({ variables: v })}
-            onUpdateLabor={(v) => void updateLaborEntry({ variables: v })}
-            onDeleteLabor={(id) => void deleteLaborEntry({ variables: { id } })}
-            onCreateEquipment={(v) => void createEquipmentLog({ variables: v })}
-            onUpdateEquipment={(v) => void updateEquipmentLog({ variables: v })}
-            onDeleteEquipment={(id) => void deleteEquipmentLog({ variables: { id } })}
-            onUpsertForecast={(v) => void upsertCostForecast({ variables: v })}
-            onCreateBilling={(v) => void createClientBilling({ variables: v })}
-            onUpdateBilling={(v) => void updateClientBilling({ variables: v })}
-            onDeleteBilling={(id) => void deleteClientBilling({ variables: { id } })}
+            projectAnalyticAccountId={p?.analyticAccountId ?? null}
+            projectAnalyticAccountName={p?.analyticAccountName ?? null}
           />
         )}
 
@@ -1708,9 +1678,11 @@ export default function ProjectDetail() {
             draft: 'neutral', pending_approval: 'warning', approved: 'info',
             in_production: 'info', completed: 'success', cancelled: 'danger',
           }
+          const storeOuts = (miData?.materialIssues ?? []) as Array<Record<string, unknown>>
           const subNav: { key: typeof procSection; label: string; count: number }[] = [
             { key: 'purchase_orders', label: 'Purchase Orders', count: recentPos.length },
             { key: 'manufacturing',   label: 'Manufacturing Requests', count: mrs.length },
+            { key: 'store_out',       label: 'Store Out', count: storeOuts.length },
           ]
           return (
             <div>
@@ -1826,6 +1798,60 @@ export default function ProjectDetail() {
                         ))}
                       </div>
                     )
+                  )}
+                </div>
+              )}
+
+              {/* Store Out — read-only summary, managed via Inventory > Store Out */}
+              {procSection === 'store_out' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <span style={{ fontSize: '13px', color: theme.textMuted }}>
+                      {storeOuts.length} store-out{storeOuts.length !== 1 ? 's' : ''} linked to this project
+                    </span>
+                    <Button variant="secondary" size="sm" onClick={() => navigate(`/inventory/store-out?projectId=${id}`)}>
+                      Manage in Store Out module →
+                    </Button>
+                  </div>
+                  {storeOuts.length === 0 && (
+                    <div style={{ color: theme.textMuted, fontSize: '13px', textAlign: 'center', padding: '32px 0' }}>
+                      No store-outs for this project yet.{' '}
+                      <button onClick={() => navigate('/inventory/store-out')}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.accent, fontSize: '13px', textDecoration: 'underline' }}>
+                        Go to Store Out
+                      </button>{' '}to create one.
+                    </div>
+                  )}
+                  {storeOuts.length > 0 && (
+                    <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 130px 120px 100px', padding: '8px 16px', background: theme.bgCanvas, borderBottom: `1px solid ${theme.border}` }}>
+                        {['Issue #', 'Description', 'Date', 'Total Cost', 'Status'].map((h, i) => (
+                          <div key={i} style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</div>
+                        ))}
+                      </div>
+                      {storeOuts.map((si, i) => {
+                        const siLines = (si['lines'] as Array<Record<string, unknown>>) ?? []
+                        const totalCost = siLines.reduce((sum, l) => sum + parseFloat(String(l['totalCost'] ?? '0')), 0)
+                        const statusVariant: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = { draft: 'warning', issued: 'success', cancelled: 'danger' }
+                        return (
+                          <div key={String(si['id'])}
+                            style={{ display: 'grid', gridTemplateColumns: '160px 1fr 130px 120px 100px', alignItems: 'center', padding: '10px 16px', borderBottom: i < storeOuts.length - 1 ? `1px solid ${theme.border}` : 'none', cursor: 'pointer' }}
+                            onClick={() => navigate('/inventory/store-out')}
+                            onMouseEnter={e => (e.currentTarget.style.background = theme.bgCanvas)}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                            <div style={{ fontFamily: 'monospace', fontSize: '13px', fontWeight: 600, color: theme.accent }}>{String(si['issueNumber'] ?? '—')}</div>
+                            <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+                              {si['poNumber'] ? `PO: ${String(si['poNumber'])}` : (si['notes'] ? String(si['notes']).slice(0, 40) : 'Manual issue')}
+                            </div>
+                            <div style={{ fontSize: '12px', color: theme.textMuted }}>{String(si['issueDate'] ?? '').slice(0, 10)}</div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                              {totalCost > 0 ? totalCost.toLocaleString('en-US', { minimumFractionDigits: 2 }) : '—'}
+                            </div>
+                            <div><Badge variant={statusVariant[String(si['status'])] ?? 'neutral'}>{String(si['status'])}</Badge></div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
               )}
@@ -3025,12 +3051,17 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showModal, setShowModal]   = useState(false)
   const [reviseDoc, setReviseDoc]   = useState<ClientDoc | null>(null)
+  const [editDoc, setEditDoc]       = useState<ClientDoc | null>(null)
   const [uploading, setUploading]   = useState(false)
   const [form, setForm] = useState({
     title: '', documentNumber: '', revision: '', category: 'rfq_tender' as CDCategory,
     receivedFrom: '', transmissionDate: '', description: '', fileId: '', filename: '',
   })
   const [revForm, setRevForm] = useState({ revision: '', description: '', fileId: '', filename: '' })
+  const [editForm, setEditForm] = useState({
+    title: '', documentNumber: '', revision: '', category: 'rfq_tender' as CDCategory,
+    receivedFrom: '', transmissionDate: '', description: '',
+  })
 
   const { data, loading, refetch } = useQuery(CLIENT_DOCUMENTS_QUERY, {
     variables: { projectId },
@@ -3040,6 +3071,7 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
 
   const [uploadDoc]    = useMutation(UPLOAD_CLIENT_DOCUMENT)
   const [uploadRev]    = useMutation(UPLOAD_CLIENT_DOCUMENT_REVISION)
+  const [updateDoc]    = useMutation(UPDATE_CLIENT_DOCUMENT)
   const [updateStatus] = useMutation(UPDATE_CLIENT_DOCUMENT_STATUS)
   const [deleteDoc]    = useMutation(DELETE_CLIENT_DOCUMENT)
 
@@ -3103,6 +3135,30 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
     catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
   }
 
+  const openEdit = (doc: ClientDoc) => {
+    setEditDoc(doc)
+    setEditForm({
+      title: doc.title, documentNumber: doc.documentNumber ?? '', revision: doc.revision ?? '',
+      category: (doc.category as CDCategory) ?? 'rfq_tender', receivedFrom: doc.receivedFrom ?? '',
+      transmissionDate: doc.transmissionDate ?? '', description: doc.description ?? '',
+    })
+  }
+
+  const handleEditSave = async () => {
+    if (!editDoc || !editForm.title) { addToast({ type: 'error', message: 'Title is required' }); return }
+    try {
+      await updateDoc({ variables: {
+        id: editDoc.id, title: editForm.title, category: editForm.category,
+        documentNumber: editForm.documentNumber || null, revision: editForm.revision || null,
+        description: editForm.description || null, receivedFrom: editForm.receivedFrom || null,
+        transmissionDate: editForm.transmissionDate || null,
+      }})
+      addToast({ type: 'success', message: 'Document updated' })
+      setEditDoc(null)
+      void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
   const handleDelete = async (doc: ClientDoc) => {
     if (!window.confirm(`Delete "${doc.title}"?`)) return
     try { await deleteDoc({ variables: { id: doc.id }}); void refetch() }
@@ -3150,11 +3206,37 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
     )
   }
 
-  const iconBtn = (label: string, title: string, onClick: () => void, danger = false) => (
-    <button title={title} onClick={onClick} style={{ padding: '5px 9px', borderRadius: 7, border: `1px solid ${danger ? '#fca5a5' : theme.border}`, background: 'transparent', color: danger ? '#ef4444' : theme.textMuted, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-      {label}
-    </button>
-  )
+  const iconActionBtn = (tooltip: string, icon: React.ReactNode, onClick: () => void, variant: 'default' | 'danger' | 'accent' = 'default') => {
+    const styles = {
+      default: { color: theme.textMuted, hoverBg: theme.bgSurface },
+      danger:  { color: '#dc2626',       hoverBg: '#fff1f2' },
+      accent:  { color: theme.accent,    hoverBg: theme.accentBg },
+    }[variant]
+    return (
+      <button
+        title={tooltip}
+        onClick={onClick}
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 30, height: 30, borderRadius: 6, border: `1px solid transparent`,
+          background: 'transparent', color: styles.color,
+          cursor: 'pointer', flexShrink: 0, transition: 'background 0.12s, border-color 0.12s',
+        }}
+        onMouseEnter={e => {
+          const t = e.currentTarget
+          t.style.background = styles.hoverBg
+          t.style.borderColor = variant === 'danger' ? '#fca5a5' : theme.border
+        }}
+        onMouseLeave={e => {
+          const t = e.currentTarget
+          t.style.background = 'transparent'
+          t.style.borderColor = 'transparent'
+        }}
+      >
+        {icon}
+      </button>
+    )
+  }
 
   const inp = (value: string, onChange: (v: string) => void, placeholder?: string, type = 'text') => (
     <input type={type} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)}
@@ -3166,7 +3248,7 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
     </div>
   )
 
-  const COL = '52px minmax(0,1fr) 150px 72px 110px 190px'
+  const COL = '52px minmax(0,1fr) 150px 72px 110px 180px'
 
   const renderDocRow = (doc: ClientDoc, isRevision = false) => {
     const catColor = CD_COLORS[doc.category as CDCategory] ?? CD_COLORS.other
@@ -3247,18 +3329,44 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
           {/* Status */}
           <div>{statusPill(doc.status)}</div>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-            {doc.downloadUrl && (
-              <a href={doc.downloadUrl} target="_blank" rel="noreferrer"
-                style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${theme.accentBorder}`, background: theme.accentBg, color: theme.accent, fontSize: 12, fontWeight: 500, textDecoration: 'none', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
-                Download
-              </a>
+          {/* Actions — icon-only compact row */}
+          <div style={{ display: 'flex', gap: 2, alignItems: 'center', justifyContent: 'flex-end' }}>
+            {/* Preview */}
+            {doc.downloadUrl && iconActionBtn('Preview',
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>,
+              () => { if (doc.downloadUrl) window.open(doc.downloadUrl, '_blank') }
             )}
-            {!isRevision && iconBtn('+ Rev', 'Upload new revision', () => { setReviseDoc(doc); setRevForm({ revision: '', description: '', fileId: '', filename: '' }) })}
-            {isAdmin && iconBtn(doc.status === 'archived' ? 'Restore' : 'Archive', doc.status === 'archived' ? 'Restore document' : 'Archive document', () => void handleArchive(doc))}
-            {isAdmin && iconBtn('Delete', 'Delete document', () => void handleDelete(doc), true)}
+            {/* Download */}
+            {doc.downloadUrl && iconActionBtn('Download',
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+              () => { if (doc.downloadUrl) window.open(doc.downloadUrl, '_blank') }, 'accent'
+            )}
+            {/* Divider */}
+            {(isAdmin || !isRevision) && doc.downloadUrl && (
+              <span style={{ width: 1, height: 16, background: theme.border, margin: '0 4px', flexShrink: 0 }} />
+            )}
+            {/* Edit */}
+            {isAdmin && !isRevision && iconActionBtn('Edit document',
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+              () => openEdit(doc)
+            )}
+            {/* + Revision */}
+            {!isRevision && iconActionBtn('Upload new revision',
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="19" y1="7" x2="3" y2="23" stroke="none"/><path d="M20 12v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M17 15h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
+              () => { setReviseDoc(doc); setRevForm({ revision: '', description: '', fileId: '', filename: '' }) }
+            )}
+            {/* Archive / Restore */}
+            {isAdmin && iconActionBtn(doc.status === 'archived' ? 'Restore document' : 'Archive document',
+              doc.status === 'archived'
+                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="1 4 1 10 7 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.51 15a9 9 0 1 0 .49-3.36" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="21 8 21 21 3 21 3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><rect x="1" y="3" width="22" height="5" rx="1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+              () => void handleArchive(doc)
+            )}
+            {/* Delete */}
+            {isAdmin && iconActionBtn('Delete document',
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+              () => void handleDelete(doc), 'danger'
+            )}
           </div>
         </div>
         {isExpanded && doc.revisions.map(rev => renderDocRow(rev, true))}
@@ -3464,6 +3572,55 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
               <button disabled={!revForm.revision || !revForm.fileId || uploading} onClick={() => void handleRevise()}
                 style={{ padding: '8px 22px', borderRadius: 8, background: (revForm.revision && revForm.fileId && !uploading) ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: (revForm.revision && revForm.fileId && !uploading) ? 'pointer' : 'not-allowed' }}>
                 Upload Revision
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Edit Modal ── */}
+      {editDoc && (
+        <Modal open={true} title={`Edit Document — ${editDoc.title}`} onClose={() => setEditDoc(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Title', true)}
+                {inp(editForm.title, v => setEditForm(f => ({...f, title: v})), 'Document title')}
+              </div>
+              <div>
+                {lbl('Category', true)}
+                <select value={editForm.category} onChange={e => setEditForm(f => ({...f, category: e.target.value as CDCategory}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }}>
+                  {CD_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Revision')}
+                {inp(editForm.revision, v => setEditForm(f => ({...f, revision: v})), 'e.g. A, 1, C2')}
+              </div>
+              <div>
+                {lbl('Document Number')}
+                {inp(editForm.documentNumber, v => setEditForm(f => ({...f, documentNumber: v})), 'e.g. DOC-001')}
+              </div>
+              <div>
+                {lbl('Received From')}
+                {inp(editForm.receivedFrom, v => setEditForm(f => ({...f, receivedFrom: v})), 'Client / sender name')}
+              </div>
+              <div>
+                {lbl('Transmission Date')}
+                {inp(editForm.transmissionDate, v => setEditForm(f => ({...f, transmissionDate: v})), '', 'date')}
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description')}
+                <textarea value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} placeholder="Brief description…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 72, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => setEditDoc(null)} style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!editForm.title} onClick={() => void handleEditSave()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: editForm.title ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: editForm.title ? 'pointer' : 'not-allowed' }}>
+                Save Changes
               </button>
             </div>
           </div>
@@ -3793,7 +3950,7 @@ function BiddingTab({
                   {lbl('Discipline')}
                   <select onChange={e => { newDelForm.current.discipline = e.target.value }} style={inp}>
                     <option value="">—</option>
-                    {DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                    {ENG_DISCIPLINES.filter(d => d.key !== 'overview').map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
                   </select>
                 </div>
               </div>
@@ -4093,624 +4250,605 @@ function BiddingTab({
 }
 
 // ── Engineering types ─────────────────────────────────────────────────────
-interface EngRevision { id: string; revisionCode: string; status: string; notes: string | null; issuedByName: string; issuedAt: string; itemCount: number; snapshotData: unknown[] }
 interface EngDrawing { id: string; drawingNumber: string; title: string; discipline: string | null; scale: string | null; paperSize: string | null; revision: string | null; status: string; issueDate: string | null; notes: string | null; fileId: string | null; parentDrawingId: string | null; uploadedByName: string | null; downloadUrl: string | null; filename: string | null; revisions: EngDrawing[]; createdAt: string }
 
-const DISCIPLINES = ['Civil','Structural','Mechanical','Electrical','Plumbing','HVAC','Architecture','Other']
-const DRAWING_STATUSES: Record<string, { label: string; color: string }> = {
-  preliminary:       { label: 'Preliminary',       color: '#94a3b8' },
-  for_review:        { label: 'For Review',         color: '#f59e0b' },
-  for_construction:  { label: 'For Construction',   color: '#3b82f6' },
-  as_built:          { label: 'As Built',           color: '#22c55e' },
-  cancelled:         { label: 'Cancelled',          color: '#ef4444' },
-  superseded:        { label: 'Superseded',         color: '#6b7280' },
+interface EngDoc {
+  id: string; projectId: string; refNumber: string; discipline: string; docType: string
+  seqNo: number; title: string; description: string | null; scale: string | null
+  paperSize: string | null; revision: string | null; status: string; issueDate: string | null
+  notes: string | null; fileId: string | null; docGroupId: string; isCurrent: boolean
+  uploadedByName: string | null; downloadUrl: string | null; filename: string | null
+  history: EngDoc[]
+  createdAt: string
 }
 
-function EngineeringTab({
-  projectId, lines, isEditable, saving, onSaveLines,
-  revisions, issuingRevision, onIssueRevision,
-  drawings, creatingDrawing, onCreateDrawing, onReviseDrawing, onUpdateDrawingStatus, onDeleteDrawing,
-  theme, isAdmin,
-}: {
+// ── Engineering Documents constants ──────────────────────────────────────
+const ENG_DISCIPLINES = [
+  { key: 'overview',      label: 'Overview',      code: null },
+  { key: 'civil',         label: 'Civil',         code: 'CIV' },
+  { key: 'structural',    label: 'Structural',    code: 'STR' },
+  { key: 'architectural', label: 'Architectural', code: 'ARC' },
+  { key: 'electrical',    label: 'Electrical',    code: 'ELE' },
+  { key: 'ist',           label: 'IST',           code: 'IST' },
+  { key: 'mechanical',    label: 'Mechanical',    code: 'MEC' },
+  { key: 'others',        label: 'Others',        code: 'OTH' },
+] as const
+
+const ENG_DOC_TYPES = [
+  { key: 'all',           label: 'All' },
+  { key: 'calculation',   label: 'Calculations' },
+  { key: 'drawing',       label: 'Drawings' },
+  { key: 'datasheet',     label: 'Datasheets' },
+  { key: 'specification', label: 'Specifications' },
+  { key: 'other',         label: 'Others' },
+] as const
+
+const ENG_DOC_STATUSES: Record<string, { label: string; dot: string; text: string; bg: string }> = {
+  preliminary:       { label: 'Preliminary',     dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  for_review:        { label: 'For Review',       dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
+  for_construction:  { label: 'For Construction', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  as_built:          { label: 'As Built',         dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
+  cancelled:         { label: 'Cancelled',        dot: '#ef4444', text: '#dc2626', bg: '#fef2f2' },
+  superseded:        { label: 'Superseded',       dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb' },
+}
+
+function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
   projectId: string
-  lines: Array<Record<string, unknown>>
-  isEditable: boolean
-  saving: boolean
-  onSaveLines: (lines: Array<{ sequence: number; phaseLabel?: string; description: string; quantity?: number; unit?: string; estimatedUnitCost?: number; bidUnitPrice?: number; notes?: string; discipline?: string; drawingRef?: string; engineeringRef?: string; specSection?: string }>) => void
-  revisions: EngRevision[]
-  issuingRevision: boolean
-  onIssueRevision: (revisionCode: string, notes?: string) => void
-  drawings: EngDrawing[]
-  creatingDrawing: boolean
-  onCreateDrawing: (vars: { projectId: string; fileId: string; drawingNumber: string; title: string; discipline?: string; scale?: string; paperSize?: string; revision?: string; status?: string; issueDate?: string; notes?: string }) => void
-  onReviseDrawing: (vars: { parentDrawingId: string; fileId: string; revision: string; notes?: string }) => void
-  onUpdateDrawingStatus: (id: string, status: string) => void
-  onDeleteDrawing: (id: string) => void
+  projectCode: string
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
-  const addToast = useToastStore((s) => s.addToast)
-  const [subTab, setSubTab] = React.useState<'scope' | 'drawings'>('scope')
+  const addToast  = useToastStore((s) => s.addToast)
+  const [discipline, setDiscipline] = React.useState<string>('overview')
+  const [docType,    setDocType]    = React.useState<string>('all')
+  const [search,     setSearch]     = React.useState('')
+  const [expandedId, setExpandedId] = React.useState<string | null>(null)
+  const [showModal,  setShowModal]  = React.useState(false)
+  const [reviseDoc,  setReviseDoc]  = React.useState<EngDoc | null>(null)
+  const [uploading,  setUploading]  = React.useState(false)
+  const [form, setForm] = React.useState({
+    title: '', description: '', revision: '', scale: '', paperSize: '',
+    issueDate: '', notes: '', fileId: '', filename: '',
+  })
+  const [revForm, setRevForm] = React.useState({ revision: '', notes: '', issueDate: '', fileId: '', filename: '' })
 
-  // ── Scope editing (mirrors RFQLinesTab) ────────────────────────────────
-  interface EngLine { id: string; sequence: number; phaseLabel: string; description: string; quantity: string; unit: string; estimatedUnitCost: string; bidUnitPrice: string; notes: string; discipline: string; drawingRef: string; engineeringRef: string; specSection: string }
-  const blankEngLine = (seq: number): EngLine => ({ id: '', sequence: seq, phaseLabel: '', description: '', quantity: '', unit: '', estimatedUnitCost: '', bidUnitPrice: '', notes: '', discipline: '', drawingRef: '', engineeringRef: '', specSection: '' })
-  const [rows, setRows] = React.useState<EngLine[]>([blankEngLine(1)])
-  const [dirty, setDirty] = React.useState(false)
-  const hasLoaded = React.useRef(false)
+  const { data, loading, refetch } = useQuery(ENG_DOCS_QUERY, {
+    variables: { projectId },
+    skip: !projectId,
+    fetchPolicy: 'cache-and-network',
+  })
 
-  React.useEffect(() => {
-    if (lines.length > 0 && !hasLoaded.current) {
-      hasLoaded.current = true
-      setRows(lines.map((l, i) => ({
-        id: String(l['id'] ?? ''), sequence: Number(l['sequence'] ?? i + 1),
-        phaseLabel: String(l['phaseLabel'] ?? ''), description: String(l['description'] ?? ''),
-        quantity: String(l['quantity'] ?? ''), unit: String(l['unit'] ?? ''),
-        estimatedUnitCost: l['estimatedUnitCost'] != null ? String(l['estimatedUnitCost']) : '',
-        bidUnitPrice:      l['bidUnitPrice']      != null ? String(l['bidUnitPrice'])      : '',
-        notes:             String(l['notes'] ?? ''),
-        discipline:        String(l['discipline']    ?? ''),
-        drawingRef:        String(l['drawingRef']    ?? ''),
-        engineeringRef:    String(l['engineeringRef'] ?? ''),
-        specSection:       String(l['specSection']   ?? ''),
-      })))
-      setDirty(false)
+  const [createDoc]    = useMutation(CREATE_ENG_DOC)
+  const [reviseDocM]   = useMutation(REVISE_ENG_DOC)
+  const [updateStatus] = useMutation(UPDATE_ENG_DOC_STATUS)
+  const [deleteDocM]   = useMutation(DELETE_ENG_DOC)
+
+  const allDocs: EngDoc[] = data?.engineeringDocuments ?? []
+
+  const filtered = allDocs.filter(d => {
+    if (discipline !== 'overview' && d.discipline !== discipline) return false
+    if (docType !== 'all' && d.docType !== docType) return false
+    if (search) {
+      const q = search.toLowerCase()
+      return d.title.toLowerCase().includes(q) || d.refNumber.toLowerCase().includes(q) || (d.uploadedByName ?? '').toLowerCase().includes(q)
     }
-  }, [lines])
+    return true
+  })
 
-  function updRow(idx: number, field: keyof EngLine, val: string) {
-    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r))
-    setDirty(true)
-  }
-  function addRow() { setRows(prev => [...prev, blankEngLine(prev.length + 1)]); setDirty(true) }
-  function removeRow(idx: number) { setRows(prev => prev.filter((_, i) => i !== idx).map((r, i) => ({ ...r, sequence: i + 1 }))); setDirty(true) }
-  function handleSave() {
-    onSaveLines(rows.map(r => ({
-      sequence: r.sequence, phaseLabel: r.phaseLabel || undefined,
-      description: r.description, quantity: r.quantity ? Number(r.quantity) : undefined,
-      unit: r.unit || undefined,
-      estimatedUnitCost: r.estimatedUnitCost ? Number(r.estimatedUnitCost) : undefined,
-      bidUnitPrice: r.bidUnitPrice ? Number(r.bidUnitPrice) : undefined,
-      notes: r.notes || undefined,
-      discipline: r.discipline || undefined, drawingRef: r.drawingRef || undefined,
-      engineeringRef: r.engineeringRef || undefined, specSection: r.specSection || undefined,
-    })))
-    setDirty(false)
-  }
-
-  // ── Issue Revision modal ───────────────────────────────────────────────
-  const [showRevModal, setShowRevModal] = React.useState(false)
-  const [revCode, setRevCode] = React.useState('')
-  const [revNotes, setRevNotes] = React.useState('')
-  const [showRevHistory, setShowRevHistory] = React.useState(false)
-  const [previewRev, setPreviewRev] = React.useState<EngRevision | null>(null)
-  const latestRev = revisions.find(r => r.status === 'issued')
-
-  function submitRevision() {
-    if (!revCode.trim()) { addToast({ type: 'error', message: 'Revision code required' }); return }
-    onIssueRevision(revCode.trim(), revNotes.trim() || undefined)
-    setShowRevModal(false)
-    setRevCode('')
-    setRevNotes('')
-  }
-
-  // ── Drawing upload state ───────────────────────────────────────────────
-  const [showDrawingModal, setShowDrawingModal]   = React.useState(false)
-  const [reviseDrawingId, setReviseDrawingId]      = React.useState<string | null>(null)
-  const [expandedDrawing, setExpandedDrawing]      = React.useState<string | null>(null)
-  const [disciplineFilter, setDisciplineFilter]    = React.useState<string>('All')
-  const [statusFilter, setStatusFilter]            = React.useState<string>('All')
-  const [drawingFile, setDrawingFile]              = React.useState<File | null>(null)
-  const [drawingUploadProgress, setDrawingUploadProgress] = React.useState(0)
-  const [drawingUploading, setDrawingUploading]    = React.useState(false)
-  const drawingForm = React.useRef({ drawingNumber: '', title: '', discipline: '', scale: '', paperSize: '', revision: '', status: 'preliminary', issueDate: '', notes: '' })
-  const drawingRevForm = React.useRef({ revision: '', notes: '' })
-  const drawingFileRef = React.useRef<HTMLInputElement>(null)
-  // Controlled states for auto-generated fields
-  const [autoDrawingNo, setAutoDrawingNo] = React.useState('')
-  const [autoNewRevCode, setAutoNewRevCode] = React.useState('')
-  const [autoRevDrawingCode, setAutoRevDrawingCode] = React.useState('')
-
-  function nextRevLetter(items: Array<{ revisionCode?: string | null; revision?: string | null }>) {
-    const codes = items
-      .map(r => (r.revisionCode ?? r.revision ?? '').replace(/^Rev\s*/i, '').trim().toUpperCase())
-      .filter(Boolean)
-    if (!codes.length) return 'Rev A'
-    codes.sort()
-    const last = codes[codes.length - 1]!
-    const chars = last.split('')
-    let carry = true
-    for (let i = chars.length - 1; i >= 0 && carry; i--) {
-      if (chars[i] === 'Z') { chars[i] = 'A' }
-      else { chars[i] = String.fromCharCode(chars[i]!.charCodeAt(0) + 1); carry = false }
+  const pickFile = async (onPicked: (fileId: string, filename: string) => void) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.pdf,.dwg,.dxf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.zip'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      setUploading(true)
+      try {
+        const { data: urlRes } = await api.post('/files/upload-url', {
+          filename: file.name, mimeType: file.type || 'application/octet-stream', sizeBytes: file.size, category: 'attachment',
+        })
+        const { fileId } = urlRes as { fileId: string }
+        const buf = await file.arrayBuffer()
+        await api.post(`/files/${fileId}/content`, buf, { headers: { 'Content-Type': file.type || 'application/octet-stream' }, timeout: 120_000 })
+        onPicked(fileId, file.name)
+      } catch { addToast({ type: 'error', message: 'File upload failed' }) }
+      finally { setUploading(false) }
     }
-    if (carry) chars.unshift('A')
-    return 'Rev ' + chars.join('')
+    input.click()
   }
 
-  const [editStatusId, setEditStatusId] = React.useState<string | null>(null)
-
-  async function uploadDrawing() {
-    if (!drawingFile) { addToast({ type: 'error', message: 'Please select a file' }); return }
-    const form = reviseDrawingId ? drawingRevForm.current : drawingForm.current
-    if (!reviseDrawingId && !(form as typeof drawingForm.current).drawingNumber.trim()) { addToast({ type: 'error', message: 'Drawing number required' }); return }
-    if (!reviseDrawingId && !(form as typeof drawingForm.current).title.trim()) { addToast({ type: 'error', message: 'Title required' }); return }
-    if (reviseDrawingId && !form.revision.trim()) { addToast({ type: 'error', message: 'Revision code is required' }); return }
+  const handleCreate = async () => {
+    if (!form.title) { addToast({ type: 'error', message: 'Title is required' }); return }
     try {
-      setDrawingUploading(true)
-      setDrawingUploadProgress(10)
-      const { data: urlRes } = await api.post('/files/upload-url', { filename: drawingFile.name, mimeType: drawingFile.type, sizeBytes: drawingFile.size, category: 'attachment' })
-      const { fileId } = urlRes as { fileId: string }
-      setDrawingUploadProgress(40)
-      const buf = await drawingFile.arrayBuffer()
-      await api.post(`/files/${fileId}/content`, buf, { headers: { 'Content-Type': drawingFile.type }, timeout: 120_000 })
-      setDrawingUploadProgress(90)
-      if (reviseDrawingId) {
-        onReviseDrawing({ parentDrawingId: reviseDrawingId, fileId, revision: drawingRevForm.current.revision, notes: drawingRevForm.current.notes || undefined })
-      } else {
-        const f = drawingForm.current
-        onCreateDrawing({ projectId, fileId, drawingNumber: f.drawingNumber, title: f.title, discipline: f.discipline || undefined, scale: f.scale || undefined, paperSize: f.paperSize || undefined, revision: f.revision || undefined, status: f.status || undefined, issueDate: f.issueDate || undefined, notes: f.notes || undefined })
-      }
-      setDrawingUploadProgress(100)
-      setShowDrawingModal(false)
-      setReviseDrawingId(null)
-      setDrawingFile(null)
-      setAutoDrawingNo(''); setAutoNewRevCode(''); setAutoRevDrawingCode('')
-      Object.assign(drawingForm.current, { drawingNumber: '', title: '', discipline: '', scale: '', paperSize: '', revision: '', status: 'preliminary', issueDate: '', notes: '' })
-      Object.assign(drawingRevForm.current, { revision: '', notes: '' })
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message || 'Upload failed' })
-    } finally {
-      setDrawingUploading(false)
-      setDrawingUploadProgress(0)
-    }
+      await createDoc({ variables: {
+        projectId,
+        discipline: discipline === 'overview' ? 'others' : discipline,
+        docType: docType === 'all' ? 'other' : docType,
+        title: form.title, fileId: form.fileId || null, revision: form.revision || null,
+        description: form.description || null, scale: form.scale || null,
+        paperSize: form.paperSize || null, issueDate: form.issueDate || null, notes: form.notes || null,
+      }})
+      addToast({ type: 'success', message: 'Document added' })
+      setShowModal(false)
+      setForm({ title: '', description: '', revision: '', scale: '', paperSize: '', issueDate: '', notes: '', fileId: '', filename: '' })
+      void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
   }
 
-  const topLevelDrawings = drawings.filter(d => !d.parentDrawingId)
-  const filteredDrawings = topLevelDrawings.filter(d =>
-    (disciplineFilter === 'All' || d.discipline === disciplineFilter) &&
-    (statusFilter === 'All' || d.status === statusFilter),
+  const handleRevise = async () => {
+    if (!revForm.revision) { addToast({ type: 'error', message: 'Revision is required' }); return }
+    try {
+      await reviseDocM({ variables: {
+        id: reviseDoc!.id, fileId: revForm.fileId || null,
+        revision: revForm.revision, notes: revForm.notes || null, issueDate: revForm.issueDate || null,
+      }})
+      addToast({ type: 'success', message: 'Revision issued' })
+      setReviseDoc(null)
+      setRevForm({ revision: '', notes: '', issueDate: '', fileId: '', filename: '' })
+      void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleDelete = async (doc: EngDoc) => {
+    if (!window.confirm(`Delete "${doc.title}" (${doc.refNumber})?`)) return
+    try { await deleteDocM({ variables: { id: doc.id }}); void refetch() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleStatus = async (doc: EngDoc, status: string) => {
+    try { await updateStatus({ variables: { id: doc.id, status }}); void refetch() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  const TYPE_CODE_MAP: Record<string, string> = {
+    calculation: 'CAL', drawing: 'DRG', datasheet: 'DAT', specification: 'SPC', other: 'OTH', all: 'OTH',
+  }
+
+  const docTypeIcon = (dt: string, size = 42) => {
+    const MAP: Record<string, { bg: string; fg: string; ext: string }> = {
+      drawing:       { bg: '#dbeafe', fg: '#1d4ed8', ext: 'DRG' },
+      calculation:   { bg: '#d1fae5', fg: '#065f46', ext: 'CAL' },
+      datasheet:     { bg: '#fef9c3', fg: '#a16207', ext: 'DAT' },
+      specification: { bg: '#ede9fe', fg: '#5b21b6', ext: 'SPC' },
+      other:         { bg: '#f1f5f9', fg: '#475569', ext: 'OTH' },
+    }
+    const c = MAP[dt] ?? MAP['other']!
+    return (
+      <div style={{ width: size, height: size, borderRadius: 10, background: c.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexShrink: 0, gap: 1 }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke={c.fg} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          <polyline points="14 2 14 8 20 8" stroke={c.fg} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span style={{ fontSize: 6.5, fontWeight: 800, color: c.fg, letterSpacing: '0.03em', lineHeight: 1 }}>{c.ext}</span>
+      </div>
+    )
+  }
+
+  const statusPill = (s: string, forAdmin = false, doc?: EngDoc) => {
+    const cfg = ENG_DOC_STATUSES[s] ?? ENG_DOC_STATUSES['preliminary']!
+    if (forAdmin && doc) {
+      return (
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px 3px 10px', borderRadius: 999, background: cfg.bg, fontSize: 11, fontWeight: 600, color: cfg.text, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+            {cfg.label}
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ marginLeft: 1, opacity: 0.5 }}><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </span>
+          <select
+            value={s}
+            onChange={e => void handleStatus(doc, e.target.value)}
+            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%' }}>
+            {Object.entries(ENG_DOC_STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+      )
+    }
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, background: cfg.bg, fontSize: 11, fontWeight: 600, color: cfg.text, whiteSpace: 'nowrap' }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+        {cfg.label}
+      </span>
+    )
+  }
+
+  const iconActionBtn = (tooltip: string, icon: React.ReactNode, onClick: () => void, variant: 'default' | 'danger' | 'accent' = 'default') => {
+    const variants = {
+      default: { color: theme.textMuted,  hoverBg: theme.bgSurface },
+      danger:  { color: '#dc2626',        hoverBg: '#fff1f2' },
+      accent:  { color: theme.accent,     hoverBg: theme.accentBg },
+    }
+    const s = variants[variant]
+    return (
+      <button title={tooltip} onClick={onClick}
+        onMouseEnter={e => { const t = e.currentTarget; t.style.background = s.hoverBg; t.style.borderColor = variant === 'danger' ? '#fca5a5' : theme.border }}
+        onMouseLeave={e => { const t = e.currentTarget; t.style.background = 'transparent'; t.style.borderColor = 'transparent' }}
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 6, border: '1px solid transparent', background: 'transparent', color: s.color, cursor: 'pointer', flexShrink: 0, transition: 'background 0.12s, border-color 0.12s' }}>
+        {icon}
+      </button>
+    )
+  }
+
+  const inp = (value: string, onChange: (v: string) => void, placeholder?: string, type = 'text') => (
+    <input type={type} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
   )
 
-  const inp: React.CSSProperties = { width: '100%', padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: '7px', background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px', boxSizing: 'border-box' }
-  const lbl = (t: string) => <label style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, marginBottom: 3, display: 'block' }}>{t}</label>
+  const activeDisc      = ENG_DISCIPLINES.find(d => d.key === discipline)
+  const activeDisciplineLabel = activeDisc?.label ?? 'Overview'
+  const activeDisciplineCode  = activeDisc?.code ?? null
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Sub-tab nav */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
-        {(['scope', 'drawings'] as const).map(st => (
-          <button key={st} onClick={() => setSubTab(st)} style={{
-            padding: '8px 20px', border: 'none', background: 'none', cursor: 'pointer',
-            fontSize: '13px', fontWeight: 600,
-            color: subTab === st ? theme.accent : theme.textMuted,
-            borderBottom: subTab === st ? `2px solid ${theme.accent}` : '2px solid transparent',
-            marginBottom: '-1px',
-          }}>
-            {st === 'scope' ? 'Scope Items' : 'Drawing Register'}
-          </button>
-        ))}
-      </div>
+  // grid: icon | document | revision | status | actions
+  const COL = '52px minmax(0,1fr) 130px 148px 168px'
 
-      {/* ── SCOPE ITEMS ─────────────────────────────────────────── */}
-      {subTab === 'scope' && (
-        <div>
-          {/* Header row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>{rows.length} item{rows.length !== 1 ? 's' : ''}</span>
-              {latestRev && (
-                <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '999px', background: '#22c55e20', color: '#22c55e', fontWeight: 600 }}>
-                  Current: {latestRev.revisionCode}
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {revisions.length > 0 && (
-                <button onClick={() => setShowRevHistory(v => !v)} style={{ fontSize: '12px', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                  {showRevHistory ? 'Hide' : 'Show'} revision history ({revisions.length})
-                </button>
-              )}
-              {isEditable && (
-                <button onClick={() => { setRevCode(nextRevLetter(revisions)); setShowRevModal(true) }} style={{ padding: '6px 14px', borderRadius: '7px', border: `1px solid ${theme.accent}`, background: 'none', color: theme.accent, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                  Issue Revision
-                </button>
-              )}
-              {isEditable && dirty && (
-                <button onClick={handleSave} disabled={saving} style={{ padding: '6px 14px', borderRadius: '7px', border: 'none', background: theme.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
-              )}
-            </div>
+  const renderRow = (doc: EngDoc, isHistory = false) => {
+    const isExpanded  = expandedId === doc.id
+    const hasHistory  = !isHistory && doc.history.length > 0
+    const discLabel   = ENG_DISCIPLINES.find(d => d.key === doc.discipline)?.label ?? doc.discipline
+    const typeLabel   = ENG_DOC_TYPES.find(t => t.key === doc.docType)?.label ?? doc.docType
+    const meta        = [discLabel, typeLabel, doc.uploadedByName && `by ${doc.uploadedByName}`, doc.issueDate && doc.issueDate].filter(Boolean).join('  ·  ')
+
+    return (
+      <React.Fragment key={doc.id}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: COL, alignItems: 'center', gap: 16,
+          padding: isHistory ? '10px 20px 10px 68px' : '14px 20px',
+          borderBottom: `1px solid ${theme.border}`,
+          background: isHistory ? theme.bgSurface : 'transparent',
+        }}>
+          {/* Icon */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {hasHistory && (
+              <button onClick={() => setExpandedId(isExpanded ? null : doc.id)}
+                style={{ all: 'unset', cursor: 'pointer', color: theme.textMuted, marginRight: -8, position: 'relative', zIndex: 1, padding: '4px 2px' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"
+                  style={{ transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', display: 'block' }}>
+                  <path d="M4 2l4 4-4 4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            )}
+            {docTypeIcon(doc.docType)}
           </div>
 
-          {/* Revision history */}
-          {showRevHistory && revisions.length > 0 && (
-            <div style={{ marginBottom: 16, border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: '10px 14px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}`, fontSize: '12px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Revision History</div>
-              {revisions.map(rev => (
-                <div key={rev.id} style={{ padding: '10px 14px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 12, fontSize: '13px' }}>
-                  <span style={{ fontWeight: 700, minWidth: 50, color: rev.status === 'issued' ? '#22c55e' : theme.textMuted }}>{rev.revisionCode}</span>
-                  <span style={{ fontSize: '11px', padding: '1px 7px', borderRadius: '999px', background: rev.status === 'issued' ? '#22c55e20' : theme.bgSurface, color: rev.status === 'issued' ? '#22c55e' : theme.textMuted, border: `1px solid ${rev.status === 'issued' ? '#22c55e' : theme.border}` }}>{rev.status === 'issued' ? 'Current' : 'Archived'}</span>
-                  <span style={{ color: theme.textMuted }}>{rev.itemCount} item{rev.itemCount !== 1 ? 's' : ''}</span>
-                  {rev.notes && <span style={{ color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>— {rev.notes}</span>}
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                    <button onClick={() => setPreviewRev(rev)} style={{ fontSize: '11px', padding: '2px 10px', borderRadius: 5, border: `1px solid ${theme.border}`, background: 'none', color: theme.textSecondary, cursor: 'pointer' }}>
-                      View Items
-                    </button>
-                    <span style={{ color: theme.textMuted, fontSize: '11px' }}>{rev.issuedByName} · {new Date(rev.issuedAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              ))}
+          {/* Document info */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
+              {isHistory && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, flexShrink: 0 }}>
+                  <path d="M9 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+              <span style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, color: theme.accent, background: theme.accentBg, padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '0.02em' }}>
+                {doc.refNumber}
+              </span>
             </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {doc.title}
+            </div>
+            {meta && (
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {meta}
+              </div>
+            )}
+            {doc.notes && (
+              <div style={{ fontSize: 11, color: theme.textSecondary, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+                {doc.notes}
+              </div>
+            )}
+          </div>
+
+          {/* Revision */}
+          <div>
+            {doc.revision
+              ? <span style={{ padding: '3px 9px', borderRadius: 6, background: theme.accentBg, color: theme.accent, fontSize: 11, fontWeight: 700 }}>Rev {doc.revision}</span>
+              : <span style={{ color: theme.textMuted, fontSize: 12 }}>—</span>
+            }
+          </div>
+
+          {/* Status */}
+          <div>{statusPill(doc.status, isAdmin && !isHistory, isAdmin && !isHistory ? doc : undefined)}</div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 2, alignItems: 'center', justifyContent: 'flex-end' }}>
+            {doc.downloadUrl && iconActionBtn('Preview', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>, () => window.open(doc.downloadUrl!, '_blank'))}
+            {doc.downloadUrl && iconActionBtn('Download', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>, () => window.open(doc.downloadUrl!, '_blank'), 'accent')}
+            {!isHistory && (doc.downloadUrl ? <span style={{ width: 1, height: 16, background: theme.border, margin: '0 3px', flexShrink: 0 }} /> : null)}
+            {!isHistory && iconActionBtn('Issue revision', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M20 12v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M17 15h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>, () => { setReviseDoc(doc); setRevForm({ revision: '', notes: '', issueDate: '', fileId: '', filename: '' }) })}
+            {isAdmin && !isHistory && iconActionBtn('Delete', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>, () => void handleDelete(doc), 'danger')}
+          </div>
+        </div>
+
+        {/* History revisions */}
+        {isExpanded && doc.history.map(h => renderRow(h, true))}
+      </React.Fragment>
+    )
+  }
+
+  const openAdd = () => {
+    setShowModal(true)
+    setForm({ title: '', description: '', revision: '', scale: '', paperSize: '', issueDate: '', notes: '', fileId: '', filename: '' })
+  }
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+
+      {/* ── Toolbar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+
+        {/* Discipline chips */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+          {ENG_DISCIPLINES.map(d => {
+            const count = d.key === 'overview' ? allDocs.length : allDocs.filter(x => x.discipline === d.key).length
+            const active = discipline === d.key
+            return (
+              <button key={d.key} onClick={() => { setDiscipline(d.key); if (d.key === 'overview') setDocType('all') }}
+                style={{
+                  padding: '5px 13px', borderRadius: 999, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'all 0.1s',
+                  background: active ? theme.accent : 'transparent',
+                  color: active ? '#fff' : theme.textSecondary,
+                  border: active ? `1px solid ${theme.accent}` : `1px solid ${theme.border}`,
+                }}>
+                {d.label}
+                {count > 0 && (
+                  <span style={{ padding: '0 5px', borderRadius: 999, background: active ? 'rgba(255,255,255,0.25)' : theme.bgSurface, color: active ? '#fff' : theme.textMuted, fontSize: 10, fontWeight: 700, lineHeight: '16px', minWidth: 16, textAlign: 'center' }}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Search */}
+        <div style={{ position: 'relative' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: theme.textMuted, pointerEvents: 'none' }}>
+            <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="2"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search documents…"
+            style={{ padding: '7px 12px 7px 32px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, width: 210, outline: 'none' }} />
+        </div>
+
+        {/* Add button */}
+        <button onClick={openAdd}
+          style={{ padding: '7px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          Add Document
+        </button>
+      </div>
+
+      {/* ── Doc-type sub-tabs (hidden for Overview) ── */}
+      {discipline !== 'overview' && (
+        <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: `1px solid ${theme.border}` }}>
+          {ENG_DOC_TYPES.map(t => {
+            const cnt = t.key === 'all'
+              ? allDocs.filter(x => x.discipline === discipline).length
+              : allDocs.filter(x => x.discipline === discipline && x.docType === t.key).length
+            const active = docType === t.key
+            return (
+              <button key={t.key} onClick={() => setDocType(t.key)}
+                style={{
+                  padding: '8px 16px', fontSize: 13, fontWeight: active ? 600 : 400, cursor: 'pointer',
+                  background: 'transparent', border: 'none',
+                  borderBottom: active ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  color: active ? theme.accent : theme.textSecondary,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  marginBottom: -1, transition: 'color 0.1s',
+                }}>
+                {t.label}
+                {cnt > 0 && <span style={{ fontSize: 11, color: active ? theme.accent : theme.textMuted, fontWeight: 700 }}>{cnt}</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Document list ── */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted, fontSize: 14 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}>
+            <circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/>
+          </svg>
+          Loading documents…
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <div style={{ width: 64, height: 64, borderRadius: 16, background: theme.bgSurface, border: `1px solid ${theme.border}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted }}>
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              <polyline points="14 2 14 8 20 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>
+            {search || discipline !== 'overview' || docType !== 'all' ? 'No matching documents' : 'No engineering documents yet'}
+          </div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 24, maxWidth: 360, margin: '0 auto 24px' }}>
+            {search || discipline !== 'overview' || docType !== 'all'
+              ? 'Try adjusting your search or filter.'
+              : `Add calculations, drawings, datasheets, and specifications organised by discipline.`}
+          </div>
+          {!search && discipline === 'overview' && docType === 'all' && (
+            <button onClick={openAdd} style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Add First Document
+            </button>
           )}
+        </div>
+      ) : (
+        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          {/* Column headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: COL, gap: 16, padding: '10px 20px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
+            {['', 'Document', 'Revision', 'Status', 'Actions'].map((h, i) => (
+              <div key={i} style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: i === 4 ? 'right' : 'left' as const }}>{h}</div>
+            ))}
+          </div>
+          {/* Rows */}
+          {filtered.map(doc => renderRow(doc, false))}
+        </div>
+      )}
 
-          {/* Scope table */}
-          <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden' }}>
-            {/* Table header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '36px 50px 100px 1fr 70px 60px 90px 90px 28px', gap: '0 6px', padding: '8px 10px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}`, fontSize: '11px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              <span>#</span><span>Phase</span><span>Discipline</span><span>Description</span><span>Qty/Unit</span><span>Est Cost</span><span>Bid Price</span><span>Drawing Ref</span><span />
+      {/* ── Add Document Modal ── */}
+      {showModal && (
+        <Modal open={true} size="lg" title="Add Engineering Document" onClose={() => setShowModal(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Ref preview */}
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: theme.accentBg, border: `1px solid ${theme.accent}40`, fontSize: 12 }}>
+              <span style={{ color: theme.textMuted }}>Reference will be assigned as: </span>
+              <strong style={{ fontFamily: 'monospace', color: theme.accent }}>
+                {projectCode}-{activeDisciplineCode ?? 'OTH'}-{TYPE_CODE_MAP[docType] ?? 'OTH'}-####
+              </strong>
             </div>
 
-            {rows.map((r, idx) => (
-              <div key={idx} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {/* Main row */}
-                <div style={{ display: 'grid', gridTemplateColumns: '36px 50px 100px 1fr 70px 60px 90px 90px 28px', gap: '0 6px', padding: '6px 10px', alignItems: 'center' }}>
-                  <span style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'center' }}>{idx + 1}</span>
-                  <input value={r.phaseLabel} onChange={e => updRow(idx, 'phaseLabel', e.target.value)} placeholder="Phase" disabled={!isEditable}
-                    style={{ ...inp, padding: '4px 6px', fontSize: '12px' }} />
-                  <select value={r.discipline} onChange={e => updRow(idx, 'discipline', e.target.value)} disabled={!isEditable}
-                    style={{ ...inp, padding: '4px 6px', fontSize: '12px' }}>
-                    <option value="">—</option>
-                    {DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                  <input value={r.description} onChange={e => updRow(idx, 'description', e.target.value)} placeholder="Description" disabled={!isEditable}
-                    style={{ ...inp, padding: '4px 6px', fontSize: '12px' }} />
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    <input value={r.quantity} onChange={e => updRow(idx, 'quantity', e.target.value)} placeholder="Qty" disabled={!isEditable} type="number"
-                      style={{ ...inp, padding: '4px 4px', fontSize: '12px', width: '40px' }} />
-                    <input value={r.unit} onChange={e => updRow(idx, 'unit', e.target.value)} placeholder="Unit" disabled={!isEditable}
-                      style={{ ...inp, padding: '4px 4px', fontSize: '12px', width: '28px' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div>
+                {lbl('Discipline', true)}
+                <select value={discipline === 'overview' ? 'others' : discipline}
+                  onChange={e => setDiscipline(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  {ENG_DISCIPLINES.filter(d => d.key !== 'overview').map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Document Type', true)}
+                <select value={docType === 'all' ? 'other' : docType}
+                  onChange={e => setDocType(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  {ENG_DOC_TYPES.filter(t => t.key !== 'all').map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Title', true)}
+                {inp(form.title, v => setForm(f => ({...f, title: v})), 'Document title')}
+              </div>
+              <div>
+                {lbl('Revision')}
+                {inp(form.revision, v => setForm(f => ({...f, revision: v})), 'e.g. A, 0, P1')}
+              </div>
+              <div>
+                {lbl('Issue Date')}
+                {inp(form.issueDate, v => setForm(f => ({...f, issueDate: v})), '', 'date')}
+              </div>
+              {(docType === 'drawing' || docType === 'all') && (
+                <>
+                  <div>
+                    {lbl('Scale')}
+                    {inp(form.scale, v => setForm(f => ({...f, scale: v})), '1:100')}
                   </div>
-                  <input value={r.estimatedUnitCost} onChange={e => updRow(idx, 'estimatedUnitCost', e.target.value)} placeholder="0.00" disabled={!isEditable} type="number"
-                    style={{ ...inp, padding: '4px 6px', fontSize: '12px' }} />
-                  <input value={r.bidUnitPrice} onChange={e => updRow(idx, 'bidUnitPrice', e.target.value)} placeholder="0.00" disabled={!isEditable} type="number"
-                    style={{ ...inp, padding: '4px 6px', fontSize: '12px' }} />
-                  <input value={r.drawingRef} onChange={e => updRow(idx, 'drawingRef', e.target.value)} placeholder="DWG-001" disabled={!isEditable}
-                    style={{ ...inp, padding: '4px 6px', fontSize: '12px' }} />
-                  {isEditable && (
-                    <button onClick={() => removeRow(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '16px', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-                  )}
-                </div>
-                {/* Engineering refs (sub-row) */}
-                {isEditable && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '86px 1fr 1fr 1fr', gap: '0 6px', padding: '2px 10px 6px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: theme.textMuted, textAlign: 'right', paddingRight: 4 }}>Eng refs:</span>
-                    <input value={r.engineeringRef} onChange={e => updRow(idx, 'engineeringRef', e.target.value)} placeholder="Engineering ref" disabled={!isEditable}
-                      style={{ ...inp, padding: '3px 6px', fontSize: '11px' }} />
-                    <input value={r.specSection} onChange={e => updRow(idx, 'specSection', e.target.value)} placeholder="Spec section" disabled={!isEditable}
-                      style={{ ...inp, padding: '3px 6px', fontSize: '11px' }} />
-                    <input value={r.notes} onChange={e => updRow(idx, 'notes', e.target.value)} placeholder="Notes" disabled={!isEditable}
-                      style={{ ...inp, padding: '3px 6px', fontSize: '11px' }} />
+                  <div>
+                    {lbl('Paper Size')}
+                    <select value={form.paperSize} onChange={e => setForm(f => ({...f, paperSize: e.target.value}))}
+                      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                      <option value="">— Select —</option>
+                      {['A0','A1','A2','A3','A4','Letter','Tabloid','Custom'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description')}
+                <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Optional description…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 60, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Notes')}
+                {inp(form.notes, v => setForm(f => ({...f, notes: v})), 'Optional notes')}
+              </div>
+            </div>
+
+            {/* File upload zone */}
+            <div>
+              {lbl('File')}
+              <div onClick={() => { if (!uploading) void pickFile((fid, fn) => setForm(f => ({...f, fileId: fid, filename: fn}))) }}
+                style={{ border: `2px dashed ${form.fileId ? theme.accent : theme.border}`, borderRadius: 10, padding: '20px 16px', textAlign: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: form.fileId ? theme.accentBg : 'transparent', transition: 'all 0.15s' }}>
+                {uploading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: theme.textMuted, fontSize: 13 }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+                    Uploading…
+                  </div>
+                ) : form.fileId ? (
+                  <div>
+                    <div style={{ fontSize: 22, marginBottom: 4, color: '#22c55e' }}>✓</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.accent }}>{form.filename}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>Click to replace</div>
+                  </div>
+                ) : (
+                  <div>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, margin: '0 auto 8px', display: 'block' }}>
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      <polyline points="17 8 12 3 7 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      <line x1="12" y1="3" x2="12" y2="15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    </svg>
+                    <div style={{ color: theme.textSecondary, fontSize: 13 }}>Click to browse or drop a file</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>PDF, DWG, DXF, PNG, JPG, DOC, XLS</div>
                   </div>
                 )}
               </div>
-            ))}
+            </div>
 
-            {isEditable && (
-              <div style={{ padding: '8px 10px', background: theme.bgSurface }}>
-                <button onClick={addRow} style={{ fontSize: '12px', color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>+ Add Item</button>
-              </div>
-            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => setShowModal(false)}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button disabled={!form.title || uploading} onClick={() => void handleCreate()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.title && !uploading ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title && !uploading ? 'pointer' : 'not-allowed' }}>
+                Add Document
+              </button>
+            </div>
           </div>
-        </div>
+        </Modal>
       )}
 
-      {/* ── DRAWING REGISTER ───────────────────────────────────── */}
-      {subTab === 'drawings' && (
-        <div>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '14px', fontWeight: 700, color: theme.textPrimary }}>{topLevelDrawings.length} drawing{topLevelDrawings.length !== 1 ? 's' : ''}</span>
-              {/* Discipline filter */}
-              {['All', ...DISCIPLINES].map(d => (
-                <button key={d} onClick={() => setDisciplineFilter(d)} style={{ padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: `1px solid ${disciplineFilter === d ? theme.accent : theme.border}`, background: disciplineFilter === d ? theme.accent : 'none', color: disciplineFilter === d ? '#fff' : theme.textMuted }}>{d}</button>
-              ))}
+      {/* ── Issue Revision Modal ── */}
+      {reviseDoc && (
+        <Modal open={true} title={`Issue Revision — ${reviseDoc.refNumber}`} onClose={() => setReviseDoc(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: theme.bgSurface, border: `1px solid ${theme.border}`, fontSize: 12, color: theme.textSecondary }}>
+              Current: <strong style={{ color: theme.textPrimary }}>{reviseDoc.title}</strong>
+              {reviseDoc.revision && <span style={{ marginLeft: 8, color: theme.textMuted }}>Rev {reviseDoc.revision}</span>}
+              <span style={{ marginLeft: 8, color: '#b45309', fontWeight: 500 }}>→ will be superseded</span>
             </div>
-            {isEditable && (
-              <button onClick={() => {
-                setReviseDrawingId(null)
-                const nextNo = `DWG-${String(topLevelDrawings.length + 1).padStart(3, '0')}`
-                setAutoDrawingNo(nextNo); drawingForm.current.drawingNumber = nextNo
-                const curRev = revisions.find(r => r.status === 'issued')?.revisionCode ?? ''
-                setAutoNewRevCode(curRev); drawingForm.current.revision = curRev
-                setShowDrawingModal(true)
-              }} style={{ padding: '7px 14px', borderRadius: '7px', border: 'none', background: theme.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-                + Add Drawing
-              </button>
-            )}
-          </div>
-
-          {/* Status filter */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-            {['All', ...Object.keys(DRAWING_STATUSES)].map(s => (
-              <button key={s} onClick={() => setStatusFilter(s)} style={{ padding: '3px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', border: `1px solid ${statusFilter === s ? (DRAWING_STATUSES[s]?.color ?? theme.accent) : theme.border}`, background: statusFilter === s ? ((DRAWING_STATUSES[s]?.color ?? theme.accent) + '20') : 'none', color: statusFilter === s ? (DRAWING_STATUSES[s]?.color ?? theme.accent) : theme.textMuted }}>
-                {s === 'All' ? 'All Statuses' : DRAWING_STATUSES[s]?.label}
-              </button>
-            ))}
-          </div>
-
-          {filteredDrawings.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px 0', color: theme.textMuted }}>
-              <div style={{ width: 56, height: 56, borderRadius: 14, background: theme.bgSurface, border: `1px solid ${theme.border}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div>{lbl('New Revision', true)}{inp(revForm.revision, v => setRevForm(f => ({...f, revision: v})), 'e.g. B, 1, P2')}</div>
+              <div>{lbl('Issue Date')}{inp(revForm.issueDate, v => setRevForm(f => ({...f, issueDate: v})), '', 'date')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Change Notes')}
+                <textarea value={revForm.notes} onChange={e => setRevForm(f => ({...f, notes: e.target.value}))} placeholder="What changed in this revision?"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 72, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
               </div>
-              <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: 4, color: theme.textPrimary }}>No drawings yet</div>
-              <div style={{ fontSize: '13px' }}>Add drawings to build the register for this project.</div>
             </div>
-          ) : (
-            <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '24px 120px 1fr 90px 80px 110px 100px', gap: '0 10px', padding: '8px 12px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}`, fontSize: '11px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                <span />
-                <span>Number</span><span>Title</span><span>Discipline</span><span>Rev</span><span>Status</span><span>Actions</span>
+            <div>
+              {lbl('Revised File')}
+              <div onClick={() => { if (!uploading) void pickFile((fid, fn) => setRevForm(f => ({...f, fileId: fid, filename: fn}))) }}
+                style={{ border: `2px dashed ${revForm.fileId ? theme.accent : theme.border}`, borderRadius: 10, padding: '16px', textAlign: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: revForm.fileId ? theme.accentBg : 'transparent' }}>
+                {uploading ? (
+                  <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
+                ) : revForm.fileId ? (
+                  <div style={{ fontSize: 13, fontWeight: 600, color: theme.accent }}>✓ {revForm.filename} <span style={{ fontSize: 11, color: theme.textMuted, fontWeight: 400 }}>— click to replace</span></div>
+                ) : (
+                  <div style={{ color: theme.textSecondary, fontSize: 13 }}>Click to attach revised file <span style={{ color: theme.textMuted }}>(optional)</span></div>
+                )}
               </div>
-              {filteredDrawings.map(dwg => (
-                <React.Fragment key={dwg.id}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '24px 120px 1fr 90px 80px 110px 100px', gap: '0 10px', padding: '9px 12px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center', fontSize: '13px', background: (DRAWING_STATUSES[dwg.status]?.color ?? '#6b7280') + '12' }}>
-                    <button onClick={() => setExpandedDrawing(expandedDrawing === dwg.id ? null : dwg.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '10px', padding: 0 }}>
-                      {dwg.revisions.length > 0 ? (expandedDrawing === dwg.id ? '▼' : '▶') : ''}
-                    </button>
-                    <span style={{ fontWeight: 600, color: theme.accent, fontFamily: 'monospace', fontSize: '12px' }}>{dwg.drawingNumber}</span>
-                    <span style={{ color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dwg.title}</span>
-                    <span style={{ color: theme.textMuted, fontSize: '12px' }}>{dwg.discipline ?? '—'}</span>
-                    <span style={{ color: theme.textMuted, fontSize: '12px', fontFamily: 'monospace' }}>{dwg.revision ?? '—'}</span>
-                    <span style={{ position: 'relative' }}>
-                      {isEditable && editStatusId === dwg.id ? (
-                        <select
-                          autoFocus
-                          defaultValue={dwg.status}
-                          onBlur={() => setEditStatusId(null)}
-                          onChange={e => { onUpdateDrawingStatus(dwg.id, e.target.value); setEditStatusId(null) }}
-                          style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '999px', border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textPrimary, cursor: 'pointer', outline: 'none' }}
-                        >
-                          {Object.entries(DRAWING_STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                        </select>
-                      ) : (
-                        <span
-                          onClick={() => isEditable && setEditStatusId(dwg.id)}
-                          title={isEditable ? 'Click to change status' : undefined}
-                          style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '999px', fontWeight: 600, background: (DRAWING_STATUSES[dwg.status]?.color ?? '#6b7280') + '20', color: DRAWING_STATUSES[dwg.status]?.color ?? '#6b7280', border: `1px solid ${(DRAWING_STATUSES[dwg.status]?.color ?? '#6b7280')}40`, cursor: isEditable ? 'pointer' : 'default', userSelect: 'none' }}>
-                          {DRAWING_STATUSES[dwg.status]?.label ?? dwg.status}
-                        </span>
-                      )}
-                    </span>
-                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                      {dwg.downloadUrl && (
-                        <a href={dwg.downloadUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px', color: theme.textSecondary, textDecoration: 'none', padding: '2px 6px', border: `1px solid ${theme.border}`, borderRadius: 5 }}>View</a>
-                      )}
-                      {isEditable && (
-                        <button onClick={() => {
-                          setReviseDrawingId(dwg.id)
-                          const allRevCodes = [{ revision: dwg.revision ?? '' }, ...dwg.revisions]
-                          const next = nextRevLetter(allRevCodes)
-                          setAutoRevDrawingCode(next); drawingRevForm.current.revision = next
-                          setShowDrawingModal(true)
-                        }} style={{ fontSize: '11px', color: theme.textMuted, background: 'none', border: `1px solid ${theme.border}`, borderRadius: 5, padding: '2px 6px', cursor: 'pointer' }}>Rev</button>
-                      )}
-                      {isAdmin && (
-                        <button onClick={() => { if (confirm('Delete this drawing?')) onDeleteDrawing(dwg.id) }} style={{ fontSize: '11px', color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>×</button>
-                      )}
-                    </div>
-                  </div>
-                  {expandedDrawing === dwg.id && dwg.revisions.map(rev => (
-                    <div key={rev.id} style={{ display: 'grid', gridTemplateColumns: '24px 120px 1fr 90px 80px 110px 100px', gap: '0 10px', padding: '7px 12px 7px 36px', borderBottom: `1px solid ${theme.border}`, alignItems: 'center', fontSize: '12px', background: theme.bgSurface }}>
-                      <span />
-                      <span style={{ color: theme.textMuted, fontFamily: 'monospace', fontSize: '11px' }}>{rev.drawingNumber}</span>
-                      <span style={{ color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rev.title}</span>
-                      <span style={{ color: theme.textMuted }}>—</span>
-                      <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>{rev.revision ?? '—'}</span>
-                      <span style={{ fontSize: '10px', color: '#6b7280', padding: '1px 6px', borderRadius: '999px', border: `1px solid #6b7280`, display: 'inline-block' }}>Superseded</span>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {rev.downloadUrl && <a href={rev.downloadUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px', color: theme.textSecondary, textDecoration: 'none', padding: '2px 6px', border: `1px solid ${theme.border}`, borderRadius: 5 }}>View</a>}
-                      </div>
-                    </div>
-                  ))}
-                </React.Fragment>
-              ))}
             </div>
-          )}
-        </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => setReviseDoc(null)}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button disabled={!revForm.revision || uploading} onClick={() => void handleRevise()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: revForm.revision && !uploading ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: revForm.revision && !uploading ? 'pointer' : 'not-allowed' }}>
+                Issue Revision
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
-
-      {/* ── Issue Revision Modal ──────────────────────────────── */}
-      <Modal open={showRevModal} onClose={() => setShowRevModal(false)} title="Issue Engineering Revision">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '4px 0' }}>
-          <div>
-            {lbl('Revision Code *')}
-            <input value={revCode} onChange={e => setRevCode(e.target.value)} style={inp} />
-          </div>
-          <div>
-            {lbl('Notes (optional)')}
-            <textarea defaultValue={revNotes} onChange={e => setRevNotes(e.target.value)} rows={3} placeholder="Describe changes in this revision…" style={{ ...inp, resize: 'vertical' }} />
-          </div>
-          <div style={{ padding: '10px 14px', borderRadius: 8, background: '#f59e0b20', border: '1px solid #f59e0b40', fontSize: '12px', color: '#92400e' }}>
-            This will snapshot all {rows.length} scope items and archive any previous revision. Project members will be notified.
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={() => setShowRevModal(false)} style={{ padding: '8px 16px', borderRadius: 7, border: `1px solid ${theme.border}`, background: 'none', color: theme.textPrimary, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
-            <button onClick={submitRevision} disabled={issuingRevision} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: issuingRevision ? 'not-allowed' : 'pointer', opacity: issuingRevision ? 0.7 : 1 }}>
-              {issuingRevision ? 'Issuing…' : 'Issue Revision'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* ── Revision Preview Modal ───────────────────────────── */}
-      <Modal open={!!previewRev} onClose={() => setPreviewRev(null)} title={previewRev ? `${previewRev.revisionCode} — Scope Snapshot (${previewRev.itemCount} item${previewRev.itemCount !== 1 ? 's' : ''})` : ''} size="xl">
-        <div style={{ overflowX: 'auto', maxHeight: '70vh', overflowY: 'auto' }}>
-          {previewRev && previewRev.snapshotData.length === 0 ? (
-            <div style={{ padding: '48px 0', textAlign: 'center', color: theme.textMuted, fontSize: '14px' }}>No items in this revision</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface, position: 'sticky', top: 0, zIndex: 1 }}>
-                  {['#', 'Description', 'Discipline', 'Qty', 'Unit', 'Est Unit Cost', 'Bid Unit Price', 'Drawing Ref'].map(h => (
-                    <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.05em', borderBottom: `2px solid ${theme.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {previewRev?.snapshotData.map((item, idx) => {
-                  const it = item as Record<string, unknown>
-                  return (
-                    <tr key={idx} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted, fontVariantNumeric: 'tabular-nums', width: 36 }}>{String(it['sequence'] ?? idx + 1)}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textPrimary, minWidth: 240 }}>{String(it['description'] ?? '—')}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted, whiteSpace: 'nowrap' }}>{String(it['discipline'] ?? '—')}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{it['quantity'] != null ? String(it['quantity']) : '—'}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted }}>{String(it['unit'] ?? '—')}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{it['estimatedUnitCost'] != null ? String(it['estimatedUnitCost']) : '—'}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>{it['bidUnitPrice'] != null ? String(it['bidUnitPrice']) : '—'}</td>
-                      <td style={{ padding: '11px 14px', color: theme.textMuted, fontFamily: 'monospace', fontSize: '13px' }}>{String(it['drawingRef'] ?? '—')}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </Modal>
-
-      {/* ── Drawing Upload Modal ──────────────────────────────── */}
-      <Modal open={showDrawingModal} onClose={() => { setShowDrawingModal(false); setReviseDrawingId(null); setDrawingFile(null); setAutoDrawingNo(''); setAutoNewRevCode(''); setAutoRevDrawingCode('') }} title={reviseDrawingId ? 'Issue Drawing Revision' : 'Add Drawing'}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
-          {!reviseDrawingId && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  {lbl('Drawing Number *')}
-                  <input value={autoDrawingNo} onChange={e => { setAutoDrawingNo(e.target.value); drawingForm.current.drawingNumber = e.target.value }} style={inp} />
-                </div>
-                <div>
-                  {lbl('Scope Revision')}
-                  <select value={autoNewRevCode} onChange={e => { setAutoNewRevCode(e.target.value); drawingForm.current.revision = e.target.value }} style={inp}>
-                    <option value="">— None —</option>
-                    {revisions.map(r => (
-                      <option key={r.id} value={r.revisionCode}>
-                        {r.revisionCode}{r.status === 'issued' ? ' (Current)' : ' (Archived)'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div>
-                {lbl('Title *')}
-                <input onChange={e => { drawingForm.current.title = e.target.value }} placeholder="Ground Floor Plan" style={inp} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                <div>
-                  {lbl('Discipline')}
-                  <select onChange={e => { drawingForm.current.discipline = e.target.value }} style={inp}>
-                    <option value="">—</option>
-                    {DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-                <div>
-                  {lbl('Scale')}
-                  <input onChange={e => { drawingForm.current.scale = e.target.value }} placeholder="1:100" style={inp} />
-                </div>
-                <div>
-                  {lbl('Paper Size')}
-                  <select onChange={e => { drawingForm.current.paperSize = e.target.value }} style={inp}>
-                    <option value="">— Select —</option>
-                    <optgroup label="ISO A-Series">
-                      <option value="A0">A0 (841 × 1189 mm)</option>
-                      <option value="A1">A1 (594 × 841 mm)</option>
-                      <option value="A2">A2 (420 × 594 mm)</option>
-                      <option value="A3">A3 (297 × 420 mm)</option>
-                      <option value="A4">A4 (210 × 297 mm)</option>
-                    </optgroup>
-                    <optgroup label="ANSI Series">
-                      <option value="ANSI-A">ANSI A / Letter (216 × 279 mm)</option>
-                      <option value="ANSI-B">ANSI B / Tabloid (279 × 432 mm)</option>
-                      <option value="ANSI-C">ANSI C (432 × 559 mm)</option>
-                      <option value="ANSI-D">ANSI D (559 × 864 mm)</option>
-                      <option value="ANSI-E">ANSI E (864 × 1118 mm)</option>
-                    </optgroup>
-                    <optgroup label="Architectural">
-                      <option value="ARCH-A">Arch A (229 × 305 mm)</option>
-                      <option value="ARCH-B">Arch B (305 × 457 mm)</option>
-                      <option value="ARCH-C">Arch C (457 × 610 mm)</option>
-                      <option value="ARCH-D">Arch D (610 × 914 mm)</option>
-                      <option value="ARCH-E">Arch E (914 × 1219 mm)</option>
-                      <option value="ARCH-E1">Arch E1 (762 × 1067 mm)</option>
-                    </optgroup>
-                  </select>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  {lbl('Status')}
-                  <select onChange={e => { drawingForm.current.status = e.target.value }} style={inp}>
-                    {Object.entries(DRAWING_STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  {lbl('Issue Date')}
-                  <input type="date" onChange={e => { drawingForm.current.issueDate = e.target.value }} style={inp} />
-                </div>
-              </div>
-              <div>
-                {lbl('Notes')}
-                <textarea rows={2} onChange={e => { drawingForm.current.notes = e.target.value }} style={{ ...inp, resize: 'vertical' }} />
-              </div>
-            </>
-          )}
-          {reviseDrawingId && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                {lbl('New Revision Code *')}
-                <input value={autoRevDrawingCode} onChange={e => { setAutoRevDrawingCode(e.target.value); drawingRevForm.current.revision = e.target.value }} style={inp} />
-              </div>
-              <div>
-                {lbl('Notes')}
-                <input onChange={e => { drawingRevForm.current.notes = e.target.value }} placeholder="Changes in this revision" style={inp} />
-              </div>
-            </div>
-          )}
-
-          {/* File upload zone */}
-          <div onClick={() => drawingFileRef.current?.click()} style={{ border: `2px dashed ${drawingFile ? theme.accent : theme.border}`, borderRadius: 10, padding: '20px', textAlign: 'center', cursor: 'pointer', background: drawingFile ? theme.accent + '08' : theme.bgSurface }}>
-            <input ref={drawingFileRef} type="file" style={{ display: 'none' }} onChange={e => setDrawingFile(e.target.files?.[0] ?? null)} accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg" />
-            {drawingFile ? (
-              <div style={{ fontSize: '13px', color: theme.accent, fontWeight: 600 }}>
-                <div style={{ fontSize: '22px' }}>📎</div>
-                {drawingFile.name}
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: '24px', marginBottom: 6 }}>📐</div>
-                <p style={{ fontSize: '13px', color: theme.textMuted, margin: '0 0 4px' }}>Drop drawing file or <span style={{ color: theme.accent }}>browse</span></p>
-                <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>PDF, DWG, DXF, PNG, JPG · Max 50 MB</p>
-              </>
-            )}
-          </div>
-
-          {drawingUploading && (
-            <div style={{ width: '100%', height: 4, background: theme.border, borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: theme.accent, width: `${drawingUploadProgress}%`, transition: 'width 0.3s' }} />
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={() => { setShowDrawingModal(false); setReviseDrawingId(null); setDrawingFile(null); setAutoDrawingNo(''); setAutoNewRevCode(''); setAutoRevDrawingCode('') }} style={{ padding: '8px 16px', borderRadius: 7, border: `1px solid ${theme.border}`, background: 'none', color: theme.textPrimary, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
-            <button onClick={() => void uploadDrawing()} disabled={drawingUploading || creatingDrawing} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: (drawingUploading || creatingDrawing) ? 'not-allowed' : 'pointer', opacity: (drawingUploading || creatingDrawing) ? 0.7 : 1 }}>
-              {drawingUploading ? `Uploading ${drawingUploadProgress}%…` : creatingDrawing ? 'Saving…' : reviseDrawingId ? 'Issue Revision' : 'Add Drawing'}
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   )
 }
@@ -5168,6 +5306,8 @@ function ExecutionTab({
   // ── Submittal modal state
   const [subModal, setSubModal] = React.useState<{ open: boolean; row: SubmittalRow | null }>({ open: false, row: null })
   const [subForm, setSubForm] = React.useState({ submittalNumber: '', title: '', submittalType: 'shop_drawing', revision: 'A', submittedDate: '', reviewerName: '', reviewStatus: 'pending', returnDate: '', remarks: '' })
+  const [subReviewModal, setSubReviewModal] = React.useState<{ open: boolean; row: SubmittalRow | null }>({ open: false, row: null })
+  const [subReviewForm, setSubReviewForm] = React.useState({ reviewerName: '', reviewStatus: 'approved', returnDate: '', remarks: '' })
 
   // ── SI modal state
   const [siModal, setSiModal] = React.useState<{ open: boolean; row: SIRow | null }>({ open: false, row: null })
@@ -5182,10 +5322,14 @@ function ExecutionTab({
   // ── IR modal state
   const [irModal, setIrModal] = React.useState<{ open: boolean; row: IRRow | null }>({ open: false, row: null })
   const [irForm, setIrForm] = React.useState({ irNumber: '', title: '', itpId: '', workPackage: '', location: '', requestedDate: '', requestedByName: '', inspectorName: '', actualDate: '', status: 'pending', result: '', remarks: '' })
+  const [irInspectModal, setIrInspectModal] = React.useState<{ open: boolean; row: IRRow | null }>({ open: false, row: null })
+  const [irInspectForm, setIrInspectForm] = React.useState({ inspectorName: '', actualDate: '', result: '', remarks: '' })
 
   // ── NCR modal state
   const [ncrModal, setNcrModal] = React.useState<{ open: boolean; row: NCRRow | null }>({ open: false, row: null })
   const [ncrForm, setNcrForm] = React.useState({ ncrNumber: '', title: '', description: '', workPackage: '', location: '', raisedByName: '', raisedDate: '', severity: 'minor', rootCause: '', correctiveAction: '', preventiveAction: '', dueDate: '', closedDate: '', closedByName: '', status: 'open' })
+  const [ncrResolveModal, setNcrResolveModal] = React.useState<{ open: boolean; row: NCRRow | null }>({ open: false, row: null })
+  const [ncrResolveForm, setNcrResolveForm] = React.useState({ rootCause: '', correctiveAction: '', preventiveAction: '', closedDate: '', closedByName: '', status: 'open' })
 
   // ── HSE modal state
   const [hseModal, setHseModal] = React.useState<{ open: boolean; row: HSERow | null }>({ open: false, row: null })
@@ -5267,6 +5411,13 @@ function ExecutionTab({
     else onUpdateSubmittal({ id: subModal.row.id, ...subForm })
     setSubModal({ open: false, row: null })
   }
+  function openSubReview(r: SubmittalRow) { setSubReviewForm({ reviewerName: r.reviewerName || currentUserName, reviewStatus: r.reviewStatus === 'pending' ? 'approved' : r.reviewStatus, returnDate: r.returnDate ?? new Date().toISOString().slice(0, 10), remarks: r.remarks ?? '' }); setSubReviewModal({ open: true, row: r }) }
+  function saveSubReview() {
+    if (!subReviewModal.row) return
+    const r = subReviewModal.row
+    onUpdateSubmittal({ id: r.id, submittalNumber: r.submittalNumber, title: r.title, submittalType: r.submittalType, revision: r.revision, submittedDate: r.submittedDate ?? '', ...subReviewForm })
+    setSubReviewModal({ open: false, row: null })
+  }
 
   // ── Site Instructions section ─────────────────────────────────────────────
   function openSICreate() { const nextNum = String(siteInstructions.length + 1).padStart(3, '0'); setSiForm({ siNumber: nextNum, subject: '', description: '', issuedBy: currentUserName, issuedDate: new Date().toISOString().slice(0, 10), acknowledgedByName: '', acknowledgedDate: '', potentialVo: false, voRef: '', status: 'open' }); setSiModal({ open: true, row: null }) }
@@ -5308,21 +5459,42 @@ function ExecutionTab({
   }
 
   // ── IR section ────────────────────────────────────────────────────────────
-  function openIRCreate() { setIrForm({ irNumber: '', title: '', itpId: '', workPackage: '', location: '', requestedDate: new Date().toISOString().slice(0, 10), requestedByName: '', inspectorName: '', actualDate: '', status: 'pending', result: '', remarks: '' }); setIrModal({ open: true, row: null }) }
+  function openIRCreate() { const nextNum = String(inspectionRequests.length + 1).padStart(3, '0'); setIrForm({ irNumber: nextNum, title: '', itpId: '', workPackage: '', location: '', requestedDate: new Date().toISOString().slice(0, 10), requestedByName: currentUserName, inspectorName: '', actualDate: '', status: 'pending', result: '', remarks: '' }); setIrModal({ open: true, row: null }) }
   function openIREdit(r: IRRow) { setIrForm({ irNumber: r.irNumber, title: r.title, itpId: r.itpId ?? '', workPackage: r.workPackage ?? '', location: r.location ?? '', requestedDate: r.requestedDate, requestedByName: r.requestedByName ?? '', inspectorName: r.inspectorName ?? '', actualDate: r.actualDate ?? '', status: r.status, result: r.result ?? '', remarks: r.remarks ?? '' }); setIrModal({ open: true, row: r }) }
   function saveIR() {
     if (!irModal.row) onCreateIR({ projectId, ...irForm })
     else onUpdateIR({ id: irModal.row.id, ...irForm })
     setIrModal({ open: false, row: null })
   }
+  function openIRInspect(r: IRRow) { setIrInspectForm({ inspectorName: r.inspectorName || currentUserName, actualDate: r.actualDate ?? new Date().toISOString().slice(0, 10), result: r.result ?? '', remarks: r.remarks ?? '' }); setIrInspectModal({ open: true, row: r }) }
+  function saveIRInspect() {
+    if (!irInspectModal.row) return
+    const r = irInspectModal.row
+    const newStatus = irInspectForm.result === 'rejected' ? 'rejected' : irInspectForm.result ? 'accepted' : r.status
+    onUpdateIR({ id: r.id, irNumber: r.irNumber, title: r.title, itpId: r.itpId ?? '', workPackage: r.workPackage ?? '', location: r.location ?? '', requestedDate: r.requestedDate, requestedByName: r.requestedByName ?? '', inspectorName: irInspectForm.inspectorName, actualDate: irInspectForm.actualDate, status: newStatus, result: irInspectForm.result, remarks: irInspectForm.remarks })
+    setIrInspectModal({ open: false, row: null })
+  }
 
   // ── NCR section ───────────────────────────────────────────────────────────
-  function openNCRCreate() { setNcrForm({ ncrNumber: '', title: '', description: '', workPackage: '', location: '', raisedByName: '', raisedDate: new Date().toISOString().slice(0, 10), severity: 'minor', rootCause: '', correctiveAction: '', preventiveAction: '', dueDate: '', closedDate: '', closedByName: '', status: 'open' }); setNcrModal({ open: true, row: null }) }
+  function openNCRCreate() { const nextNum = String(ncrs.length + 1).padStart(3, '0'); setNcrForm({ ncrNumber: nextNum, title: '', description: '', workPackage: '', location: '', raisedByName: currentUserName, raisedDate: new Date().toISOString().slice(0, 10), severity: 'minor', rootCause: '', correctiveAction: '', preventiveAction: '', dueDate: '', closedDate: '', closedByName: '', status: 'open' }); setNcrModal({ open: true, row: null }) }
   function openNCREdit(r: NCRRow) { setNcrForm({ ncrNumber: r.ncrNumber, title: r.title, description: r.description, workPackage: r.workPackage ?? '', location: r.location ?? '', raisedByName: r.raisedByName ?? '', raisedDate: r.raisedDate, severity: r.severity, rootCause: r.rootCause ?? '', correctiveAction: r.correctiveAction ?? '', preventiveAction: r.preventiveAction ?? '', dueDate: r.dueDate ?? '', closedDate: r.closedDate ?? '', closedByName: r.closedByName ?? '', status: r.status }); setNcrModal({ open: true, row: r }) }
   function saveNCR() {
     if (!ncrModal.row) onCreateNCR({ projectId, ...ncrForm })
     else onUpdateNCR({ id: ncrModal.row.id, ...ncrForm })
     setNcrModal({ open: false, row: null })
+  }
+  function openNCRResolve(r: NCRRow) {
+    setNcrResolveForm({ rootCause: r.rootCause ?? '', correctiveAction: r.correctiveAction ?? '', preventiveAction: r.preventiveAction ?? '', closedDate: r.closedDate ?? '', closedByName: r.closedByName ?? '', status: r.status })
+    setNcrResolveModal({ open: true, row: r })
+  }
+  function saveNCRResolve() {
+    if (!ncrResolveModal.row) return
+    const r = ncrResolveModal.row
+    const f = ncrResolveForm
+    const newStatus = f.closedDate ? 'closed' : (f.rootCause && f.correctiveAction) ? 'pending_close' : f.status
+    const closedBy = f.closedDate ? (f.closedByName || currentUserName) : f.closedByName
+    onUpdateNCR({ id: r.id, ncrNumber: r.ncrNumber, title: r.title, description: r.description, workPackage: r.workPackage ?? '', location: r.location ?? '', raisedByName: r.raisedByName ?? '', raisedDate: r.raisedDate, severity: r.severity, dueDate: r.dueDate ?? '', rootCause: f.rootCause, correctiveAction: f.correctiveAction, preventiveAction: f.preventiveAction, closedDate: f.closedDate, closedByName: closedBy, status: newStatus })
+    setNcrResolveModal({ open: false, row: null })
   }
 
   // ── HSE section ───────────────────────────────────────────────────────────
@@ -5336,7 +5508,7 @@ function ExecutionTab({
   }
 
   // ── Transmittal section ───────────────────────────────────────────────────
-  function openTxCreate() { setTxForm({ transmittalNumber: '', title: '', toCompany: '', toContact: '', fromName: '', sentDate: new Date().toISOString().slice(0, 10), purpose: 'for_approval', acknowledgedDate: '', notes: '', status: 'sent' }); setTxModal({ open: true, row: null }) }
+  function openTxCreate() { const nextNum = String(transmittals.length + 1).padStart(3, '0'); setTxForm({ transmittalNumber: nextNum, title: '', toCompany: '', toContact: '', fromName: currentUserName, sentDate: new Date().toISOString().slice(0, 10), purpose: 'for_approval', acknowledgedDate: '', notes: '', status: 'sent' }); setTxModal({ open: true, row: null }) }
   function openTxEdit(r: TransmittalRow) { setTxForm({ transmittalNumber: r.transmittalNumber, title: r.title, toCompany: r.toCompany ?? '', toContact: r.toContact ?? '', fromName: r.fromName ?? '', sentDate: r.sentDate, purpose: r.purpose, acknowledgedDate: r.acknowledgedDate ?? '', notes: r.notes ?? '', status: r.status }); setTxModal({ open: true, row: r }) }
   function saveTx() {
     if (!txModal.row) onCreateTransmittal({ projectId, ...txForm })
@@ -5482,6 +5654,7 @@ function ExecutionTab({
                 {isEditable && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: th.bgSurface, borderTop: `1px solid ${th.border}` }}>
                     <button onClick={() => openSubEdit(r)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${th.border}`, background: 'none', color: th.textSecondary, fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    {r.reviewStatus === 'pending' && <button onClick={() => openSubReview(r)} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: th.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Submit Review</button>}
                     <button onClick={() => addToast({ type: 'danger', message: `Delete submittal "${r.submittalNumber}"?`, actions: [{ label: 'Delete', variant: 'danger', onClick: () => onDeleteSubmittal(r.id) }, { label: 'Cancel', onClick: () => {} }] })} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 500, cursor: 'pointer', marginLeft: 'auto' }}>Delete</button>
                   </div>
                 )}
@@ -5535,6 +5708,7 @@ function ExecutionTab({
                 {isEditable && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: th.bgSurface, borderTop: `1px solid ${th.border}` }}>
                     <button onClick={() => openSIEdit(r)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${th.border}`, background: 'none', color: th.textSecondary, fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    {r.status === 'open' && <button onClick={() => onUpdateSI({ id: r.id, siNumber: r.siNumber, subject: r.subject, description: r.description ?? '', issuedBy: r.issuedBy ?? '', issuedDate: r.issuedDate, acknowledgedByName: currentUserName, acknowledgedDate: new Date().toISOString().slice(0, 10), potentialVo: r.potentialVo, voRef: r.voRef ?? '', status: 'acknowledged' })} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: th.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Acknowledge</button>}
                     <button onClick={() => addToast({ type: 'danger', message: `Delete SI-${r.siNumber}?`, actions: [{ label: 'Delete', variant: 'danger', onClick: () => onDeleteSI(r.id) }, { label: 'Cancel', onClick: () => {} }] })} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 500, cursor: 'pointer', marginLeft: 'auto' }}>Delete</button>
                   </div>
                 )}
@@ -5560,7 +5734,21 @@ function ExecutionTab({
                 {itps.map(r => (
                   <div key={r.id} style={{ border: `1px solid ${th.border}`, borderRadius: 10, overflow: 'hidden', borderLeft: `3px solid ${statusBorderColor(r.status)}` }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: th.bgSurface, borderBottom: `1px solid ${th.border}` }}>
-                      {execBadge(r.status, th)}
+                      {isEditable ? (() => {
+                        const s = EXEC_STATUS_COLOR[r.status] ?? { bg: th.bgSurface, color: th.textMuted, border: th.border }
+                        return (
+                          <select
+                            value={r.status}
+                            onChange={e => onUpdateITP({ id: r.id, title: r.title, workPackage: r.workPackage ?? '', discipline: r.discipline ?? '', revision: r.revision, status: e.target.value, createdByName: r.createdByName ?? '' })}
+                            style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', background: s.bg, color: s.color, border: `1px solid ${s.border}`, cursor: 'pointer' }}
+                          >
+                            <option value="draft">Draft</option>
+                            <option value="approved">Approved</option>
+                            <option value="active">Active</option>
+                            <option value="closed">Closed</option>
+                          </select>
+                        )
+                      })() : execBadge(r.status, th)}
                       <span style={{ fontSize: '11px', color: th.textMuted }}>Rev. {r.revision}</span>
                       {r.discipline && <span style={{ fontSize: '11px', color: th.textMuted }}>· {r.discipline}</span>}
                       <span style={{ marginLeft: 'auto', fontSize: '11px', color: th.textMuted }}>{r.items.length} checklist item{r.items.length !== 1 ? 's' : ''}</span>
@@ -5656,6 +5844,7 @@ function ExecutionTab({
                     {isEditable && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: th.bgSurface, borderTop: `1px solid ${th.border}` }}>
                         <button onClick={() => openIREdit(r)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${th.border}`, background: 'none', color: th.textSecondary, fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                        {r.status === 'pending' && <button onClick={() => openIRInspect(r)} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: th.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Record Inspection</button>}
                         <button onClick={() => addToast({ type: 'danger', message: `Delete IR-${r.irNumber}?`, actions: [{ label: 'Delete', variant: 'danger', onClick: () => onDeleteIR(r.id) }, { label: 'Cancel', onClick: () => {} }] })} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 500, cursor: 'pointer', marginLeft: 'auto' }}>Delete</button>
                       </div>
                     )}
@@ -5711,6 +5900,7 @@ function ExecutionTab({
                     {isEditable && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: th.bgSurface, borderTop: `1px solid ${th.border}` }}>
                         <button onClick={() => openNCREdit(r)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${th.border}`, background: 'none', color: th.textSecondary, fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                        {r.status !== 'closed' && <button onClick={() => openNCRResolve(r)} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: th.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Resolve NCR</button>}
                         <button onClick={() => addToast({ type: 'danger', message: `Delete NCR-${r.ncrNumber}?`, actions: [{ label: 'Delete', variant: 'danger', onClick: () => onDeleteNCR(r.id) }, { label: 'Cancel', onClick: () => {} }] })} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 500, cursor: 'pointer', marginLeft: 'auto' }}>Delete</button>
                       </div>
                     )}
@@ -5743,7 +5933,16 @@ function ExecutionTab({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, flexWrap: 'wrap' }}>
                   {execBadge(r.recordType, th)}
                   {r.severity && execBadge(r.severity, th)}
-                  {r.ptwStatus && execBadge(r.ptwStatus, th)}
+                  {r.recordType === 'ptw' && r.ptwStatus && isEditable ? (() => {
+                    const s = EXEC_STATUS_COLOR[r.ptwStatus] ?? { bg: th.bgSurface, color: th.textMuted, border: th.border }
+                    const hsePayload = (extra: Record<string, unknown>) => ({ id: r.id, recordType: r.recordType, title: r.title, recordDate: r.recordDate, conductedBy: r.conductedBy ?? '', location: r.location ?? '', description: r.description ?? '', attendeeCount: r.attendeeCount?.toString() ?? '', attendeeNames: r.attendeeNames ?? '', incidentType: r.incidentType ?? '', severity: r.severity ?? '', injuredPerson: r.injuredPerson ?? '', rootCause: r.rootCause ?? '', correctiveAction: r.correctiveAction ?? '', correctiveDueDate: r.correctiveDueDate ?? '', observationType: r.observationType ?? '', ptwType: r.ptwType ?? '', ptwNumber: r.ptwNumber ?? '', validFrom: r.validFrom ?? '', validTo: r.validTo ?? '', approvedBy: r.approvedBy ?? '', ptwStatus: r.ptwStatus ?? 'pending', status: r.status, ...extra })
+                    return <select value={r.ptwStatus} onChange={e => onUpdateHSE(hsePayload({ ptwStatus: e.target.value }))} style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', background: s.bg, color: s.color, border: `1px solid ${s.border}`, cursor: 'pointer' }}>
+                      <option value="pending">Pending</option>
+                      <option value="active">Active</option>
+                      <option value="expired">Expired</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  })() : (r.ptwStatus && execBadge(r.ptwStatus, th))}
                   {execBadge(r.status, th)}
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, fontSize: '11px', color: th.textMuted }}>
                     <span>{r.recordDate}</span>
@@ -5784,6 +5983,7 @@ function ExecutionTab({
                 {isEditable && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: th.bgSurface, borderTop: `1px solid ${th.border}` }}>
                     <button onClick={() => openHSEEdit(r)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${th.border}`, background: 'none', color: th.textSecondary, fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    {r.recordType !== 'ptw' && r.status === 'open' && <button onClick={() => onUpdateHSE({ id: r.id, recordType: r.recordType, title: r.title, recordDate: r.recordDate, conductedBy: r.conductedBy ?? '', location: r.location ?? '', description: r.description ?? '', attendeeCount: r.attendeeCount?.toString() ?? '', attendeeNames: r.attendeeNames ?? '', incidentType: r.incidentType ?? '', severity: r.severity ?? '', injuredPerson: r.injuredPerson ?? '', rootCause: r.rootCause ?? '', correctiveAction: r.correctiveAction ?? '', correctiveDueDate: r.correctiveDueDate ?? '', observationType: r.observationType ?? '', ptwType: r.ptwType ?? '', ptwNumber: r.ptwNumber ?? '', validFrom: r.validFrom ?? '', validTo: r.validTo ?? '', approvedBy: r.approvedBy ?? '', ptwStatus: r.ptwStatus ?? 'pending', status: 'closed' })} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: th.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Close Record</button>}
                     <button onClick={() => addToast({ type: 'danger', message: `Delete HSE record "${r.title}"?`, actions: [{ label: 'Delete', variant: 'danger', onClick: () => onDeleteHSE(r.id) }, { label: 'Cancel', onClick: () => {} }] })} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 500, cursor: 'pointer', marginLeft: 'auto' }}>Delete</button>
                   </div>
                 )}
@@ -5849,6 +6049,7 @@ function ExecutionTab({
                 {isEditable && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: th.bgSurface, borderTop: `1px solid ${th.border}` }}>
                     <button onClick={() => openTxEdit(r)} style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${th.border}`, background: 'none', color: th.textSecondary, fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}>Edit</button>
+                    {r.status === 'sent' && <button onClick={() => onUpdateTransmittal({ id: r.id, transmittalNumber: r.transmittalNumber, title: r.title, toCompany: r.toCompany ?? '', toContact: r.toContact ?? '', fromName: r.fromName ?? '', sentDate: r.sentDate, purpose: r.purpose, acknowledgedDate: new Date().toISOString().slice(0, 10), notes: r.notes ?? '', status: 'acknowledged' })} style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: th.accent, color: '#fff', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Acknowledge</button>}
                     <button onClick={() => addToast({ type: 'danger', message: `Delete transmittal TXL-${r.transmittalNumber}?`, actions: [{ label: 'Delete', variant: 'danger', onClick: () => onDeleteTransmittal(r.id) }, { label: 'Cancel', onClick: () => {} }] })} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #fecaca', background: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 500, cursor: 'pointer', marginLeft: 'auto' }}>Delete</button>
                   </div>
                 )}
@@ -5945,6 +6146,20 @@ function ExecutionTab({
           {modalBtns(saveSub, () => setSubModal({ open: false, row: null }))}
         </>,
         () => setSubModal({ open: false, row: null })
+      )}
+
+      {/* ── Submittal Review Modal ── */}
+      {subReviewModal.open && modalOverlay(
+        <>
+          <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>Submit Review</h3>
+          <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>SUB-{subReviewModal.row?.submittalNumber} · {subReviewModal.row?.title}</p>
+          {field('Reviewer', inp(subReviewForm.reviewerName, v => setSubReviewForm(f => ({ ...f, reviewerName: v }))))}
+          {field('Review Status *', sel(subReviewForm.reviewStatus, v => setSubReviewForm(f => ({ ...f, reviewStatus: v })), ['approved', 'approved_with_comments', 'rejected', 'resubmit']))}
+          {field('Return Date', inp(subReviewForm.returnDate, v => setSubReviewForm(f => ({ ...f, returnDate: v })), '', 'date'))}
+          {field('Remarks', textarea(subReviewForm.remarks, v => setSubReviewForm(f => ({ ...f, remarks: v }))))}
+          {modalBtns(saveSubReview, () => setSubReviewModal({ open: false, row: null }), 'Save Review')}
+        </>,
+        () => setSubReviewModal({ open: false, row: null })
       )}
 
       {/* ── Site Instruction Modal ── */}
@@ -6051,7 +6266,10 @@ function ExecutionTab({
         <>
           <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>{irModal.row ? 'Edit Inspection Request' : 'New Inspection Request'}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {field('IR Number', inp(irForm.irNumber, v => setIrForm(f => ({ ...f, irNumber: v }))))}
+            {field('IR Number', irModal.row
+              ? inp(irForm.irNumber, v => setIrForm(f => ({ ...f, irNumber: v })))
+              : <div style={{ padding: '7px 12px', borderRadius: '6px', border: `1px solid ${th.border}`, background: th.bgCanvas, color: th.textMuted, fontSize: '13px', fontFamily: 'monospace', fontWeight: 700 }}>IR-{irForm.irNumber}</div>
+            )}
             {field('Requested Date', inp(irForm.requestedDate, v => setIrForm(f => ({ ...f, requestedDate: v })), '', 'date'))}
           </div>
           {field('Title *', inp(irForm.title, v => setIrForm(f => ({ ...f, title: v }))))}
@@ -6059,15 +6277,40 @@ function ExecutionTab({
             {field('Work Package', inp(irForm.workPackage, v => setIrForm(f => ({ ...f, workPackage: v }))))}
             {field('Location', inp(irForm.location, v => setIrForm(f => ({ ...f, location: v }))))}
             {field('Requested By', inp(irForm.requestedByName, v => setIrForm(f => ({ ...f, requestedByName: v }))))}
-            {field('Inspector Name', inp(irForm.inspectorName, v => setIrForm(f => ({ ...f, inspectorName: v }))))}
-            {field('Actual Date', inp(irForm.actualDate, v => setIrForm(f => ({ ...f, actualDate: v })), '', 'date'))}
-            {field('Status', sel(irForm.status, v => setIrForm(f => ({ ...f, status: v })), ['pending', 'accepted', 'rejected', 'closed']))}
-            {field('Result', sel(irForm.result, v => setIrForm(f => ({ ...f, result: v })), ['', 'accepted', 'accepted_with_punch', 'rejected']))}
           </div>
-          {field('Remarks', textarea(irForm.remarks, v => setIrForm(f => ({ ...f, remarks: v }))))}
+          {irModal.row && (
+            <>
+              <div style={{ margin: '16px 0 12px', borderTop: `1px solid ${th.border}`, paddingTop: '16px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>Inspection Details</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {field('Inspector Name', inp(irForm.inspectorName, v => setIrForm(f => ({ ...f, inspectorName: v }))))}
+                  {field('Actual Date', inp(irForm.actualDate, v => setIrForm(f => ({ ...f, actualDate: v })), '', 'date'))}
+                  {field('Result', sel(irForm.result, v => { const s = v === 'rejected' ? 'rejected' : v ? 'accepted' : irForm.status; setIrForm(f => ({ ...f, result: v, status: s })) }, ['', 'accepted', 'accepted_with_punch', 'rejected']))}
+                  {field('Status', sel(irForm.status, v => setIrForm(f => ({ ...f, status: v })), ['pending', 'accepted', 'rejected', 'closed']))}
+                </div>
+                {field('Remarks', textarea(irForm.remarks, v => setIrForm(f => ({ ...f, remarks: v }))))}
+              </div>
+            </>
+          )}
           {modalBtns(saveIR, () => setIrModal({ open: false, row: null }))}
         </>,
         () => setIrModal({ open: false, row: null })
+      )}
+
+      {/* ── IR Inspect Modal ── */}
+      {irInspectModal.open && modalOverlay(
+        <>
+          <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>Record Inspection</h3>
+          <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>IR-{irInspectModal.row?.irNumber} · {irInspectModal.row?.title}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            {field('Inspector Name', inp(irInspectForm.inspectorName, v => setIrInspectForm(f => ({ ...f, inspectorName: v }))))}
+            {field('Actual Date', inp(irInspectForm.actualDate, v => setIrInspectForm(f => ({ ...f, actualDate: v })), '', 'date'))}
+          </div>
+          {field('Result *', sel(irInspectForm.result, v => setIrInspectForm(f => ({ ...f, result: v })), ['', 'accepted', 'accepted_with_punch', 'rejected']))}
+          {field('Remarks', textarea(irInspectForm.remarks, v => setIrInspectForm(f => ({ ...f, remarks: v }))))}
+          {modalBtns(saveIRInspect, () => setIrInspectModal({ open: false, row: null }), 'Save Inspection')}
+        </>,
+        () => setIrInspectModal({ open: false, row: null })
       )}
 
       {/* ── NCR Modal ── */}
@@ -6075,7 +6318,10 @@ function ExecutionTab({
         <>
           <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>{ncrModal.row ? 'Edit NCR' : 'New NCR'}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {field('NCR Number', inp(ncrForm.ncrNumber, v => setNcrForm(f => ({ ...f, ncrNumber: v }))))}
+            {field('NCR Number', ncrModal.row
+              ? inp(ncrForm.ncrNumber, v => setNcrForm(f => ({ ...f, ncrNumber: v })))
+              : <div style={{ padding: '7px 12px', borderRadius: '6px', border: `1px solid ${th.border}`, background: th.bgCanvas, color: th.textMuted, fontSize: '13px', fontFamily: 'monospace', fontWeight: 700 }}>NCR-{ncrForm.ncrNumber}</div>
+            )}
             {field('Raised Date', inp(ncrForm.raisedDate, v => setNcrForm(f => ({ ...f, raisedDate: v })), '', 'date'))}
           </div>
           {field('Title *', inp(ncrForm.title, v => setNcrForm(f => ({ ...f, title: v }))))}
@@ -6085,17 +6331,67 @@ function ExecutionTab({
             {field('Location', inp(ncrForm.location, v => setNcrForm(f => ({ ...f, location: v }))))}
             {field('Raised By', inp(ncrForm.raisedByName, v => setNcrForm(f => ({ ...f, raisedByName: v }))))}
             {field('Severity', sel(ncrForm.severity, v => setNcrForm(f => ({ ...f, severity: v })), ['minor', 'major', 'critical']))}
-            {field('Status', sel(ncrForm.status, v => setNcrForm(f => ({ ...f, status: v })), ['open', 'pending_close', 'closed']))}
             {field('Due Date', inp(ncrForm.dueDate, v => setNcrForm(f => ({ ...f, dueDate: v })), '', 'date'))}
-            {field('Closed Date', inp(ncrForm.closedDate, v => setNcrForm(f => ({ ...f, closedDate: v })), '', 'date'))}
-            {field('Closed By', inp(ncrForm.closedByName, v => setNcrForm(f => ({ ...f, closedByName: v }))))}
           </div>
-          {field('Root Cause', textarea(ncrForm.rootCause, v => setNcrForm(f => ({ ...f, rootCause: v }))))}
-          {field('Corrective Action', textarea(ncrForm.correctiveAction, v => setNcrForm(f => ({ ...f, correctiveAction: v }))))}
-          {field('Preventive Action', textarea(ncrForm.preventiveAction, v => setNcrForm(f => ({ ...f, preventiveAction: v }))))}
+          {ncrModal.row && (
+            <>
+              <div style={{ margin: '16px 0 12px', borderTop: `1px solid ${th.border}`, paddingTop: '16px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>Resolution</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {field('Status', sel(ncrForm.status, v => setNcrForm(f => ({ ...f, status: v })), ['open', 'pending_close', 'closed']))}
+                  {field('Closed Date', inp(ncrForm.closedDate, v => {
+                    const newStatus = v ? 'closed' : ncrForm.status === 'closed' ? 'pending_close' : ncrForm.status
+                    const closedBy = v ? (ncrForm.closedByName || currentUserName) : ncrForm.closedByName
+                    setNcrForm(f => ({ ...f, closedDate: v, closedByName: closedBy, status: newStatus }))
+                  }, '', 'date'))}
+                  {field('Closed By', inp(ncrForm.closedByName, v => setNcrForm(f => ({ ...f, closedByName: v }))))}
+                </div>
+                {field('Root Cause', textarea(ncrForm.rootCause, v => {
+                  const s = v && ncrForm.correctiveAction && ncrForm.status === 'open' ? 'pending_close' : ncrForm.status
+                  setNcrForm(f => ({ ...f, rootCause: v, status: s }))
+                }))}
+                {field('Corrective Action', textarea(ncrForm.correctiveAction, v => {
+                  const s = v && ncrForm.rootCause && ncrForm.status === 'open' ? 'pending_close' : ncrForm.status
+                  setNcrForm(f => ({ ...f, correctiveAction: v, status: s }))
+                }))}
+                {field('Preventive Action', textarea(ncrForm.preventiveAction, v => setNcrForm(f => ({ ...f, preventiveAction: v }))))}
+              </div>
+            </>
+          )}
           {modalBtns(saveNCR, () => setNcrModal({ open: false, row: null }))}
         </>,
         () => setNcrModal({ open: false, row: null })
+      )}
+
+      {/* ── NCR Resolve Modal ── */}
+      {ncrResolveModal.open && modalOverlay(
+        <>
+          <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: th.textPrimary }}>Resolve NCR</h3>
+          <p style={{ fontSize: '12px', color: th.textMuted, margin: '0 0 16px' }}>NCR-{ncrResolveModal.row?.ncrNumber} · {ncrResolveModal.row?.title}</p>
+          {field('Root Cause', textarea(ncrResolveForm.rootCause, v => {
+            const s = v && ncrResolveForm.correctiveAction && ncrResolveForm.status === 'open' ? 'pending_close' : ncrResolveForm.status
+            setNcrResolveForm(f => ({ ...f, rootCause: v, status: s }))
+          }))}
+          {field('Corrective Action', textarea(ncrResolveForm.correctiveAction, v => {
+            const s = v && ncrResolveForm.rootCause && ncrResolveForm.status === 'open' ? 'pending_close' : ncrResolveForm.status
+            setNcrResolveForm(f => ({ ...f, correctiveAction: v, status: s }))
+          }))}
+          {field('Preventive Action', textarea(ncrResolveForm.preventiveAction, v => setNcrResolveForm(f => ({ ...f, preventiveAction: v }))))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            {field('Closed Date', inp(ncrResolveForm.closedDate, v => {
+              const newStatus = v ? 'closed' : ncrResolveForm.status === 'closed' ? 'pending_close' : ncrResolveForm.status
+              const closedBy = v ? (ncrResolveForm.closedByName || currentUserName) : ncrResolveForm.closedByName
+              setNcrResolveForm(f => ({ ...f, closedDate: v, closedByName: closedBy, status: newStatus }))
+            }, '', 'date'))}
+            {field('Closed By', inp(ncrResolveForm.closedByName, v => setNcrResolveForm(f => ({ ...f, closedByName: v }))))}
+          </div>
+          <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: 8, background: th.bgHover, border: `1px solid ${th.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: th.textMuted }}>Status will be saved as:</span>
+            {(() => { const s = ncrResolveForm.closedDate ? 'closed' : (ncrResolveForm.rootCause && ncrResolveForm.correctiveAction) ? 'pending_close' : ncrResolveForm.status; return execBadge(s, th) })()}
+          </div>
+          {modalBtns(saveNCRResolve, () => setNcrResolveModal({ open: false, row: null }), 'Save Resolution')}
+        </>,
+        () => setNcrResolveModal({ open: false, row: null })
       )}
 
       {/* ── HSE Modal ── */}
@@ -6158,7 +6454,10 @@ function ExecutionTab({
         <>
           <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: th.textPrimary }}>{txModal.row ? 'Edit Transmittal' : 'New Transmittal'}</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {field('Transmittal Number', inp(txForm.transmittalNumber, v => setTxForm(f => ({ ...f, transmittalNumber: v }))))}
+            {field('Transmittal Number', txModal.row
+              ? inp(txForm.transmittalNumber, v => setTxForm(f => ({ ...f, transmittalNumber: v })))
+              : <div style={{ padding: '7px 12px', borderRadius: '6px', border: `1px solid ${th.border}`, background: th.bgCanvas, color: th.textMuted, fontSize: '13px', fontFamily: 'monospace', fontWeight: 700 }}>TXL-{txForm.transmittalNumber}</div>
+            )}
             {field('Sent Date', inp(txForm.sentDate, v => setTxForm(f => ({ ...f, sentDate: v })), '', 'date'))}
           </div>
           {field('Title *', inp(txForm.title, v => setTxForm(f => ({ ...f, title: v }))))}
@@ -6167,10 +6466,17 @@ function ExecutionTab({
             {field('To Contact', inp(txForm.toContact, v => setTxForm(f => ({ ...f, toContact: v }))))}
             {field('From Name', inp(txForm.fromName, v => setTxForm(f => ({ ...f, fromName: v }))))}
             {field('Purpose', sel(txForm.purpose, v => setTxForm(f => ({ ...f, purpose: v })), ['for_approval', 'for_information', 'for_review', 'for_record', 'as_built']))}
-            {field('Status', sel(txForm.status, v => setTxForm(f => ({ ...f, status: v })), ['sent', 'acknowledged', 'superseded']))}
-            {field('Acknowledged Date', inp(txForm.acknowledgedDate, v => setTxForm(f => ({ ...f, acknowledgedDate: v })), '', 'date'))}
           </div>
           {field('Notes', textarea(txForm.notes, v => setTxForm(f => ({ ...f, notes: v }))))}
+          {txModal.row && (
+            <div style={{ margin: '16px 0 12px', borderTop: `1px solid ${th.border}`, paddingTop: '16px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: th.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>Acknowledgement</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {field('Status', sel(txForm.status, v => setTxForm(f => ({ ...f, status: v })), ['sent', 'acknowledged', 'superseded']))}
+                {field('Acknowledged Date', inp(txForm.acknowledgedDate, v => setTxForm(f => ({ ...f, acknowledgedDate: v })), '', 'date'))}
+              </div>
+            </div>
+          )}
           {modalBtns(saveTx, () => setTxModal({ open: false, row: null }))}
         </>,
         () => setTxModal({ open: false, row: null })
@@ -6921,74 +7227,28 @@ function PlanningTab(props: PlanningProps) {
 
 // ── CostControlTab ────────────────────────────────────────────────────────────
 
-type CCCostCode = { id: string; projectId: string; wbsId: string | null; code: string; name: string; category: string; budgetAmount: number; sequence: number; committedAmount: number; actualAmount: number; forecastEAC: number; remainingBudget: number; percentConsumed: number }
-type CCCommitted = { id: string; projectId: string; costCodeId: string | null; costCodeName: string | null; commitmentType: string; referenceNumber: string | null; description: string; vendorName: string | null; committedAmount: number; invoicedAmount: number; paidAmount: number; currencyCode: string; commitmentDate: string | null; expectedInvoiceDate: string | null; status: string; notes: string | null }
-type CCCashFlow = { id: string; projectId: string; periodYear: number; periodMonth: number; label: string; plannedOutflow: number; actualOutflow: number; forecastOutflow: number; plannedInflow: number; actualInflow: number; forecastInflow: number; notes: string | null; cumPlannedOutflow: number; cumActualOutflow: number; cumForecastOutflow: number }
-type CCSCBilling = { id: string; subcontractId: string; billingNumber: string; billingDate: string; grossAmount: number; retentionAmount: number; netAmount: number; certifiedAmount: number | null; certifiedDate: string | null; paidAmount: number; paidDate: string | null; status: string; notes: string | null }
-type CCSubcontract = { id: string; projectId: string; costCodeId: string | null; subcontractNumber: string; subcontractorName: string; description: string | null; contractValue: number; revisedValue: number; retentionPercentage: number; retentionReleased: number; certifiedAmount: number; paidAmount: number; currencyCode: string; startDate: string | null; endDate: string | null; status: string; billings: CCSCBilling[] }
-type CCLabor = { id: string; projectId: string; costCodeId: string | null; workDate: string; trade: string; workerName: string | null; regularHours: number; overtimeHours: number; costPerHour: number; totalCost: number; notes: string | null }
-type CCEquipment = { id: string; projectId: string; costCodeId: string | null; logDate: string; equipmentName: string; equipmentType: string | null; ownership: string; workingHours: number; standbyHours: number; costPerHour: number; standbyRate: number; totalCost: number; notes: string | null }
-type CCForecast = { id: string; projectId: string; costCodeId: string | null; costCodeName: string | null; forecastDate: string; etcAmount: number; eacAmount: number; notes: string | null }
-type CCBilling = { id: string; projectId: string; billingNumber: string; billingDate: string; periodFrom: string | null; periodTo: string | null; grossAmount: number; retentionPercentage: number; retentionAmount: number; netAmount: number; certifiedAmount: number | null; certifiedDate: string | null; paidAmount: number; paidDate: string | null; status: string; notes: string | null }
+type CCCostCode = { id: string; projectId: string; wbsId: string | null; analyticAccountId: string | null; code: string; name: string; category: string; budgetAmount: number; sequence: number; committedAmount: number; actualAmount: number; forecastEAC: number; remainingBudget: number; percentConsumed: number }
 type CCSummary = { totalBudget: number; totalCommitted: number; totalActual: number; totalForecastEAC: number; totalRemaining: number; totalVariance: number; percentConsumed: number; totalBilled: number; totalCertified: number; totalPaidByClient: number; totalRetentionHeld: number; outstandingReceivable: number; byCategory: Array<{ category: string; budgetAmount: number; committedAmount: number; actualAmount: number; forecastEAC: number; variance: number }> }
 
 type CostControlProps = {
   projectId: string; th: Record<string, string>; isEditable: boolean; isAdmin: boolean
-  costCodes: CCCostCode[]; committedCosts: CCCommitted[]; cashFlow: CCCashFlow[]
-  subcontracts: CCSubcontract[]; laborEntries: CCLabor[]; equipmentLog: CCEquipment[]
-  forecasts: CCForecast[]; clientBillings: CCBilling[]; summary: CCSummary | null
+  costCodes: CCCostCode[]; summary: CCSummary | null
+  projectAnalyticAccountId: string | null; projectAnalyticAccountName: string | null
   onCreateCostCode: (v: Record<string, unknown>) => void; onUpdateCostCode: (v: Record<string, unknown>) => void; onDeleteCostCode: (id: string) => void
-  onCreateCommitted: (v: Record<string, unknown>) => void; onUpdateCommitted: (v: Record<string, unknown>) => void; onDeleteCommitted: (id: string) => void; onSyncPOs: () => void
-  onUpsertCashFlow: (v: Record<string, unknown>) => void
-  onCreateSubcontract: (v: Record<string, unknown>) => void; onUpdateSubcontract: (v: Record<string, unknown>) => void; onDeleteSubcontract: (id: string) => void
-  onCreateSCBilling: (v: Record<string, unknown>) => void; onUpdateSCBilling: (v: Record<string, unknown>) => void; onDeleteSCBilling: (id: string) => void
-  onCreateLabor: (v: Record<string, unknown>) => void; onUpdateLabor: (v: Record<string, unknown>) => void; onDeleteLabor: (id: string) => void
-  onCreateEquipment: (v: Record<string, unknown>) => void; onUpdateEquipment: (v: Record<string, unknown>) => void; onDeleteEquipment: (id: string) => void
-  onUpsertForecast: (v: Record<string, unknown>) => void
-  onCreateBilling: (v: Record<string, unknown>) => void; onUpdateBilling: (v: Record<string, unknown>) => void; onDeleteBilling: (id: string) => void
 }
 
 function CostControlTab(props: CostControlProps) {
-  const { projectId, th, isEditable, isAdmin, costCodes, committedCosts, cashFlow, subcontracts, laborEntries, equipmentLog, forecasts, clientBillings, summary, onCreateCostCode, onUpdateCostCode, onDeleteCostCode, onCreateCommitted, onUpdateCommitted, onDeleteCommitted, onSyncPOs, onUpsertCashFlow, onCreateSubcontract, onUpdateSubcontract, onDeleteSubcontract, onCreateSCBilling, onUpdateSCBilling, onDeleteSCBilling, onCreateLabor, onUpdateLabor, onDeleteLabor, onCreateEquipment, onUpdateEquipment, onDeleteEquipment, onUpsertForecast, onCreateBilling, onUpdateBilling, onDeleteBilling } = props
+  const { projectId, th, isEditable, isAdmin, costCodes, summary, projectAnalyticAccountId, projectAnalyticAccountName, onCreateCostCode, onUpdateCostCode, onDeleteCostCode } = props
 
-  type CCSection = 'overview' | 'budget' | 'committed' | 'cashflow' | 'invoices' | 'subcontracts' | 'labor' | 'equipment' | 'forecast'
+  type CCSection = 'overview' | 'budget'
   const [section, setSection] = React.useState<CCSection>('overview')
-  const [expandedSC, setExpandedSC] = React.useState<Set<string>>(new Set())
 
-  // Modals
   const [codeModal, setCodeModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCCostCode> }>({ open: false, mode: 'create', item: {} })
-  const [codeForm, setCodeForm] = React.useState({ code: '', name: '', category: 'labor', budgetAmount: '0', sequence: '0' })
-
-  const [commitModal, setCommitModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCCommitted> }>({ open: false, mode: 'create', item: {} })
-  const [commitForm, setCommitForm] = React.useState({ costCodeId: '', commitmentType: 'manual', referenceNumber: '', description: '', vendorName: '', committedAmount: '0', invoicedAmount: '0', paidAmount: '0', commitmentDate: '', expectedInvoiceDate: '', status: 'active', notes: '' })
-
-  const [cfModal, setCfModal] = React.useState<{ open: boolean; item: Partial<CCCashFlow> }>({ open: false, item: {} })
-  const [cfForm, setCfForm] = React.useState({ periodYear: String(new Date().getFullYear()), periodMonth: String(new Date().getMonth() + 1), plannedOutflow: '0', actualOutflow: '0', forecastOutflow: '0', plannedInflow: '0', actualInflow: '0', forecastInflow: '0', notes: '' })
-
-  const [scModal, setScModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCSubcontract> }>({ open: false, mode: 'create', item: {} })
-  const [scForm, setScForm] = React.useState({ subcontractNumber: '', subcontractorName: '', description: '', scopeOfWork: '', contractValue: '0', revisedValue: '0', retentionPercentage: '10', retentionReleased: '0', certifiedAmount: '0', paidAmount: '0', startDate: '', endDate: '', status: 'active', costCodeId: '' })
-
-  const [scBilModal, setScBilModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; subcontractId: string; item: Partial<CCSCBilling> }>({ open: false, mode: 'create', subcontractId: '', item: {} })
-  const [scBilForm, setScBilForm] = React.useState({ billingNumber: '', billingDate: '', grossAmount: '0', retentionAmount: '0', netAmount: '0', certifiedAmount: '', certifiedDate: '', paidAmount: '0', paidDate: '', status: 'submitted', notes: '' })
-
-  const [laborModal, setLaborModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCLabor> }>({ open: false, mode: 'create', item: {} })
-  const [laborForm, setLaborForm] = React.useState({ workDate: '', trade: '', workerName: '', regularHours: '8', overtimeHours: '0', costPerHour: '0', costCodeId: '', notes: '' })
-
-  const [equipModal, setEquipModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCEquipment> }>({ open: false, mode: 'create', item: {} })
-  const [equipForm, setEquipForm] = React.useState({ logDate: '', equipmentName: '', equipmentType: '', ownership: 'rented', workingHours: '8', standbyHours: '0', costPerHour: '0', standbyRate: '0', costCodeId: '', notes: '' })
-
-  const [fcModal, setFcModal] = React.useState<{ open: boolean; item: Partial<CCForecast> }>({ open: false, item: {} })
-  const [fcForm, setFcForm] = React.useState({ costCodeId: '', forecastDate: new Date().toISOString().slice(0, 10), etcAmount: '0', eacAmount: '0', notes: '' })
-
-  const [bilModal, setBilModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCBilling> }>({ open: false, mode: 'create', item: {} })
-  const [bilForm, setBilForm] = React.useState({ billingNumber: '', billingDate: '', periodFrom: '', periodTo: '', grossAmount: '0', retentionPercentage: '10', retentionAmount: '0', netAmount: '0', certifiedAmount: '', certifiedDate: '', paidAmount: '0', paidDate: '', status: 'draft', notes: '' })
+  const [codeForm, setCodeForm] = React.useState({ analyticAccountId: '', code: '', name: '', category: 'labor', budgetAmount: '0', sequence: '0' })
 
   const nav: Array<{ key: CCSection; label: string }> = [
-    { key: 'overview', label: 'Overview' }, { key: 'budget', label: 'Budget' },
-    { key: 'committed', label: 'Committed' }, { key: 'cashflow', label: 'Cash Flow' },
-    { key: 'invoices', label: 'Client Billing' }, { key: 'subcontracts', label: 'Subcontracts' },
-    { key: 'labor', label: 'Labor' }, { key: 'equipment', label: 'Equipment' },
-    { key: 'forecast', label: 'Forecast' },
+    { key: 'overview', label: 'Overview' },
+    { key: 'budget', label: 'Budget' },
   ]
 
   const card = { background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '8px', padding: '16px', marginBottom: '12px' } as React.CSSProperties
@@ -7101,31 +7361,29 @@ function CostControlTab(props: CostControlProps) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Cost Codes & Budget</div>
-        {isEditable && <button style={btn()} onClick={() => { setCodeModal({ open: true, mode: 'create', item: {} }); setCodeForm({ code: '', name: '', category: 'labor', budgetAmount: '0', sequence: '0' }) }}>+ Cost Code</button>}
+        {isEditable && <button style={btn()} onClick={() => { setCodeModal({ open: true, mode: 'create', item: {} }); setCodeForm({ analyticAccountId: projectAnalyticAccountId ?? '', code: '', name: '', category: 'labor', budgetAmount: '0', sequence: '0' }) }}>+ Cost Code</button>}
       </div>
-      <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 90px 100px 100px 100px 80px 60px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
-          <span>Code</span><span>Name</span><span>Category</span><span>Budget</span><span>Committed</span><span>Actual</span><span>Remaining</span><span>%</span>
+      <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflowX: 'auto' }}>
+        <div style={{ minWidth: '720px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 90px 110px 110px 100px 110px 70px', columnGap: '8px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
+          <span>Code</span><span>Name</span><span>Category</span><span style={{ textAlign: 'right' }}>Budget</span><span style={{ textAlign: 'right' }}>Committed</span><span style={{ textAlign: 'right' }}>Actual</span><span style={{ textAlign: 'right' }}>Remaining</span><span style={{ textAlign: 'center' }}>%</span>
         </div>
         {costCodes.length === 0 && <div style={{ padding: '24px', textAlign: 'center', color: th.textSecondary, fontSize: '13px' }}>No cost codes yet. Add cost codes to track budget.</div>}
         {costCodes.map(c => (
-          <div key={c.id} onClick={() => { setCodeModal({ open: true, mode: 'edit', item: c }); setCodeForm({ code: c.code, name: c.name, category: c.category, budgetAmount: String(c.budgetAmount), sequence: String(c.sequence) }) }}
-            style={{ display: 'grid', gridTemplateColumns: '80px 1fr 90px 100px 100px 100px 80px 60px', padding: '8px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, cursor: 'pointer', borderLeft: `3px solid ${catColors[c.category] ?? '#94a3b8'}`, alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', fontFamily: 'monospace', color: th.textSecondary }}>{c.code}</span>
-            <span style={{ fontSize: '13px', color: th.textPrimary }}>{c.name}</span>
-            <span style={{ fontSize: '11px', color: th.textSecondary, textTransform: 'capitalize' }}>{c.category}</span>
-            <span style={{ fontSize: '12px', color: th.textPrimary, textAlign: 'right' }}>{fmt(c.budgetAmount)}</span>
-            <span style={{ fontSize: '12px', color: '#f59e0b', textAlign: 'right' }}>{fmt(c.committedAmount)}</span>
-            <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right' }}>{fmt(c.actualAmount)}</span>
-            <span style={{ fontSize: '12px', color: c.remainingBudget < 0 ? '#ef4444' : '#22c55e', textAlign: 'right' }}>{fmt(c.remainingBudget)}</span>
-            <div>
-              <div style={{ background: th.border, borderRadius: '3px', height: '6px', overflow: 'hidden' }}><div style={{ width: `${Math.min(100, c.percentConsumed)}%`, background: c.percentConsumed > 100 ? '#ef4444' : catColors[c.category] ?? '#94a3b8', height: '100%' }} /></div>
-              <div style={{ fontSize: '10px', color: th.textSecondary, marginTop: '2px' }}>{pct(c.percentConsumed)}</div>
-            </div>
+          <div key={c.id} onClick={() => { setCodeModal({ open: true, mode: 'edit', item: c }); setCodeForm({ analyticAccountId: c.analyticAccountId ?? '', code: c.code, name: c.name, category: c.category, budgetAmount: String(c.budgetAmount), sequence: String(c.sequence) }) }}
+            style={{ display: 'grid', gridTemplateColumns: '160px 1fr 90px 110px 110px 100px 110px 70px', columnGap: '8px', padding: '8px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, cursor: 'pointer', boxSizing: 'border-box', borderLeft: `3px solid ${catColors[c.category] ?? '#94a3b8'}`, alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontFamily: 'monospace', color: th.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{c.code}</span>
+            <span style={{ fontSize: '13px', color: th.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{c.name}</span>
+            <span style={{ fontSize: '11px', color: th.textSecondary, textTransform: 'capitalize', minWidth: 0 }}>{c.category}</span>
+            <span style={{ fontSize: '12px', color: th.textPrimary, textAlign: 'right', minWidth: 0 }}>{fmt(c.budgetAmount)}</span>
+            <span style={{ fontSize: '12px', color: '#f59e0b', textAlign: 'right', minWidth: 0 }}>{fmt(c.committedAmount)}</span>
+            <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right', minWidth: 0 }}>{fmt(c.actualAmount)}</span>
+            <span style={{ fontSize: '12px', color: c.remainingBudget < 0 ? '#ef4444' : '#22c55e', textAlign: 'right', minWidth: 0 }}>{fmt(c.remainingBudget)}</span>
+            <span style={{ fontSize: '11px', color: c.percentConsumed > 100 ? '#ef4444' : th.textSecondary, textAlign: 'center', minWidth: 0 }}>{pct(c.percentConsumed)}</span>
           </div>
         ))}
         {costCodes.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 90px 100px 100px 100px 80px 60px', padding: '8px 12px', background: th.bgSurface, borderTop: `1px solid ${th.border}`, fontSize: '12px', fontWeight: 700, color: th.textPrimary }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr 90px 110px 110px 100px 110px 70px', columnGap: '8px', padding: '8px 12px', background: th.bgSurface, borderTop: `1px solid ${th.border}`, fontSize: '12px', fontWeight: 700, color: th.textPrimary }}>
             <span /><span>Total</span><span />
             <span style={{ textAlign: 'right' }}>{fmt(costCodes.reduce((s, c) => s + c.budgetAmount, 0))}</span>
             <span style={{ textAlign: 'right', color: '#f59e0b' }}>{fmt(costCodes.reduce((s, c) => s + c.committedAmount, 0))}</span>
@@ -7134,378 +7392,12 @@ function CostControlTab(props: CostControlProps) {
             <span />
           </div>
         )}
+        </div>
       </div>
     </div>
   )
 
-  // ── Committed ─────────────────────────────────────────────────────────────
-  const renderCommitted = () => (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-        <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Committed Costs</div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {isEditable && <button style={btn({ background: '#10b981' })} onClick={onSyncPOs}>Sync POs</button>}
-          {isEditable && <button style={btn()} onClick={() => { setCommitModal({ open: true, mode: 'create', item: {} }); setCommitForm({ costCodeId: '', commitmentType: 'manual', referenceNumber: '', description: '', vendorName: '', committedAmount: '0', invoicedAmount: '0', paidAmount: '0', commitmentDate: '', expectedInvoiceDate: '', status: 'active', notes: '' }) }}>+ Commitment</button>}
-        </div>
-      </div>
-      <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 100px 100px 90px 80px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
-          <span>Type</span><span>Description</span><span>Vendor</span><span>Committed</span><span>Invoiced</span><span>Status</span><span />
-        </div>
-        {committedCosts.length === 0 && <div style={{ padding: '24px', textAlign: 'center', color: th.textSecondary, fontSize: '13px' }}>No commitments. Click "Sync POs" to import from approved POs, or add manually.</div>}
-        {committedCosts.map(c => (
-          <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 100px 100px 90px 80px', padding: '8px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '3px', padding: '2px 6px', textTransform: 'uppercase', color: th.textSecondary }}>{c.commitmentType}</span>
-            <div>
-              <div style={{ fontSize: '13px', color: th.textPrimary }}>{c.description}</div>
-              {c.costCodeName && <div style={{ fontSize: '11px', color: th.textSecondary }}>Code: {c.costCodeName}</div>}
-              {c.referenceNumber && <div style={{ fontSize: '11px', color: th.textSecondary }}>Ref: {c.referenceNumber}</div>}
-            </div>
-            <span style={{ fontSize: '12px', color: th.textSecondary }}>{c.vendorName ?? '—'}</span>
-            <span style={{ fontSize: '12px', color: '#f59e0b', textAlign: 'right' }}>{fmt(c.committedAmount)}</span>
-            <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right' }}>{fmt(c.invoicedAmount)}</span>
-            <span style={{ fontSize: '11px', color: c.status === 'cancelled' ? '#ef4444' : c.status === 'fully_invoiced' ? '#22c55e' : '#f59e0b' }}>{c.status.replace(/_/g, ' ')}</span>
-            {isEditable && (
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button style={btn({ padding: '3px 8px', fontSize: '11px', background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => { setCommitModal({ open: true, mode: 'edit', item: c }); setCommitForm({ costCodeId: c.costCodeId ?? '', commitmentType: c.commitmentType, referenceNumber: c.referenceNumber ?? '', description: c.description, vendorName: c.vendorName ?? '', committedAmount: String(c.committedAmount), invoicedAmount: String(c.invoicedAmount), paidAmount: String(c.paidAmount), commitmentDate: c.commitmentDate ?? '', expectedInvoiceDate: c.expectedInvoiceDate ?? '', status: c.status, notes: c.notes ?? '' }) }}>Edit</button>
-                <button style={btn({ padding: '3px 8px', fontSize: '11px', background: '#ef4444' })} onClick={() => { if (confirm('Delete?')) onDeleteCommitted(c.id) }}>Del</button>
-              </div>
-            )}
-          </div>
-        ))}
-        {committedCosts.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 120px 100px 100px 90px 80px', padding: '8px 12px', background: th.bgSurface, borderTop: `1px solid ${th.border}`, fontSize: '12px', fontWeight: 700, color: th.textPrimary }}>
-            <span /><span>Total</span><span />
-            <span style={{ textAlign: 'right', color: '#f59e0b' }}>{fmt(committedCosts.reduce((s, c) => s + c.committedAmount, 0))}</span>
-            <span style={{ textAlign: 'right', color: '#3b82f6' }}>{fmt(committedCosts.reduce((s, c) => s + c.invoicedAmount, 0))}</span>
-            <span /><span />
-          </div>
-        )}
-      </div>
-    </div>
-  )
-
-  // ── Cash Flow ─────────────────────────────────────────────────────────────
-  const renderCashFlow = () => {
-    const maxFlow = Math.max(...cashFlow.map(p => Math.max(p.plannedOutflow, p.actualOutflow, p.forecastOutflow)), 1)
-    const maxCum  = Math.max(...cashFlow.map(p => Math.max(p.cumPlannedOutflow, p.cumActualOutflow, p.cumForecastOutflow)), 1)
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Cash Flow</div>
-          {isEditable && <button style={btn()} onClick={() => { setCfModal({ open: true, item: {} }); setCfForm({ periodYear: String(new Date().getFullYear()), periodMonth: String(new Date().getMonth() + 1), plannedOutflow: '0', actualOutflow: '0', forecastOutflow: '0', plannedInflow: '0', actualInflow: '0', forecastInflow: '0', notes: '' }) }}>+ Period</button>}
-        </div>
-        {/* S-Curve SVG */}
-        {cashFlow.length > 1 && (
-          <div style={{ ...card, overflowX: 'auto' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: th.textPrimary, marginBottom: '8px' }}>Cumulative S-Curve (Outflow)</div>
-            <svg width={Math.max(400, cashFlow.length * 40)} height="120" style={{ display: 'block' }}>
-              {/* Grid lines */}
-              {[0.25, 0.5, 0.75, 1].map(f => (
-                <line key={f} x1="0" y1={110 - f * 100} x2={cashFlow.length * 40} y2={110 - f * 100} stroke={th.border} strokeWidth="1" />
-              ))}
-              {/* Planned */}
-              <polyline points={cashFlow.map((p, i) => `${i * 40 + 20},${110 - (p.cumPlannedOutflow / maxCum) * 100}`).join(' ')} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 2" />
-              {/* Forecast */}
-              <polyline points={cashFlow.map((p, i) => `${i * 40 + 20},${110 - (p.cumForecastOutflow / maxCum) * 100}`).join(' ')} fill="none" stroke="#f59e0b" strokeWidth="2" />
-              {/* Actual */}
-              <polyline points={cashFlow.filter(p => p.actualOutflow > 0 || p.cumActualOutflow > 0).map((p, i) => `${i * 40 + 20},${110 - (p.cumActualOutflow / maxCum) * 100}`).join(' ')} fill="none" stroke="#3b82f6" strokeWidth="2.5" />
-              {/* Labels */}
-              {cashFlow.map((p, i) => (
-                <text key={p.id} x={i * 40 + 20} y="118" textAnchor="middle" fontSize="9" fill={th.textSecondary}>{p.label.slice(5)}</text>
-              ))}
-            </svg>
-            <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', color: th.textSecondary }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4 2" /></svg> Planned</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#f59e0b" strokeWidth="2" /></svg> Forecast</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><svg width="16" height="4"><line x1="0" y1="2" x2="16" y2="2" stroke="#3b82f6" strokeWidth="2" /></svg> Actual</span>
-            </div>
-          </div>
-        )}
-        {/* Period table */}
-        <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflow: 'hidden', overflowX: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 100px 100px 100px 100px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase', minWidth: '700px' }}>
-            <span>Period</span><span style={{ textAlign: 'right' }}>Pln Out</span><span style={{ textAlign: 'right' }}>Act Out</span><span style={{ textAlign: 'right' }}>Fcast Out</span><span style={{ textAlign: 'right' }}>Pln In</span><span style={{ textAlign: 'right' }}>Act In</span><span style={{ textAlign: 'right' }}>Fcast In</span>
-          </div>
-          {cashFlow.length === 0 && <div style={{ padding: '24px', textAlign: 'center', color: th.textSecondary, fontSize: '13px' }}>No cash flow periods.</div>}
-          {cashFlow.map(p => (
-            <div key={p.id} style={{ display: 'grid', gridTemplateColumns: '80px 100px 100px 100px 100px 100px 100px', padding: '7px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, minWidth: '700px', alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: th.textPrimary }}>{p.label}</span>
-              <span style={{ fontSize: '12px', color: th.textSecondary, textAlign: 'right' }}>{fmt(p.plannedOutflow)}</span>
-              <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right' }}>{fmt(p.actualOutflow)}</span>
-              <span style={{ fontSize: '12px', color: '#f59e0b', textAlign: 'right' }}>{fmt(p.forecastOutflow)}</span>
-              <span style={{ fontSize: '12px', color: th.textSecondary, textAlign: 'right' }}>{fmt(p.plannedInflow)}</span>
-              <span style={{ fontSize: '12px', color: '#22c55e', textAlign: 'right' }}>{fmt(p.actualInflow)}</span>
-              <span style={{ fontSize: '12px', color: '#22c55e', textAlign: 'right' }}>{fmt(p.forecastInflow)}</span>
-            </div>
-          ))}
-        </div>
-        {/* Monthly bar chart */}
-        {cashFlow.length > 0 && (
-          <div style={{ ...card, marginTop: '12px', overflowX: 'auto' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: th.textPrimary, marginBottom: '8px' }}>Monthly Outflow</div>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '80px' }}>
-              {cashFlow.map(p => (
-                <div key={p.id} style={{ display: 'flex', gap: '2px', alignItems: 'flex-end', flex: 1 }} title={p.label}>
-                  <div style={{ width: '12px', background: '#94a3b8', height: `${(p.plannedOutflow / maxFlow) * 72}px`, borderRadius: '2px 2px 0 0', opacity: 0.5, minHeight: '2px' }} />
-                  <div style={{ width: '12px', background: '#3b82f6', height: `${(p.actualOutflow / maxFlow) * 72}px`, borderRadius: '2px 2px 0 0', minHeight: '2px' }} />
-                  <div style={{ width: '12px', background: '#f59e0b', height: `${(p.forecastOutflow / maxFlow) * 72}px`, borderRadius: '2px 2px 0 0', minHeight: '2px' }} />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── Client Billing ────────────────────────────────────────────────────────
-  const renderInvoices = () => {
-    const statusColorMap: Record<string, string> = { draft: '#94a3b8', submitted: '#f59e0b', certified: '#3b82f6', paid: '#22c55e', disputed: '#ef4444' }
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Client Billings (AR)</div>
-          {isEditable && <button style={btn()} onClick={() => { setBilModal({ open: true, mode: 'create', item: {} }); setBilForm({ billingNumber: '', billingDate: '', periodFrom: '', periodTo: '', grossAmount: '0', retentionPercentage: '10', retentionAmount: '0', netAmount: '0', certifiedAmount: '', certifiedDate: '', paidAmount: '0', paidDate: '', status: 'draft', notes: '' }) }}>+ Invoice</button>}
-        </div>
-        {clientBillings.length === 0 && <div style={{ color: th.textSecondary, fontSize: '13px' }}>No client billings yet.</div>}
-        {clientBillings.map(b => (
-          <div key={b.id} style={{ ...card, borderLeft: `4px solid ${statusColorMap[b.status] ?? th.border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: th.textPrimary }}>{b.billingNumber}</div>
-                <div style={{ fontSize: '12px', color: th.textSecondary }}>{b.billingDate}{b.periodFrom && ` · ${b.periodFrom} – ${b.periodTo}`}</div>
-                <div style={{ display: 'flex', gap: '12px', marginTop: '6px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', color: th.textSecondary }}>Gross: <strong style={{ color: th.textPrimary }}>{fmt(b.grossAmount)}</strong></span>
-                  <span style={{ fontSize: '12px', color: th.textSecondary }}>Retention: <strong style={{ color: '#f59e0b' }}>{fmt(b.retentionAmount)}</strong></span>
-                  <span style={{ fontSize: '12px', color: th.textSecondary }}>Net: <strong style={{ color: th.textPrimary }}>{fmt(b.netAmount)}</strong></span>
-                  {b.certifiedAmount != null && <span style={{ fontSize: '12px', color: th.textSecondary }}>Certified: <strong style={{ color: '#3b82f6' }}>{fmt(b.certifiedAmount)}</strong></span>}
-                  {b.paidAmount > 0 && <span style={{ fontSize: '12px', color: th.textSecondary }}>Paid: <strong style={{ color: '#22c55e' }}>{fmt(b.paidAmount)}</strong></span>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '11px', background: `${statusColorMap[b.status] ?? th.border}22`, color: statusColorMap[b.status] ?? th.textSecondary, border: `1px solid ${statusColorMap[b.status] ?? th.border}44`, borderRadius: '4px', padding: '3px 8px' }}>{b.status.charAt(0).toUpperCase() + b.status.slice(1)}</span>
-                {isEditable && (
-                  <>
-                    <button style={btn({ padding: '4px 10px', fontSize: '11px', background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => { setBilModal({ open: true, mode: 'edit', item: b }); setBilForm({ billingNumber: b.billingNumber, billingDate: b.billingDate, periodFrom: b.periodFrom ?? '', periodTo: b.periodTo ?? '', grossAmount: String(b.grossAmount), retentionPercentage: String(b.retentionPercentage), retentionAmount: String(b.retentionAmount), netAmount: String(b.netAmount), certifiedAmount: b.certifiedAmount != null ? String(b.certifiedAmount) : '', certifiedDate: b.certifiedDate ?? '', paidAmount: String(b.paidAmount), paidDate: b.paidDate ?? '', status: b.status, notes: b.notes ?? '' }) }}>Edit</button>
-                    <button style={btn({ padding: '4px 10px', fontSize: '11px', background: '#ef4444' })} onClick={() => { if (confirm('Delete?')) onDeleteBilling(b.id) }}>Del</button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  // ── Subcontracts ──────────────────────────────────────────────────────────
-  const renderSubcontracts = () => {
-    const statusColorMap: Record<string, string> = { draft: '#94a3b8', active: '#3b82f6', completed: '#22c55e', terminated: '#ef4444' }
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Subcontracts</div>
-          {isEditable && <button style={btn()} onClick={() => { setScModal({ open: true, mode: 'create', item: {} }); setScForm({ subcontractNumber: '', subcontractorName: '', description: '', scopeOfWork: '', contractValue: '0', revisedValue: '0', retentionPercentage: '10', retentionReleased: '0', certifiedAmount: '0', paidAmount: '0', startDate: '', endDate: '', status: 'active', costCodeId: '' }) }}>+ Subcontract</button>}
-        </div>
-        {subcontracts.length === 0 && <div style={{ color: th.textSecondary, fontSize: '13px' }}>No subcontracts yet.</div>}
-        {subcontracts.map(sc => {
-          const isExpanded = expandedSC.has(sc.id)
-          const retentionHeld = (sc.revisedValue || sc.contractValue) * (sc.retentionPercentage / 100) - sc.retentionReleased
-          return (
-            <div key={sc.id} style={{ ...card, borderLeft: `4px solid ${statusColorMap[sc.status] ?? th.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setExpandedSC(s => { const n = new Set(s); isExpanded ? n.delete(sc.id) : n.add(sc.id); return n })}>
-                    <span style={{ fontSize: '14px', fontWeight: 600, color: th.textPrimary }}>{sc.subcontractNumber}: {sc.subcontractorName}</span>
-                    <span style={{ fontSize: '11px', background: `${statusColorMap[sc.status] ?? th.border}22`, color: statusColorMap[sc.status] ?? th.textSecondary, border: `1px solid ${statusColorMap[sc.status] ?? th.border}44`, borderRadius: '4px', padding: '2px 6px' }}>{sc.status}</span>
-                    <span style={{ color: th.textSecondary, fontSize: '13px' }}>{isExpanded ? '▾' : '▸'}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '16px', marginTop: '6px', flexWrap: 'wrap', fontSize: '12px', color: th.textSecondary }}>
-                    <span>Contract: <strong style={{ color: th.textPrimary }}>{fmt(sc.contractValue)}</strong></span>
-                    {sc.revisedValue !== sc.contractValue && <span>Revised: <strong style={{ color: '#f59e0b' }}>{fmt(sc.revisedValue)}</strong></span>}
-                    <span>Certified: <strong style={{ color: '#3b82f6' }}>{fmt(sc.certifiedAmount)}</strong></span>
-                    <span>Paid: <strong style={{ color: '#22c55e' }}>{fmt(sc.paidAmount)}</strong></span>
-                    <span>Retention held: <strong style={{ color: '#f59e0b' }}>{fmt(Math.max(0, retentionHeld))} ({sc.retentionPercentage}%)</strong></span>
-                  </div>
-                </div>
-                {isEditable && (
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button style={btn({ padding: '4px 10px', fontSize: '11px', background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => { setScModal({ open: true, mode: 'edit', item: sc }); setScForm({ subcontractNumber: sc.subcontractNumber, subcontractorName: sc.subcontractorName, description: sc.description ?? '', scopeOfWork: '', contractValue: String(sc.contractValue), revisedValue: String(sc.revisedValue), retentionPercentage: String(sc.retentionPercentage), retentionReleased: String(sc.retentionReleased), certifiedAmount: String(sc.certifiedAmount), paidAmount: String(sc.paidAmount), startDate: sc.startDate ?? '', endDate: sc.endDate ?? '', status: sc.status, costCodeId: sc.costCodeId ?? '' }) }}>Edit</button>
-                    <button style={btn({ padding: '4px 10px', fontSize: '11px' })} onClick={() => { setScBilModal({ open: true, mode: 'create', subcontractId: sc.id, item: {} }); setScBilForm({ billingNumber: `IPC-${sc.billings.length + 1}`, billingDate: new Date().toISOString().slice(0, 10), grossAmount: '0', retentionAmount: '0', netAmount: '0', certifiedAmount: '', certifiedDate: '', paidAmount: '0', paidDate: '', status: 'submitted', notes: '' }) }}>+ Billing</button>
-                    <button style={btn({ padding: '4px 10px', fontSize: '11px', background: '#ef4444' })} onClick={() => { if (confirm('Delete subcontract?')) onDeleteSubcontract(sc.id) }}>Del</button>
-                  </div>
-                )}
-              </div>
-              {isExpanded && sc.billings.length > 0 && (
-                <div style={{ marginTop: '12px', border: `1px solid ${th.border}`, borderRadius: '6px', overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '100px 100px 100px 100px 100px 80px 80px', padding: '6px 10px', background: th.bgSurface, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
-                    <span>Billing #</span><span style={{ textAlign: 'right' }}>Gross</span><span style={{ textAlign: 'right' }}>Retention</span><span style={{ textAlign: 'right' }}>Net</span><span style={{ textAlign: 'right' }}>Certified</span><span style={{ textAlign: 'right' }}>Paid</span><span>Status</span>
-                  </div>
-                  {sc.billings.map(b => (
-                    <div key={b.id} style={{ display: 'grid', gridTemplateColumns: '100px 100px 100px 100px 100px 80px 80px', padding: '6px 10px', borderTop: `1px solid ${th.border}`, background: th.bgCanvas, fontSize: '12px', alignItems: 'center' }}>
-                      <span style={{ color: th.textPrimary }}>{b.billingNumber}</span>
-                      <span style={{ textAlign: 'right', color: th.textSecondary }}>{fmt(b.grossAmount)}</span>
-                      <span style={{ textAlign: 'right', color: '#f59e0b' }}>{fmt(b.retentionAmount)}</span>
-                      <span style={{ textAlign: 'right', color: th.textSecondary }}>{fmt(b.netAmount)}</span>
-                      <span style={{ textAlign: 'right', color: '#3b82f6' }}>{b.certifiedAmount != null ? fmt(b.certifiedAmount) : '—'}</span>
-                      <span style={{ textAlign: 'right', color: '#22c55e' }}>{fmt(b.paidAmount)}</span>
-                      <span style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'capitalize' }}>{b.status}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
-
-  // ── Labor ─────────────────────────────────────────────────────────────────
-  const renderLabor = () => {
-    const byTrade = laborEntries.reduce((acc, e) => { acc[e.trade] = (acc[e.trade] ?? 0) + e.totalCost; return acc }, {} as Record<string, number>)
-    const totalLaborCost = laborEntries.reduce((s, e) => s + e.totalCost, 0)
-    const totalLaborHours = laborEntries.reduce((s, e) => s + e.regularHours + e.overtimeHours, 0)
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Labor Timesheets</div>
-          {isEditable && <button style={btn()} onClick={() => { setLaborModal({ open: true, mode: 'create', item: {} }); setLaborForm({ workDate: new Date().toISOString().slice(0, 10), trade: '', workerName: '', regularHours: '8', overtimeHours: '0', costPerHour: '0', costCodeId: '', notes: '' }) }}>+ Entry</button>}
-        </div>
-        {/* Summary */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <div style={{ ...card, marginBottom: 0, flex: 1, minWidth: '120px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'uppercase' }}>Total Hours</div><div style={{ fontSize: '20px', fontWeight: 700, color: th.textPrimary }}>{totalLaborHours.toFixed(1)}</div></div>
-          <div style={{ ...card, marginBottom: 0, flex: 1, minWidth: '120px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'uppercase' }}>Total Cost</div><div style={{ fontSize: '20px', fontWeight: 700, color: '#3b82f6' }}>{fmt(totalLaborCost)}</div></div>
-        </div>
-        {/* By trade */}
-        {Object.keys(byTrade).length > 0 && (
-          <div style={{ ...card, marginBottom: '16px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: th.textPrimary, marginBottom: '8px' }}>By Trade</div>
-            {Object.entries(byTrade).sort((a, b) => b[1] - a[1]).map(([trade, cost]) => (
-              <div key={trade} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${th.border}`, fontSize: '12px' }}>
-                <span style={{ color: th.textPrimary }}>{trade}</span>
-                <span style={{ color: '#3b82f6' }}>{fmt(cost)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        {/* Table */}
-        <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '90px 100px 100px 60px 60px 80px 80px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
-            <span>Date</span><span>Trade</span><span>Worker</span><span>Reg hrs</span><span>OT hrs</span><span>Rate</span><span>Total</span>
-          </div>
-          {laborEntries.length === 0 && <div style={{ padding: '20px', textAlign: 'center', color: th.textSecondary, fontSize: '13px' }}>No labor entries yet.</div>}
-          {laborEntries.map(e => (
-            <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '90px 100px 100px 60px 60px 80px 80px', padding: '7px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', color: th.textSecondary }}>{e.workDate}</span>
-              <span style={{ fontSize: '12px', color: th.textPrimary }}>{e.trade}</span>
-              <span style={{ fontSize: '12px', color: th.textSecondary }}>{e.workerName ?? '—'}</span>
-              <span style={{ fontSize: '12px', color: th.textSecondary, textAlign: 'right' }}>{e.regularHours}</span>
-              <span style={{ fontSize: '12px', color: e.overtimeHours > 0 ? '#f59e0b' : th.textSecondary, textAlign: 'right' }}>{e.overtimeHours}</span>
-              <span style={{ fontSize: '12px', color: th.textSecondary, textAlign: 'right' }}>${e.costPerHour}/h</span>
-              <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right', fontWeight: 600 }}>{fmt(e.totalCost)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // ── Equipment ─────────────────────────────────────────────────────────────
-  const renderEquipment = () => {
-    const totalEquipCost  = equipmentLog.reduce((s, e) => s + e.totalCost, 0)
-    const totalWorkHours  = equipmentLog.reduce((s, e) => s + e.workingHours, 0)
-    const totalStandby    = equipmentLog.reduce((s, e) => s + e.standbyHours, 0)
-    return (
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Equipment Log</div>
-          {isEditable && <button style={btn()} onClick={() => { setEquipModal({ open: true, mode: 'create', item: {} }); setEquipForm({ logDate: new Date().toISOString().slice(0, 10), equipmentName: '', equipmentType: '', ownership: 'rented', workingHours: '8', standbyHours: '0', costPerHour: '0', standbyRate: '0', costCodeId: '', notes: '' }) }}>+ Log Entry</button>}
-        </div>
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <div style={{ ...card, marginBottom: 0, flex: 1, minWidth: '100px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'uppercase' }}>Working Hrs</div><div style={{ fontSize: '20px', fontWeight: 700, color: th.textPrimary }}>{totalWorkHours.toFixed(1)}</div></div>
-          <div style={{ ...card, marginBottom: 0, flex: 1, minWidth: '100px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'uppercase' }}>Standby Hrs</div><div style={{ fontSize: '20px', fontWeight: 700, color: '#f59e0b' }}>{totalStandby.toFixed(1)}</div></div>
-          <div style={{ ...card, marginBottom: 0, flex: 1, minWidth: '100px', textAlign: 'center' }}><div style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'uppercase' }}>Total Cost</div><div style={{ fontSize: '20px', fontWeight: 700, color: '#8b5cf6' }}>{fmt(totalEquipCost)}</div></div>
-        </div>
-        <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 80px 60px 60px 70px 80px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
-            <span>Date</span><span>Equipment</span><span>Type</span><span>Work hrs</span><span>Standby</span><span>Own</span><span>Total</span>
-          </div>
-          {equipmentLog.length === 0 && <div style={{ padding: '20px', textAlign: 'center', color: th.textSecondary, fontSize: '13px' }}>No equipment log entries yet.</div>}
-          {equipmentLog.map(e => (
-            <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 80px 60px 60px 70px 80px', padding: '7px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, alignItems: 'center' }}>
-              <span style={{ fontSize: '12px', color: th.textSecondary }}>{e.logDate}</span>
-              <span style={{ fontSize: '12px', color: th.textPrimary }}>{e.equipmentName}</span>
-              <span style={{ fontSize: '11px', color: th.textSecondary }}>{e.equipmentType ?? '—'}</span>
-              <span style={{ fontSize: '12px', color: th.textSecondary, textAlign: 'right' }}>{e.workingHours}</span>
-              <span style={{ fontSize: '12px', color: e.standbyHours > 0 ? '#f59e0b' : th.textSecondary, textAlign: 'right' }}>{e.standbyHours}</span>
-              <span style={{ fontSize: '11px', color: th.textSecondary, textTransform: 'capitalize' }}>{e.ownership}</span>
-              <span style={{ fontSize: '12px', color: '#8b5cf6', textAlign: 'right', fontWeight: 600 }}>{fmt(e.totalCost)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  // ── Forecast ──────────────────────────────────────────────────────────────
-  const renderForecast = () => (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>Cost Forecast (ETC / EAC)</div>
-        {isEditable && costCodes.length > 0 && <button style={btn()} onClick={() => { setFcModal({ open: true, item: {} }); setFcForm({ costCodeId: costCodes[0]?.id ?? '', forecastDate: new Date().toISOString().slice(0, 10), etcAmount: '0', eacAmount: '0', notes: '' }) }}>+ Forecast Entry</button>}
-      </div>
-      {costCodes.length === 0 && <div style={{ color: th.textSecondary, fontSize: '13px' }}>Add cost codes first to enter forecasts.</div>}
-      {/* EAC vs Budget per cost code */}
-      {costCodes.length > 0 && (
-        <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflow: 'hidden', marginBottom: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 100px 100px 100px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
-            <span>Code</span><span>Name</span><span>Budget</span><span>Actual</span><span>EAC</span><span>Variance</span>
-          </div>
-          {costCodes.map(c => {
-            const latest = forecasts.find(f => f.costCodeId === c.id)
-            const eac = latest?.eacAmount ?? (c.actualAmount + c.committedAmount)
-            const variance = c.budgetAmount - eac
-            return (
-              <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 100px 100px 100px', padding: '8px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, alignItems: 'center', borderLeft: `3px solid ${catColors[c.category] ?? '#94a3b8'}` }}>
-                <span style={{ fontSize: '11px', fontFamily: 'monospace', color: th.textSecondary }}>{c.code}</span>
-                <span style={{ fontSize: '12px', color: th.textPrimary }}>{c.name}</span>
-                <span style={{ fontSize: '12px', color: th.textSecondary, textAlign: 'right' }}>{fmt(c.budgetAmount)}</span>
-                <span style={{ fontSize: '12px', color: '#3b82f6', textAlign: 'right' }}>{fmt(c.actualAmount)}</span>
-                <span style={{ fontSize: '12px', color: eac > c.budgetAmount ? '#ef4444' : '#22c55e', textAlign: 'right', fontWeight: 600 }}>{fmt(eac)}</span>
-                <span style={{ fontSize: '12px', color: varColor(variance), textAlign: 'right' }}>{fmt(variance)}</span>
-              </div>
-            )
-          })}
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px 100px 100px 100px', padding: '8px 12px', background: th.bgSurface, borderTop: `1px solid ${th.border}`, fontSize: '12px', fontWeight: 700, color: th.textPrimary }}>
-            <span /><span>Total</span>
-            <span style={{ textAlign: 'right' }}>{fmt(costCodes.reduce((s, c) => s + c.budgetAmount, 0))}</span>
-            <span style={{ textAlign: 'right', color: '#3b82f6' }}>{fmt(costCodes.reduce((s, c) => s + c.actualAmount, 0))}</span>
-            <span style={{ textAlign: 'right' }}>{fmt(costCodes.reduce((s, c) => { const latest = forecasts.find(f => f.costCodeId === c.id); return s + (latest?.eacAmount ?? (c.actualAmount + c.committedAmount)) }, 0))}</span>
-            <span style={{ textAlign: 'right', color: varColor(costCodes.reduce((s, c) => { const latest = forecasts.find(f => f.costCodeId === c.id); return s + (c.budgetAmount - (latest?.eacAmount ?? (c.actualAmount + c.committedAmount))) }, 0)) }}>{fmt(costCodes.reduce((s, c) => { const latest = forecasts.find(f => f.costCodeId === c.id); return s + (c.budgetAmount - (latest?.eacAmount ?? (c.actualAmount + c.committedAmount))) }, 0))}</span>
-          </div>
-        </div>
-      )}
-      {/* Forecast history */}
-      {forecasts.length > 0 && (
-        <div>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: th.textPrimary, marginBottom: '8px' }}>Forecast History</div>
-          {forecasts.map(f => (
-            <div key={f.id} style={{ ...card, marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: '13px', color: th.textPrimary }}>{f.costCodeName ?? 'All Codes'} <span style={{ fontSize: '11px', color: th.textSecondary }}>({f.forecastDate})</span></div>
-                <div style={{ fontSize: '12px', color: th.textSecondary, marginTop: '2px' }}>ETC: <strong style={{ color: '#f59e0b' }}>{fmt(f.etcAmount)}</strong> · EAC: <strong style={{ color: f.eacAmount > (costCodes.find(c => c.id === f.costCodeId)?.budgetAmount ?? 0) ? '#ef4444' : '#22c55e' }}>{fmt(f.eacAmount)}</strong></div>
-                {f.notes && <div style={{ fontSize: '11px', color: th.textSecondary, marginTop: '2px' }}>{f.notes}</div>}
-              </div>
-              {isEditable && <button style={btn({ padding: '3px 10px', fontSize: '11px', background: '#6366f1' })} onClick={() => { setFcModal({ open: true, item: f }); setFcForm({ costCodeId: f.costCodeId ?? '', forecastDate: f.forecastDate, etcAmount: String(f.etcAmount), eacAmount: String(f.eacAmount), notes: f.notes ?? '' }) }}>Update</button>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-
+  // ── [removed: Committed, Cash Flow, Invoices, Subcontracts, Labor, Equipment, Forecast moved to Finance module] ──
   return (
     <div style={{ fontFamily: 'system-ui,sans-serif', color: th.textPrimary }}>
       {/* Sub-nav */}
@@ -7518,29 +7410,24 @@ function CostControlTab(props: CostControlProps) {
         ))}
       </div>
 
-      {section === 'overview'     && renderOverview()}
-      {section === 'budget'       && renderBudget()}
-      {section === 'committed'    && renderCommitted()}
-      {section === 'cashflow'     && renderCashFlow()}
-      {section === 'invoices'     && renderInvoices()}
-      {section === 'subcontracts' && renderSubcontracts()}
-      {section === 'labor'        && renderLabor()}
-      {section === 'equipment'    && renderEquipment()}
-      {section === 'forecast'     && renderForecast()}
+      {section === 'overview' && renderOverview()}
+      {section === 'budget'   && renderBudget()}
 
       {/* Cost Code Modal */}
       {codeModal.open && (
         <div style={modalOverlay} onClick={() => setCodeModal({ open: false, mode: 'create', item: {} })}>
           <div style={modalBox} onClick={e => e.stopPropagation()}>
             {mHdr(codeModal.mode === 'create' ? 'Add Cost Code' : 'Edit Cost Code')}
-            {ff('Code', fi(codeForm.code, v => setCodeForm(f => ({ ...f, code: v })), 'L-100'))}
-            {ff('Name', fi(codeForm.name, v => setCodeForm(f => ({ ...f, name: v }))))}
+            {ff('Analytic Account', (
+              <div style={{ padding: '7px 10px', borderRadius: '6px', border: `1px solid ${th.border}`, background: th.bgCanvas, fontSize: '13px', color: th.textMuted }}>
+                {projectAnalyticAccountName ?? '—'}
+              </div>
+            ))}
             {ff('Category', fs(codeForm.category, v => setCodeForm(f => ({ ...f, category: v })), catOpts))}
             {ff('Budget Amount', fi(codeForm.budgetAmount, v => setCodeForm(f => ({ ...f, budgetAmount: v })), '0', 'number'))}
-            {ff('Sequence', fi(codeForm.sequence, v => setCodeForm(f => ({ ...f, sequence: v })), '0', 'number'))}
             {mBtns(() => {
-              if (codeModal.mode === 'create') onCreateCostCode({ projectId, code: codeForm.code, name: codeForm.name, category: codeForm.category, budgetAmount: parseFloat(codeForm.budgetAmount) || 0, sequence: parseInt(codeForm.sequence) || 0 })
-              else onUpdateCostCode({ id: codeModal.item.id, code: codeForm.code, name: codeForm.name, category: codeForm.category, budgetAmount: parseFloat(codeForm.budgetAmount) || 0, sequence: parseInt(codeForm.sequence) || 0 })
+              if (codeModal.mode === 'create') onCreateCostCode({ projectId, analyticAccountId: codeForm.analyticAccountId || undefined, code: codeForm.code || undefined, name: codeForm.name || undefined, category: codeForm.category, budgetAmount: parseFloat(codeForm.budgetAmount) || 0, sequence: costCodes.length })
+              else onUpdateCostCode({ id: codeModal.item.id, category: codeForm.category, budgetAmount: parseFloat(codeForm.budgetAmount) || 0 })
               setCodeModal({ open: false, mode: 'create', item: {} })
             }, () => setCodeModal({ open: false, mode: 'create', item: {} }))}
             {codeModal.mode === 'edit' && isAdmin && <button style={{ ...btn({ background: '#ef4444', width: '100%', marginTop: '8px', textAlign: 'center' }) }} onClick={() => { if (confirm('Delete cost code?')) { onDeleteCostCode(codeModal.item.id!); setCodeModal({ open: false, mode: 'create', item: {} }) } }}>Delete</button>}
@@ -7548,201 +7435,6 @@ function CostControlTab(props: CostControlProps) {
         </div>
       )}
 
-      {/* Committed Cost Modal */}
-      {commitModal.open && (
-        <div style={modalOverlay} onClick={() => setCommitModal({ open: false, mode: 'create', item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(commitModal.mode === 'create' ? 'Add Commitment' : 'Edit Commitment')}
-            {ff('Type', fs(commitForm.commitmentType, v => setCommitForm(f => ({ ...f, commitmentType: v })), statusOpts(['po','subcontract','rental','manual'])))}
-            {ff('Description', fi(commitForm.description, v => setCommitForm(f => ({ ...f, description: v }))))}
-            {ff('Vendor / Supplier', fi(commitForm.vendorName, v => setCommitForm(f => ({ ...f, vendorName: v }))))}
-            {ff('Reference Number', fi(commitForm.referenceNumber, v => setCommitForm(f => ({ ...f, referenceNumber: v }))))}
-            {ff('Committed Amount', fi(commitForm.committedAmount, v => setCommitForm(f => ({ ...f, committedAmount: v })), '0', 'number'))}
-            {commitModal.mode === 'edit' && ff('Invoiced Amount', fi(commitForm.invoicedAmount, v => setCommitForm(f => ({ ...f, invoicedAmount: v })), '0', 'number'))}
-            {commitModal.mode === 'edit' && ff('Paid Amount', fi(commitForm.paidAmount, v => setCommitForm(f => ({ ...f, paidAmount: v })), '0', 'number'))}
-            {ff('Cost Code', fs(commitForm.costCodeId, v => setCommitForm(f => ({ ...f, costCodeId: v })), codeOpts))}
-            {ff('Commitment Date', fi(commitForm.commitmentDate, v => setCommitForm(f => ({ ...f, commitmentDate: v })), '', 'date'))}
-            {ff('Expected Invoice Date', fi(commitForm.expectedInvoiceDate, v => setCommitForm(f => ({ ...f, expectedInvoiceDate: v })), '', 'date'))}
-            {commitModal.mode === 'edit' && ff('Status', fs(commitForm.status, v => setCommitForm(f => ({ ...f, status: v })), statusOpts(['active','partially_invoiced','fully_invoiced','cancelled'])))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '60px' }} value={commitForm.notes} onChange={e => setCommitForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => {
-              if (commitModal.mode === 'create') onCreateCommitted({ projectId, costCodeId: commitForm.costCodeId || null, commitmentType: commitForm.commitmentType, referenceNumber: commitForm.referenceNumber || null, description: commitForm.description, vendorName: commitForm.vendorName || null, committedAmount: parseFloat(commitForm.committedAmount) || 0, commitmentDate: commitForm.commitmentDate || null, expectedInvoiceDate: commitForm.expectedInvoiceDate || null, notes: commitForm.notes || null })
-              else onUpdateCommitted({ id: commitModal.item.id, costCodeId: commitForm.costCodeId || null, description: commitForm.description, vendorName: commitForm.vendorName || null, committedAmount: parseFloat(commitForm.committedAmount) || 0, invoicedAmount: parseFloat(commitForm.invoicedAmount) || 0, paidAmount: parseFloat(commitForm.paidAmount) || 0, commitmentDate: commitForm.commitmentDate || null, expectedInvoiceDate: commitForm.expectedInvoiceDate || null, status: commitForm.status, notes: commitForm.notes || null })
-              setCommitModal({ open: false, mode: 'create', item: {} })
-            }, () => setCommitModal({ open: false, mode: 'create', item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* Cash Flow Modal */}
-      {cfModal.open && (
-        <div style={modalOverlay} onClick={() => setCfModal({ open: false, item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr('Cash Flow Period')}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>{ff('Year', fi(cfForm.periodYear, v => setCfForm(f => ({ ...f, periodYear: v })), '', 'number'))}</div>
-              <div>{ff('Month', fs(cfForm.periodMonth, v => setCfForm(f => ({ ...f, periodMonth: v })), [1,2,3,4,5,6,7,8,9,10,11,12].map(m => ({ value: String(m), label: new Date(2000, m - 1).toLocaleString('default', { month: 'long' }) }))))}</div>
-            </div>
-            {ff('Planned Outflow', fi(cfForm.plannedOutflow, v => setCfForm(f => ({ ...f, plannedOutflow: v })), '0', 'number'))}
-            {ff('Actual Outflow', fi(cfForm.actualOutflow, v => setCfForm(f => ({ ...f, actualOutflow: v })), '0', 'number'))}
-            {ff('Forecast Outflow', fi(cfForm.forecastOutflow, v => setCfForm(f => ({ ...f, forecastOutflow: v })), '0', 'number'))}
-            {ff('Planned Inflow', fi(cfForm.plannedInflow, v => setCfForm(f => ({ ...f, plannedInflow: v })), '0', 'number'))}
-            {ff('Actual Inflow', fi(cfForm.actualInflow, v => setCfForm(f => ({ ...f, actualInflow: v })), '0', 'number'))}
-            {ff('Forecast Inflow', fi(cfForm.forecastInflow, v => setCfForm(f => ({ ...f, forecastInflow: v })), '0', 'number'))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '60px' }} value={cfForm.notes} onChange={e => setCfForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => { onUpsertCashFlow({ projectId, periodYear: parseInt(cfForm.periodYear), periodMonth: parseInt(cfForm.periodMonth), plannedOutflow: parseFloat(cfForm.plannedOutflow) || 0, actualOutflow: parseFloat(cfForm.actualOutflow) || 0, forecastOutflow: parseFloat(cfForm.forecastOutflow) || 0, plannedInflow: parseFloat(cfForm.plannedInflow) || 0, actualInflow: parseFloat(cfForm.actualInflow) || 0, forecastInflow: parseFloat(cfForm.forecastInflow) || 0, notes: cfForm.notes || null }); setCfModal({ open: false, item: {} }) }, () => setCfModal({ open: false, item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* Subcontract Modal */}
-      {scModal.open && (
-        <div style={modalOverlay} onClick={() => setScModal({ open: false, mode: 'create', item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(scModal.mode === 'create' ? 'Add Subcontract' : 'Edit Subcontract')}
-            {ff('Subcontract Number', fi(scForm.subcontractNumber, v => setScForm(f => ({ ...f, subcontractNumber: v })), 'SC-001'))}
-            {ff('Subcontractor Name', fi(scForm.subcontractorName, v => setScForm(f => ({ ...f, subcontractorName: v }))))}
-            {ff('Description', <textarea style={{ ...inputSt, minHeight: '50px' }} value={scForm.description} onChange={e => setScForm(f => ({ ...f, description: e.target.value }))} />)}
-            {ff('Contract Value', fi(scForm.contractValue, v => setScForm(f => ({ ...f, contractValue: v })), '0', 'number'))}
-            {scModal.mode === 'edit' && ff('Revised Value', fi(scForm.revisedValue, v => setScForm(f => ({ ...f, revisedValue: v })), '0', 'number'))}
-            {ff('Retention %', fi(scForm.retentionPercentage, v => setScForm(f => ({ ...f, retentionPercentage: v })), '10', 'number'))}
-            {scModal.mode === 'edit' && ff('Retention Released', fi(scForm.retentionReleased, v => setScForm(f => ({ ...f, retentionReleased: v })), '0', 'number'))}
-            {scModal.mode === 'edit' && ff('Certified Amount', fi(scForm.certifiedAmount, v => setScForm(f => ({ ...f, certifiedAmount: v })), '0', 'number'))}
-            {scModal.mode === 'edit' && ff('Paid Amount', fi(scForm.paidAmount, v => setScForm(f => ({ ...f, paidAmount: v })), '0', 'number'))}
-            {ff('Cost Code', fs(scForm.costCodeId, v => setScForm(f => ({ ...f, costCodeId: v })), codeOpts))}
-            {ff('Start Date', fi(scForm.startDate, v => setScForm(f => ({ ...f, startDate: v })), '', 'date'))}
-            {ff('End Date', fi(scForm.endDate, v => setScForm(f => ({ ...f, endDate: v })), '', 'date'))}
-            {scModal.mode === 'edit' && ff('Status', fs(scForm.status, v => setScForm(f => ({ ...f, status: v })), statusOpts(['draft','active','completed','terminated'])))}
-            {mBtns(() => {
-              if (scModal.mode === 'create') onCreateSubcontract({ projectId, costCodeId: scForm.costCodeId || null, subcontractNumber: scForm.subcontractNumber, subcontractorName: scForm.subcontractorName, description: scForm.description || null, contractValue: parseFloat(scForm.contractValue) || 0, retentionPercentage: parseFloat(scForm.retentionPercentage) || 10, startDate: scForm.startDate || null, endDate: scForm.endDate || null })
-              else onUpdateSubcontract({ id: scModal.item.id, costCodeId: scForm.costCodeId || null, subcontractorName: scForm.subcontractorName, description: scForm.description || null, contractValue: parseFloat(scForm.contractValue) || 0, revisedValue: parseFloat(scForm.revisedValue) || 0, retentionPercentage: parseFloat(scForm.retentionPercentage) || 10, retentionReleased: parseFloat(scForm.retentionReleased) || 0, certifiedAmount: parseFloat(scForm.certifiedAmount) || 0, paidAmount: parseFloat(scForm.paidAmount) || 0, startDate: scForm.startDate || null, endDate: scForm.endDate || null, status: scForm.status })
-              setScModal({ open: false, mode: 'create', item: {} })
-            }, () => setScModal({ open: false, mode: 'create', item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* SC Billing Modal */}
-      {scBilModal.open && (
-        <div style={modalOverlay} onClick={() => setScBilModal({ open: false, mode: 'create', subcontractId: '', item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(scBilModal.mode === 'create' ? 'Add Subcontract Billing' : 'Update Billing')}
-            {ff('Billing Number', fi(scBilForm.billingNumber, v => setScBilForm(f => ({ ...f, billingNumber: v }))))}
-            {ff('Billing Date', fi(scBilForm.billingDate, v => setScBilForm(f => ({ ...f, billingDate: v })), '', 'date'))}
-            {ff('Gross Amount', fi(scBilForm.grossAmount, v => setScBilForm(f => ({ ...f, grossAmount: v })), '0', 'number'))}
-            {ff('Retention Amount', fi(scBilForm.retentionAmount, v => setScBilForm(f => ({ ...f, retentionAmount: v })), '0', 'number'))}
-            {ff('Net Amount', fi(scBilForm.netAmount, v => setScBilForm(f => ({ ...f, netAmount: v })), '0', 'number'))}
-            {ff('Certified Amount', fi(scBilForm.certifiedAmount, v => setScBilForm(f => ({ ...f, certifiedAmount: v })), 'optional', 'number'))}
-            {ff('Certified Date', fi(scBilForm.certifiedDate, v => setScBilForm(f => ({ ...f, certifiedDate: v })), '', 'date'))}
-            {ff('Paid Amount', fi(scBilForm.paidAmount, v => setScBilForm(f => ({ ...f, paidAmount: v })), '0', 'number'))}
-            {ff('Paid Date', fi(scBilForm.paidDate, v => setScBilForm(f => ({ ...f, paidDate: v })), '', 'date'))}
-            {ff('Status', fs(scBilForm.status, v => setScBilForm(f => ({ ...f, status: v })), statusOpts(['submitted','certified','paid','disputed'])))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '50px' }} value={scBilForm.notes} onChange={e => setScBilForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => {
-              if (scBilModal.mode === 'create') onCreateSCBilling({ subcontractId: scBilModal.subcontractId, billingNumber: scBilForm.billingNumber, billingDate: scBilForm.billingDate, grossAmount: parseFloat(scBilForm.grossAmount) || 0, retentionAmount: parseFloat(scBilForm.retentionAmount) || 0, netAmount: parseFloat(scBilForm.netAmount) || 0, notes: scBilForm.notes || null })
-              else onUpdateSCBilling({ id: scBilModal.item.id, certifiedAmount: scBilForm.certifiedAmount ? parseFloat(scBilForm.certifiedAmount) : null, certifiedDate: scBilForm.certifiedDate || null, paidAmount: parseFloat(scBilForm.paidAmount) || 0, paidDate: scBilForm.paidDate || null, status: scBilForm.status, notes: scBilForm.notes || null })
-              setScBilModal({ open: false, mode: 'create', subcontractId: '', item: {} })
-            }, () => setScBilModal({ open: false, mode: 'create', subcontractId: '', item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* Labor Modal */}
-      {laborModal.open && (
-        <div style={modalOverlay} onClick={() => setLaborModal({ open: false, mode: 'create', item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(laborModal.mode === 'create' ? 'Add Labor Entry' : 'Edit Labor Entry')}
-            {ff('Work Date', fi(laborForm.workDate, v => setLaborForm(f => ({ ...f, workDate: v })), '', 'date'))}
-            {ff('Trade', fi(laborForm.trade, v => setLaborForm(f => ({ ...f, trade: v })), 'Civil, Mechanical, Electrical…'))}
-            {ff('Worker Name', fi(laborForm.workerName, v => setLaborForm(f => ({ ...f, workerName: v })), 'optional'))}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-              <div>{ff('Regular Hrs', fi(laborForm.regularHours, v => setLaborForm(f => ({ ...f, regularHours: v })), '8', 'number'))}</div>
-              <div>{ff('OT Hrs', fi(laborForm.overtimeHours, v => setLaborForm(f => ({ ...f, overtimeHours: v })), '0', 'number'))}</div>
-              <div>{ff('$/Hour', fi(laborForm.costPerHour, v => setLaborForm(f => ({ ...f, costPerHour: v })), '0', 'number'))}</div>
-            </div>
-            {ff('Cost Code', fs(laborForm.costCodeId, v => setLaborForm(f => ({ ...f, costCodeId: v })), codeOpts))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '50px' }} value={laborForm.notes} onChange={e => setLaborForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => {
-              if (laborModal.mode === 'create') onCreateLabor({ projectId, costCodeId: laborForm.costCodeId || null, workDate: laborForm.workDate, trade: laborForm.trade, workerName: laborForm.workerName || null, regularHours: parseFloat(laborForm.regularHours) || 0, overtimeHours: parseFloat(laborForm.overtimeHours) || 0, costPerHour: parseFloat(laborForm.costPerHour) || 0, notes: laborForm.notes || null })
-              else onUpdateLabor({ id: laborModal.item.id, trade: laborForm.trade, workerName: laborForm.workerName || null, regularHours: parseFloat(laborForm.regularHours) || 0, overtimeHours: parseFloat(laborForm.overtimeHours) || 0, costPerHour: parseFloat(laborForm.costPerHour) || 0, notes: laborForm.notes || null })
-              setLaborModal({ open: false, mode: 'create', item: {} })
-            }, () => setLaborModal({ open: false, mode: 'create', item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* Equipment Modal */}
-      {equipModal.open && (
-        <div style={modalOverlay} onClick={() => setEquipModal({ open: false, mode: 'create', item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(equipModal.mode === 'create' ? 'Add Equipment Log' : 'Edit Equipment Log')}
-            {ff('Log Date', fi(equipForm.logDate, v => setEquipForm(f => ({ ...f, logDate: v })), '', 'date'))}
-            {ff('Equipment Name', fi(equipForm.equipmentName, v => setEquipForm(f => ({ ...f, equipmentName: v })), 'Excavator CAT 320…'))}
-            {ff('Equipment Type', fi(equipForm.equipmentType, v => setEquipForm(f => ({ ...f, equipmentType: v })), 'Excavator, Crane, Generator…'))}
-            {ff('Ownership', fs(equipForm.ownership, v => setEquipForm(f => ({ ...f, ownership: v })), [{ value: 'owned', label: 'Company Owned' }, { value: 'rented', label: 'Rented' }]))}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>{ff('Working Hrs', fi(equipForm.workingHours, v => setEquipForm(f => ({ ...f, workingHours: v })), '8', 'number'))}</div>
-              <div>{ff('Standby Hrs', fi(equipForm.standbyHours, v => setEquipForm(f => ({ ...f, standbyHours: v })), '0', 'number'))}</div>
-              <div>{ff('Cost/Hour ($)', fi(equipForm.costPerHour, v => setEquipForm(f => ({ ...f, costPerHour: v })), '0', 'number'))}</div>
-              <div>{ff('Standby Rate ($)', fi(equipForm.standbyRate, v => setEquipForm(f => ({ ...f, standbyRate: v })), '0', 'number'))}</div>
-            </div>
-            {ff('Cost Code', fs(equipForm.costCodeId, v => setEquipForm(f => ({ ...f, costCodeId: v })), codeOpts))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '50px' }} value={equipForm.notes} onChange={e => setEquipForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => {
-              if (equipModal.mode === 'create') onCreateEquipment({ projectId, costCodeId: equipForm.costCodeId || null, logDate: equipForm.logDate, equipmentName: equipForm.equipmentName, equipmentType: equipForm.equipmentType || null, ownership: equipForm.ownership, workingHours: parseFloat(equipForm.workingHours) || 0, standbyHours: parseFloat(equipForm.standbyHours) || 0, costPerHour: parseFloat(equipForm.costPerHour) || 0, standbyRate: parseFloat(equipForm.standbyRate) || 0, notes: equipForm.notes || null })
-              else onUpdateEquipment({ id: equipModal.item.id, equipmentName: equipForm.equipmentName, equipmentType: equipForm.equipmentType || null, workingHours: parseFloat(equipForm.workingHours) || 0, standbyHours: parseFloat(equipForm.standbyHours) || 0, costPerHour: parseFloat(equipForm.costPerHour) || 0, standbyRate: parseFloat(equipForm.standbyRate) || 0, notes: equipForm.notes || null })
-              setEquipModal({ open: false, mode: 'create', item: {} })
-            }, () => setEquipModal({ open: false, mode: 'create', item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* Forecast Modal */}
-      {fcModal.open && (
-        <div style={modalOverlay} onClick={() => setFcModal({ open: false, item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr('Cost Forecast Entry')}
-            {ff('Cost Code', fs(fcForm.costCodeId, v => setFcForm(f => ({ ...f, costCodeId: v })), codeOpts))}
-            {ff('Forecast Date', fi(fcForm.forecastDate, v => setFcForm(f => ({ ...f, forecastDate: v })), '', 'date'))}
-            {ff('ETC (Estimate to Complete)', fi(fcForm.etcAmount, v => setFcForm(f => ({ ...f, etcAmount: v })), '0', 'number'))}
-            {ff('EAC (Estimate at Completion)', fi(fcForm.eacAmount, v => setFcForm(f => ({ ...f, eacAmount: v })), '0', 'number'))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '50px' }} value={fcForm.notes} onChange={e => setFcForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => { onUpsertForecast({ projectId, costCodeId: fcForm.costCodeId || null, forecastDate: fcForm.forecastDate, etcAmount: parseFloat(fcForm.etcAmount) || 0, eacAmount: parseFloat(fcForm.eacAmount) || 0, notes: fcForm.notes || null }); setFcModal({ open: false, item: {} }) }, () => setFcModal({ open: false, item: {} }))}
-          </div>
-        </div>
-      )}
-
-      {/* Client Billing Modal */}
-      {bilModal.open && (
-        <div style={modalOverlay} onClick={() => setBilModal({ open: false, mode: 'create', item: {} })}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(bilModal.mode === 'create' ? 'Add Client Invoice' : 'Edit Client Invoice')}
-            {ff('Invoice Number', fi(bilForm.billingNumber, v => setBilForm(f => ({ ...f, billingNumber: v })), 'INV-001'))}
-            {ff('Invoice Date', fi(bilForm.billingDate, v => setBilForm(f => ({ ...f, billingDate: v })), '', 'date'))}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>{ff('Period From', fi(bilForm.periodFrom, v => setBilForm(f => ({ ...f, periodFrom: v })), '', 'date'))}</div>
-              <div>{ff('Period To', fi(bilForm.periodTo, v => setBilForm(f => ({ ...f, periodTo: v })), '', 'date'))}</div>
-            </div>
-            {ff('Gross Amount', fi(bilForm.grossAmount, v => setBilForm(f => ({ ...f, grossAmount: v })), '0', 'number'))}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>{ff('Retention %', fi(bilForm.retentionPercentage, v => setBilForm(f => ({ ...f, retentionPercentage: v })), '10', 'number'))}</div>
-              <div>{ff('Retention Amount', fi(bilForm.retentionAmount, v => setBilForm(f => ({ ...f, retentionAmount: v })), '0', 'number'))}</div>
-            </div>
-            {ff('Net Amount', fi(bilForm.netAmount, v => setBilForm(f => ({ ...f, netAmount: v })), '0', 'number'))}
-            {bilModal.mode === 'edit' && ff('Certified Amount', fi(bilForm.certifiedAmount, v => setBilForm(f => ({ ...f, certifiedAmount: v })), 'optional', 'number'))}
-            {bilModal.mode === 'edit' && ff('Certified Date', fi(bilForm.certifiedDate, v => setBilForm(f => ({ ...f, certifiedDate: v })), '', 'date'))}
-            {bilModal.mode === 'edit' && ff('Paid Amount', fi(bilForm.paidAmount, v => setBilForm(f => ({ ...f, paidAmount: v })), '0', 'number'))}
-            {bilModal.mode === 'edit' && ff('Paid Date', fi(bilForm.paidDate, v => setBilForm(f => ({ ...f, paidDate: v })), '', 'date'))}
-            {bilModal.mode === 'edit' && ff('Status', fs(bilForm.status, v => setBilForm(f => ({ ...f, status: v })), statusOpts(['draft','submitted','certified','paid','disputed'])))}
-            {ff('Notes', <textarea style={{ ...inputSt, minHeight: '50px' }} value={bilForm.notes} onChange={e => setBilForm(f => ({ ...f, notes: e.target.value }))} />)}
-            {mBtns(() => {
-              if (bilModal.mode === 'create') onCreateBilling({ projectId, billingNumber: bilForm.billingNumber, billingDate: bilForm.billingDate, periodFrom: bilForm.periodFrom || null, periodTo: bilForm.periodTo || null, grossAmount: parseFloat(bilForm.grossAmount) || 0, retentionPercentage: parseFloat(bilForm.retentionPercentage) || 10, retentionAmount: parseFloat(bilForm.retentionAmount) || 0, netAmount: parseFloat(bilForm.netAmount) || 0, notes: bilForm.notes || null })
-              else onUpdateBilling({ id: bilModal.item.id, billingDate: bilForm.billingDate || null, periodFrom: bilForm.periodFrom || null, periodTo: bilForm.periodTo || null, grossAmount: parseFloat(bilForm.grossAmount) || 0, retentionPercentage: parseFloat(bilForm.retentionPercentage) || 10, retentionAmount: parseFloat(bilForm.retentionAmount) || 0, netAmount: parseFloat(bilForm.netAmount) || 0, certifiedAmount: bilForm.certifiedAmount ? parseFloat(bilForm.certifiedAmount) : null, certifiedDate: bilForm.certifiedDate || null, paidAmount: parseFloat(bilForm.paidAmount) || 0, paidDate: bilForm.paidDate || null, status: bilForm.status, notes: bilForm.notes || null })
-              setBilModal({ open: false, mode: 'create', item: {} })
-            }, () => setBilModal({ open: false, mode: 'create', item: {} }))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -7791,6 +7483,8 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
   const [drawModal, setDrawModal] = React.useState<{ open: boolean; voId: string }>({ open: false, voId: '' })
   const [drawForm, setDrawForm]   = React.useState({ drawingNumber: '', revision: '', title: '', notes: '' })
+
+  const [confirmDel, setConfirmDel] = React.useState<{ message: string; onConfirm: () => void } | null>(null)
 
   const card    = { background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '8px', padding: '16px', marginBottom: '12px' } as React.CSSProperties
   const vbtn    = (extra?: React.CSSProperties): React.CSSProperties => ({ padding: '6px 14px', borderRadius: '6px', border: 'none', background: th.accent, color: '#fff', cursor: 'pointer', fontSize: '13px', ...extra })
@@ -7941,56 +7635,85 @@ function VariationOrdersTab(props: VariationOrdersProps) {
         const sc = STATUS_COLOR[vo.status] ?? '#94a3b8'
         const costTotal = vo.costItems.reduce((s, c) => s + c.amount, 0)
         return (
-          <div key={vo.id} style={{ ...card, borderLeft: `4px solid ${sc}`, marginBottom: '10px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleVO(vo.id)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 700, color: th.textPrimary }}>{vo.voNumber}</span>
-                  <span style={{ fontSize: '13px', color: th.textPrimary }}>{vo.title}</span>
-                  <span style={{ fontSize: '10px', background: `${sc}22`, color: sc, border: `1px solid ${sc}44`, borderRadius: '4px', padding: '2px 7px', textTransform: 'capitalize' }}>{vo.status.replace(/_/g, ' ')}</span>
-                  <span style={{ fontSize: '11px', color: th.textSecondary }}>{CHANGE_TYPE_LABEL[vo.changeType]}</span>
-                  <span style={{ color: th.textSecondary, fontSize: '12px', marginLeft: '4px' }}>{isExpanded ? '▾' : '▸'}</span>
-                </div>
-                <div style={{ display: 'flex', gap: '16px', marginTop: '6px', fontSize: '12px', color: th.textSecondary, flexWrap: 'wrap' }}>
-                  <span>Value: <strong style={{ color: th.textPrimary }}>{fmt(vo.voValue)}</strong></span>
-                  {vo.approvedValue != null && <span>Approved: <strong style={{ color: '#22c55e' }}>{fmt(vo.approvedValue)}</strong></span>}
-                  {vo.scheduleImpactDays !== 0 && <span style={{ color: vo.scheduleImpactDays > 0 ? '#f97316' : '#22c55e' }}>Schedule: {vo.scheduleImpactDays > 0 ? '+' : ''}{vo.scheduleImpactDays}d</span>}
-                  <span>From: {INITIATED_BY_LABEL[vo.initiatedBy]}</span>
-                  {vo.clientRef && <span>Ref: {vo.clientRef}</span>}
-                  {vo.receivedDate && <span>Received: {vo.receivedDate}</span>}
-                </div>
+          <div key={vo.id} style={{ border: `1px solid ${th.border}`, borderLeft: `4px solid ${sc}`, borderRadius: '8px', overflow: 'hidden', marginBottom: '10px' }}>
+
+            {/* ── Header band ── */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: th.bgSurface, gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, cursor: 'pointer', flexWrap: 'wrap' }} onClick={() => toggleVO(vo.id)}>
+                <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'monospace', color: th.accent, letterSpacing: '0.03em' }}>{vo.voNumber}</span>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: th.textPrimary }}>{vo.title}</span>
+                <span style={{ fontSize: '10px', background: `${sc}18`, color: sc, border: `1px solid ${sc}50`, borderRadius: '10px', padding: '2px 8px', fontWeight: 600, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{vo.status.replace(/_/g, ' ')}</span>
+                <span style={{ fontSize: '11px', color: th.textSecondary, background: th.bgCanvas, border: `1px solid ${th.border}`, borderRadius: '10px', padding: '2px 8px', whiteSpace: 'nowrap' }}>{CHANGE_TYPE_LABEL[vo.changeType]}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={th.textSecondary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}><polyline points="6 9 12 15 18 9"/></svg>
               </div>
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                {isAdmin && vo.status === 'draft' && <button style={vbtn({ padding: '4px 10px', fontSize: '11px', background: '#f59e0b' })} onClick={() => onSubmitVO(vo.id)}>Submit</button>}
-                {isAdmin && vo.status === 'submitted' && <button style={vbtn({ padding: '4px 10px', fontSize: '11px', background: '#3b82f6' })} onClick={() => onSetVOStatus(vo.id, 'under_review')}>Mark Under Review</button>}
-                {isAdmin && ['submitted','under_review'].includes(vo.status) && (
-                  <>
-                    <button style={vbtn({ padding: '4px 10px', fontSize: '11px', background: '#22c55e' })} onClick={() => { setApproveModal({ open: true, voId: vo.id, voNumber: vo.voNumber, voValue: vo.voValue }); setApprovedValue(String(vo.voValue)) }}>Approve</button>
-                    <button style={vbtn({ padding: '4px 10px', fontSize: '11px', background: '#ef4444' })} onClick={() => { setRejectModal({ open: true, voId: vo.id, voNumber: vo.voNumber }); setRejectReason('') }}>Reject</button>
-                  </>
-                )}
-                {isAdmin && <button style={vbtn({ padding: '4px 10px', fontSize: '11px', background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => openEditVO(vo)}>Edit</button>}
-                {isAdmin && vo.status === 'draft' && <button style={vbtn({ padding: '4px 10px', fontSize: '11px', background: '#ef4444' })} onClick={() => { if (confirm(`Delete ${vo.voNumber}?`)) onDeleteVO(vo.id) }}>Del</button>}
+              <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                {isAdmin && vo.status === 'draft' && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#f59e0b' })} onClick={() => onSubmitVO(vo.id)}>Submit</button>}
+                {isAdmin && vo.status === 'submitted' && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#3b82f6' })} onClick={() => onSetVOStatus(vo.id, 'under_review')}>Under Review</button>}
+                {isAdmin && ['submitted','under_review'].includes(vo.status) && (<>
+                  <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#22c55e' })} onClick={() => { setApproveModal({ open: true, voId: vo.id, voNumber: vo.voNumber, voValue: vo.voValue }); setApprovedValue(String(vo.voValue)) }}>Approve</button>
+                  <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#ef4444' })} onClick={() => { setRejectModal({ open: true, voId: vo.id, voNumber: vo.voNumber }); setRejectReason('') }}>Reject</button>
+                </>)}
+                {isAdmin && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: 'transparent', color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => openEditVO(vo)}>Edit</button>}
+                {isAdmin && vo.status === 'draft' && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#ef4444' })} onClick={() => setConfirmDel({ message: `Delete ${vo.voNumber}?`, onConfirm: () => onDeleteVO(vo.id) })}>Del</button>}
               </div>
             </div>
-            {vo.rejectionReason && <div style={{ marginTop: '8px', padding: '6px 10px', background: '#ef444415', borderRadius: '4px', fontSize: '12px', color: '#ef4444' }}>Rejection reason: {vo.rejectionReason}</div>}
+
+            {/* ── Metadata band ── */}
+            <div style={{ display: 'flex', gap: '0', borderTop: `1px solid ${th.border}`, background: th.bgCanvas, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Value', value: fmt(vo.voValue), color: th.textPrimary },
+                ...(vo.approvedValue != null ? [{ label: 'Approved', value: fmt(vo.approvedValue), color: '#22c55e' }] : []),
+                ...(vo.scheduleImpactDays !== 0 ? [{ label: 'Schedule', value: `${vo.scheduleImpactDays > 0 ? '+' : ''}${vo.scheduleImpactDays}d`, color: vo.scheduleImpactDays > 0 ? '#f97316' : '#22c55e' }] : []),
+                { label: 'From', value: INITIATED_BY_LABEL[vo.initiatedBy], color: th.textSecondary },
+                ...(vo.clientRef ? [{ label: 'Ref', value: vo.clientRef, color: th.textSecondary }] : []),
+                ...(vo.receivedDate ? [{ label: 'Received', value: vo.receivedDate, color: th.textSecondary }] : []),
+              ].map((m, i) => (
+                <div key={m.label} style={{ padding: '7px 14px', borderRight: `1px solid ${th.border}`, fontSize: '12px' }}>
+                  <span style={{ color: th.textSecondary, fontSize: '10px', textTransform: 'uppercase', fontWeight: 600, marginRight: '5px' }}>{m.label}</span>
+                  <span style={{ color: m.color, fontWeight: 500 }}>{m.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Rejection notice ── */}
+            {vo.rejectionReason && (
+              <div style={{ padding: '8px 14px', background: '#ef444412', borderTop: `1px solid #ef444430`, fontSize: '12px', color: '#ef4444' }}>
+                Rejection reason: {vo.rejectionReason}
+              </div>
+            )}
+
+            {/* ── Expanded content ── */}
             {isExpanded && (
-              <div style={{ marginTop: '12px', borderTop: `1px solid ${th.border}`, paddingTop: '12px' }}>
+              <div style={{ borderTop: `1px solid ${th.border}` }}>
+
+                {/* Info fields */}
                 {(vo.description || vo.impactAnalysis || vo.technicalNotes) && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: '8px', marginBottom: '12px' }}>
-                    {vo.description && <div style={{ background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '6px', padding: '8px' }}><div style={{ fontSize: '10px', color: th.textSecondary, marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Description</div><div style={{ fontSize: '12px', color: th.textPrimary }}>{vo.description}</div></div>}
-                    {vo.impactAnalysis && <div style={{ background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '6px', padding: '8px' }}><div style={{ fontSize: '10px', color: th.textSecondary, marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Impact Analysis</div><div style={{ fontSize: '12px', color: th.textPrimary }}>{vo.impactAnalysis}</div></div>}
-                    {vo.technicalNotes && <div style={{ background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '6px', padding: '8px' }}><div style={{ fontSize: '10px', color: th.textSecondary, marginBottom: '4px', textTransform: 'uppercase', fontWeight: 600 }}>Technical Notes</div><div style={{ fontSize: '12px', color: th.textPrimary }}>{vo.technicalNotes}</div></div>}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(220px,1fr))', borderBottom: `1px solid ${th.border}` }}>
+                    {[
+                      { label: 'Description', value: vo.description },
+                      { label: 'Impact Analysis', value: vo.impactAnalysis },
+                      { label: 'Technical Notes', value: vo.technicalNotes },
+                    ].filter(f => f.value).map((f, i, arr) => (
+                      <div key={f.label} style={{ padding: '10px 14px', borderRight: i < arr.length - 1 ? `1px solid ${th.border}` : 'none', background: th.bgSurface }}>
+                        <div style={{ fontSize: '10px', color: th.textSecondary, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.04em', marginBottom: '4px' }}>{f.label}</div>
+                        <div style={{ fontSize: '12px', color: th.textPrimary, lineHeight: 1.5 }}>{f.value}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
-                <div style={{ display: 'flex', borderBottom: `1px solid ${th.border}`, marginBottom: '12px' }}>
+
+                {/* Sub-tab nav */}
+                <div style={{ display: 'flex', borderBottom: `1px solid ${th.border}`, padding: '0 14px', background: th.bgSurface }}>
                   {(['cost', 'correspondence', 'drawings'] as VOSubTab[]).map(t => (
                     <button key={t} onClick={() => setSubTab(s => ({ ...s, [vo.id]: t }))}
-                      style={{ padding: '6px 14px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: st === t ? 600 : 400, color: st === t ? th.accent : th.textSecondary, background: 'transparent', borderBottom: `2px solid ${st === t ? th.accent : 'transparent'}` }}>
+                      style={{ padding: '8px 14px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: st === t ? 600 : 400, color: st === t ? th.accent : th.textSecondary, background: 'transparent', borderBottom: `2px solid ${st === t ? th.accent : 'transparent'}`, marginBottom: '-1px' }}>
                       {t === 'cost' ? `Cost (${vo.costItems.length})` : t === 'correspondence' ? `Correspondence (${vo.correspondence.length})` : `Drawings (${vo.drawings.length})`}
                     </button>
                   ))}
                 </div>
+
+                {/* Sub-tab content */}
+                <div style={{ padding: '14px', background: th.bgCanvas }}>
                 {st === 'cost' && (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'center' }}>
@@ -8010,9 +7733,13 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                             <span style={{ color: th.textSecondary }}>{ci.unit ?? ''}</span>
                             <span style={{ color: th.textSecondary, textAlign: 'right' }}>{fmt(ci.unitRate)}</span>
                             <span style={{ color: th.accent, fontWeight: 600, textAlign: 'right' }}>{fmt(ci.amount)}</span>
-                            {isAdmin && <div style={{ display: 'flex', gap: '3px' }}>
-                              <button style={vbtn({ padding: '2px 6px', fontSize: '10px', background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => { setCostModal({ open: true, mode: 'edit', voId: vo.id, item: ci }); setCostForm({ category: ci.category, description: ci.description, quantity: String(ci.quantity), unit: ci.unit ?? '', unitRate: String(ci.unitRate), amount: String(ci.amount), notes: ci.notes ?? '' }) }}>E</button>
-                              <button style={vbtn({ padding: '2px 6px', fontSize: '10px', background: '#ef4444' })} onClick={() => { if (confirm('Delete?')) onDeleteCostItem(ci.id) }}>D</button>
+                            {isAdmin && <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                              <button title="Edit" style={vbtn({ padding: '4px 6px', background: 'transparent', color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => { setCostModal({ open: true, mode: 'edit', voId: vo.id, item: ci }); setCostForm({ category: ci.category, description: ci.description, quantity: String(ci.quantity), unit: ci.unit ?? '', unitRate: String(ci.unitRate), amount: String(ci.amount), notes: ci.notes ?? '' }) }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                              <button title="Delete" style={vbtn({ padding: '4px 6px', background: 'transparent', color: '#ef4444', border: `1px solid #ef444450` })} onClick={() => setConfirmDel({ message: 'Delete cost item?', onConfirm: () => onDeleteCostItem(ci.id) })}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                              </button>
                             </div>}
                           </div>
                         ))}
@@ -8041,7 +7768,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                             </div>
                             {c.description && <div style={{ fontSize: '12px', color: th.textSecondary }}>{c.description}</div>}
                           </div>
-                          {isAdmin && <button style={vbtn({ padding: '3px 8px', fontSize: '11px', background: '#ef4444' })} onClick={() => { if (confirm('Delete?')) onDeleteCorrespondence(c.id) }}>Del</button>}
+                          {isAdmin && <button style={vbtn({ padding: '3px 8px', fontSize: '11px', background: '#ef4444' })} onClick={() => setConfirmDel({ message: 'Delete correspondence entry?', onConfirm: () => onDeleteCorrespondence(c.id) })}>Del</button>}
                         </div>
                       </div>
                     ))}
@@ -8060,18 +7787,19 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                           <span>Drawing #</span><span>Rev</span><span>Title</span><span>Notes</span><span />
                         </div>
                         {vo.drawings.map(d => (
-                          <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '130px 60px 1fr 1fr 60px', padding: '6px 10px', borderTop: `1px solid ${th.border}`, background: th.bgCanvas, fontSize: '12px', alignItems: 'center' }}>
+                          <div key={d.id} style={{ display: 'grid', gridTemplateColumns: '130px 60px 1fr 1fr 60px', padding: '6px 10px', borderTop: `1px solid ${th.border}`, background: th.bgSurface, fontSize: '12px', alignItems: 'center' }}>
                             <span style={{ fontFamily: 'monospace', color: th.textPrimary }}>{d.drawingNumber}</span>
                             <span style={{ color: th.textSecondary }}>{d.revision ?? '—'}</span>
                             <span style={{ color: th.textSecondary }}>{d.title ?? '—'}</span>
                             <span style={{ color: th.textSecondary, fontSize: '11px' }}>{d.notes ?? ''}</span>
-                            {isAdmin && <button style={vbtn({ padding: '2px 6px', fontSize: '10px', background: '#ef4444' })} onClick={() => { if (confirm('Remove?')) onRemoveDrawing(d.id) }}>Del</button>}
+                            {isAdmin && <button style={vbtn({ padding: '2px 6px', fontSize: '10px', background: '#ef4444' })} onClick={() => setConfirmDel({ message: 'Remove linked drawing?', onConfirm: () => onRemoveDrawing(d.id) })}>Del</button>}
                           </div>
                         ))}
                       </div>
                     ) : <div style={{ color: th.textSecondary, fontSize: '12px' }}>No linked drawings yet.</div>}
                   </div>
                 )}
+                </div>
               </div>
             )}
           </div>
@@ -8151,8 +7879,8 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
       {/* Cost Item Modal */}
       {costModal.open && (
-        <div style={modalOverlay} onClick={() => setCostModal(m => ({ ...m, open: false }))}>
-          <div style={modalBox} onClick={e => e.stopPropagation()}>
+        <div style={modalOverlay}>
+          <div style={modalBox}>
             {mHdr(costModal.mode === 'create' ? 'Add Cost Item' : 'Edit Cost Item')}
             {voff('Category', vfs(costForm.category, v => setCostForm(f => ({ ...f, category: v })), catOpts))}
             {voff('Description', vfi(costForm.description, v => setCostForm(f => ({ ...f, description: v }))))}
@@ -8204,6 +7932,19 @@ function VariationOrdersTab(props: VariationOrdersProps) {
           </div>
         </div>
       )}
+
+      {confirmDel && (
+        <div style={{ ...modalOverlay, zIndex: 9500 }}>
+          <div style={{ ...modalBox, maxWidth: '360px' }}>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: th.textPrimary, marginBottom: '6px' }}>Confirm</div>
+            <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '20px' }}>{confirmDel.message}</div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button style={vbtn({ background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => setConfirmDel(null)}>Cancel</button>
+              <button style={vbtn({ background: '#ef4444' })} onClick={() => { confirmDel.onConfirm(); setConfirmDel(null) }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -8237,7 +7978,7 @@ function MeetingsTab(props: MeetingsProps) {
   const [minutesDraft, setMinutesDraft]     = React.useState('')
 
   const [mModal, setMModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<MeetingType> }>({ open: false, mode: 'create', item: {} })
-  const [mForm, setMForm]   = React.useState({ meetingNumber: '', meetingType: 'site', title: '', meetingDate: '', location: '', chairperson: '', attendees: '', agenda: '', distributionList: '' })
+  const [mForm, setMForm]   = React.useState({ meetingType: 'site', title: '', meetingDate: '', location: '', chairperson: '', attendees: '', agenda: '', distributionList: '' })
 
   const [aModal, setAModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; meetingId: string; item: Partial<MeetingActionType> }>({ open: false, mode: 'create', meetingId: '', item: {} })
   const [aForm, setAForm]   = React.useState({ description: '', responsiblePerson: '', dueDate: '', priority: 'medium', status: 'open', remarks: '' })
@@ -8274,18 +8015,17 @@ function MeetingsTab(props: MeetingsProps) {
   const PRIORITY_OPTS   = [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'critical', label: 'Critical' }]
   const ACTION_STATUS_OPTS = [{ value: 'open', label: 'Open' }, { value: 'in_progress', label: 'In Progress' }, { value: 'closed', label: 'Closed' }]
 
-  const nextMeetingNumber = `MOM-${String(meetings.length + 1).padStart(3, '0')}`
   const today = new Date().toISOString().slice(0, 10)
 
   const isOverdue = (a: MeetingActionType) => a.status !== 'closed' && !!a.dueDate && a.dueDate < today
 
   const openCreateMeeting = () => {
     setMModal({ open: true, mode: 'create', item: {} })
-    setMForm({ meetingNumber: nextMeetingNumber, meetingType: 'site', title: '', meetingDate: today, location: '', chairperson: '', attendees: '', agenda: '', distributionList: '' })
+    setMForm({ meetingType: 'site', title: '', meetingDate: today, location: '', chairperson: '', attendees: '', agenda: '', distributionList: '' })
   }
   const openEditMeeting = (m: MeetingType) => {
     setMModal({ open: true, mode: 'edit', item: m })
-    setMForm({ meetingNumber: m.meetingNumber, meetingType: m.meetingType, title: m.title, meetingDate: m.meetingDate, location: m.location ?? '', chairperson: m.chairperson ?? '', attendees: m.attendees ?? '', agenda: m.agenda ?? '', distributionList: m.distributionList ?? '' })
+    setMForm({ meetingType: m.meetingType, title: m.title, meetingDate: m.meetingDate, location: m.location ?? '', chairperson: m.chairperson ?? '', attendees: m.attendees ?? '', agenda: m.agenda ?? '', distributionList: m.distributionList ?? '' })
   }
   const openCreateAction = (meetingId: string) => {
     setAModal({ open: true, mode: 'create', meetingId, item: {} })
@@ -8540,22 +8280,19 @@ function MeetingsTab(props: MeetingsProps) {
       {mModal.open && (
         <div style={modalOverlay} onClick={() => setMModal(m => ({ ...m, open: false }))}>
           <div style={modalBox} onClick={e => e.stopPropagation()}>
-            {mHdr(mModal.mode === 'create' ? 'New Meeting (MOM)' : `Edit ${mForm.meetingNumber}`)}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div>{voff('Meeting Number', vfi(mForm.meetingNumber, v => setMForm(f => ({ ...f, meetingNumber: v }))))}</div>
-              <div>{voff('Meeting Type', vfs(mForm.meetingType, v => setMForm(f => ({ ...f, meetingType: v })), MEETING_TYPE_OPTS))}</div>
-            </div>
+            {mHdr(mModal.mode === 'create' ? 'New Meeting (MOM)' : `Edit Meeting — ${mModal.item.meetingNumber ?? ''}`)}
+            {voff('Meeting Type', vfs(mForm.meetingType, v => setMForm(f => ({ ...f, meetingType: v })), MEETING_TYPE_OPTS))}
             {voff('Title', vfi(mForm.title, v => setMForm(f => ({ ...f, title: v })), 'e.g. Weekly Site Meeting #12'))}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <div>{voff('Date', vfi(mForm.meetingDate, v => setMForm(f => ({ ...f, meetingDate: v })), '', 'date'))}</div>
-              <div>{voff('Location', vfi(mForm.location, v => setMForm(f => ({ ...f, location: v })), 'Site office, Teams…'))}</div>
+              <div>{voff('Location / Link', vfi(mForm.location, v => setMForm(f => ({ ...f, location: v })), 'Site office or paste full https:// link for a Join button'))}</div>
             </div>
             {voff('Chairperson', vfi(mForm.chairperson, v => setMForm(f => ({ ...f, chairperson: v })), 'Name of meeting chair'))}
             {voff('Attendees', <textarea style={{ ...inputSt, minHeight: '60px' }} value={mForm.attendees} onChange={e => setMForm(f => ({ ...f, attendees: e.target.value }))} placeholder="One name per line or comma-separated" />)}
             {voff('Agenda', <textarea style={{ ...inputSt, minHeight: '70px' }} value={mForm.agenda} onChange={e => setMForm(f => ({ ...f, agenda: e.target.value }))} placeholder="List agenda items…" />)}
-            {voff('Distribution List', <textarea style={{ ...inputSt, minHeight: '50px' }} value={mForm.distributionList} onChange={e => setMForm(f => ({ ...f, distributionList: e.target.value }))} placeholder="Who should receive this MOM" />)}
+            {voff('Distribution List', <textarea style={{ ...inputSt, minHeight: '50px' }} value={mForm.distributionList} onChange={e => setMForm(f => ({ ...f, distributionList: e.target.value }))} placeholder="email@example.com, another@example.com…" />)}
             {mBtns(() => {
-              const vars = { meetingNumber: mForm.meetingNumber, meetingType: mForm.meetingType, title: mForm.title, meetingDate: mForm.meetingDate, location: mForm.location || null, chairperson: mForm.chairperson || null, attendees: mForm.attendees || null, agenda: mForm.agenda || null, distributionList: mForm.distributionList || null }
+              const vars = { meetingType: mForm.meetingType, title: mForm.title, meetingDate: mForm.meetingDate, location: mForm.location || null, chairperson: mForm.chairperson || null, attendees: mForm.attendees || null, agenda: mForm.agenda || null, distributionList: mForm.distributionList || null }
               if (mModal.mode === 'create') onCreateMeeting({ projectId, ...vars })
               else onUpdateMeeting({ id: mModal.item.id, ...vars })
               setMModal(m => ({ ...m, open: false }))

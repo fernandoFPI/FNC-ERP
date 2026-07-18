@@ -11,7 +11,7 @@ import { useAuthStore } from '../../store/authStore'
 interface NavChild {
   label: string
   path: string
-  badge?: number | 'overdue'
+  badge?: number | 'overdue' | 'ap_pending'
   permKeys?: string[]
 }
 
@@ -54,6 +54,7 @@ function Icon({ name }: { name: string }) {
     calendar: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
     clipboard: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>,
     'map-pin': <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
+    'log-out': <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
     activity: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
     tag: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
     percent: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>,
@@ -83,25 +84,51 @@ const NAV_SECTIONS: NavSection[] = [
   {
     section: 'Finance',
     items: [
-      { label: 'Chart of Accounts', icon: <Icon name="dollar-sign" />, path: '/finance/accounts', permKeys: ['finance.accounts.view'] },
-      { label: 'Journal Entries', icon: <Icon name="file-text" />, path: '/finance/journals', permKeys: ['finance.journals.view'] },
-      { label: 'Project Invoices', icon: <Icon name="file-text" />, path: '/projects/invoices', permKeys: ['projects.invoices.view'] },
-      { label: 'Accounts Receivable', icon: <Icon name="activity" />, path: '/finance/ar', permKeys: ['finance.ar.view'] },
-      { label: 'Accounts Payable', icon: <Icon name="credit-card" />, path: '/finance/ap', badge: 'ap_pending', permKeys: ['finance.ap.view'] },
-      { label: 'WHT Payable', icon: <Icon name="percent" />, path: '/finance/wht-payable', permKeys: ['finance.ap.view'] },
-      { label: 'Payment Vouchers', icon: <Icon name="credit-card" />, path: '/finance/payment-vouchers', permKeys: ['finance.ap.view'] },
-      { label: 'Bank Reconciliation', icon: <Icon name="landmark" />, path: '/finance/bank', permKeys: ['finance.bank.view'] },
-      { label: 'Fixed Assets', icon: <Icon name="box" />, path: '/finance/assets', permKeys: ['finance.assets.view'] },
-      { label: 'Payment Terms', icon: <Icon name="file-clock" />, path: '/finance/payment-terms', permKeys: ['finance.terms.view'] },
-      { label: 'Retention', icon: <Icon name="archive" />, path: '/finance/retention', permKeys: ['finance.retention.view'] },
-      { label: 'GL Budgets', icon: <Icon name="sliders" />, path: '/finance/budget', permKeys: ['finance.budget.view'] },
-      { label: 'FX Revaluation', icon: <Icon name="trending-up" />, path: '/finance/revaluation', permKeys: ['finance.revaluation.view'] },
-      { label: 'Expense Claims', icon: <Icon name="clipboard" />, path: '/finance/expense-claims', permKeys: ['finance.expenses.view'] },
-      { label: 'Petty Cash', icon: <Icon name="dollar-sign" />, path: '/finance/petty-cash', permKeys: ['finance.petty_cash.view'] },
-      { label: 'Cost Centers', icon: <Icon name="layers" />, path: '/finance/cost-centers', permKeys: ['finance.cost_centers.view'] },
-      { label: 'Analytic Accounts', icon: <Icon name="tag" />, path: '/finance/analytic-accounts', permKeys: ['finance.analytic_accounts.view'] },
-      { label: 'FX Rates', icon: <Icon name="refresh-cw" />, path: '/finance/fx-rates', permKeys: ['finance.fx_rates.view'] },
-      { label: 'Periods', icon: <Icon name="calendar" />, path: '/finance/periods', permKeys: ['finance.periods.view'] },
+      {
+        label: 'Journals & Accounts',
+        icon: <Icon name="dollar-sign" />,
+        path: '_f_ledger',
+        permKeys: ['finance.accounts.view', 'finance.journals.view'],
+        children: [
+          { label: 'Chart of Accounts', path: '/finance/accounts', permKeys: ['finance.accounts.view'] },
+          { label: 'Journal Entries',   path: '/finance/journals', permKeys: ['finance.journals.view'] },
+        ],
+      },
+      {
+        label: 'Receivables & Payables',
+        icon: <Icon name="activity" />,
+        path: '_f_arp',
+        permKeys: ['finance.ar.view', 'finance.ap.view', 'finance.retention.view'],
+        children: [
+          { label: 'Accounts Receivable', path: '/finance/ar',               permKeys: ['finance.ar.view'] },
+          { label: 'Accounts Payable',    path: '/finance/ap',               badge: 'ap_pending' as const, permKeys: ['finance.ap.view'] },
+          { label: 'WHT Payable',         path: '/finance/wht-payable',      permKeys: ['finance.ap.view'] },
+          { label: 'Payment Vouchers',    path: '/finance/payment-vouchers', permKeys: ['finance.ap.view'] },
+          { label: 'Retention',           path: '/finance/retention',        permKeys: ['finance.retention.view'] },
+        ],
+      },
+      {
+        label: 'Cash & Bank',
+        icon: <Icon name="landmark" />,
+        path: '_f_cash',
+        permKeys: ['finance.bank.view', 'finance.petty_cash.view', 'finance.expenses.view'],
+        children: [
+          { label: 'Bank Reconciliation', path: '/finance/bank',           permKeys: ['finance.bank.view'] },
+          { label: 'Petty Cash',          path: '/finance/petty-cash',     permKeys: ['finance.petty_cash.view'] },
+          { label: 'Expense Claims',      path: '/finance/expense-claims', permKeys: ['finance.expenses.view'] },
+        ],
+      },
+      {
+        label: 'Assets & Budgets',
+        icon: <Icon name="trending-up" />,
+        path: '_f_assets',
+        permKeys: ['finance.assets.view', 'finance.budget.view', 'finance.revaluation.view'],
+        children: [
+          { label: 'Fixed Assets',   path: '/finance/assets',      permKeys: ['finance.assets.view'] },
+          { label: 'GL Budgets',     path: '/finance/budget',      permKeys: ['finance.budget.view'] },
+          { label: 'FX Revaluation', path: '/finance/revaluation', permKeys: ['finance.revaluation.view'] },
+        ],
+      },
       {
         label: 'Reports',
         icon: <Icon name="bar-chart-2" />,
@@ -109,7 +136,7 @@ const NAV_SECTIONS: NavSection[] = [
         permKeys: ['finance.reports.view'],
         children: [
           { label: 'Trial Balance', path: '/finance/reports/trial-balance', permKeys: ['finance.reports.view'] },
-          { label: 'Profit & Loss', path: '/finance/reports/profit-loss', permKeys: ['finance.reports.view'] },
+          { label: 'Profit & Loss', path: '/finance/reports/profit-loss',   permKeys: ['finance.reports.view'] },
           { label: 'Balance Sheet', path: '/finance/reports/balance-sheet', permKeys: ['finance.reports.view'] },
         ],
       },
@@ -118,10 +145,11 @@ const NAV_SECTIONS: NavSection[] = [
   {
     section: 'Procurement',
     items: [
-      { label: 'Vendors', icon: <Icon name="users" />, path: '/procurement/vendors', permKeys: ['procurement.vendors.view'] },
-      { label: 'Purchase Orders', icon: <Icon name="shopping-cart" />, path: '/procurement/purchase-orders', permKeys: ['procurement.po.view'] },
-      { label: 'My PO queue', icon: <Icon name="inbox" />, path: '/procurement/queue', badge: 'queue', permKeys: ['procurement.po.view'] },
-      { label: 'Approval Queue', icon: <Icon name="check-circle" />, path: '/procurement/purchase-orders/approval-queue', badge: 'approval', permKeys: ['procurement.po.approve'] },
+      { label: 'Vendors',          icon: <Icon name="users" />,         path: '/procurement/vendors',                                 permKeys: ['procurement.vendors.view'] },
+      { label: 'Purchase Orders',  icon: <Icon name="shopping-cart" />, path: '/procurement/purchase-orders',                        permKeys: ['procurement.po.view'] },
+      { label: 'Project Invoices', icon: <Icon name="file-text" />,     path: '/projects/invoices',                                  permKeys: ['projects.invoices.view'] },
+      { label: 'My PO Queue',      icon: <Icon name="inbox" />,         path: '/procurement/queue',                    badge: 'queue',    permKeys: ['procurement.po.view'] },
+      { label: 'Approval Queue',   icon: <Icon name="check-circle" />,  path: '/procurement/purchase-orders/approval-queue', badge: 'approval', permKeys: ['procurement.po.approve'] },
     ],
   },
   {
@@ -131,6 +159,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Locations', icon: <Icon name="map-pin" />, path: '/inventory/locations', permKeys: ['inventory.locations.view'] },
       { label: 'Stock Balances', icon: <Icon name="layers" />, path: '/inventory/balances', permKeys: ['inventory.stock_moves.view'] },
       { label: 'Stock Moves', icon: <Icon name="activity" />, path: '/inventory/moves', permKeys: ['inventory.stock_moves.view'] },
+      { label: 'Store Out', icon: <Icon name="log-out" />, path: '/inventory/store-out', permKeys: ['inventory.stock_moves.view'] },
       { label: 'Lots', icon: <Icon name="tag" />, path: '/inventory/lots', permKeys: ['inventory.lots.view'] },
     ],
   },
@@ -322,7 +351,10 @@ export function Sidebar({ mobile = false, expanded = false, onClose, rail = fals
     })
     const hasChildren = visibleChildren.length > 0
     const isExpanded = expandedItems.has(item.path)
-    const isParentActive = location.pathname.startsWith(item.path)
+    const isChildCurrentlyActive = hasChildren && visibleChildren.some(c =>
+      location.pathname === c.path || location.pathname.startsWith(c.path + '/')
+    )
+    const isParentActive = location.pathname.startsWith(item.path) || isChildCurrentlyActive
     const isDirectActive = !hasChildren && (location.pathname === item.path || location.pathname.startsWith(item.path + '/'))
     const badgeCount = getBadgeCount(item)
 

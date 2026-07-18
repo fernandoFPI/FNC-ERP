@@ -24,10 +24,14 @@ const STATUS_OPTIONS_ADMIN = [
 const STATUS_OPTIONS_USER = STATUS_OPTIONS_ADMIN.filter((o) => o.value !== 'pending')
 
 const TYPE_OPTIONS = [
-  { value: 'construction',  label: 'Construction' },
-  { value: 'manufacturing', label: 'Manufacturing' },
-  { value: 'service',       label: 'Service' },
-  { value: 'other',         label: 'Other' },
+  { value: 'construction',          label: 'Construction' },
+  { value: 'supply',                label: 'Supply' },
+  { value: 'services',              label: 'Services' },
+  { value: 'rental',                label: 'Rental' },
+  { value: 'fabrication',           label: 'Fabrication' },
+  { value: 'manpower_supply',       label: 'Manpower Supply' },
+  { value: 'operation_maintenance', label: 'Operation & Maintenance' },
+  { value: 'epc',                   label: 'EPC' },
 ]
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger' | 'info'> = {

@@ -22,8 +22,8 @@ interface ReceiptLine {
   description: string
   ordered_qty: number
   qty_received_so_far: number
+  qty_from_stock: number
   qty_to_receive: string
-  actual_unit_price: string
   po_unit_price: number
 }
 
@@ -61,15 +61,21 @@ export default function ReceiptForm() {
 
   useEffect(() => {
     if (poData?.purchaseOrder && !initialized) {
-      setLines(poData.purchaseOrder.lines.map((l: { id: string; description?: string; qty: string; qty_received?: string; unit_price?: string }) => ({
-        po_line_id: l.id,
-        description: l.description ?? '',
-        ordered_qty: parseFloat(l.qty),
-        qty_received_so_far: parseFloat(l.qty_received ?? '0'),
-        qty_to_receive: String(Math.max(0, parseFloat(l.qty) - parseFloat(l.qty_received ?? '0'))),
-        actual_unit_price: l.unit_price ?? '',
-        po_unit_price: parseFloat(l.unit_price ?? '0'),
-      })))
+      setLines(poData.purchaseOrder.lines.map((l: { id: string; description?: string; qty: string; qty_received?: string; qty_from_stock?: string; unit_price?: string }) => {
+        const orderedQty = parseFloat(l.qty)
+        const receivedSoFar = parseFloat(l.qty_received ?? '0')
+        const fromStock = parseFloat(l.qty_from_stock ?? '0')
+        const toReceive = Math.max(0, orderedQty - receivedSoFar - fromStock)
+        return {
+          po_line_id: l.id,
+          description: l.description ?? '',
+          ordered_qty: orderedQty,
+          qty_received_so_far: receivedSoFar,
+          qty_from_stock: fromStock,
+          qty_to_receive: String(toReceive),
+          po_unit_price: parseFloat(l.unit_price ?? '0'),
+        }
+      }))
       // Pre-fill receiver from PO's designated receiver if set
       const poReceiverName = poData.purchaseOrder.assigned_receiver_name as string | null
       if (poReceiverName) {
@@ -152,8 +158,6 @@ export default function ReceiptForm() {
     e.preventDefault()
     if (!form.received_by_name.trim()) { addToast({ type: 'error', message: 'Please select who received the goods' }); return }
     if (pendingPhotos.length === 0) { addToast({ type: 'error', message: 'At least one photo is required' }); return }
-    const missingPrice = lines.filter(l => parseFloat(l.qty_to_receive) > 0 && !(parseFloat(l.actual_unit_price) > 0))
-    if (missingPrice.length > 0) { addToast({ type: 'error', message: 'Actual unit price is required for all received lines' }); return }
     setSubmitting(true)
     try {
       // If the receipt was already saved (photo retry), skip re-recording
@@ -170,7 +174,7 @@ export default function ReceiptForm() {
               location_notes: form.location_notes || undefined,
               lines: lines
                 .filter((l) => parseFloat(l.qty_to_receive) > 0)
-                .map((l) => ({ po_line_id: l.po_line_id, qty_received: parseFloat(l.qty_to_receive), actual_unit_price: parseFloat(l.actual_unit_price) || undefined })),
+                .map((l) => ({ po_line_id: l.po_line_id, qty_received: parseFloat(l.qty_to_receive) })),
             },
           },
           refetchQueries: [{ query: PURCHASE_ORDER_QUERY, variables: { id } }],
@@ -327,54 +331,34 @@ export default function ReceiptForm() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{ background: theme.bgSurface }}>
-                {['Description', 'PO Price', 'Ordered', 'Received', 'To Receive', 'Actual Price *'].map((h) => (
-                  <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, fontSize: '11px', color: h === 'Actual Price *' ? '#dc2626' : theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>{h}</th>
+                {['Description', 'PO Price', 'Ordered', 'Received', 'From Stock', 'To Receive'].map((h) => (
+                  <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {lines.map((line, i) => {
-                const actualVal = parseFloat(line.actual_unit_price)
-                const hasQty = parseFloat(line.qty_to_receive) > 0
-                const missingPrice = hasQty && !(actualVal > 0)
-                const variance = actualVal > 0 && line.po_unit_price > 0 ? ((actualVal - line.po_unit_price) / line.po_unit_price) * 100 : null
-                return (
-                  <tr key={line.po_line_id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '8px 16px', color: theme.textSecondary }}>{line.description}</td>
-                    <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textMuted, whiteSpace: 'nowrap' }}>
-                      {line.po_unit_price > 0 ? line.po_unit_price.toLocaleString() : '—'}
-                    </td>
-                    <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textPrimary }}>{line.ordered_qty.toLocaleString()}</td>
-                    <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textMuted }}>{line.qty_received_so_far.toLocaleString()}</td>
-                    <td style={{ padding: '8px 16px' }}>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={line.qty_to_receive}
-                        onChange={(e) => setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, qty_to_receive: e.target.value } : l))}
-                      />
-                    </td>
-                    <td style={{ padding: '8px 16px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={line.actual_unit_price}
-                          onChange={(e) => setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, actual_unit_price: e.target.value } : l))}
-                          style={{ border: missingPrice ? '1.5px solid #dc2626' : undefined }}
-                        />
-                        {variance !== null && (
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: variance > 0 ? '#dc2626' : variance < 0 ? '#16a34a' : theme.textMuted }}>
-                            {variance > 0 ? '+' : ''}{variance.toFixed(1)}% vs PO
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+              {lines.map((line, i) => (
+                <tr key={line.po_line_id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <td style={{ padding: '8px 16px', color: theme.textSecondary }}>{line.description}</td>
+                  <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+                    {line.po_unit_price > 0 ? line.po_unit_price.toLocaleString() : '—'}
+                  </td>
+                  <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textPrimary }}>{line.ordered_qty.toLocaleString()}</td>
+                  <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textMuted }}>{line.qty_received_so_far.toLocaleString()}</td>
+                  <td style={{ padding: '8px 16px', fontFamily: 'monospace', color: line.qty_from_stock > 0 ? '#16a34a' : theme.textMuted }}>
+                    {line.qty_from_stock > 0 ? line.qty_from_stock.toLocaleString() : '—'}
+                  </td>
+                  <td style={{ padding: '8px 16px' }}>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={line.qty_to_receive}
+                      onChange={(e) => setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, qty_to_receive: e.target.value } : l))}
+                    />
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </Card>

@@ -6,7 +6,7 @@ import {
   START_PROJECT, HOLD_PROJECT, RESUME_PROJECT, SUBMIT_PROJECT,
   APPROVE_PROJECT, REJECT_BACK_PROJECT, COMPLETE_PROJECT,
   CANCEL_PROJECT, CANCEL_PROJECT_AFTER_APPROVAL, UPDATE_PROJECT,
-  SUBMIT_TO_TEAM, APPROVE_RFQ, REJECT_RFQ,
+  SUBMIT_TO_TEAM, APPROVE_RFQ, REJECT_RFQ, ADVANCE_PHASE,
 } from '../../graphql/projects'
 
 type ProjectStatus = 'pending' | 'ongoing' | 'submitted' | 'approved' | 'completed' | 'on_hold' | 'cancelled' | 'cancelled_after_approval'
@@ -23,32 +23,105 @@ interface ProjectTimeline {
 interface Props {
   projectId: string
   status: ProjectStatus
+  lifecyclePhase?: string
   allowedActions: string[]
+  clientDocCount?: number
+  rfqLineCount?: number
+  isRfq?: boolean
   onTransitioned?: () => void
   timeline?: ProjectTimeline
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  start:                 'Start Project',
-  submit_to_team:        'Submit to Team',
-  hold:                  'Put On Hold',
-  resume:                'Resume',
-  submit:                'Submit for Review',
-  approve:               'Approve',
-  approve_rfq:           'Approve RFQ',
-  reject_back:           'Send Back for Rework',
-  reject_rfq:            'Send Back for Revision',
-  complete:              'Mark Complete',
-  cancel:                'Cancel',
-  cancel_after_approval: 'Cancel Project',
+// ── Phase-aware button definitions ─────────────────────────────────────────
+
+interface PhaseButton {
+  key: string
+  label: string
+  variant: 'primary' | 'success' | 'warning' | 'danger'
+  requiresReason?: boolean
+  requiresTimeline?: 'rfq' | 'bid'
+  gate?: string | null
+  isAdvancePhase?: boolean
+  targetPhase?: string
 }
 
-function resolveActionLabel(action: string, _status: ProjectStatus): string {
-  return ACTION_LABEL[action] ?? action
+function getPhaseButtons(
+  phase: string,
+  status: ProjectStatus,
+  allowedActions: string[],
+  isRfq: boolean,
+  rfqLineCount: number,
+): PhaseButton[] {
+  const has = (a: string) => allowedActions.includes(a)
+
+  if (['cancelled', 'cancelled_after_approval'].includes(status)) return []
+
+  // On hold — only resume
+  if (status === 'on_hold') {
+    return has('resume')
+      ? [{ key: 'resume', label: 'Resume Project', variant: 'primary' }]
+      : []
+  }
+
+  switch (phase) {
+    case 'enquiry': {
+      const btns: PhaseButton[] = []
+      const startKey = has('submit_to_team') ? 'submit_to_team' : has('start') ? 'start' : null
+      if (startKey) btns.push({ key: startKey, label: 'Start Scope Review', variant: 'primary', requiresTimeline: 'rfq' })
+      if (has('hold'))   btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+      if (has('cancel')) btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+      return btns
+    }
+    case 'scope_review': {
+      const notEnoughLines = rfqLineCount < 1
+      const btns: PhaseButton[] = [
+        {
+          key: 'advance_bidding',
+          label: 'Advance to Bidding',
+          variant: 'primary',
+          isAdvancePhase: true,
+          targetPhase: 'bidding',
+          gate: notEnoughLines ? 'Add at least one Scope of Work line first' : null,
+        },
+      ]
+      if (has('hold'))   btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+      if (has('cancel')) btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+      return btns
+    }
+    case 'bidding': {
+      const btns: PhaseButton[] = []
+      if (has('submit')) btns.push({ key: 'submit', label: 'Submit Bid to Client', variant: 'success', requiresTimeline: 'bid' })
+      if (has('hold'))   btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+      if (has('cancel')) btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+      return btns
+    }
+    case 'client_approval': {
+      const btns: PhaseButton[] = []
+      if (isRfq) {
+        if (has('approve_rfq'))  btns.push({ key: 'approve_rfq', label: 'Mark as Awarded', variant: 'success' })
+        if (has('reject_rfq'))   btns.push({ key: 'reject_rfq', label: 'Reject Bid', variant: 'danger', requiresReason: true })
+      } else {
+        if (has('approve'))      btns.push({ key: 'approve', label: 'Mark as Awarded', variant: 'success' })
+        if (has('reject_back'))  btns.push({ key: 'reject_back', label: 'Request Revision', variant: 'warning', requiresReason: true })
+      }
+      if (has('cancel'))         btns.push({ key: 'cancel', label: 'Cancel', variant: 'danger', requiresReason: true })
+      return btns
+    }
+    case 'execution': {
+      const btns: PhaseButton[] = []
+      if (has('complete'))                btns.push({ key: 'complete', label: 'Close Project', variant: 'success' })
+      if (has('hold'))                    btns.push({ key: 'hold', label: 'Put On Hold', variant: 'warning', requiresReason: true })
+      if (has('cancel_after_approval'))   btns.push({ key: 'cancel_after_approval', label: 'Cancel Project', variant: 'danger', requiresReason: true })
+      return btns
+    }
+    case 'closeout':
+      return [] // terminal
+    default:
+      return []
+  }
 }
 
-const REASON_REQUIRED = new Set(['hold', 'reject_back', 'reject_rfq', 'cancel', 'cancel_after_approval'])
-const TIMELINE_ACTIONS = new Set(['start', 'submit'])
+// ── Styles ──────────────────────────────────────────────────────────────────
 
 const inputStyle = (theme: ThemeTokens): React.CSSProperties => ({
   width: '100%', padding: '6px 10px', borderRadius: '6px',
@@ -59,12 +132,23 @@ const labelStyle = (theme: ThemeTokens): React.CSSProperties => ({
   fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '4px', fontWeight: 500,
 })
 
-export function ProjectStatusBar({ projectId, status, allowedActions, onTransitioned, timeline }: Props) {
+const VARIANT_COLOR = {
+  primary: '',  // filled with theme.accent below
+  success: '#16a34a',
+  warning: '#f59e0b',
+  danger:  '#ef4444',
+}
+
+export function ProjectStatusBar({
+  projectId, status, lifecyclePhase = 'enquiry', allowedActions,
+  clientDocCount = 0, rfqLineCount = 0, isRfq = false,
+  onTransitioned, timeline,
+}: Props) {
   const { theme } = useTheme()
-  const [pendingAction, setPendingAction] = useState<string | null>(null)
-  const [reason, setReason]               = useState('')
-  const [saving, setSaving]               = useState(false)
-  const [timelineForm, setTimelineForm]   = useState({
+  const [pendingBtn,  setPendingBtn]  = useState<PhaseButton | null>(null)
+  const [reason,      setReason]      = useState('')
+  const [saving,      setSaving]      = useState(false)
+  const [timelineForm, setTimelineForm] = useState({
     siteVisitDate: '', siteVisitTime: '',
     questionDate:  '', questionTime:  '',
     submissionDate: '', submissionTime: '',
@@ -83,8 +167,9 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
   const [cancelProject]              = useMutation(CANCEL_PROJECT)
   const [cancelProjectAfterApproval] = useMutation(CANCEL_PROJECT_AFTER_APPROVAL)
   const [updateProject]              = useMutation(UPDATE_PROJECT)
+  const [advancePhaseMut]            = useMutation(ADVANCE_PHASE)
 
-  const mutationFor = (action: string) => ({
+  const mutationFor = (key: string) => ({
     start:                 startProject,
     submit_to_team:        submitToTeam,
     hold:                  holdProject,
@@ -97,16 +182,17 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
     complete:              completeProject,
     cancel:                cancelProject,
     cancel_after_approval: cancelProjectAfterApproval,
-  }[action] ?? null)
+  }[key] ?? null)
 
   const sliceTime = (t?: string | null) => t ? String(t).slice(0, 5) : ''
 
-  const handleAction = (action: string) => {
-    if (REASON_REQUIRED.has(action)) {
-      setPendingAction(action); setReason(''); return
+  const handleClick = (btn: PhaseButton) => {
+    if (btn.gate) return // gated — button is disabled
+    if (btn.requiresReason) {
+      setPendingBtn(btn); setReason(''); return
     }
-    if (action === 'start' || action === 'submit_to_team') {
-      setPendingAction(action)
+    if (btn.requiresTimeline === 'rfq') {
+      setPendingBtn(btn)
       setTimelineForm({
         siteVisitDate:  timeline?.siteVisitDate  ?? '',
         siteVisitTime:  sliceTime(timeline?.siteVisitTime),
@@ -116,8 +202,8 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
       })
       return
     }
-    if (action === 'submit') {
-      setPendingAction('submit')
+    if (btn.requiresTimeline === 'bid') {
+      setPendingBtn(btn)
       setTimelineForm({
         siteVisitDate: '', siteVisitTime: '',
         questionDate:  '', questionTime:  '',
@@ -126,30 +212,35 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
       })
       return
     }
-    void executeAction(action)
+    void executeBtn(btn)
   }
 
-  const executeAction = async (action: string, reasonArg?: string) => {
-    const mut = mutationFor(action)
+  const executeBtn = async (btn: PhaseButton, reasonArg?: string) => {
+    if (btn.isAdvancePhase && btn.targetPhase) {
+      await advancePhaseMut({ variables: { id: projectId, targetPhase: btn.targetPhase } })
+      setPendingBtn(null); setReason('')
+      onTransitioned?.(); return
+    }
+    const mut = mutationFor(btn.key)
     if (!mut) return
     const variables: Record<string, unknown> = { id: projectId }
-    if (REASON_REQUIRED.has(action)) variables['reason'] = reasonArg ?? reason
+    if (btn.requiresReason) variables['reason'] = reasonArg ?? reason
     await mut({ variables })
-    setPendingAction(null); setReason('')
+    setPendingBtn(null); setReason('')
     onTransitioned?.()
   }
 
   const handleTimelineConfirm = async (skip = false) => {
     setSaving(true)
     try {
-      if (!skip) {
+      if (!skip && pendingBtn) {
         const input: Record<string, unknown> = {}
-        if (pendingAction === 'start' || pendingAction === 'submit_to_team') {
+        if (pendingBtn.requiresTimeline === 'rfq') {
           if (timelineForm.siteVisitDate) input['siteVisitDate'] = timelineForm.siteVisitDate
           if (timelineForm.siteVisitTime) input['siteVisitTime'] = timelineForm.siteVisitTime
           if (timelineForm.questionDate)  input['questionDate']  = timelineForm.questionDate
           if (timelineForm.questionTime)  input['questionTime']  = timelineForm.questionTime
-        } else if (pendingAction === 'submit') {
+        } else if (pendingBtn.requiresTimeline === 'bid') {
           if (timelineForm.submissionDate) input['submissionDate'] = timelineForm.submissionDate
           if (timelineForm.submissionTime) input['submissionTime'] = timelineForm.submissionTime
         }
@@ -157,21 +248,25 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
           await updateProject({ variables: { id: projectId, input } })
         }
       }
-      const mut = mutationFor(pendingAction!)
-      if (mut) await mut({ variables: { id: projectId } })
-      setPendingAction(null)
+      if (pendingBtn) {
+        const mut = mutationFor(pendingBtn.key)
+        if (mut) await mut({ variables: { id: projectId } })
+      }
+      setPendingBtn(null)
       onTransitioned?.()
     } finally {
       setSaving(false)
     }
   }
 
-  const isSideState  = ['on_hold', 'cancelled', 'cancelled_after_approval'].includes(status)
+  const phase   = lifecyclePhase
+  const buttons = getPhaseButtons(phase, status, allowedActions, isRfq, rfqLineCount)
 
-  const sideStateLabel: Record<string, string> = {
+  const isSideState = ['on_hold', 'cancelled', 'cancelled_after_approval'].includes(status)
+  const sideLabel: Record<string, string> = {
     on_hold: 'On Hold', cancelled: 'Cancelled', cancelled_after_approval: 'Cancelled After Approval',
   }
-  const sideStateColor: Record<string, string> = {
+  const sideColor: Record<string, string> = {
     on_hold: '#f59e0b', cancelled: '#ef4444', cancelled_after_approval: '#b91c1c',
   }
 
@@ -179,34 +274,39 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
   const setTF = (k: keyof typeof timelineForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setTimelineForm(f => ({ ...f, [k]: e.target.value }))
 
+  const btnBg = (btn: PhaseButton) => {
+    if (btn.gate) return theme.border
+    return btn.variant === 'primary' ? theme.accent : VARIANT_COLOR[btn.variant]
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       {/* Side-state badge */}
       {isSideState && (
-        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '999px', background: sideStateColor[status], color: '#fff', fontSize: '12px', fontWeight: 600, alignSelf: 'flex-start' }}>
-          {sideStateLabel[status] ?? status}
+        <div style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: '999px', background: sideColor[status], color: '#fff', fontSize: '12px', fontWeight: 600, alignSelf: 'flex-start' }}>
+          {sideLabel[status] ?? status}
         </div>
       )}
 
       {/* Reason input */}
-      {pendingAction && REASON_REQUIRED.has(pendingAction) && (
+      {pendingBtn && pendingBtn.requiresReason && !pendingBtn.isAdvancePhase && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: theme.accentBg, border: `1px solid ${theme.accentBorder}`, borderRadius: '8px', padding: '10px 12px' }}>
           <input
             style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.borderInput}`, background: theme.bgCanvas, color: theme.textPrimary, fontSize: '13px' }}
-            placeholder={`Reason for "${resolveActionLabel(pendingAction, status)}"…`}
+            placeholder={`Reason for "${pendingBtn.label}"…`}
             value={reason}
             onChange={e => setReason(e.target.value)}
             autoFocus
           />
           <button
             disabled={!reason.trim()}
-            onClick={() => void executeAction(pendingAction)}
+            onClick={() => void executeBtn(pendingBtn)}
             style={{ padding: '6px 14px', borderRadius: '6px', background: reason.trim() ? theme.accent : theme.border, color: '#fff', border: 'none', cursor: reason.trim() ? 'pointer' : 'not-allowed', fontSize: '13px', fontWeight: 500 }}
           >
             Confirm
           </button>
           <button
-            onClick={() => setPendingAction(null)}
+            onClick={() => setPendingBtn(null)}
             style={{ padding: '6px 12px', borderRadius: '6px', background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textMuted, cursor: 'pointer', fontSize: '13px' }}
           >
             Cancel
@@ -214,8 +314,8 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
         </div>
       )}
 
-      {/* Timeline modal — Submit to Team / Start */}
-      {(pendingAction === 'start' || pendingAction === 'submit_to_team') && (
+      {/* Timeline — RFQ schedule (Start Scope Review / Submit to Team) */}
+      {pendingBtn?.requiresTimeline === 'rfq' && (
         <div style={{ background: theme.accentBg, border: `1px solid ${theme.accentBorder}`, borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
             Before starting — confirm the tender schedule
@@ -244,7 +344,7 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
               onClick={() => void handleTimelineConfirm(false)}
               style={{ padding: '6px 16px', borderRadius: '6px', background: theme.accent, color: '#fff', border: 'none', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 500 }}
             >
-              {saving ? 'Saving…' : 'Confirm & Submit to Team'}
+              {saving ? 'Saving…' : `Confirm & ${pendingBtn?.label}`}
             </button>
             <button
               disabled={saving}
@@ -255,7 +355,7 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
             </button>
             <button
               disabled={saving}
-              onClick={() => setPendingAction(null)}
+              onClick={() => setPendingBtn(null)}
               style={{ padding: '6px 12px', borderRadius: '6px', background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textMuted, cursor: 'pointer', fontSize: '13px' }}
             >
               Cancel
@@ -264,11 +364,11 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
         </div>
       )}
 
-      {/* Timeline modal — Submit for Approval */}
-      {pendingAction === 'submit' && (
+      {/* Timeline — Bid submission date */}
+      {pendingBtn?.requiresTimeline === 'bid' && (
         <div style={{ background: theme.accentBg, border: `1px solid ${theme.accentBorder}`, borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-            Confirm submission details
+            Confirm bid submission details
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
@@ -286,11 +386,11 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
               onClick={() => void handleTimelineConfirm(false)}
               style={{ padding: '6px 16px', borderRadius: '6px', background: tf.submissionDate ? theme.accent : theme.border, color: '#fff', border: 'none', cursor: (saving || !tf.submissionDate) ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 500 }}
             >
-              {saving ? 'Saving…' : 'Confirm & Submit for Approval'}
+              {saving ? 'Saving…' : 'Confirm & Submit Bid'}
             </button>
             <button
               disabled={saving}
-              onClick={() => setPendingAction(null)}
+              onClick={() => setPendingBtn(null)}
               style={{ padding: '6px 12px', borderRadius: '6px', background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textMuted, cursor: 'pointer', fontSize: '13px' }}
             >
               Cancel
@@ -300,26 +400,36 @@ export function ProjectStatusBar({ projectId, status, allowedActions, onTransiti
       )}
 
       {/* Action buttons */}
-      {!pendingAction && allowedActions.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-          {allowedActions.map(action => {
-            const isDanger   = action === 'cancel' || action === 'cancel_after_approval'
-            const isApprove  = action === 'approve_rfq' || action === 'approve'
-            const isWarning  = action === 'reject_rfq' || action === 'reject_back'
-            const bg = isDanger ? '#ef4444' : isApprove ? '#16a34a' : isWarning ? '#f59e0b' : theme.accent
-            return (
-              <button
-                key={action}
-                onClick={() => handleAction(action)}
-                style={{
-                  padding: '6px 14px', borderRadius: '7px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', border: 'none',
-                  background: bg, color: '#fff',
-                }}
-              >
-                {resolveActionLabel(action, status)}
-              </button>
-            )
-          })}
+      {!pendingBtn && buttons.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+          {buttons.map(btn => (
+            <button
+              key={btn.key}
+              onClick={() => handleClick(btn)}
+              disabled={!!btn.gate}
+              title={btn.gate ?? undefined}
+              style={{
+                padding: '6px 14px', borderRadius: '7px', fontSize: '13px', fontWeight: 500,
+                cursor: btn.gate ? 'not-allowed' : 'pointer',
+                border: 'none', opacity: btn.gate ? 0.55 : 1,
+                background: btnBg(btn), color: '#fff',
+              }}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Gate hint */}
+      {!pendingBtn && buttons.some(b => b.gate) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {buttons.filter(b => b.gate).map(b => (
+            <div key={b.key} style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ color: '#f59e0b', fontWeight: 700 }}>!</span>
+              <span><strong>{b.label}</strong> — {b.gate}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

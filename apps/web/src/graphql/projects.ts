@@ -9,7 +9,8 @@ const PROJECT_FIELDS = gql`
     budgetAmount budgetCurrency
     holdReason cancelReason receivingDate submissionDate submissionTime siteVisitDate siteVisitTime questionDate questionTime submittedAt approvedAt completedAt cancelledAt
     overallCompletionPct teamCount openPoCount stagesCompleted stagesTotal currentStageName
-    analyticAccountName allowedActions
+    analyticAccountId analyticAccountName allowedActions
+    lifecyclePhase clientDocCount rfqLineCount
     isRfq rfqEstimatedCost rfqOutcome rfqOutcomeReason
     costSummary stages team statusHistory activityLog recentPos
     createdAt updatedAt
@@ -67,19 +68,19 @@ export const CREATE_RFQ = gql`
 
 export const APPROVE_RFQ = gql`
   mutation ApproveRFQ($id: ID!, $notes: String) {
-    approveRFQ(id: $id, notes: $notes) { id status isRfq rfqOutcome approvedAt allowedActions statusHistory }
+    approveRFQ(id: $id, notes: $notes) { id status lifecyclePhase isRfq rfqOutcome approvedAt allowedActions statusHistory }
   }
 `
 
 export const REJECT_RFQ = gql`
   mutation RejectRFQ($id: ID!, $reason: String!) {
-    rejectRFQ(id: $id, reason: $reason) { id status allowedActions statusHistory }
+    rejectRFQ(id: $id, reason: $reason) { id status lifecyclePhase allowedActions statusHistory }
   }
 `
 
 export const SUBMIT_TO_TEAM = gql`
   mutation SubmitToTeam($id: ID!) {
-    submitToTeam(id: $id) { id status allowedActions statusHistory }
+    submitToTeam(id: $id) { id status lifecyclePhase allowedActions statusHistory }
   }
 `
 
@@ -129,7 +130,7 @@ export const UPDATE_PROJECT = gql`
 
 export const START_PROJECT = gql`
   mutation StartProject($id: ID!) {
-    startProject(id: $id) { id status allowedActions statusHistory }
+    startProject(id: $id) { id status lifecyclePhase allowedActions statusHistory }
   }
 `
 
@@ -147,25 +148,25 @@ export const RESUME_PROJECT = gql`
 
 export const SUBMIT_PROJECT = gql`
   mutation SubmitProject($id: ID!) {
-    submitProject(id: $id) { id status submittedAt allowedActions statusHistory }
+    submitProject(id: $id) { id status lifecyclePhase submittedAt allowedActions statusHistory }
   }
 `
 
 export const APPROVE_PROJECT = gql`
   mutation ApproveProject($id: ID!) {
-    approveProject(id: $id) { id status approvedAt allowedActions statusHistory }
+    approveProject(id: $id) { id status lifecyclePhase approvedAt allowedActions statusHistory }
   }
 `
 
 export const REJECT_BACK_PROJECT = gql`
   mutation RejectBackProject($id: ID!, $reason: String!) {
-    rejectBackProject(id: $id, reason: $reason) { id status allowedActions statusHistory }
+    rejectBackProject(id: $id, reason: $reason) { id status lifecyclePhase allowedActions statusHistory }
   }
 `
 
 export const COMPLETE_PROJECT = gql`
   mutation CompleteProject($id: ID!) {
-    completeProject(id: $id) { id status allowedActions statusHistory }
+    completeProject(id: $id) { id status lifecyclePhase allowedActions statusHistory }
   }
 `
 
@@ -183,7 +184,19 @@ export const CANCEL_PROJECT_AFTER_APPROVAL = gql`
 
 export const ADMIN_SET_PROJECT_STATUS = gql`
   mutation AdminSetProjectStatus($id: ID!, $status: String!) {
-    adminSetProjectStatus(id: $id, status: $status) { id status allowedActions statusHistory }
+    adminSetProjectStatus(id: $id, status: $status) { id status lifecyclePhase allowedActions statusHistory }
+  }
+`
+
+export const ADMIN_SET_PHASE = gql`
+  mutation AdminSetPhase($id: ID!, $phase: String!) {
+    adminSetPhase(id: $id, phase: $phase) { id status lifecyclePhase allowedActions }
+  }
+`
+
+export const ADVANCE_PHASE = gql`
+  mutation AdvancePhase($id: ID!, $targetPhase: String!) {
+    advancePhase(id: $id, targetPhase: $targetPhase) { id status lifecyclePhase allowedActions }
   }
 `
 
@@ -404,6 +417,20 @@ export const UPLOAD_CLIENT_DOCUMENT_REVISION = gql`
   }
 `
 
+export const UPDATE_CLIENT_DOCUMENT = gql`
+  ${CLIENT_DOCUMENT_FIELDS}
+  mutation UpdateClientDocument(
+    $id: ID! $title: String $category: String $documentNumber: String
+    $revision: String $description: String $receivedFrom: String $transmissionDate: String
+  ) {
+    updateClientDocument(
+      id: $id title: $title category: $category documentNumber: $documentNumber
+      revision: $revision description: $description receivedFrom: $receivedFrom
+      transmissionDate: $transmissionDate
+    ) { ...ClientDocumentFields }
+  }
+`
+
 export const UPDATE_CLIENT_DOCUMENT_STATUS = gql`
   mutation UpdateClientDocumentStatus($id: ID!, $status: String!) {
     updateClientDocumentStatus(id: $id, status: $status) { id status }
@@ -416,7 +443,59 @@ export const DELETE_CLIENT_DOCUMENT = gql`
   }
 `
 
-// ── Engineering module ────────────────────────────────────────────────────
+// ── Engineering Documents ─────────────────────────────────────────────────
+
+const ENG_DOC_FIELDS = gql`
+  fragment EngDocFields on EngineeringDoc {
+    id projectId refNumber discipline docType seqNo title description
+    scale paperSize revision status issueDate notes fileId docGroupId
+    isCurrent uploadedByName downloadUrl filename createdAt
+    history {
+      id refNumber revision status issueDate notes uploadedByName downloadUrl filename createdAt
+    }
+  }
+`
+
+export const ENG_DOCS_QUERY = gql`
+  ${ENG_DOC_FIELDS}
+  query EngineeringDocuments($projectId: ID!) {
+    engineeringDocuments(projectId: $projectId) { ...EngDocFields }
+  }
+`
+
+export const CREATE_ENG_DOC = gql`
+  ${ENG_DOC_FIELDS}
+  mutation CreateEngineeringDoc(
+    $projectId: ID! $discipline: String! $docType: String! $title: String!
+    $fileId: ID $revision: String $description: String $scale: String
+    $paperSize: String $issueDate: String $notes: String
+  ) {
+    createEngineeringDoc(
+      projectId: $projectId discipline: $discipline docType: $docType title: $title
+      fileId: $fileId revision: $revision description: $description scale: $scale
+      paperSize: $paperSize issueDate: $issueDate notes: $notes
+    ) { ...EngDocFields }
+  }
+`
+
+export const REVISE_ENG_DOC = gql`
+  ${ENG_DOC_FIELDS}
+  mutation ReviseEngineeringDoc($id: ID! $fileId: ID $revision: String! $notes: String $issueDate: String) {
+    reviseEngineeringDoc(id: $id fileId: $fileId revision: $revision notes: $notes issueDate: $issueDate) { ...EngDocFields }
+  }
+`
+
+export const UPDATE_ENG_DOC_STATUS = gql`
+  mutation UpdateEngineeringDocStatus($id: ID!, $status: String!) {
+    updateEngineeringDocStatus(id: $id, status: $status) { id status }
+  }
+`
+
+export const DELETE_ENG_DOC = gql`
+  mutation DeleteEngineeringDoc($id: ID!) { deleteEngineeringDoc(id: $id) }
+`
+
+// ── Engineering module (legacy) ───────────────────────────────────────────
 
 export const ENGINEERING_REVISIONS_QUERY = gql`
   query EngineeringRevisions($projectId: ID!) {
@@ -1215,7 +1294,7 @@ export const PROJECT_COST_SUMMARY_QUERY = gql`
 `
 
 // Cost code mutations
-export const CREATE_COST_CODE = gql`${COST_CODE_FIELDS} mutation CreateCostCode($projectId: ID!, $wbsId: ID, $code: String!, $name: String!, $category: String!, $budgetAmount: Float!, $sequence: Int) { createCostCode(projectId: $projectId, wbsId: $wbsId, code: $code, name: $name, category: $category, budgetAmount: $budgetAmount, sequence: $sequence) { ...CostCodeFields } }`
+export const CREATE_COST_CODE = gql`${COST_CODE_FIELDS} mutation CreateCostCode($projectId: ID!, $wbsId: ID, $analyticAccountId: ID, $code: String, $name: String, $category: String!, $budgetAmount: Float!, $sequence: Int) { createCostCode(projectId: $projectId, wbsId: $wbsId, analyticAccountId: $analyticAccountId, code: $code, name: $name, category: $category, budgetAmount: $budgetAmount, sequence: $sequence) { ...CostCodeFields } }`
 export const UPDATE_COST_CODE = gql`${COST_CODE_FIELDS} mutation UpdateCostCode($id: ID!, $wbsId: ID, $code: String, $name: String, $category: String, $budgetAmount: Float, $sequence: Int) { updateCostCode(id: $id, wbsId: $wbsId, code: $code, name: $name, category: $category, budgetAmount: $budgetAmount, sequence: $sequence) { ...CostCodeFields } }`
 export const DELETE_COST_CODE = gql`mutation DeleteCostCode($id: ID!) { deleteCostCode(id: $id) }`
 
@@ -1309,7 +1388,7 @@ const MEETING_FIELDS = `id projectId meetingNumber meetingType title meetingDate
 
 export const PROJECT_MEETINGS_QUERY = gql`query ProjectMeetings($projectId: ID!) { projectMeetings(projectId: $projectId) { ${MEETING_FIELDS} } }`
 
-export const CREATE_MEETING = gql`mutation CreateMeeting($projectId: ID!, $meetingNumber: String!, $meetingType: String!, $title: String!, $meetingDate: String!, $location: String, $chairperson: String, $attendees: String, $agenda: String, $distributionList: String) { createMeeting(projectId: $projectId, meetingNumber: $meetingNumber, meetingType: $meetingType, title: $title, meetingDate: $meetingDate, location: $location, chairperson: $chairperson, attendees: $attendees, agenda: $agenda, distributionList: $distributionList) { ${MEETING_FIELDS} } }`
+export const CREATE_MEETING = gql`mutation CreateMeeting($projectId: ID!, $meetingType: String!, $title: String!, $meetingDate: String!, $location: String, $chairperson: String, $attendees: String, $agenda: String, $distributionList: String) { createMeeting(projectId: $projectId, meetingType: $meetingType, title: $title, meetingDate: $meetingDate, location: $location, chairperson: $chairperson, attendees: $attendees, agenda: $agenda, distributionList: $distributionList) { ${MEETING_FIELDS} } }`
 export const UPDATE_MEETING = gql`mutation UpdateMeeting($id: ID!, $meetingType: String, $title: String, $meetingDate: String, $location: String, $chairperson: String, $attendees: String, $agenda: String, $minutes: String, $distributionList: String) { updateMeeting(id: $id, meetingType: $meetingType, title: $title, meetingDate: $meetingDate, location: $location, chairperson: $chairperson, attendees: $attendees, agenda: $agenda, minutes: $minutes, distributionList: $distributionList) { ${MEETING_FIELDS} } }`
 export const DELETE_MEETING = gql`mutation DeleteMeeting($id: ID!) { deleteMeeting(id: $id) }`
 export const ISSUE_MEETING = gql`mutation IssueMeeting($id: ID!) { issueMeeting(id: $id) { ${MEETING_FIELDS} } }`
@@ -1318,3 +1397,44 @@ export const CLOSE_MEETING = gql`mutation CloseMeeting($id: ID!) { closeMeeting(
 export const CREATE_MEETING_ACTION = gql`mutation CreateMeetingAction($meetingId: ID!, $description: String!, $responsiblePerson: String, $dueDate: String, $priority: String, $carryOverFrom: ID) { createMeetingAction(meetingId: $meetingId, description: $description, responsiblePerson: $responsiblePerson, dueDate: $dueDate, priority: $priority, carryOverFrom: $carryOverFrom) { ${MEETING_ACTION_FIELDS} } }`
 export const UPDATE_MEETING_ACTION = gql`mutation UpdateMeetingAction($id: ID!, $description: String, $responsiblePerson: String, $dueDate: String, $priority: String, $status: String, $remarks: String) { updateMeetingAction(id: $id, description: $description, responsiblePerson: $responsiblePerson, dueDate: $dueDate, priority: $priority, status: $status, remarks: $remarks) { ${MEETING_ACTION_FIELDS} } }`
 export const DELETE_MEETING_ACTION = gql`mutation DeleteMeetingAction($id: ID!) { deleteMeetingAction(id: $id) }`
+
+// ── Store Out / Material Issues ────────────────────────────────────────────
+
+const MI_LINE_FIELDS = `id productId productName poLineId qtyIssued unitCost totalCost isInvoiced`
+const MI_FIELDS = `id issueNumber issueDate status notes poId poNumber projectCode projectName issuedByName createdAt lines { ${MI_LINE_FIELDS} }`
+
+export const MATERIAL_ISSUES_QUERY = gql`
+  query MaterialIssues($projectId: ID, $status: String) {
+    materialIssues(projectId: $projectId, status: $status) { ${MI_FIELDS} }
+  }
+`
+
+export const CREATE_MATERIAL_ISSUE = gql`
+  mutation CreateMaterialIssue($projectId: ID!, $poId: ID, $issueDate: String!, $notes: String) {
+    createMaterialIssue(projectId: $projectId, poId: $poId, issueDate: $issueDate, notes: $notes) { ${MI_FIELDS} }
+  }
+`
+
+export const ADD_MATERIAL_ISSUE_LINE = gql`
+  mutation AddMaterialIssueLine($issueId: ID!, $productId: ID!, $poLineId: ID, $qtyIssued: Float!, $unitCost: Float!) {
+    addMaterialIssueLine(issueId: $issueId, productId: $productId, poLineId: $poLineId, qtyIssued: $qtyIssued, unitCost: $unitCost) { ${MI_LINE_FIELDS} }
+  }
+`
+
+export const DELETE_MATERIAL_ISSUE_LINE = gql`
+  mutation DeleteMaterialIssueLine($id: ID!, $issueId: ID!) {
+    deleteMaterialIssueLine(id: $id, issueId: $issueId)
+  }
+`
+
+export const ISSUE_MATERIAL_ISSUE = gql`
+  mutation IssueMaterialIssue($id: ID!) {
+    issueMaterialIssue(id: $id) { ${MI_FIELDS} }
+  }
+`
+
+export const CANCEL_MATERIAL_ISSUE = gql`
+  mutation CancelMaterialIssue($id: ID!) {
+    cancelMaterialIssue(id: $id) { ${MI_FIELDS} }
+  }
+`

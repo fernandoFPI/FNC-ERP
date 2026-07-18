@@ -10,9 +10,10 @@ interface DrawerProps {
   children: React.ReactNode
   width?: string
   className?: string
+  noPadding?: boolean
 }
 
-export function Drawer({ open, onClose, title, children, width = '400px', className = '' }: DrawerProps) {
+export function Drawer({ open, onClose, title, children, width = '400px', className = '', noPadding = false }: DrawerProps) {
   const { theme } = useTheme()
 
   useEffect(() => {
@@ -68,7 +69,13 @@ export function Drawer({ open, onClose, title, children, width = '400px', classN
               ×
             </button>
           </div>
-          <div style={{ padding: '20px', overflowY: 'auto', height: 'calc(100% - 60px)' }}>
+          <div style={{
+            padding: noPadding ? '0' : '20px',
+            overflowY: noPadding ? 'hidden' : 'auto',
+            height: 'calc(100% - 61px)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
             {children}
           </div>
         </Card>
