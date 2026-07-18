@@ -1859,3 +1859,93 @@ export const UPDATE_INTERFACE_ACTION = gql`
 export const DELETE_INTERFACE_ACTION = gql`
   mutation DeleteInterfaceAction($id: ID!) { deleteInterfaceAction(id: $id) }
 `
+
+// ── Phase 5: Punch List & Completions ────────────────────────────────────────
+
+const PUNCH_PHOTO_FIELDS = `id punchId fileId url caption uploadedBy createdAt`
+
+const PUNCH_FIELDS = `
+  id projectId punchNo category discipline area title description
+  subcontractor responsible raisedBy raisedDate targetDate
+  status supervisorSignedBy supervisorSignedAt pmSignedBy pmSignedAt closedAt
+  photoCount createdAt updatedAt isOverdue
+  photos { ${PUNCH_PHOTO_FIELDS} }
+`
+
+export const PROJECT_PUNCH_ITEMS_QUERY = gql`
+  query ProjectPunchItems(
+    $projectId: ID! $category: String $status: String
+    $discipline: String $subcontractor: String
+  ) {
+    projectPunchItems(
+      projectId: $projectId category: $category status: $status
+      discipline: $discipline subcontractor: $subcontractor
+    ) { ${PUNCH_FIELDS} }
+  }
+`
+
+export const CREATE_PUNCH_ITEM = gql`
+  mutation CreatePunchItem(
+    $projectId: ID! $category: String! $discipline: String $area: String
+    $title: String! $description: String $subcontractor: String $responsible: String
+    $raisedBy: String $raisedDate: String $targetDate: String
+  ) {
+    createPunchItem(
+      projectId: $projectId category: $category discipline: $discipline area: $area
+      title: $title description: $description subcontractor: $subcontractor
+      responsible: $responsible raisedBy: $raisedBy raisedDate: $raisedDate targetDate: $targetDate
+    ) { ${PUNCH_FIELDS} }
+  }
+`
+
+export const UPDATE_PUNCH_ITEM = gql`
+  mutation UpdatePunchItem(
+    $id: ID! $category: String $discipline: String $area: String
+    $title: String $description: String $subcontractor: String $responsible: String
+    $raisedBy: String $raisedDate: String $targetDate: String
+  ) {
+    updatePunchItem(
+      id: $id category: $category discipline: $discipline area: $area
+      title: $title description: $description subcontractor: $subcontractor
+      responsible: $responsible raisedBy: $raisedBy raisedDate: $raisedDate targetDate: $targetDate
+    ) { ${PUNCH_FIELDS} }
+  }
+`
+
+export const UPDATE_PUNCH_STATUS = gql`
+  mutation UpdatePunchStatus($id: ID!, $status: String!) {
+    updatePunchStatus(id: $id, status: $status) { ${PUNCH_FIELDS} }
+  }
+`
+
+export const SUPERVISOR_SIGN_PUNCH = gql`
+  mutation SupervisorSignPunch($id: ID!, $signedBy: String) {
+    supervisorSignPunch(id: $id, signedBy: $signedBy) { ${PUNCH_FIELDS} }
+  }
+`
+
+export const PM_SIGN_PUNCH = gql`
+  mutation PmSignPunch($id: ID!, $signedBy: String) {
+    pmSignPunch(id: $id, signedBy: $signedBy) { ${PUNCH_FIELDS} }
+  }
+`
+
+export const REOPEN_PUNCH = gql`
+  mutation ReopenPunch($id: ID!) { reopenPunch(id: $id) { ${PUNCH_FIELDS} } }
+`
+
+export const DELETE_PUNCH_ITEM = gql`
+  mutation DeletePunchItem($id: ID!) { deletePunchItem(id: $id) }
+`
+
+export const ADD_PUNCH_PHOTO = gql`
+  mutation AddPunchPhoto($punchId: ID!, $url: String, $caption: String, $uploadedBy: String) {
+    addPunchPhoto(punchId: $punchId, url: $url, caption: $caption, uploadedBy: $uploadedBy) {
+      ${PUNCH_PHOTO_FIELDS}
+    }
+  }
+`
+
+export const DELETE_PUNCH_PHOTO = gql`
+  mutation DeletePunchPhoto($id: ID!) { deletePunchPhoto(id: $id) }
+`

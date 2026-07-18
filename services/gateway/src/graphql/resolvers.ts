@@ -764,6 +764,55 @@ function engTransmittalToGQL(row: Record<string, unknown>, items: Record<string,
   }
 }
 
+function punchPhotoToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id:          row['id'],
+    punchId:     row['punch_id'],
+    fileId:      row['file_id']      ?? null,
+    url:         row['url']          ?? null,
+    caption:     row['caption']      ?? null,
+    uploadedBy:  row['uploaded_by']  ?? null,
+    createdAt:   row['created_at'],
+  }
+}
+
+async function punchItemToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const photosRes = await query(
+    `SELECT * FROM project_punch_photos WHERE punch_id=$1 ORDER BY created_at ASC`,
+    [row['id']],
+  )
+  const photos = photosRes.rows.map(p => punchPhotoToGQL(p as Record<string, unknown>))
+  const targetDate = row['target_date'] ? new Date(String(row['target_date'])) : null
+  const status     = String(row['status'])
+  const isOverdue  = targetDate != null && status !== 'closed' && targetDate < new Date()
+  return {
+    id:                  row['id'],
+    projectId:           row['project_id'],
+    punchNo:             row['punch_no'],
+    category:            row['category'],
+    discipline:          row['discipline']           ?? null,
+    area:                row['area']                 ?? null,
+    title:               row['title'],
+    description:         row['description']          ?? null,
+    subcontractor:       row['subcontractor']        ?? null,
+    responsible:         row['responsible']          ?? null,
+    raisedBy:            row['raised_by']            ?? null,
+    raisedDate:          row['raised_date']          ?? null,
+    targetDate:          row['target_date']          ?? null,
+    status,
+    supervisorSignedBy:  row['supervisor_signed_by'] ?? null,
+    supervisorSignedAt:  row['supervisor_signed_at'] ?? null,
+    pmSignedBy:          row['pm_signed_by']         ?? null,
+    pmSignedAt:          row['pm_signed_at']         ?? null,
+    closedAt:            row['closed_at']            ?? null,
+    photos,
+    photoCount:          photos.length,
+    createdAt:           row['created_at'],
+    updatedAt:           row['updated_at'],
+    isOverdue,
+  }
+}
+
 function actionToGQL(row: Record<string, unknown>): Record<string, unknown> {
   const due = row['due_date'] ? new Date(String(row['due_date'])) : null
   const status = String(row['status'])
@@ -14059,6 +14108,186 @@ Object.assign(resolvers.Mutation, {
   deleteInterfaceAction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await query(`DELETE FROM project_interface_actions WHERE id=$1`, [args.id])
+    return true
+  },
+
+  // ── Phase 5: Punch List ─────────────────────────────────────────────────────
+
+  projectPunchItems: async (
+    _: unknown,
+    args: { projectId: string; category?: string; status?: string; discipline?: string; subcontractor?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions = [`project_id = $1`]
+    const params: unknown[] = [args.projectId]
+    if (args.category)     { conditions.push(`category = $${params.length + 1}`);     params.push(args.category) }
+    if (args.status)       { conditions.push(`status = $${params.length + 1}`);       params.push(args.status) }
+    if (args.discipline)   { conditions.push(`discipline = $${params.length + 1}`);   params.push(args.discipline) }
+    if (args.subcontractor){ conditions.push(`subcontractor = $${params.length + 1}`); params.push(args.subcontractor) }
+    const res = await query(
+      `SELECT * FROM project_punch_items WHERE ${conditions.join(' AND ')} ORDER BY punch_no ASC`,
+      params,
+    )
+    return Promise.all(res.rows.map(r => punchItemToGQL(r as Record<string, unknown>)))
+  },
+
+  projectPunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_punch_items WHERE id=$1`, [args.id])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('Punch item not found')
+    return punchItemToGQL(r)
+  },
+
+  createPunchItem: async (
+    _: unknown,
+    args: {
+      projectId: string; category: string; discipline?: string; area?: string
+      title: string; description?: string; subcontractor?: string; responsible?: string
+      raisedBy?: string; raisedDate?: string; targetDate?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    if (!['A','B','C'].includes(args.category)) throw new Error('Category must be A, B, or C')
+    // Count within category for numbering: PUNCH-A-NNN
+    const countRes = await query(
+      `SELECT COUNT(*) FROM project_punch_items WHERE project_id=$1 AND category=$2`,
+      [args.projectId, args.category],
+    )
+    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
+    const punchNo = `${args.category}-${seq}`
+    const res = await query(
+      `INSERT INTO project_punch_items
+        (project_id,punch_no,category,discipline,area,title,description,
+         subcontractor,responsible,raised_by,raised_date,target_date,created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [
+        args.projectId, punchNo, args.category,
+        args.discipline ?? null, args.area ?? null,
+        args.title, args.description ?? null,
+        args.subcontractor ?? null, args.responsible ?? null,
+        args.raisedBy ?? null, args.raisedDate ?? null,
+        args.targetDate ?? null, ctx.auth.userId,
+      ],
+    )
+    return punchItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updatePunchItem: async (
+    _: unknown,
+    args: {
+      id: string; category?: string; discipline?: string; area?: string
+      title?: string; description?: string; subcontractor?: string; responsible?: string
+      raisedBy?: string; raisedDate?: string; targetDate?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_punch_items SET
+        category=COALESCE($2,category), discipline=$3, area=$4,
+        title=COALESCE($5,title), description=$6,
+        subcontractor=$7, responsible=$8,
+        raised_by=$9, raised_date=$10, target_date=$11,
+        updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [
+        args.id,
+        args.category ?? null, args.discipline ?? null, args.area ?? null,
+        args.title ?? null, args.description ?? null,
+        args.subcontractor ?? null, args.responsible ?? null,
+        args.raisedBy ?? null, args.raisedDate ?? null, args.targetDate ?? null,
+      ],
+    )
+    if (!res.rows[0]) throw new Error('Punch item not found')
+    return punchItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updatePunchStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const valid = ['open','in_progress','supervisor_signed','closed']
+    if (!valid.includes(args.status)) throw new Error('Invalid punch status')
+    const res = await query(
+      `UPDATE project_punch_items SET status=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,
+      [args.id, args.status],
+    )
+    if (!res.rows[0]) throw new Error('Punch item not found')
+    return punchItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  supervisorSignPunch: async (_: unknown, args: { id: string; signedBy?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_punch_items WHERE id=$1`, [args.id])
+    const r0 = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r0) throw new Error('Punch item not found')
+    if (!['open','in_progress'].includes(String(r0['status']))) throw new Error('Item must be open or in_progress to supervisor-sign')
+    const res = await query(
+      `UPDATE project_punch_items SET
+        status='supervisor_signed',
+        supervisor_signed_by=$2, supervisor_signed_at=NOW(),
+        updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [args.id, args.signedBy ?? null],
+    )
+    return punchItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  pmSignPunch: async (_: unknown, args: { id: string; signedBy?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT status FROM project_punch_items WHERE id=$1`, [args.id])
+    const r0 = existing.rows[0] as Record<string, unknown> | undefined
+    if (!r0) throw new Error('Punch item not found')
+    if (String(r0['status']) !== 'supervisor_signed') throw new Error('Supervisor must sign before PM can counter-sign')
+    const res = await query(
+      `UPDATE project_punch_items SET
+        status='closed',
+        pm_signed_by=$2, pm_signed_at=NOW(),
+        closed_at=NOW(), updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [args.id, args.signedBy ?? null],
+    )
+    return punchItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  reopenPunch: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_punch_items SET
+        status='open',
+        supervisor_signed_by=NULL, supervisor_signed_at=NULL,
+        pm_signed_by=NULL, pm_signed_at=NULL,
+        closed_at=NULL, updated_at=NOW()
+       WHERE id=$1 AND status != 'open' RETURNING *`,
+      [args.id],
+    )
+    if (!res.rows[0]) throw new Error('Punch item not found or already open')
+    return punchItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deletePunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`DELETE FROM project_punch_items WHERE id=$1`, [args.id])
+    return true
+  },
+
+  addPunchPhoto: async (
+    _: unknown,
+    args: { punchId: string; url?: string; caption?: string; uploadedBy?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `INSERT INTO project_punch_photos (punch_id,url,caption,uploaded_by) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [args.punchId, args.url ?? null, args.caption ?? null, args.uploadedBy ?? null],
+    )
+    return punchPhotoToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deletePunchPhoto: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`DELETE FROM project_punch_photos WHERE id=$1`, [args.id])
     return true
   },
 })

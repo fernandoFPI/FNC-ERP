@@ -4830,4 +4830,93 @@ export const typeDefs = `#graphql
 
     deleteInterfaceAction(id: ID!): Boolean!
   }
+
+  # ── Phase 5: Punch List & Completions ────────────────────────────────────────
+
+  type PunchPhoto {
+    id: ID!
+    punchId: ID!
+    fileId: ID
+    url: String
+    caption: String
+    uploadedBy: String
+    createdAt: String!
+  }
+
+  type PunchItem {
+    id: ID!
+    projectId: ID!
+    punchNo: String!
+    category: String!
+    discipline: String
+    area: String
+    title: String!
+    description: String
+    subcontractor: String
+    responsible: String
+    raisedBy: String
+    raisedDate: String
+    targetDate: String
+    status: String!
+    supervisorSignedBy: String
+    supervisorSignedAt: String
+    pmSignedBy: String
+    pmSignedAt: String
+    closedAt: String
+    photos: [PunchPhoto!]!
+    photoCount: Int!
+    createdAt: String!
+    updatedAt: String!
+    isOverdue: Boolean!
+  }
+
+  extend type Query {
+    projectPunchItems(
+      projectId: ID!
+      category: String
+      status: String
+      discipline: String
+      subcontractor: String
+    ): [PunchItem!]!
+    projectPunchItem(id: ID!): PunchItem
+  }
+
+  extend type Mutation {
+    createPunchItem(
+      projectId: ID!
+      category: String!
+      discipline: String
+      area: String
+      title: String!
+      description: String
+      subcontractor: String
+      responsible: String
+      raisedBy: String
+      raisedDate: String
+      targetDate: String
+    ): PunchItem!
+
+    updatePunchItem(
+      id: ID!
+      category: String
+      discipline: String
+      area: String
+      title: String
+      description: String
+      subcontractor: String
+      responsible: String
+      raisedBy: String
+      raisedDate: String
+      targetDate: String
+    ): PunchItem!
+
+    updatePunchStatus(id: ID!, status: String!): PunchItem!
+    supervisorSignPunch(id: ID!, signedBy: String): PunchItem!
+    pmSignPunch(id: ID!, signedBy: String): PunchItem!
+    reopenPunch(id: ID!): PunchItem!
+    deletePunchItem(id: ID!): Boolean!
+
+    addPunchPhoto(punchId: ID!, url: String, caption: String, uploadedBy: String): PunchPhoto!
+    deletePunchPhoto(id: ID!): Boolean!
+  }
 `

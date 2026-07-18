@@ -15,6 +15,9 @@ import {
   PROJECT_CDRS_QUERY, CREATE_CDR, UPDATE_CDR, SUBMIT_CDR, APPROVE_CDR_STEP, REJECT_CDR_STEP, WITHDRAW_CDR, DELETE_CDR,
   PROJECT_INTERFACES_QUERY, CREATE_INTERFACE, UPDATE_INTERFACE, UPDATE_INTERFACE_STATUS, DELETE_INTERFACE,
   CREATE_INTERFACE_ACTION, UPDATE_INTERFACE_ACTION, DELETE_INTERFACE_ACTION,
+  PROJECT_PUNCH_ITEMS_QUERY, CREATE_PUNCH_ITEM, UPDATE_PUNCH_ITEM, UPDATE_PUNCH_STATUS,
+  SUPERVISOR_SIGN_PUNCH, PM_SIGN_PUNCH, REOPEN_PUNCH, DELETE_PUNCH_ITEM,
+  ADD_PUNCH_PHOTO, DELETE_PUNCH_PHOTO,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -98,6 +101,7 @@ const ALL_TABS = [
   { key: 'tq',               label: 'TQ' },
   { key: 'cdr',              label: 'CDR' },
   { key: 'interfaces',       label: 'Interfaces' },
+  { key: 'punch_list',       label: 'Punch List' },
   { key: 'bidding',          label: 'Bidding' },
   { key: 'planning',         label: 'Planning' },
   { key: 'team',             label: 'Team' },
@@ -888,6 +892,14 @@ export default function ProjectDetail() {
 
         {tab === 'interfaces' && (
           <InterfacesTab
+            projectId={id!}
+            theme={theme}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {tab === 'punch_list' && (
+          <PunchListTab
             projectId={id!}
             theme={theme}
             isAdmin={isAdmin}
@@ -7380,6 +7392,542 @@ function InterfacesTab({ projectId, theme, isAdmin }: { projectId: string; theme
               <button disabled={!form.partyA || !form.partyB || !form.title} onClick={() => void handleSave()}
                 style={{ padding: '8px 22px', borderRadius: 8, background: form.partyA && form.partyB && form.title ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.partyA && form.partyB && form.title ? 'pointer' : 'not-allowed' }}>
                 {editIface ? 'Save Changes' : 'Register Interface'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PUNCH LIST TAB — Completions (PRODOM Phase 5)
+// A-Punch: safety/operability critical (before commissioning)
+// B-Punch: non-critical defects (before handover)
+// C-Punch: commissioning items (post-handover)
+// Sign-off: Supervisor signs → PM counter-signs to close
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface PunchPhoto {
+  id: string; punchId: string; fileId: string | null
+  url: string | null; caption: string | null; uploadedBy: string | null; createdAt: string
+}
+
+interface PunchItem {
+  id: string; projectId: string; punchNo: string; category: string
+  discipline: string | null; area: string | null; title: string; description: string | null
+  subcontractor: string | null; responsible: string | null
+  raisedBy: string | null; raisedDate: string | null; targetDate: string | null
+  status: string
+  supervisorSignedBy: string | null; supervisorSignedAt: string | null
+  pmSignedBy: string | null; pmSignedAt: string | null; closedAt: string | null
+  photos: PunchPhoto[]; photoCount: number
+  createdAt: string; updatedAt: string; isOverdue: boolean
+}
+
+const PUNCH_CATEGORIES = {
+  A: { label: 'A-Punch', desc: 'Safety / Operability Critical', color: '#dc2626', bg: '#fee2e2', border: '#fca5a5', dot: '#ef4444' },
+  B: { label: 'B-Punch', desc: 'Non-Critical Defects',          color: '#d97706', bg: '#fffbeb', border: '#fde68a', dot: '#f59e0b' },
+  C: { label: 'C-Punch', desc: 'Commissioning Items',           color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', dot: '#3b82f6' },
+} as const
+
+const PUNCH_STATUS: Record<string, { label: string; text: string; bg: string }> = {
+  open:              { label: 'Open',              text: '#475569', bg: '#f1f5f9' },
+  in_progress:       { label: 'In Progress',       text: '#92400e', bg: '#fffbeb' },
+  supervisor_signed: { label: 'Supervisor Signed', text: '#5b21b6', bg: '#ede9fe' },
+  closed:            { label: 'Closed',            text: '#15803d', bg: '#f0fdf4' },
+}
+
+const PUNCH_DISCIPLINES = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation', 'Piping', 'HSE', 'Architecture', 'Process', 'General']
+
+function PunchListTab({ projectId, theme, isAdmin }: { projectId: string; theme: ReturnType<typeof useTheme>['theme']; isAdmin?: boolean }) {
+  const addToast = useToastStore((s) => s.addToast)
+
+  const [catFilter, setCatFilter]         = React.useState<string>('all')
+  const [statusFilter, setStatusFilter]   = React.useState<string>('all')
+  const [expandedId, setExpandedId]       = React.useState<string | null>(null)
+  const [showModal, setShowModal]         = React.useState(false)
+  const [editItem, setEditItem]           = React.useState<PunchItem | null>(null)
+  const [signModal, setSignModal]         = React.useState<{ item: PunchItem; step: 'supervisor' | 'pm' } | null>(null)
+  const [signerName, setSignerName]       = React.useState('')
+  const [photoModal, setPhotoModal]       = React.useState<PunchItem | null>(null)
+  const [photoUrl, setPhotoUrl]           = React.useState('')
+  const [photoCaption, setPhotoCaption]   = React.useState('')
+
+  const emptyForm = {
+    category: 'B' as 'A' | 'B' | 'C', discipline: '', area: '', title: '', description: '',
+    subcontractor: '', responsible: '', raisedBy: '', raisedDate: '', targetDate: '',
+  }
+  const [form, setForm] = React.useState(emptyForm)
+
+  const { data, loading, refetch } = useQuery(PROJECT_PUNCH_ITEMS_QUERY, {
+    variables: {
+      projectId,
+      category:  catFilter    === 'all' ? undefined : catFilter,
+      status:    statusFilter === 'all' ? undefined : statusFilter,
+    },
+    skip: !projectId, fetchPolicy: 'cache-and-network',
+  })
+  const items: PunchItem[] = data?.projectPunchItems ?? []
+
+  const [createItem]   = useMutation(CREATE_PUNCH_ITEM)
+  const [updateItem]   = useMutation(UPDATE_PUNCH_ITEM)
+  const [updateStatus] = useMutation(UPDATE_PUNCH_STATUS)
+  const [supervisorSign] = useMutation(SUPERVISOR_SIGN_PUNCH)
+  const [pmSign]         = useMutation(PM_SIGN_PUNCH)
+  const [reopenItem]     = useMutation(REOPEN_PUNCH)
+  const [deleteItem]     = useMutation(DELETE_PUNCH_ITEM)
+  const [addPhoto]       = useMutation(ADD_PUNCH_PHOTO)
+  const [deletePhoto]    = useMutation(DELETE_PUNCH_PHOTO)
+
+  // KPIs split by category
+  const kpi = (['A','B','C'] as const).reduce<Record<string, { open: number; inProgress: number; signed: number; closed: number; overdue: number }>>((acc, cat) => {
+    const catItems = items.filter(i => i.category === cat)
+    acc[cat] = {
+      open:       catItems.filter(i => i.status === 'open').length,
+      inProgress: catItems.filter(i => i.status === 'in_progress').length,
+      signed:     catItems.filter(i => i.status === 'supervisor_signed').length,
+      closed:     catItems.filter(i => i.status === 'closed').length,
+      overdue:    catItems.filter(i => i.isOverdue).length,
+    }
+    return acc
+  }, {})
+
+  const handleSave = async () => {
+    if (!form.title.trim()) { addToast({ type: 'error', message: 'Title is required' }); return }
+    try {
+      const vars = {
+        projectId, category: form.category, discipline: form.discipline || null,
+        area: form.area || null, title: form.title, description: form.description || null,
+        subcontractor: form.subcontractor || null, responsible: form.responsible || null,
+        raisedBy: form.raisedBy || null, raisedDate: form.raisedDate || null,
+        targetDate: form.targetDate || null,
+      }
+      if (editItem) { await updateItem({ variables: { id: editItem.id, ...vars } }); addToast({ type: 'success', message: 'Punch item updated' }) }
+      else          { await createItem({ variables: vars }); addToast({ type: 'success', message: 'Punch item raised' }) }
+      setShowModal(false); setEditItem(null); setForm(emptyForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleSign = async () => {
+    if (!signModal) return
+    try {
+      if (signModal.step === 'supervisor') {
+        await supervisorSign({ variables: { id: signModal.item.id, signedBy: signerName || null } })
+        addToast({ type: 'success', message: 'Supervisor sign-off recorded' })
+      } else {
+        await pmSign({ variables: { id: signModal.item.id, signedBy: signerName || null } })
+        addToast({ type: 'success', message: 'PM sign-off recorded — item closed' })
+      }
+      setSignModal(null); setSignerName(''); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleAddPhoto = async (punchId: string) => {
+    if (!photoUrl.trim()) { addToast({ type: 'error', message: 'URL is required' }); return }
+    try {
+      await addPhoto({ variables: { punchId, url: photoUrl, caption: photoCaption || null } })
+      setPhotoUrl(''); setPhotoCaption(''); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  // Export punch list as CSV
+  const handleExport = () => {
+    const headers = ['Punch No','Category','Title','Area','Discipline','Subcontractor','Responsible','Status','Target Date','Supervisor Signed By','PM Signed By']
+    const rows = items.map(i => [
+      i.punchNo, i.category, `"${i.title.replace(/"/g, '""')}"`,
+      i.area ?? '', i.discipline ?? '', i.subcontractor ?? '', i.responsible ?? '',
+      PUNCH_STATUS[i.status]?.label ?? i.status,
+      i.targetDate ?? '',
+      i.supervisorSignedBy ? `${i.supervisorSignedBy} (${i.supervisorSignedAt ? new Date(i.supervisorSignedAt).toLocaleDateString() : ''})` : '',
+      i.pmSignedBy ? `${i.pmSignedBy} (${i.pmSignedAt ? new Date(i.pmSignedAt).toLocaleDateString() : ''})` : '',
+    ])
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'punch-list.csv'; a.click()
+  }
+
+  const inp = (v: string, fn: (x: string) => void, ph?: string, type = 'text') => (
+    <input type={type} value={v} placeholder={ph} onChange={e => fn(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
+  )
+
+  const catBadge = (cat: string) => {
+    const c = PUNCH_CATEGORIES[cat as 'A' | 'B' | 'C'] ?? PUNCH_CATEGORIES['B']
+    return <span style={{ padding: '2px 8px', borderRadius: 4, background: c.bg, border: `1px solid ${c.border}`, color: c.color, fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{c.label}</span>
+  }
+
+  const statusPill = (s: string) => {
+    const c = PUNCH_STATUS[s] ?? { label: s, text: '#475569', bg: '#f1f5f9' }
+    return <span style={{ padding: '3px 10px', borderRadius: 999, background: c.bg, fontSize: 11, fontWeight: 600, color: c.text, whiteSpace: 'nowrap' as const }}>{c.label}</span>
+  }
+
+  // Two-step sign-off dots
+  const SignOffDots = ({ item }: { item: PunchItem }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} title={`Supervisor: ${item.supervisorSignedBy ?? '—'} | PM: ${item.pmSignedBy ?? '—'}`}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.supervisorSignedAt ? '#8b5cf6' : theme.border }} title="Supervisor sign-off" />
+      <div style={{ width: 20, height: 1, background: theme.border }} />
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.pmSignedAt ? '#22c55e' : theme.border }} title="PM sign-off" />
+    </div>
+  )
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+      {/* Category KPI cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
+        {(['A','B','C'] as const).map(cat => {
+          const c = PUNCH_CATEGORIES[cat]
+          const k = kpi[cat] ?? { open: 0, inProgress: 0, signed: 0, closed: 0, overdue: 0 }
+          const total = k.open + k.inProgress + k.signed + k.closed
+          return (
+            <div key={cat} style={{ padding: 16, borderRadius: 12, background: c.bg, border: `2px solid ${c.border}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20, fontWeight: 900, color: c.color }}>{c.label}</span>
+                <span style={{ fontSize: 10, color: c.color, opacity: 0.8, fontWeight: 500 }}>{c.desc}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                {[
+                  { label: 'Open',     value: k.open,       dimColor: '#64748b' },
+                  { label: 'In Prog',  value: k.inProgress, dimColor: '#92400e' },
+                  { label: 'Signed',   value: k.signed,     dimColor: '#5b21b6' },
+                  { label: 'Closed',   value: k.closed,     dimColor: '#15803d' },
+                ].map(s => (
+                  <div key={s.label} style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: c.color, fontVariantNumeric: 'tabular-nums' }}>{s.value}</div>
+                    <div style={{ fontSize: 9, color: c.color, opacity: 0.7, fontWeight: 600 }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {k.overdue > 0 && (
+                <div style={{ marginTop: 8, padding: '3px 8px', borderRadius: 4, background: '#fee2e2', color: '#dc2626', fontSize: 10, fontWeight: 700, display: 'inline-block' }}>
+                  {k.overdue} OVERDUE
+                </div>
+              )}
+              <div style={{ marginTop: 10, height: 4, borderRadius: 2, background: `${c.color}20`, overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: c.color, borderRadius: 2, width: total > 0 ? `${Math.round((k.closed / total) * 100)}%` : '0%', transition: 'width 0.4s ease' }} />
+              </div>
+              <div style={{ fontSize: 9, color: c.color, opacity: 0.7, marginTop: 3 }}>
+                {total > 0 ? `${Math.round((k.closed / total) * 100)}% cleared` : 'No items'}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        {/* Category filter */}
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all','A','B','C'] as const).map((c, i, arr) => {
+            const cfg = c !== 'all' ? PUNCH_CATEGORIES[c] : null
+            return (
+              <button key={c} onClick={() => setCatFilter(c)}
+                style={{ padding: '7px 13px', background: catFilter === c ? (cfg?.color ?? theme.accent) : theme.bgCanvas, color: catFilter === c ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: catFilter === c ? 700 : 400, borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+                {c === 'all' ? 'All' : `${c}-Punch`}
+              </button>
+            )
+          })}
+        </div>
+        {/* Status filter */}
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all','open','in_progress','supervisor_signed','closed'] as const).map((s, i, arr) => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              style={{ padding: '7px 11px', background: statusFilter === s ? theme.accent : theme.bgCanvas, color: statusFilter === s ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: statusFilter === s ? 600 : 400, borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+              {s === 'all' ? 'All Status' : (PUNCH_STATUS[s]?.label ?? s)}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={handleExport}
+          style={{ padding: '7px 14px', borderRadius: 8, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>
+          ↓ Export CSV
+        </button>
+        <button onClick={() => { setEditItem(null); setForm(emptyForm); setShowModal(true) }}
+          style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          Raise Punch Item
+        </button>
+      </div>
+
+      {/* Items */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+          Loading…
+        </div>
+      ) : items.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No Punch Items</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, maxWidth: 380, margin: '0 auto 24px' }}>
+            Raise punch items to track pre-handover defects and commissioning snags. Two-step sign-off ensures every item is supervisor and PM approved before closure.
+          </div>
+          <button onClick={() => { setEditItem(null); setForm(emptyForm); setShowModal(true) }}
+            style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Raise First Punch Item
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {items.map(item => {
+            const isExpanded = expandedId === item.id
+            const cat = PUNCH_CATEGORIES[item.category as 'A' | 'B' | 'C'] ?? PUNCH_CATEGORIES['B']
+
+            return (
+              <div key={item.id} style={{ border: `1px solid ${item.isOverdue ? '#fca5a5' : theme.border}`, borderRadius: 10, overflow: 'hidden', background: item.isOverdue ? '#fff5f5' : theme.bgCanvas }}>
+                {/* Row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : item.id)}>
+                  {/* Category stripe */}
+                  <div style={{ width: 3, height: 36, borderRadius: 2, background: cat.dot, flexShrink: 0 }} />
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: cat.color, background: cat.bg, padding: '1px 6px', borderRadius: 4, border: `1px solid ${cat.border}` }}>{item.punchNo}</span>
+                      {catBadge(item.category)}
+                      {item.discipline && <span style={{ fontSize: 10, color: theme.textMuted, background: theme.bgSurface, padding: '1px 6px', borderRadius: 4, border: `1px solid ${theme.border}` }}>{item.discipline}</span>}
+                      {item.area && <span style={{ fontSize: 10, color: theme.textMuted }}>Area: {item.area}</span>}
+                      {item.isOverdue && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fee2e2', color: '#dc2626' }}>OVERDUE</span>}
+                    </div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                      {item.subcontractor && `Sub: ${item.subcontractor}`}
+                      {item.responsible && ` · ${item.responsible}`}
+                      {item.targetDate && ` · Due: ${item.targetDate}`}
+                      {item.photoCount > 0 && ` · 📷 ${item.photoCount}`}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+                    {statusPill(item.status)}
+                    <SignOffDots item={item} />
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Expanded */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px 18px', background: theme.bgSurface }}>
+                    {/* Metadata grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '6px 20px', marginBottom: 14 }}>
+                      {[
+                        { label: 'Raised By',    value: item.raisedBy    ?? '—' },
+                        { label: 'Raised Date',  value: item.raisedDate  ?? '—' },
+                        { label: 'Subcontractor',value: item.subcontractor ?? '—' },
+                        { label: 'Responsible',  value: item.responsible  ?? '—' },
+                        { label: 'Target Date',  value: item.targetDate   ?? '—' },
+                        { label: 'Area',         value: item.area         ?? '—' },
+                      ].map(m => (
+                        <div key={m.label}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 1 }}>{m.label}</div>
+                          <div style={{ fontSize: 12, color: theme.textPrimary }}>{m.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {item.description && (
+                      <div style={{ marginBottom: 14, padding: '10px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, color: theme.textPrimary, lineHeight: 1.6 }}>
+                        {item.description}
+                      </div>
+                    )}
+
+                    {/* Sign-off status */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Sign-Off Workflow</div>
+                      <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: `1px solid ${theme.border}`, width: 'fit-content' }}>
+                        <div style={{ padding: '10px 20px', background: item.supervisorSignedAt ? '#ede9fe' : theme.bgCanvas, borderRight: `1px solid ${theme.border}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.supervisorSignedAt ? '#8b5cf6' : theme.border }} />
+                            <span style={{ fontSize: 11, fontWeight: 700, color: item.supervisorSignedAt ? '#5b21b6' : theme.textMuted }}>Step 1 — Supervisor</span>
+                          </div>
+                          {item.supervisorSignedBy
+                            ? <div style={{ fontSize: 11, color: '#5b21b6' }}>{item.supervisorSignedBy} · {item.supervisorSignedAt ? new Date(item.supervisorSignedAt).toLocaleDateString() : ''}</div>
+                            : <div style={{ fontSize: 11, color: theme.textMuted }}>Pending</div>}
+                        </div>
+                        <div style={{ padding: '10px 20px', background: item.pmSignedAt ? '#f0fdf4' : theme.bgCanvas }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: item.pmSignedAt ? '#22c55e' : theme.border }} />
+                            <span style={{ fontSize: 11, fontWeight: 700, color: item.pmSignedAt ? '#15803d' : theme.textMuted }}>Step 2 — Project Manager</span>
+                          </div>
+                          {item.pmSignedBy
+                            ? <div style={{ fontSize: 11, color: '#15803d' }}>{item.pmSignedBy} · {item.pmSignedAt ? new Date(item.pmSignedAt).toLocaleDateString() : ''}</div>
+                            : <div style={{ fontSize: 11, color: theme.textMuted }}>Pending supervisor sign first</div>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Photos */}
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Photo Evidence ({item.photos.length})</div>
+                        <button onClick={() => { setPhotoModal(item); setPhotoUrl(''); setPhotoCaption('') }}
+                          style={{ padding: '3px 10px', borderRadius: 6, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 11, cursor: 'pointer' }}>+ Add Photo</button>
+                      </div>
+
+                      {photoModal?.id === item.id && (
+                        <div style={{ marginBottom: 10, padding: '12px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginBottom: 8 }}>
+                            <input value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="Image URL or paste link…"
+                              style={{ padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgSurface, color: theme.textPrimary, fontSize: 12, outline: 'none' }} />
+                            <input value={photoCaption} onChange={e => setPhotoCaption(e.target.value)} placeholder="Caption (optional)"
+                              style={{ padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgSurface, color: theme.textPrimary, fontSize: 12, outline: 'none', width: 160 }} />
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button onClick={() => setPhotoModal(null)}
+                              style={{ padding: '5px 12px', borderRadius: 6, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={() => void handleAddPhoto(item.id)}
+                              style={{ padding: '5px 14px', borderRadius: 6, background: theme.accent, color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Add Photo</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {item.photos.length === 0 ? (
+                        <div style={{ padding: '14px 16px', border: `1px dashed ${theme.border}`, borderRadius: 8, textAlign: 'center', fontSize: 12, color: theme.textMuted }}>No photos attached</div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          {item.photos.map(photo => (
+                            <div key={photo.id} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: `1px solid ${theme.border}` }}>
+                              {photo.url
+                                ? <img src={photo.url} alt={photo.caption ?? ''} style={{ width: 100, height: 80, objectFit: 'cover', display: 'block' }} />
+                                : <div style={{ width: 100, height: 80, background: theme.bgSurface, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>📷</div>
+                              }
+                              {photo.caption && <div style={{ padding: '3px 6px', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 9, position: 'absolute', bottom: 0, left: 0, right: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{photo.caption}</div>}
+                              <button onClick={() => { if (window.confirm('Delete photo?')) void deletePhoto({ variables: { id: photo.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                                style={{ position: 'absolute', top: 3, right: 3, width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,38,38,0.85)', border: 'none', color: '#fff', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+                      <button onClick={() => { setEditItem(item); setForm({ category: item.category as 'A'|'B'|'C', discipline: item.discipline??'', area: item.area??'', title: item.title, description: item.description??'', subcontractor: item.subcontractor??'', responsible: item.responsible??'', raisedBy: item.raisedBy??'', raisedDate: item.raisedDate??'', targetDate: item.targetDate??'' }); setShowModal(true) }}
+                        style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Edit</button>
+
+                      {item.status === 'open' && (
+                        <button onClick={() => void updateStatus({ variables: { id: item.id, status: 'in_progress' } }).then(() => { void refetch() }).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message }))}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Mark In Progress</button>
+                      )}
+
+                      {(item.status === 'open' || item.status === 'in_progress') && (
+                        <button onClick={() => { setSignModal({ item, step: 'supervisor' }); setSignerName('') }}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#ede9fe', border: '1px solid #c4b5fd', color: '#5b21b6', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Supervisor Sign-Off</button>
+                      )}
+
+                      {item.status === 'supervisor_signed' && (
+                        <button onClick={() => { setSignModal({ item, step: 'pm' }); setSignerName('') }}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>PM Counter-Sign</button>
+                      )}
+
+                      {item.status !== 'open' && (
+                        <button onClick={() => { if (window.confirm(`Reopen ${item.punchNo}? Sign-offs will be cleared.`)) void reopenItem({ variables: { id: item.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textMuted, fontSize: 12, cursor: 'pointer' }}>Reopen</button>
+                      )}
+
+                      <button onClick={() => { if (window.confirm(`Delete ${item.punchNo}?`)) void deleteItem({ variables: { id: item.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                        style={{ padding: '6px 13px', borderRadius: 7, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Create / Edit Modal ── */}
+      {showModal && (
+        <Modal open={true} size="lg" title={editItem ? `Edit ${editItem.punchNo}` : 'Raise Punch Item'} onClose={() => { setShowModal(false); setEditItem(null); setForm(emptyForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Category selector */}
+            <div>
+              {lbl('Category', true)}
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['A','B','C'] as const).map(cat => {
+                  const c = PUNCH_CATEGORIES[cat]
+                  return (
+                    <button key={cat} onClick={() => setForm(f => ({...f, category: cat}))}
+                      style={{ flex: 1, padding: '10px 8px', borderRadius: 8, border: `2px solid ${form.category === cat ? c.color : theme.border}`, background: form.category === cat ? c.bg : theme.bgCanvas, cursor: 'pointer', textAlign: 'center' }}>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: form.category === cat ? c.color : theme.textMuted }}>{c.label}</div>
+                      <div style={{ fontSize: 10, color: form.category === cat ? c.color : theme.textMuted, opacity: 0.8, marginTop: 2 }}>{c.desc}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Title', true)}
+                {inp(form.title, v => setForm(f => ({...f, title: v})), 'Brief description of the defect or punch item')}
+              </div>
+              <div>
+                {lbl('Discipline')}
+                <select value={form.discipline} onChange={e => setForm(f => ({...f, discipline: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— Select —</option>
+                  {PUNCH_DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>{lbl('Area / System')}{inp(form.area, v => setForm(f => ({...f, area: v})), 'e.g. Area 3B, System 02')}</div>
+              <div>{lbl('Subcontractor')}{inp(form.subcontractor, v => setForm(f => ({...f, subcontractor: v})), 'Responsible subcontractor')}</div>
+              <div>{lbl('Responsible Person')}{inp(form.responsible, v => setForm(f => ({...f, responsible: v})), 'Name')}</div>
+              <div>{lbl('Raised By')}{inp(form.raisedBy, v => setForm(f => ({...f, raisedBy: v})), 'Inspector / surveyor name')}</div>
+              <div>{lbl('Date Raised')}{inp(form.raisedDate, v => setForm(f => ({...f, raisedDate: v})), '', 'date')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>{lbl('Target Close Date')}{inp(form.targetDate, v => setForm(f => ({...f, targetDate: v})), '', 'date')}</div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description')}
+                <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Detailed description of the defect…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 72, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowModal(false); setEditItem(null); setForm(emptyForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!form.title.trim()} onClick={() => void handleSave()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.title.trim() ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title.trim() ? 'pointer' : 'not-allowed' }}>
+                {editItem ? 'Save Changes' : 'Raise Punch Item'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Sign-Off Modal ── */}
+      {signModal && (
+        <Modal open={true} title={signModal.step === 'supervisor' ? `Supervisor Sign-Off — ${signModal.item.punchNo}` : `PM Counter-Sign — ${signModal.item.punchNo}`} onClose={() => { setSignModal(null); setSignerName('') }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ padding: '10px 14px', borderRadius: 8, background: signModal.step === 'supervisor' ? '#ede9fe' : '#f0fdf4', border: `1px solid ${signModal.step === 'supervisor' ? '#c4b5fd' : '#bbf7d0'}`, fontSize: 13, color: signModal.step === 'supervisor' ? '#5b21b6' : '#15803d' }}>
+              {signModal.step === 'supervisor'
+                ? 'Supervisor sign-off confirms the defect has been rectified and is ready for PM review.'
+                : 'PM counter-sign closes this punch item. This action cannot be undone without reopening.'}
+            </div>
+            <div style={{ padding: '10px 14px', background: theme.bgSurface, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: theme.textPrimary, marginBottom: 2 }}>{signModal.item.punchNo} — {signModal.item.title}</div>
+              <div style={{ fontSize: 11, color: theme.textMuted }}>{signModal.item.subcontractor ?? ''}{signModal.item.area ? ` · ${signModal.item.area}` : ''}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {signModal.step === 'supervisor' ? 'Supervisor Name' : 'Project Manager Name'}
+              </div>
+              <input value={signerName} onChange={e => setSignerName(e.target.value)} placeholder="Full name (optional)"
+                style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button onClick={() => { setSignModal(null); setSignerName('') }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => void handleSign()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: signModal.step === 'supervisor' ? '#5b21b6' : '#15803d', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                {signModal.step === 'supervisor' ? 'Sign Off' : 'Counter-Sign & Close'}
               </button>
             </div>
           </div>
