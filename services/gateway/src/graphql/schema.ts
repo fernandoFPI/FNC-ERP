@@ -4743,4 +4743,91 @@ export const typeDefs = `#graphql
     withdrawCDR(id: ID!): ProjectCDR!
     deleteCDR(id: ID!): Boolean!
   }
+
+  # ── Phase 4: Interface Management ────────────────────────────────────────────
+
+  type InterfaceAction {
+    id: ID!
+    interfaceId: ID!
+    description: String!
+    owner: String
+    dueDate: String
+    status: String!
+    closedAt: String
+    createdAt: String!
+    updatedAt: String!
+    isOverdue: Boolean!
+  }
+
+  type ProjectInterface {
+    id: ID!
+    projectId: ID!
+    interfaceNo: String!
+    partyA: String!
+    partyB: String!
+    disciplineA: String
+    disciplineB: String
+    title: String!
+    description: String
+    agreedDate: String
+    priority: String!
+    status: String!
+    actions: [InterfaceAction!]!
+    openActionCount: Int!
+    overdueActionCount: Int!
+    createdAt: String!
+    updatedAt: String!
+    isOverdue: Boolean!
+  }
+
+  extend type Query {
+    projectInterfaces(projectId: ID!, status: String, disciplinePair: String): [ProjectInterface!]!
+    projectInterface(id: ID!): ProjectInterface
+  }
+
+  extend type Mutation {
+    createInterface(
+      projectId: ID!
+      partyA: String!
+      partyB: String!
+      disciplineA: String
+      disciplineB: String
+      title: String!
+      description: String
+      agreedDate: String
+      priority: String
+    ): ProjectInterface!
+
+    updateInterface(
+      id: ID!
+      partyA: String
+      partyB: String
+      disciplineA: String
+      disciplineB: String
+      title: String
+      description: String
+      agreedDate: String
+      priority: String
+    ): ProjectInterface!
+
+    updateInterfaceStatus(id: ID!, status: String!): ProjectInterface!
+    deleteInterface(id: ID!): Boolean!
+
+    createInterfaceAction(
+      interfaceId: ID!
+      description: String!
+      owner: String
+      dueDate: String
+    ): InterfaceAction!
+
+    updateInterfaceAction(
+      id: ID!
+      description: String
+      owner: String
+      dueDate: String
+      status: String
+    ): InterfaceAction!
+
+    deleteInterfaceAction(id: ID!): Boolean!
+  }
 `

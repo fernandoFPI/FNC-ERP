@@ -13,6 +13,8 @@ import {
   DELETE_ENG_TRANSMITTAL, ADD_ENG_TRANSMITTAL_ITEM, REMOVE_ENG_TRANSMITTAL_ITEM,
   PROJECT_TQS_QUERY, CREATE_TQ, UPDATE_TQ, REVIEW_TQ, RESPOND_TO_TQ, CLOSE_TQ, DELETE_TQ,
   PROJECT_CDRS_QUERY, CREATE_CDR, UPDATE_CDR, SUBMIT_CDR, APPROVE_CDR_STEP, REJECT_CDR_STEP, WITHDRAW_CDR, DELETE_CDR,
+  PROJECT_INTERFACES_QUERY, CREATE_INTERFACE, UPDATE_INTERFACE, UPDATE_INTERFACE_STATUS, DELETE_INTERFACE,
+  CREATE_INTERFACE_ACTION, UPDATE_INTERFACE_ACTION, DELETE_INTERFACE_ACTION,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -95,6 +97,7 @@ const ALL_TABS = [
   { key: 'transmittals',     label: 'Transmittals' },
   { key: 'tq',               label: 'TQ' },
   { key: 'cdr',              label: 'CDR' },
+  { key: 'interfaces',       label: 'Interfaces' },
   { key: 'bidding',          label: 'Bidding' },
   { key: 'planning',         label: 'Planning' },
   { key: 'team',             label: 'Team' },
@@ -877,6 +880,14 @@ export default function ProjectDetail() {
 
         {tab === 'cdr' && (
           <CDRTab
+            projectId={id!}
+            theme={theme}
+            isAdmin={isAdmin}
+          />
+        )}
+
+        {tab === 'interfaces' && (
+          <InterfacesTab
             projectId={id!}
             theme={theme}
             isAdmin={isAdmin}
@@ -6893,6 +6904,482 @@ function CDRTab({ projectId, theme, isAdmin }: { projectId: string; theme: Retur
               <button onClick={() => void handleAction()}
                 style={{ padding: '8px 22px', borderRadius: 8, background: actionModal.action === 'approve' ? '#15803d' : '#dc2626', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 Confirm {actionModal.action === 'approve' ? 'Approval' : 'Rejection'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INTERFACES TAB — Interface Management (PRODOM Phase 4)
+// Tracks formal handoffs between disciplines / subcontractors.
+// Each interface has a delivery date and a set of trackable action items.
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface IFaceAction {
+  id: string; interfaceId: string; description: string; owner: string | null
+  dueDate: string | null; status: string; closedAt: string | null
+  createdAt: string; updatedAt: string; isOverdue: boolean
+}
+
+interface ProjectIface {
+  id: string; projectId: string; interfaceNo: string
+  partyA: string; partyB: string; disciplineA: string | null; disciplineB: string | null
+  title: string; description: string | null; agreedDate: string | null
+  priority: string; status: string
+  actions: IFaceAction[]; openActionCount: number; overdueActionCount: number
+  createdAt: string; updatedAt: string; isOverdue: boolean
+}
+
+const IFACE_STATUS: Record<string, { label: string; dot: string; text: string; bg: string; border: string }> = {
+  identified:       { label: 'Identified',       dot: '#94a3b8', text: '#475569', bg: '#f1f5f9', border: '#e2e8f0' },
+  active:           { label: 'Active',            dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe' },
+  pending_response: { label: 'Pending Response',  dot: '#f59e0b', text: '#92400e', bg: '#fffbeb', border: '#fde68a' },
+  agreed:           { label: 'Agreed',            dot: '#8b5cf6', text: '#5b21b6', bg: '#ede9fe', border: '#c4b5fd' },
+  closed:           { label: 'Closed',            dot: '#22c55e', text: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+}
+
+const IFACE_STATUS_ORDER = ['identified', 'active', 'pending_response', 'agreed', 'closed'] as const
+
+const IFACE_PRIORITY: Record<string, string> = { high: '#dc2626', normal: '#3b82f6', low: '#94a3b8' }
+
+const IFACE_DISCIPLINES = ['Civil', 'Structural', 'Mechanical', 'Electrical', 'Instrumentation', 'Piping', 'HSE', 'Architecture', 'Process', 'General']
+
+// Heatmap color based on days until agreedDate
+function heatmapColor(agreedDate: string | null, status: string): string {
+  if (!agreedDate || status === 'closed' || status === 'agreed') return '#f0fdf4'
+  const days = Math.floor((new Date(agreedDate).getTime() - Date.now()) / 86400000)
+  if (days < 0)  return '#fee2e2'  // overdue — red
+  if (days < 7)  return '#fff7ed'  // < 1 week — orange
+  if (days < 21) return '#fffbeb'  // < 3 weeks — amber
+  return '#f0fdf4'                 // OK — green
+}
+function heatmapBorderColor(agreedDate: string | null, status: string): string {
+  if (!agreedDate || status === 'closed' || status === 'agreed') return '#bbf7d0'
+  const days = Math.floor((new Date(agreedDate).getTime() - Date.now()) / 86400000)
+  if (days < 0)  return '#fca5a5'
+  if (days < 7)  return '#fed7aa'
+  if (days < 21) return '#fde68a'
+  return '#bbf7d0'
+}
+
+function InterfacesTab({ projectId, theme, isAdmin }: { projectId: string; theme: ReturnType<typeof useTheme>['theme']; isAdmin?: boolean }) {
+  const addToast = useToastStore((s) => s.addToast)
+
+  const [statusFilter, setStatusFilter]   = React.useState<string>('all')
+  const [expandedId, setExpandedId]       = React.useState<string | null>(null)
+  const [showModal, setShowModal]         = React.useState(false)
+  const [editIface, setEditIface]         = React.useState<ProjectIface | null>(null)
+  const [addActionFor, setAddActionFor]   = React.useState<string | null>(null)
+  const [editAction, setEditAction]       = React.useState<IFaceAction | null>(null)
+  const [actionForm, setActionForm]       = React.useState({ description: '', owner: '', dueDate: '' })
+
+  const emptyForm = {
+    partyA: '', partyB: '', disciplineA: '', disciplineB: '',
+    title: '', description: '', agreedDate: '', priority: 'normal',
+  }
+  const [form, setForm] = React.useState(emptyForm)
+
+  const { data, loading, refetch } = useQuery(PROJECT_INTERFACES_QUERY, {
+    variables: { projectId, status: statusFilter === 'all' ? undefined : statusFilter },
+    skip: !projectId, fetchPolicy: 'cache-and-network',
+  })
+  const ifaces: ProjectIface[] = data?.projectInterfaces ?? []
+
+  const [createIface]      = useMutation(CREATE_INTERFACE)
+  const [updateIface]      = useMutation(UPDATE_INTERFACE)
+  const [updateStatus]     = useMutation(UPDATE_INTERFACE_STATUS)
+  const [deleteIface]      = useMutation(DELETE_INTERFACE)
+  const [createAction]     = useMutation(CREATE_INTERFACE_ACTION)
+  const [updateAction]     = useMutation(UPDATE_INTERFACE_ACTION)
+  const [deleteActionM]    = useMutation(DELETE_INTERFACE_ACTION)
+
+  const kpi = {
+    identified:       ifaces.filter(i => i.status === 'identified').length,
+    active:           ifaces.filter(i => i.status === 'active').length,
+    pending_response: ifaces.filter(i => i.status === 'pending_response').length,
+    agreed:           ifaces.filter(i => i.status === 'agreed').length,
+    closed:           ifaces.filter(i => i.status === 'closed').length,
+    overdue:          ifaces.filter(i => i.isOverdue).length,
+    overdueActions:   ifaces.reduce((s, i) => s + i.overdueActionCount, 0),
+  }
+
+  const handleSave = async () => {
+    if (!form.partyA || !form.partyB || !form.title) { addToast({ type: 'error', message: 'Party A, Party B and title are required' }); return }
+    try {
+      const vars = {
+        projectId, partyA: form.partyA, partyB: form.partyB,
+        disciplineA: form.disciplineA || null, disciplineB: form.disciplineB || null,
+        title: form.title, description: form.description || null,
+        agreedDate: form.agreedDate || null, priority: form.priority,
+      }
+      if (editIface) { await updateIface({ variables: { id: editIface.id, ...vars } }); addToast({ type: 'success', message: 'Interface updated' }) }
+      else           { await createIface({ variables: vars }); addToast({ type: 'success', message: 'Interface registered' }) }
+      setShowModal(false); setEditIface(null); setForm(emptyForm); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleStatusChange = async (iface: ProjectIface, newStatus: string) => {
+    try {
+      await updateStatus({ variables: { id: iface.id, status: newStatus } }); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleSaveAction = async (interfaceId: string) => {
+    if (!actionForm.description.trim()) return
+    try {
+      if (editAction) {
+        await updateAction({ variables: { id: editAction.id, description: actionForm.description, owner: actionForm.owner || null, dueDate: actionForm.dueDate || null } })
+      } else {
+        await createAction({ variables: { interfaceId, description: actionForm.description, owner: actionForm.owner || null, dueDate: actionForm.dueDate || null } })
+      }
+      setAddActionFor(null); setEditAction(null); setActionForm({ description: '', owner: '', dueDate: '' }); void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleCycleActionStatus = async (action: IFaceAction) => {
+    const next: Record<string, string> = { open: 'in_progress', in_progress: 'closed', closed: 'open' }
+    try { await updateAction({ variables: { id: action.id, status: next[action.status] ?? 'open' } }); void refetch() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const inp = (v: string, fn: (x: string) => void, ph?: string, type = 'text') => (
+    <input type={type} value={v} placeholder={ph} onChange={e => fn(e.target.value)}
+      style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+  )
+  const lbl = (t: string, req = false) => (
+    <div style={{ fontSize: 11, fontWeight: 700, color: theme.textMuted, marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>
+      {t}{req && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
+    </div>
+  )
+  const statusPill = (s: string) => {
+    const c = IFACE_STATUS[s] ?? IFACE_STATUS['identified']!
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 999, background: c.bg, fontSize: 11, fontWeight: 600, color: c.text, whiteSpace: 'nowrap', border: `1px solid ${c.border}` }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: c.dot, flexShrink: 0 }} />{c.label}
+      </span>
+    )
+  }
+
+  const actionStatusStyle = (s: string): React.CSSProperties => {
+    if (s === 'closed')      return { color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }
+    if (s === 'in_progress') return { color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }
+    return { color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer' }
+  }
+
+  return (
+    <div style={{ padding: '2px 0 20px' }}>
+      {/* KPI */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Identified',      value: kpi.identified,       color: '#475569', bg: '#f1f5f9' },
+          { label: 'Active',          value: kpi.active,           color: '#1d4ed8', bg: '#eff6ff' },
+          { label: 'Pend. Response',  value: kpi.pending_response, color: '#92400e', bg: '#fffbeb' },
+          { label: 'Agreed',          value: kpi.agreed,           color: '#5b21b6', bg: '#ede9fe' },
+          { label: 'Closed',          value: kpi.closed,           color: '#15803d', bg: '#f0fdf4' },
+          { label: 'Overdue',         value: kpi.overdue,          color: '#dc2626', bg: '#fee2e2' },
+          { label: 'Overdue Actions', value: kpi.overdueActions,   color: '#dc2626', bg: '#fee2e2' },
+        ].map(k => (
+          <div key={k.label} style={{ padding: '10px 16px', borderRadius: 10, background: k.bg, border: `1px solid ${k.color}20`, textAlign: 'center', minWidth: 80 }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: k.color, fontVariantNumeric: 'tabular-nums' }}>{k.value}</div>
+            <div style={{ fontSize: 10, color: k.color, fontWeight: 600, marginTop: 2 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+          {(['all', ...IFACE_STATUS_ORDER] as const).map((s, i, arr) => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              style={{ padding: '7px 11px', background: statusFilter === s ? theme.accent : theme.bgCanvas, color: statusFilter === s ? '#fff' : theme.textSecondary, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: statusFilter === s ? 600 : 400, borderRight: i < arr.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+              {s === 'all' ? 'All' : (IFACE_STATUS[s]?.label ?? s)}
+            </button>
+          ))}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => { setEditIface(null); setForm(emptyForm); setShowModal(true) }}
+          style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+          Register Interface
+        </button>
+      </div>
+
+      {/* Interface Cards */}
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 60, color: theme.textMuted }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}><circle cx="12" cy="12" r="10" stroke={theme.border} strokeWidth="3"/><path d="M12 2a10 10 0 0 1 10 10" stroke={theme.accent} strokeWidth="3" strokeLinecap="round"/></svg>
+          Loading…
+        </div>
+      ) : ifaces.length === 0 ? (
+        <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔗</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No Interfaces Registered</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, maxWidth: 420, margin: '0 auto 24px' }}>
+            Register interface points where one discipline or subcontractor depends on information or material from another. Track deliveries formally against an agreed date.
+          </div>
+          <button onClick={() => { setEditIface(null); setForm(emptyForm); setShowModal(true) }}
+            style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Register First Interface
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {ifaces.map(iface => {
+            const isExpanded = expandedId === iface.id
+            const hmBg     = heatmapColor(iface.agreedDate, iface.status)
+            const hmBorder = heatmapBorderColor(iface.agreedDate, iface.status)
+            const prioColor = IFACE_PRIORITY[iface.priority] ?? IFACE_PRIORITY['normal']!
+
+            return (
+              <div key={iface.id} style={{ border: `1px solid ${hmBorder}`, borderRadius: 12, overflow: 'hidden', background: hmBg }}>
+                {/* Header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', cursor: 'pointer' }}
+                  onClick={() => setExpandedId(isExpanded ? null : iface.id)}>
+
+                  {/* Priority stripe */}
+                  <div style={{ width: 4, height: 40, borderRadius: 2, background: prioColor, flexShrink: 0 }} />
+
+                  {/* Party A ↔ Party B */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: theme.accent, background: `${theme.accentBg}`, padding: '1px 7px', borderRadius: 4 }}>{iface.interfaceNo}</span>
+                      {iface.isOverdue && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: '#fee2e2', color: '#dc2626' }}>OVERDUE</span>}
+                    </div>
+
+                    {/* Parties */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: theme.textPrimary, background: theme.bgCanvas, padding: '2px 8px', borderRadius: 5, border: `1px solid ${theme.border}` }}>
+                        {iface.partyA}{iface.disciplineA ? ` (${iface.disciplineA})` : ''}
+                      </span>
+                      <svg width="18" height="12" viewBox="0 0 24 12" fill="none" style={{ flexShrink: 0, color: theme.textMuted }}>
+                        <path d="M2 6h20M15 1l7 5-7 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: theme.textPrimary, background: theme.bgCanvas, padding: '2px 8px', borderRadius: 5, border: `1px solid ${theme.border}` }}>
+                        {iface.partyB}{iface.disciplineB ? ` (${iface.disciplineB})` : ''}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: theme.textSecondary, fontWeight: 500 }}>{iface.title}</div>
+
+                    <div style={{ display: 'flex', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
+                      {iface.agreedDate && <span style={{ fontSize: 11, color: iface.isOverdue ? '#dc2626' : theme.textMuted }}>Due: {iface.agreedDate}</span>}
+                      {iface.openActionCount > 0 && <span style={{ fontSize: 11, color: theme.textMuted }}>{iface.openActionCount} open action{iface.openActionCount !== 1 ? 's' : ''}</span>}
+                      {iface.overdueActionCount > 0 && <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>{iface.overdueActionCount} overdue action{iface.overdueActionCount !== 1 ? 's' : ''}</span>}
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                    {statusPill(iface.status)}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>
+                      <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Expanded */}
+                {isExpanded && (
+                  <div style={{ borderTop: `1px solid ${hmBorder}`, padding: '16px 18px', background: theme.bgSurface }}>
+
+                    {/* Description */}
+                    {iface.description && (
+                      <div style={{ marginBottom: 16, padding: '10px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}`, fontSize: 13, color: theme.textPrimary, lineHeight: 1.6 }}>
+                        {iface.description}
+                      </div>
+                    )}
+
+                    {/* Status progression */}
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Status</div>
+                      <div style={{ display: 'flex', gap: 0, borderRadius: 8, border: `1px solid ${theme.border}`, overflow: 'hidden', alignSelf: 'flex-start', width: 'fit-content' }}>
+                        {IFACE_STATUS_ORDER.map((s, i) => {
+                          const cfg = IFACE_STATUS[s]!
+                          const isCurrent = iface.status === s
+                          const isPast = IFACE_STATUS_ORDER.indexOf(iface.status as typeof IFACE_STATUS_ORDER[number]) > i
+                          return (
+                            <button key={s}
+                              onClick={() => { if (iface.status !== s) void handleStatusChange(iface, s) }}
+                              title={isCurrent ? 'Current status' : `Move to ${cfg.label}`}
+                              style={{
+                                padding: '6px 13px', border: 'none', borderRight: i < IFACE_STATUS_ORDER.length - 1 ? `1px solid ${theme.border}` : 'none',
+                                cursor: isCurrent ? 'default' : 'pointer', fontSize: 11, fontWeight: isCurrent ? 700 : 400,
+                                background: isCurrent ? cfg.bg : isPast ? '#f8fafc' : theme.bgCanvas,
+                                color: isCurrent ? cfg.text : isPast ? '#94a3b8' : theme.textMuted,
+                              }}>
+                              {isCurrent && <span style={{ marginRight: 4 }}>✓</span>}{cfg.label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Action Items */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Action Items ({iface.actions.length})
+                        </div>
+                        {addActionFor !== iface.id && (
+                          <button onClick={() => { setAddActionFor(iface.id); setEditAction(null); setActionForm({ description: '', owner: '', dueDate: '' }) }}
+                            style={{ padding: '4px 10px', borderRadius: 6, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 11, cursor: 'pointer' }}>+ Add Action</button>
+                        )}
+                      </div>
+
+                      {/* Add/Edit action form */}
+                      {addActionFor === iface.id && (
+                        <div style={{ marginBottom: 10, padding: '12px 14px', background: theme.bgCanvas, borderRadius: 8, border: `1px solid ${theme.border}` }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                            <div style={{ gridColumn: '1 / -1' }}>
+                              {lbl(editAction ? 'Edit Action' : 'New Action', true)}
+                              <input value={actionForm.description} onChange={e => setActionForm(f => ({...f, description: e.target.value}))} placeholder="Describe the required action…"
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgSurface, color: theme.textPrimary, fontSize: 12, boxSizing: 'border-box' as const, outline: 'none' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: theme.textMuted, marginBottom: 3 }}>OWNER</div>
+                              <input value={actionForm.owner} onChange={e => setActionForm(f => ({...f, owner: e.target.value}))} placeholder="Responsible person"
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgSurface, color: theme.textPrimary, fontSize: 12, boxSizing: 'border-box' as const, outline: 'none' }} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10, fontWeight: 600, color: theme.textMuted, marginBottom: 3 }}>DUE DATE</div>
+                              <input type="date" value={actionForm.dueDate} onChange={e => setActionForm(f => ({...f, dueDate: e.target.value}))}
+                                style={{ width: '100%', padding: '7px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgSurface, color: theme.textPrimary, fontSize: 12, boxSizing: 'border-box' as const, outline: 'none' }} />
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                            <button onClick={() => { setAddActionFor(null); setEditAction(null); setActionForm({ description: '', owner: '', dueDate: '' }) }}
+                              style={{ padding: '5px 12px', borderRadius: 6, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                            <button onClick={() => void handleSaveAction(iface.id)}
+                              style={{ padding: '5px 14px', borderRadius: 6, background: theme.accent, color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                              {editAction ? 'Save' : 'Add Action'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {iface.actions.length === 0 ? (
+                        <div style={{ padding: '14px 16px', border: `1px dashed ${theme.border}`, borderRadius: 8, textAlign: 'center', fontSize: 12, color: theme.textMuted }}>
+                          No action items yet — click "+ Add Action" to create one
+                        </div>
+                      ) : (
+                        <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                          {iface.actions.map((action, idx) => (
+                            <div key={action.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', background: action.isOverdue ? '#fff5f5' : idx % 2 === 0 ? theme.bgCanvas : theme.bgSurface, borderBottom: idx < iface.actions.length - 1 ? `1px solid ${theme.border}` : 'none' }}>
+                              {/* Status toggle */}
+                              <button onClick={() => void handleCycleActionStatus(action)} title="Click to cycle status"
+                                style={{ ...actionStatusStyle(action.status), flexShrink: 0, marginTop: 1 }}>
+                                {action.status === 'closed' ? '✓' : action.status === 'in_progress' ? '▶' : '○'}
+                              </button>
+
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: action.status === 'closed' ? theme.textMuted : theme.textPrimary, textDecoration: action.status === 'closed' ? 'line-through' : 'none', lineHeight: 1.4 }}>
+                                  {action.description}
+                                </div>
+                                <div style={{ display: 'flex', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
+                                  {action.owner && <span style={{ fontSize: 10, color: theme.textMuted }}>👤 {action.owner}</span>}
+                                  {action.dueDate && <span style={{ fontSize: 10, color: action.isOverdue ? '#dc2626' : theme.textMuted }}>📅 {action.dueDate}{action.isOverdue ? ' (OVERDUE)' : ''}</span>}
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                                <button onClick={() => { setEditAction(action); setAddActionFor(iface.id); setActionForm({ description: action.description, owner: action.owner ?? '', dueDate: action.dueDate ?? '' }) }}
+                                  style={{ padding: '3px 7px', borderRadius: 5, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 10, cursor: 'pointer' }}>Edit</button>
+                                <button onClick={() => { if (window.confirm('Delete action?')) void deleteActionM({ variables: { id: action.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                                  style={{ padding: '3px 7px', borderRadius: 5, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 10, cursor: 'pointer' }}>✕</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer actions */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
+                      <button onClick={() => { setEditIface(iface); setForm({ partyA: iface.partyA, partyB: iface.partyB, disciplineA: iface.disciplineA??'', disciplineB: iface.disciplineB??'', title: iface.title, description: iface.description??'', agreedDate: iface.agreedDate??'', priority: iface.priority }); setShowModal(true) }}
+                        style={{ padding: '6px 13px', borderRadius: 7, background: theme.bgCanvas, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Edit</button>
+                      {iface.status !== 'closed' && (
+                        <button onClick={() => { if (window.confirm(`Close interface ${iface.interfaceNo}?`)) void handleStatusChange(iface, 'closed') }}
+                          style={{ padding: '6px 13px', borderRadius: 7, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Close Interface</button>
+                      )}
+                      <button onClick={() => { if (window.confirm(`Delete ${iface.interfaceNo}?`)) void deleteIface({ variables: { id: iface.id } }).then(() => void refetch()).catch((e: unknown) => addToast({ type: 'error', message: (e as Error).message })) }}
+                        style={{ padding: '6px 13px', borderRadius: 7, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 12, cursor: 'pointer' }}>Delete</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Create / Edit Modal */}
+      {showModal && (
+        <Modal open={true} size="lg" title={editIface ? `Edit ${editIface.interfaceNo}` : 'Register Interface Point'} onClose={() => { setShowModal(false); setEditIface(null); setForm(emptyForm) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+            <div style={{ padding: '8px 12px', borderRadius: 7, background: theme.bgSurface, border: `1px solid ${theme.border}`, fontSize: 12, color: theme.textMuted }}>
+              An interface point defines a formal dependency — Party A must deliver information or material to Party B by the agreed date.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {/* Party A */}
+              <div>
+                {lbl('Party A (Provider)', true)}
+                {inp(form.partyA, v => setForm(f => ({...f, partyA: v})), 'e.g. FNC Civil')}
+              </div>
+              <div>
+                {lbl('Party B (Receiver)', true)}
+                {inp(form.partyB, v => setForm(f => ({...f, partyB: v})), 'e.g. Sub X Mechanical')}
+              </div>
+              <div>
+                {lbl('Discipline A')}
+                <select value={form.disciplineA} onChange={e => setForm(f => ({...f, disciplineA: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— None —</option>
+                  {IFACE_DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Discipline B')}
+                <select value={form.disciplineB} onChange={e => setForm(f => ({...f, disciplineB: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— None —</option>
+                  {IFACE_DISCIPLINES.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Interface Title', true)}
+                {inp(form.title, v => setForm(f => ({...f, title: v})), 'e.g. Structural dimensions from Civil to Mechanical')}
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Description')}
+                <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))} placeholder="Detailed description of what must be delivered…"
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 72, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+              <div>
+                {lbl('Agreed Delivery Date')}
+                {inp(form.agreedDate, v => setForm(f => ({...f, agreedDate: v})), '', 'date')}
+              </div>
+              <div>
+                {lbl('Priority')}
+                <select value={form.priority} onChange={e => setForm(f => ({...f, priority: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="high">High</option>
+                  <option value="normal">Normal</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowModal(false); setEditIface(null); setForm(emptyForm) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!form.partyA || !form.partyB || !form.title} onClick={() => void handleSave()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.partyA && form.partyB && form.title ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.partyA && form.partyB && form.title ? 'pointer' : 'not-allowed' }}>
+                {editIface ? 'Save Changes' : 'Register Interface'}
               </button>
             </div>
           </div>

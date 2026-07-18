@@ -764,6 +764,56 @@ function engTransmittalToGQL(row: Record<string, unknown>, items: Record<string,
   }
 }
 
+function actionToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  const due = row['due_date'] ? new Date(String(row['due_date'])) : null
+  const status = String(row['status'])
+  return {
+    id:          row['id'],
+    interfaceId: row['interface_id'],
+    description: row['description'],
+    owner:       row['owner']      ?? null,
+    dueDate:     row['due_date']   ?? null,
+    status,
+    closedAt:    row['closed_at']  ?? null,
+    createdAt:   row['created_at'],
+    updatedAt:   row['updated_at'],
+    isOverdue:   due != null && status !== 'closed' && due < new Date(),
+  }
+}
+
+async function interfaceToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const actionsRes = await query(
+    `SELECT * FROM project_interface_actions WHERE interface_id=$1 ORDER BY created_at ASC`,
+    [row['id']],
+  )
+  const actions = actionsRes.rows.map(a => actionToGQL(a as Record<string, unknown>))
+  const openActions    = actions.filter(a => a['status'] !== 'closed')
+  const overdueActions = actions.filter(a => a['isOverdue'])
+  const agreedDate = row['agreed_date'] ? new Date(String(row['agreed_date'])) : null
+  const status = String(row['status'])
+  const isOverdue = agreedDate != null && status !== 'closed' && status !== 'agreed' && agreedDate < new Date()
+  return {
+    id:                 row['id'],
+    projectId:          row['project_id'],
+    interfaceNo:        row['interface_no'],
+    partyA:             row['party_a'],
+    partyB:             row['party_b'],
+    disciplineA:        row['discipline_a']  ?? null,
+    disciplineB:        row['discipline_b']  ?? null,
+    title:              row['title'],
+    description:        row['description']   ?? null,
+    agreedDate:         row['agreed_date']   ?? null,
+    priority:           row['priority']      ?? 'normal',
+    status,
+    actions,
+    openActionCount:    openActions.length,
+    overdueActionCount: overdueActions.length,
+    createdAt:          row['created_at'],
+    updatedAt:          row['updated_at'],
+    isOverdue,
+  }
+}
+
 function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
   const dueDate  = row['due_date'] ? new Date(String(row['due_date'])) : null
   const status   = String(row['status'])
@@ -13849,6 +13899,166 @@ Object.assign(resolvers.Mutation, {
     if (!r) throw new Error('CDR not found')
     if (r['status'] !== 'draft') throw new Error('Only draft CDRs can be deleted')
     await query(`DELETE FROM project_cdrs WHERE id=$1`, [args.id])
+    return true
+  },
+
+  // ── Phase 4: Interface Management ──────────────────────────────────────────
+
+  projectInterfaces: async (
+    _: unknown,
+    args: { projectId: string; status?: string; disciplinePair?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions = [`project_id = $1`]
+    const params: unknown[] = [args.projectId]
+    if (args.status) {
+      conditions.push(`status = $${params.length + 1}`)
+      params.push(args.status)
+    }
+    const res = await query(
+      `SELECT * FROM project_interfaces WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+      params,
+    )
+    return Promise.all(res.rows.map(r => interfaceToGQL(r as Record<string, unknown>)))
+  },
+
+  projectInterface: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_interfaces WHERE id=$1`, [args.id])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('Interface not found')
+    return interfaceToGQL(r)
+  },
+
+  createInterface: async (
+    _: unknown,
+    args: {
+      projectId: string; partyA: string; partyB: string
+      disciplineA?: string; disciplineB?: string; title: string
+      description?: string; agreedDate?: string; priority?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
+    const countRes = await query(
+      `SELECT COUNT(*) FROM project_interfaces WHERE project_id=$1 AND interface_no LIKE $2`,
+      [args.projectId, `IFC-${ym}-%`],
+    )
+    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
+    const interfaceNo = `IFC-${ym}-${seq}`
+    const res = await query(
+      `INSERT INTO project_interfaces
+        (project_id,interface_no,party_a,party_b,discipline_a,discipline_b,
+         title,description,agreed_date,priority,created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [
+        args.projectId, interfaceNo,
+        args.partyA, args.partyB,
+        args.disciplineA ?? null, args.disciplineB ?? null,
+        args.title, args.description ?? null,
+        args.agreedDate ?? null, args.priority ?? 'normal',
+        ctx.auth.userId,
+      ],
+    )
+    return interfaceToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateInterface: async (
+    _: unknown,
+    args: {
+      id: string; partyA?: string; partyB?: string
+      disciplineA?: string; disciplineB?: string; title?: string
+      description?: string; agreedDate?: string; priority?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_interfaces SET
+        party_a=COALESCE($2,party_a), party_b=COALESCE($3,party_b),
+        discipline_a=$4, discipline_b=$5,
+        title=COALESCE($6,title), description=$7,
+        agreed_date=$8, priority=COALESCE($9,priority),
+        updated_at=NOW()
+       WHERE id=$1 RETURNING *`,
+      [
+        args.id,
+        args.partyA ?? null, args.partyB ?? null,
+        args.disciplineA ?? null, args.disciplineB ?? null,
+        args.title ?? null, args.description ?? null,
+        args.agreedDate ?? null, args.priority ?? null,
+      ],
+    )
+    if (!res.rows[0]) throw new Error('Interface not found')
+    return interfaceToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateInterfaceStatus: async (
+    _: unknown,
+    args: { id: string; status: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const valid = ['identified','active','pending_response','agreed','closed']
+    if (!valid.includes(args.status)) throw new Error('Invalid status')
+    const res = await query(
+      `UPDATE project_interfaces SET status=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,
+      [args.id, args.status],
+    )
+    if (!res.rows[0]) throw new Error('Interface not found')
+    return interfaceToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deleteInterface: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const existing = await query(`SELECT id FROM project_interfaces WHERE id=$1`, [args.id])
+    if (!existing.rows[0]) throw new Error('Interface not found')
+    await query(`DELETE FROM project_interfaces WHERE id=$1`, [args.id])
+    return true
+  },
+
+  createInterfaceAction: async (
+    _: unknown,
+    args: { interfaceId: string; description: string; owner?: string; dueDate?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `INSERT INTO project_interface_actions (interface_id,description,owner,due_date)
+       VALUES ($1,$2,$3,$4) RETURNING *`,
+      [args.interfaceId, args.description, args.owner ?? null, args.dueDate ?? null],
+    )
+    return actionToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateInterfaceAction: async (
+    _: unknown,
+    args: { id: string; description?: string; owner?: string; dueDate?: string; status?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const closedAt = args.status === 'closed' ? 'NOW()' : null
+    const res = await query(
+      closedAt
+        ? `UPDATE project_interface_actions SET
+            description=COALESCE($2,description), owner=$3, due_date=$4,
+            status=COALESCE($5,status), closed_at=NOW(), updated_at=NOW()
+           WHERE id=$1 RETURNING *`
+        : `UPDATE project_interface_actions SET
+            description=COALESCE($2,description), owner=$3, due_date=$4,
+            status=COALESCE($5,status), updated_at=NOW()
+           WHERE id=$1 RETURNING *`,
+      [args.id, args.description ?? null, args.owner ?? null, args.dueDate ?? null, args.status ?? null],
+    )
+    if (!res.rows[0]) throw new Error('Action not found')
+    return actionToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deleteInterfaceAction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`DELETE FROM project_interface_actions WHERE id=$1`, [args.id])
     return true
   },
 })

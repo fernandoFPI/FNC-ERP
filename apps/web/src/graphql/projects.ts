@@ -1778,3 +1778,84 @@ export const WITHDRAW_CDR = gql`
 export const DELETE_CDR = gql`
   mutation DeleteCDR($id: ID!) { deleteCDR(id: $id) }
 `
+
+// ── Phase 4: Interface Management ────────────────────────────────────────────
+
+const IFACE_ACTION_FIELDS = `id interfaceId description owner dueDate status closedAt createdAt updatedAt isOverdue`
+
+const IFACE_FIELDS = `
+  id projectId interfaceNo partyA partyB disciplineA disciplineB
+  title description agreedDate priority status
+  openActionCount overdueActionCount createdAt updatedAt isOverdue
+  actions { ${IFACE_ACTION_FIELDS} }
+`
+
+export const PROJECT_INTERFACES_QUERY = gql`
+  query ProjectInterfaces($projectId: ID!, $status: String, $disciplinePair: String) {
+    projectInterfaces(projectId: $projectId, status: $status, disciplinePair: $disciplinePair) {
+      ${IFACE_FIELDS}
+    }
+  }
+`
+
+export const CREATE_INTERFACE = gql`
+  mutation CreateInterface(
+    $projectId: ID! $partyA: String! $partyB: String!
+    $disciplineA: String $disciplineB: String
+    $title: String! $description: String $agreedDate: String $priority: String
+  ) {
+    createInterface(
+      projectId: $projectId partyA: $partyA partyB: $partyB
+      disciplineA: $disciplineA disciplineB: $disciplineB
+      title: $title description: $description agreedDate: $agreedDate priority: $priority
+    ) { ${IFACE_FIELDS} }
+  }
+`
+
+export const UPDATE_INTERFACE = gql`
+  mutation UpdateInterface(
+    $id: ID! $partyA: String $partyB: String
+    $disciplineA: String $disciplineB: String
+    $title: String $description: String $agreedDate: String $priority: String
+  ) {
+    updateInterface(
+      id: $id partyA: $partyA partyB: $partyB
+      disciplineA: $disciplineA disciplineB: $disciplineB
+      title: $title description: $description agreedDate: $agreedDate priority: $priority
+    ) { ${IFACE_FIELDS} }
+  }
+`
+
+export const UPDATE_INTERFACE_STATUS = gql`
+  mutation UpdateInterfaceStatus($id: ID!, $status: String!) {
+    updateInterfaceStatus(id: $id, status: $status) { ${IFACE_FIELDS} }
+  }
+`
+
+export const DELETE_INTERFACE = gql`
+  mutation DeleteInterface($id: ID!) { deleteInterface(id: $id) }
+`
+
+export const CREATE_INTERFACE_ACTION = gql`
+  mutation CreateInterfaceAction(
+    $interfaceId: ID! $description: String! $owner: String $dueDate: String
+  ) {
+    createInterfaceAction(
+      interfaceId: $interfaceId description: $description owner: $owner dueDate: $dueDate
+    ) { ${IFACE_ACTION_FIELDS} }
+  }
+`
+
+export const UPDATE_INTERFACE_ACTION = gql`
+  mutation UpdateInterfaceAction(
+    $id: ID! $description: String $owner: String $dueDate: String $status: String
+  ) {
+    updateInterfaceAction(
+      id: $id description: $description owner: $owner dueDate: $dueDate status: $status
+    ) { ${IFACE_ACTION_FIELDS} }
+  }
+`
+
+export const DELETE_INTERFACE_ACTION = gql`
+  mutation DeleteInterfaceAction($id: ID!) { deleteInterfaceAction(id: $id) }
+`
