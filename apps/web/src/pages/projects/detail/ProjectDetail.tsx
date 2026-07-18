@@ -5,7 +5,9 @@ import {
   PROJECT_QUERY, ADMIN_SET_PROJECT_STATUS, ADMIN_SET_PHASE, RFQ_LINES_QUERY, UPSERT_RFQ_LINES, RFQ_PHASES_QUERY, UPDATE_RFQ_PHASE,
   CLIENT_DOCUMENTS_QUERY, UPLOAD_CLIENT_DOCUMENT, UPLOAD_CLIENT_DOCUMENT_REVISION,
   UPDATE_CLIENT_DOCUMENT, UPDATE_CLIENT_DOCUMENT_STATUS, DELETE_CLIENT_DOCUMENT,
-  ENG_DOCS_QUERY, CREATE_ENG_DOC, REVISE_ENG_DOC, UPDATE_ENG_DOC_STATUS, DELETE_ENG_DOC,
+  ENG_DOCS_QUERY, CREATE_ENG_DOC, REVISE_ENG_DOC, UPDATE_ENG_DOC_STATUS, DELETE_ENG_DOC, UPDATE_ENG_DOC_META,
+  DOC_COMMENTS_QUERY, ADD_DOC_COMMENT, RESPOND_TO_COMMENT, DELETE_DOC_COMMENT,
+  DOC_DISTRIBUTION_QUERY, UPSERT_DISTRIBUTION_ENTRY, DELETE_DISTRIBUTION_ENTRY,
   ENGINEERING_REVISIONS_QUERY, ISSUE_ENGINEERING_REVISION,
   PROJECT_DRAWINGS_QUERY, CREATE_PROJECT_DRAWING, REVISE_PROJECT_DRAWING,
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
@@ -4258,8 +4260,26 @@ interface EngDoc {
   paperSize: string | null; revision: string | null; status: string; issueDate: string | null
   notes: string | null; fileId: string | null; docGroupId: string; isCurrent: boolean
   uploadedByName: string | null; downloadUrl: string | null; filename: string | null
+  originatorName: string | null; checkerName: string | null; approverName: string | null
+  purposeOfIssue: string | null; commentCount: number; openCommentCount: number
   history: EngDoc[]
   createdAt: string
+}
+
+interface DocComment {
+  id: string; documentId: string; revision: string; reviewerName: string | null
+  commentNumber: number; locationRef: string | null; commentText: string
+  category: 'major' | 'minor' | 'info'
+  responseText: string | null; responseName: string | null; responseDate: string | null
+  resolution: 'accepted' | 'partial' | 'rejected' | 'withdrawn' | null
+  createdAt: string
+}
+
+interface DDMEntry {
+  id: string; projectId: string; companyName: string; contactName: string | null
+  contactEmail: string | null; discipline: string | null; docType: string | null
+  statusTrigger: string; copies: number; format: 'PDF' | 'DWG' | 'Native' | 'Hard Copy'
+  autoTransmit: boolean; notes: string | null; createdAt: string
 }
 
 // ── Engineering Documents constants ──────────────────────────────────────
@@ -4284,12 +4304,39 @@ const ENG_DOC_TYPES = [
 ] as const
 
 const ENG_DOC_STATUSES: Record<string, { label: string; dot: string; text: string; bg: string }> = {
-  preliminary:       { label: 'Preliminary',     dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
-  for_review:        { label: 'For Review',       dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
-  for_construction:  { label: 'For Construction', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
-  as_built:          { label: 'As Built',         dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
-  cancelled:         { label: 'Cancelled',        dot: '#ef4444', text: '#dc2626', bg: '#fef2f2' },
-  superseded:        { label: 'Superseded',       dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb' },
+  draft:            { label: 'Draft',            dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  IFA:              { label: 'IFA',              dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
+  IFR:              { label: 'IFR',              dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+  IFI:              { label: 'IFI',              dot: '#a78bfa', text: '#5b21b6', bg: '#ede9fe' },
+  IFC:              { label: 'IFC',              dot: '#f97316', text: '#c2410c', bg: '#fff7ed' },
+  AFC:              { label: 'AFC',              dot: '#22c55e', text: '#15803d', bg: '#f0fdf4' },
+  as_built:         { label: 'As-Built',         dot: '#06b6d4', text: '#0e7490', bg: '#ecfeff' },
+  superseded:       { label: 'Superseded',       dot: '#9ca3af', text: '#6b7280', bg: '#f9fafb' },
+  cancelled:        { label: 'Cancelled',        dot: '#ef4444', text: '#dc2626', bg: '#fef2f2' },
+  preliminary:      { label: 'Preliminary',      dot: '#94a3b8', text: '#475569', bg: '#f1f5f9' },
+  for_review:       { label: 'For Review',       dot: '#f59e0b', text: '#a16207', bg: '#fffbeb' },
+  for_construction: { label: 'For Construction', dot: '#3b82f6', text: '#1d4ed8', bg: '#eff6ff' },
+}
+
+const ENG_PURPOSE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  IFA: { label: 'For Approval',       color: '#a16207', bg: '#fffbeb' },
+  IFR: { label: 'For Review',         color: '#1d4ed8', bg: '#eff6ff' },
+  IFI: { label: 'For Information',    color: '#5b21b6', bg: '#ede9fe' },
+  IFC: { label: 'For Construction',   color: '#c2410c', bg: '#fff7ed' },
+  AFC: { label: 'Appr. for Constr.',  color: '#15803d', bg: '#f0fdf4' },
+}
+
+const DOC_CATEGORY_META: Record<string, { label: string; color: string; bg: string }> = {
+  major: { label: 'Major', color: '#dc2626', bg: '#fee2e2' },
+  minor: { label: 'Minor', color: '#d97706', bg: '#fef3c7' },
+  info:  { label: 'Info',  color: '#2563eb', bg: '#dbeafe' },
+}
+
+const DOC_RESOLUTION_META: Record<string, { label: string; color: string; bg: string }> = {
+  accepted:  { label: 'Accepted',  color: '#15803d', bg: '#f0fdf4' },
+  partial:   { label: 'Partial',   color: '#a16207', bg: '#fffbeb' },
+  rejected:  { label: 'Rejected',  color: '#dc2626', bg: '#fee2e2' },
+  withdrawn: { label: 'Withdrawn', color: '#6b7280', bg: '#f9fafb' },
 }
 
 function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
@@ -4298,32 +4345,71 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
 }) {
-  const addToast  = useToastStore((s) => s.addToast)
-  const [discipline, setDiscipline] = React.useState<string>('overview')
-  const [docType,    setDocType]    = React.useState<string>('all')
-  const [search,     setSearch]     = React.useState('')
-  const [expandedId, setExpandedId] = React.useState<string | null>(null)
-  const [showModal,  setShowModal]  = React.useState(false)
-  const [reviseDoc,  setReviseDoc]  = React.useState<EngDoc | null>(null)
-  const [uploading,  setUploading]  = React.useState(false)
+  const addToast = useToastStore((s) => s.addToast)
+
+  // sub-view
+  const [engView, setEngView] = React.useState<'register' | 'review' | 'distribution'>('register')
+
+  // register state
+  const [discipline,  setDiscipline]  = React.useState<string>('overview')
+  const [docType,     setDocType]     = React.useState<string>('all')
+  const [search,      setSearch]      = React.useState('')
+  const [expandedId,  setExpandedId]  = React.useState<string | null>(null)
+  const [showModal,   setShowModal]   = React.useState(false)
+  const [reviseDoc,   setReviseDoc]   = React.useState<EngDoc | null>(null)
+  const [uploading,   setUploading]   = React.useState(false)
   const [form, setForm] = React.useState({
     title: '', description: '', revision: '', scale: '', paperSize: '',
     issueDate: '', notes: '', fileId: '', filename: '',
+    originatorName: '', checkerName: '', approverName: '', purposeOfIssue: '',
   })
-  const [revForm, setRevForm] = React.useState({ revision: '', notes: '', issueDate: '', fileId: '', filename: '' })
+  const [revForm, setRevForm] = React.useState({
+    revision: '', notes: '', issueDate: '', fileId: '', filename: '',
+    originatorName: '', checkerName: '', approverName: '', purposeOfIssue: '',
+  })
+
+  // review state
+  const [reviewDocId,     setReviewDocId]     = React.useState<string | null>(null)
+  const [showCommentForm, setShowCommentForm]  = React.useState(false)
+  const [commentForm, setCommentForm] = React.useState({ locationRef: '', commentText: '', category: 'minor' as 'major' | 'minor' | 'info' })
+  const [respondingTo,   setRespondingTo]     = React.useState<string | null>(null)
+  const [responseForm, setResponseForm] = React.useState({ responseText: '', resolution: 'accepted' })
+
+  // distribution state
+  const [showDDMModal, setShowDDMModal] = React.useState(false)
+  const [editDDM,      setEditDDM]      = React.useState<DDMEntry | null>(null)
+  const emptyDDM: { companyName: string; contactName: string; contactEmail: string; discipline: string; docType: string; statusTrigger: string; copies: number; format: DDMEntry['format']; autoTransmit: boolean; notes: string } = { companyName: '', contactName: '', contactEmail: '', discipline: '', docType: '', statusTrigger: 'IFA', copies: 1, format: 'PDF', autoTransmit: false, notes: '' }
+  const [ddmForm, setDDMForm] = React.useState(emptyDDM)
 
   const { data, loading, refetch } = useQuery(ENG_DOCS_QUERY, {
     variables: { projectId },
     skip: !projectId,
     fetchPolicy: 'cache-and-network',
   })
+  const { data: commentsData, refetch: refetchComments } = useQuery(DOC_COMMENTS_QUERY, {
+    variables: { documentId: reviewDocId ?? '' },
+    skip: !reviewDocId,
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: ddmData, refetch: refetchDDM } = useQuery(DOC_DISTRIBUTION_QUERY, {
+    variables: { projectId },
+    skip: engView !== 'distribution',
+    fetchPolicy: 'cache-and-network',
+  })
 
-  const [createDoc]    = useMutation(CREATE_ENG_DOC)
-  const [reviseDocM]   = useMutation(REVISE_ENG_DOC)
-  const [updateStatus] = useMutation(UPDATE_ENG_DOC_STATUS)
-  const [deleteDocM]   = useMutation(DELETE_ENG_DOC)
+  const [createDoc]      = useMutation(CREATE_ENG_DOC)
+  const [reviseDocM]     = useMutation(REVISE_ENG_DOC)
+  const [updateStatus]   = useMutation(UPDATE_ENG_DOC_STATUS)
+  const [deleteDocM]     = useMutation(DELETE_ENG_DOC)
+  const [addCommentM]    = useMutation(ADD_DOC_COMMENT)
+  const [respondM]       = useMutation(RESPOND_TO_COMMENT)
+  const [deleteCommentM] = useMutation(DELETE_DOC_COMMENT)
+  const [upsertDDMM]     = useMutation(UPSERT_DISTRIBUTION_ENTRY)
+  const [deleteDDMM]     = useMutation(DELETE_DISTRIBUTION_ENTRY)
 
-  const allDocs: EngDoc[] = data?.engineeringDocuments ?? []
+  const allDocs: EngDoc[]      = data?.engineeringDocuments ?? []
+  const comments: DocComment[] = commentsData?.docComments ?? []
+  const ddmEntries: DDMEntry[] = ddmData?.docDistributionMatrix ?? []
 
   const filtered = allDocs.filter(d => {
     if (discipline !== 'overview' && d.discipline !== discipline) return false
@@ -4334,6 +4420,9 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
     }
     return true
   })
+
+  const docsForReview = allDocs.filter(d => d.commentCount > 0)
+  const reviewDoc     = allDocs.find(d => d.id === reviewDocId) ?? null
 
   const pickFile = async (onPicked: (fileId: string, filename: string) => void) => {
     const input = document.createElement('input')
@@ -4367,10 +4456,12 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
         title: form.title, fileId: form.fileId || null, revision: form.revision || null,
         description: form.description || null, scale: form.scale || null,
         paperSize: form.paperSize || null, issueDate: form.issueDate || null, notes: form.notes || null,
+        originatorName: form.originatorName || null, checkerName: form.checkerName || null,
+        approverName: form.approverName || null, purposeOfIssue: form.purposeOfIssue || null,
       }})
       addToast({ type: 'success', message: 'Document added' })
       setShowModal(false)
-      setForm({ title: '', description: '', revision: '', scale: '', paperSize: '', issueDate: '', notes: '', fileId: '', filename: '' })
+      setForm({ title: '', description: '', revision: '', scale: '', paperSize: '', issueDate: '', notes: '', fileId: '', filename: '', originatorName: '', checkerName: '', approverName: '', purposeOfIssue: '' })
       void refetch()
     } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
   }
@@ -4381,12 +4472,73 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
       await reviseDocM({ variables: {
         id: reviseDoc!.id, fileId: revForm.fileId || null,
         revision: revForm.revision, notes: revForm.notes || null, issueDate: revForm.issueDate || null,
+        originatorName: revForm.originatorName || null, checkerName: revForm.checkerName || null,
+        approverName: revForm.approverName || null, purposeOfIssue: revForm.purposeOfIssue || null,
       }})
       addToast({ type: 'success', message: 'Revision issued' })
       setReviseDoc(null)
-      setRevForm({ revision: '', notes: '', issueDate: '', fileId: '', filename: '' })
+      setRevForm({ revision: '', notes: '', issueDate: '', fileId: '', filename: '', originatorName: '', checkerName: '', approverName: '', purposeOfIssue: '' })
       void refetch()
     } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleAddComment = async () => {
+    if (!commentForm.commentText || !reviewDocId) return
+    try {
+      await addCommentM({ variables: {
+        documentId: reviewDocId,
+        revision: reviewDoc?.revision ?? 'A',
+        locationRef: commentForm.locationRef || null,
+        commentText: commentForm.commentText,
+        category: commentForm.category,
+      }})
+      addToast({ type: 'success', message: 'Comment added' })
+      setCommentForm({ locationRef: '', commentText: '', category: 'minor' })
+      setShowCommentForm(false)
+      void refetchComments()
+      void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleRespond = async (commentId: string) => {
+    if (!responseForm.responseText) return
+    try {
+      await respondM({ variables: { id: commentId, responseText: responseForm.responseText, resolution: responseForm.resolution }})
+      addToast({ type: 'success', message: 'Response submitted' })
+      setRespondingTo(null)
+      setResponseForm({ responseText: '', resolution: 'accepted' })
+      void refetchComments()
+      void refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleDeleteComment = async (id: string) => {
+    if (!window.confirm('Delete this comment?')) return
+    try { await deleteCommentM({ variables: { id }}); void refetchComments(); void refetch() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleSaveDDM = async () => {
+    if (!ddmForm.companyName || !ddmForm.statusTrigger) { addToast({ type: 'error', message: 'Company and status trigger are required' }); return }
+    try {
+      await upsertDDMM({ variables: {
+        id: editDDM?.id ?? null, projectId,
+        companyName: ddmForm.companyName, contactName: ddmForm.contactName || null,
+        contactEmail: ddmForm.contactEmail || null, discipline: ddmForm.discipline || null,
+        docType: ddmForm.docType || null, statusTrigger: ddmForm.statusTrigger,
+        copies: ddmForm.copies, format: ddmForm.format,
+        autoTransmit: ddmForm.autoTransmit, notes: ddmForm.notes || null,
+      }})
+      addToast({ type: 'success', message: editDDM ? 'Entry updated' : 'Entry added' })
+      setShowDDMModal(false); setEditDDM(null); setDDMForm(emptyDDM)
+      void refetchDDM()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+  }
+
+  const handleDeleteDDM = async (id: string) => {
+    if (!window.confirm('Remove this distribution entry?')) return
+    try { await deleteDDMM({ variables: { id }}); void refetchDDM() }
+    catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
   }
 
   const handleDelete = async (doc: EngDoc) => {
@@ -4536,6 +4688,18 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
                 {meta}
               </div>
             )}
+            {doc.purposeOfIssue && ENG_PURPOSE_LABELS[doc.purposeOfIssue] && (
+              <span style={{ display: 'inline-flex', marginTop: 3, padding: '1px 7px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: ENG_PURPOSE_LABELS[doc.purposeOfIssue]!.color, background: ENG_PURPOSE_LABELS[doc.purposeOfIssue]!.bg }}>
+                {ENG_PURPOSE_LABELS[doc.purposeOfIssue]!.label}
+              </span>
+            )}
+            {!isHistory && doc.openCommentCount > 0 && (
+              <button onClick={() => { setEngView('review'); setReviewDocId(doc.id) }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 3, marginLeft: doc.purposeOfIssue ? 6 : 0, padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fee2e2', border: 'none', cursor: 'pointer' }}>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><text x="12" y="16" textAnchor="middle" fill="white" fontSize="13" fontWeight="bold">{doc.openCommentCount}</text></svg>
+                {doc.openCommentCount} open
+              </button>
+            )}
             {doc.notes && (
               <div style={{ fontSize: 11, color: theme.textSecondary, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
                 {doc.notes}
@@ -4559,7 +4723,7 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
             {doc.downloadUrl && iconActionBtn('Preview', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>, () => window.open(doc.downloadUrl!, '_blank'))}
             {doc.downloadUrl && iconActionBtn('Download', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>, () => window.open(doc.downloadUrl!, '_blank'), 'accent')}
             {!isHistory && (doc.downloadUrl ? <span style={{ width: 1, height: 16, background: theme.border, margin: '0 3px', flexShrink: 0 }} /> : null)}
-            {!isHistory && iconActionBtn('Issue revision', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M20 12v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M17 15h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>, () => { setReviseDoc(doc); setRevForm({ revision: '', notes: '', issueDate: '', fileId: '', filename: '' }) })}
+            {!isHistory && iconActionBtn('Issue revision', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M20 12v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M17 15h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>, () => { setReviseDoc(doc); setRevForm({ revision: '', notes: '', issueDate: '', fileId: '', filename: '', originatorName: '', checkerName: '', approverName: '', purposeOfIssue: '' }) })}
             {isAdmin && !isHistory && iconActionBtn('Delete', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>, () => void handleDelete(doc), 'danger')}
           </div>
         </div>
@@ -4572,11 +4736,47 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
 
   const openAdd = () => {
     setShowModal(true)
-    setForm({ title: '', description: '', revision: '', scale: '', paperSize: '', issueDate: '', notes: '', fileId: '', filename: '' })
+    setForm({ title: '', description: '', revision: '', scale: '', paperSize: '', issueDate: '', notes: '', fileId: '', filename: '', originatorName: '', checkerName: '', approverName: '', purposeOfIssue: '' })
   }
+
+  // ── Sub-view tab SVG icons ─────────────────────────────────────────────
+  const IconRegister = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.8"/><line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><line x1="8" y1="16" x2="12" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+  )
+  const IconReview = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  )
+  const IconDist = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.8"/><path d="M23 21v-2a4 4 0 0 0-3-3.87" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+  )
 
   return (
     <div style={{ padding: '2px 0 20px' }}>
+
+      {/* ── Sub-view switcher ── */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
+        {([
+          { key: 'register',     label: 'Register',     Icon: IconRegister },
+          { key: 'review',       label: 'Review',       Icon: IconReview,  badge: allDocs.filter(d => d.openCommentCount > 0).length },
+          { key: 'distribution', label: 'Distribution', Icon: IconDist },
+        ] as const).map(tab => {
+          const active = engView === tab.key
+          const badge = 'badge' in tab ? tab.badge : 0
+          return (
+            <button key={tab.key} onClick={() => setEngView(tab.key)}
+              style={{ padding: '9px 18px', background: 'transparent', border: 'none', cursor: 'pointer', borderBottom: active ? `2px solid ${theme.accent}` : '2px solid transparent', color: active ? theme.accent : theme.textSecondary, fontWeight: active ? 600 : 400, fontSize: 13, marginBottom: -1, display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'color 0.1s', whiteSpace: 'nowrap' }}>
+              <tab.Icon />
+              {tab.label}
+              {badge > 0 && <span style={{ padding: '0 5px', borderRadius: 999, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: '16px', minWidth: 16, textAlign: 'center' }}>{badge}</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          REGISTER VIEW
+      ══════════════════════════════════════════════════════════════════ */}
+      {engView === 'register' && <>
 
       {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -4672,7 +4872,7 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
           <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 24, maxWidth: 360, margin: '0 auto 24px' }}>
             {search || discipline !== 'overview' || docType !== 'all'
               ? 'Try adjusting your search or filter.'
-              : `Add calculations, drawings, datasheets, and specifications organised by discipline.`}
+              : 'Add calculations, drawings, datasheets, and specifications organised by discipline.'}
           </div>
           {!search && discipline === 'overview' && docType === 'all' && (
             <button onClick={openAdd} style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -4682,29 +4882,317 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
         </div>
       ) : (
         <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}>
-          {/* Column headers */}
           <div style={{ display: 'grid', gridTemplateColumns: COL, gap: 16, padding: '10px 20px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
             {['', 'Document', 'Revision', 'Status', 'Actions'].map((h, i) => (
               <div key={i} style={{ fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: i === 4 ? 'right' : 'left' as const }}>{h}</div>
             ))}
           </div>
-          {/* Rows */}
           {filtered.map(doc => renderRow(doc, false))}
         </div>
       )}
 
-      {/* ── Add Document Modal ── */}
+      </> /* end register view */}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          REVIEW VIEW
+      ══════════════════════════════════════════════════════════════════ */}
+      {engView === 'review' && (
+        <div style={{ display: 'grid', gridTemplateColumns: reviewDocId ? '340px 1fr' : '1fr', gap: 16 }}>
+
+          {/* ── Document list panel ── */}
+          <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden', alignSelf: 'start' }}>
+            <div style={{ padding: '12px 16px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Documents</span>
+              <span style={{ fontSize: 11, color: theme.textMuted }}>{allDocs.length} total</span>
+            </div>
+            {allDocs.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>No documents yet</div>
+            ) : allDocs.map(doc => {
+              const isSelected = reviewDocId === doc.id
+              const st = ENG_DOC_STATUSES[doc.status] ?? ENG_DOC_STATUSES['draft']!
+              return (
+                <button key={doc.id} onClick={() => { setReviewDocId(doc.id); setShowCommentForm(false); setRespondingTo(null) }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', background: isSelected ? theme.accentBg : 'transparent', borderBottom: `1px solid ${theme.border}`, border: 'none', borderLeft: isSelected ? `3px solid ${theme.accent}` : '3px solid transparent', cursor: 'pointer', textAlign: 'left' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: isSelected ? theme.accent : theme.textMuted, marginBottom: 2 }}>{doc.refNumber}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.title}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 7px', borderRadius: 999, background: st.bg, fontSize: 10, fontWeight: 600, color: st.text }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot }} />{st.label}
+                      </span>
+                      {doc.openCommentCount > 0 && (
+                        <span style={{ padding: '1px 6px', borderRadius: 999, background: '#fee2e2', color: '#dc2626', fontSize: 10, fontWeight: 700 }}>
+                          {doc.openCommentCount} open
+                        </span>
+                      )}
+                      {doc.openCommentCount === 0 && doc.commentCount > 0 && (
+                        <span style={{ padding: '1px 6px', borderRadius: 999, background: '#f0fdf4', color: '#15803d', fontSize: 10, fontWeight: 700 }}>
+                          {doc.commentCount} resolved
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* ── Comment thread panel ── */}
+          {reviewDocId && reviewDoc && (
+            <div>
+              {/* Thread header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: '14px 20px', background: theme.bgSurface, borderRadius: 12, border: `1px solid ${theme.border}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: theme.accent, marginBottom: 2 }}>{reviewDoc.refNumber}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: theme.textPrimary }}>{reviewDoc.title}</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                    Rev {reviewDoc.revision ?? '—'}
+                    {reviewDoc.originatorName && ` · Orig: ${reviewDoc.originatorName}`}
+                    {reviewDoc.checkerName && ` · Checker: ${reviewDoc.checkerName}`}
+                  </div>
+                </div>
+                <button onClick={() => setShowCommentForm(v => !v)}
+                  style={{ padding: '7px 16px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                  Add Comment
+                </button>
+              </div>
+
+              {/* Add comment form */}
+              {showCommentForm && (
+                <div style={{ marginBottom: 16, padding: 16, borderRadius: 12, border: `1px solid ${theme.accent}40`, background: theme.accentBg }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.accent, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>New Review Comment</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      {lbl('Category', true)}
+                      <select value={commentForm.category} onChange={e => setCommentForm(f => ({...f, category: e.target.value as 'major'|'minor'|'info'}))}
+                        style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                        <option value="major">Major — Must resolve before approval</option>
+                        <option value="minor">Minor — Noted, address if possible</option>
+                        <option value="info">Info — For reference only</option>
+                      </select>
+                    </div>
+                    <div>
+                      {lbl('Location Reference')}
+                      {inp(commentForm.locationRef, v => setCommentForm(f => ({...f, locationRef: v})), 'e.g. Sheet 3, Clause 4.2')}
+                    </div>
+                  </div>
+                  {lbl('Comment Text', true)}
+                  <textarea value={commentForm.commentText} onChange={e => setCommentForm(f => ({...f, commentText: e.target.value}))} placeholder="Describe the issue clearly…"
+                    style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 80, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none', marginBottom: 12 }} />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={() => { setShowCommentForm(false); setCommentForm({ locationRef: '', commentText: '', category: 'minor' }) }}
+                      style={{ padding: '7px 16px', borderRadius: 7, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                    <button disabled={!commentForm.commentText} onClick={() => void handleAddComment()}
+                      style={{ padding: '7px 18px', borderRadius: 7, background: commentForm.commentText ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: commentForm.commentText ? 'pointer' : 'not-allowed' }}>Submit Comment</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Comment list */}
+              {comments.length === 0 ? (
+                <div style={{ padding: '48px 32px', textAlign: 'center', border: `2px dashed ${theme.border}`, borderRadius: 12 }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, margin: '0 auto 12px', display: 'block' }}>
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, marginBottom: 4 }}>No comments yet</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted }}>Click "Add Comment" to start the review thread</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {comments.map((c, idx) => {
+                    const catMeta = DOC_CATEGORY_META[c.category] ?? DOC_CATEGORY_META['minor']!
+                    const resMeta = c.resolution ? (DOC_RESOLUTION_META[c.resolution] ?? null) : null
+                    const isResponding = respondingTo === c.id
+                    const hasResponse  = !!c.responseText
+                    return (
+                      <div key={c.id} style={{ borderRadius: 10, border: `1px solid ${theme.border}`, overflow: 'hidden' }}>
+                        {/* Comment header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
+                          <span style={{ width: 22, height: 22, borderRadius: '50%', background: theme.accent, color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 5, background: catMeta.bg, color: catMeta.color, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{catMeta.label}</span>
+                          {c.locationRef && <span style={{ fontSize: 11, color: theme.textMuted }}>@ {c.locationRef}</span>}
+                          <span style={{ marginLeft: 'auto', fontSize: 11, color: theme.textMuted }}>{c.reviewerName ?? 'Reviewer'} · {new Date(c.createdAt).toLocaleDateString()}</span>
+                          {isAdmin && !hasResponse && (
+                            <button onClick={() => void handleDeleteComment(c.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 2, display: 'inline-flex' }}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                            </button>
+                          )}
+                        </div>
+                        {/* Comment body */}
+                        <div style={{ padding: '12px 14px', fontSize: 13, color: theme.textPrimary, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{c.commentText}</div>
+
+                        {/* Response */}
+                        {hasResponse && (
+                          <div style={{ padding: '10px 14px', background: '#f0fdf4', borderTop: `1px solid #bbf7d0` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M3 10h10a8 8 0 0 1 8 8v2M3 10l6 6M3 10l6-6" stroke="#15803d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#15803d' }}>Response</span>
+                              {resMeta && <span style={{ padding: '1px 7px', borderRadius: 999, background: resMeta.bg, color: resMeta.color, fontSize: 10, fontWeight: 700 }}>{resMeta.label}</span>}
+                              <span style={{ marginLeft: 'auto', fontSize: 11, color: '#15803d' }}>{c.responseName ?? ''}{c.responseDate ? ` · ${new Date(c.responseDate).toLocaleDateString()}` : ''}</span>
+                            </div>
+                            <div style={{ fontSize: 13, color: '#166534', lineHeight: 1.5 }}>{c.responseText}</div>
+                          </div>
+                        )}
+
+                        {/* Respond form */}
+                        {!hasResponse && (
+                          <div style={{ borderTop: `1px solid ${theme.border}`, padding: '8px 14px' }}>
+                            {isResponding ? (
+                              <div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, marginBottom: 8 }}>
+                                  <textarea value={responseForm.responseText} onChange={e => setResponseForm(f => ({...f, responseText: e.target.value}))} placeholder="Enter response to this comment…"
+                                    style={{ width: '100%', padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, minHeight: 60, resize: 'vertical', boxSizing: 'border-box' as const, outline: 'none' }} />
+                                  <select value={responseForm.resolution} onChange={e => setResponseForm(f => ({...f, resolution: e.target.value}))}
+                                    style={{ padding: '8px 10px', border: `1px solid ${theme.border}`, borderRadius: 7, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 12, height: 'fit-content', alignSelf: 'flex-start' }}>
+                                    <option value="accepted">Accepted</option>
+                                    <option value="partial">Partial</option>
+                                    <option value="rejected">Rejected</option>
+                                    <option value="withdrawn">Withdrawn</option>
+                                  </select>
+                                </div>
+                                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                  <button onClick={() => { setRespondingTo(null); setResponseForm({ responseText: '', resolution: 'accepted' }) }}
+                                    style={{ padding: '5px 12px', borderRadius: 6, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                                  <button disabled={!responseForm.responseText} onClick={() => void handleRespond(c.id)}
+                                    style={{ padding: '5px 14px', borderRadius: 6, background: responseForm.responseText ? '#15803d' : theme.border, color: '#fff', border: 'none', fontSize: 12, fontWeight: 600, cursor: responseForm.responseText ? 'pointer' : 'not-allowed' }}>Submit Response</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button onClick={() => { setRespondingTo(c.id); setResponseForm({ responseText: '', resolution: 'accepted' }) }}
+                                style={{ fontSize: 12, color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontWeight: 600 }}>
+                                ↩ Respond to this comment
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Placeholder when no doc selected */}
+          {!reviewDocId && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 32px', color: theme.textMuted, textAlign: 'center' }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 16, opacity: 0.4 }}>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Select a document</div>
+              <div style={{ fontSize: 12 }}>Choose a document from the list to view and add review comments</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          DISTRIBUTION VIEW
+      ══════════════════════════════════════════════════════════════════ */}
+      {engView === 'distribution' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: theme.textPrimary }}>Document Distribution Matrix</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>Defines who receives which document types at each status milestone</div>
+            </div>
+            {isAdmin && (
+              <button onClick={() => { setEditDDM(null); setDDMForm(emptyDDM); setShowDDMModal(true) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                Add Entry
+              </button>
+            )}
+          </div>
+
+          {ddmEntries.length === 0 ? (
+            <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 16, padding: '64px 32px', textAlign: 'center' }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" style={{ color: theme.textMuted, margin: '0 auto 14px', display: 'block' }}>
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.5"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}>No distribution entries</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, maxWidth: 400, margin: '0 auto 20px' }}>
+                Configure which companies receive which documents at each status milestone (IFA, IFR, IFC, etc.).
+              </div>
+              {isAdmin && (
+                <button onClick={() => { setEditDDM(null); setDDMForm(emptyDDM); setShowDDMModal(true) }}
+                  style={{ padding: '8px 20px', borderRadius: 8, background: theme.accent, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Add First Entry
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: theme.bgSurface }}>
+                      {['Company', 'Contact', 'Discipline', 'Doc Type', 'Status Trigger', 'Copies', 'Format', 'Auto', 'Actions'].map((h, i) => (
+                        <th key={i} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.07em', borderBottom: `1px solid ${theme.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ddmEntries.map((e, idx) => {
+                      const stMeta = ENG_DOC_STATUSES[e.statusTrigger] ?? ENG_DOC_STATUSES['draft']!
+                      return (
+                        <tr key={e.id} style={{ borderBottom: `1px solid ${theme.border}`, background: idx % 2 === 0 ? 'transparent' : theme.bgSurface }}>
+                          <td style={{ padding: '10px 14px', fontWeight: 600, color: theme.textPrimary }}>{e.companyName}</td>
+                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
+                            <div>{e.contactName ?? '—'}</div>
+                            {e.contactEmail && <div style={{ fontSize: 11, color: theme.textMuted }}>{e.contactEmail}</div>}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>{e.discipline ?? <span style={{ color: theme.textMuted }}>All</span>}</td>
+                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>{e.docType ?? <span style={{ color: theme.textMuted }}>All</span>}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 999, background: stMeta.bg, color: stMeta.text, fontSize: 11, fontWeight: 700 }}>
+                              <span style={{ width: 5, height: 5, borderRadius: '50%', background: stMeta.dot }} />{stMeta.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>{e.copies}</td>
+                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>{e.format}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            {e.autoTransmit
+                              ? <span style={{ padding: '2px 8px', borderRadius: 999, background: '#f0fdf4', color: '#15803d', fontSize: 10, fontWeight: 700 }}>Auto</span>
+                              : <span style={{ color: theme.textMuted, fontSize: 12 }}>Manual</span>}
+                          </td>
+                          <td style={{ padding: '10px 14px' }}>
+                            {isAdmin && (
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button onClick={() => { setEditDDM(e); setDDMForm({ companyName: e.companyName, contactName: e.contactName ?? '', contactEmail: e.contactEmail ?? '', discipline: e.discipline ?? '', docType: e.docType ?? '', statusTrigger: e.statusTrigger, copies: e.copies, format: e.format as DDMEntry['format'], autoTransmit: e.autoTransmit, notes: e.notes ?? '' }); setShowDDMModal(true) }}
+                                  style={{ padding: '4px 10px', borderRadius: 6, background: theme.bgSurface, border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 11, cursor: 'pointer' }}>Edit</button>
+                                <button onClick={() => void handleDeleteDDM(e.id)}
+                                  style={{ padding: '4px 10px', borderRadius: 6, background: '#fff1f2', border: '1px solid #fca5a5', color: '#dc2626', fontSize: 11, cursor: 'pointer' }}>Delete</button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Shared Modals ─────────────────────────────────────────────────── */}
+
+      {/* Add Document Modal */}
       {showModal && (
         <Modal open={true} size="lg" title="Add Engineering Document" onClose={() => setShowModal(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Ref preview */}
             <div style={{ padding: '10px 14px', borderRadius: 8, background: theme.accentBg, border: `1px solid ${theme.accent}40`, fontSize: 12 }}>
               <span style={{ color: theme.textMuted }}>Reference will be assigned as: </span>
               <strong style={{ fontFamily: 'monospace', color: theme.accent }}>
                 {projectCode}-{activeDisciplineCode ?? 'OTH'}-{TYPE_CODE_MAP[docType] ?? 'OTH'}-####
               </strong>
             </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
                 {lbl('Discipline', true)}
@@ -4734,6 +5222,26 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
                 {lbl('Issue Date')}
                 {inp(form.issueDate, v => setForm(f => ({...f, issueDate: v})), '', 'date')}
               </div>
+              <div>
+                {lbl('Purpose of Issue')}
+                <select value={form.purposeOfIssue} onChange={e => setForm(f => ({...f, purposeOfIssue: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— None —</option>
+                  {Object.entries(ENG_PURPOSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Originator')}
+                {inp(form.originatorName, v => setForm(f => ({...f, originatorName: v})), 'Name or company')}
+              </div>
+              <div>
+                {lbl('Checker')}
+                {inp(form.checkerName, v => setForm(f => ({...f, checkerName: v})), 'Name or company')}
+              </div>
+              <div>
+                {lbl('Approver')}
+                {inp(form.approverName, v => setForm(f => ({...f, approverName: v})), 'Name or company')}
+              </div>
               {(docType === 'drawing' || docType === 'all') && (
                 <>
                   <div>
@@ -4760,8 +5268,6 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
                 {inp(form.notes, v => setForm(f => ({...f, notes: v})), 'Optional notes')}
               </div>
             </div>
-
-            {/* File upload zone */}
             <div>
               {lbl('File')}
               <div onClick={() => { if (!uploading) void pickFile((fid, fn) => setForm(f => ({...f, fileId: fid, filename: fn}))) }}
@@ -4790,22 +5296,17 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
                 )}
               </div>
             </div>
-
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
               <button onClick={() => setShowModal(false)}
-                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>
-                Cancel
-              </button>
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
               <button disabled={!form.title || uploading} onClick={() => void handleCreate()}
-                style={{ padding: '8px 22px', borderRadius: 8, background: form.title && !uploading ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title && !uploading ? 'pointer' : 'not-allowed' }}>
-                Add Document
-              </button>
+                style={{ padding: '8px 22px', borderRadius: 8, background: form.title && !uploading ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: form.title && !uploading ? 'pointer' : 'not-allowed' }}>Add Document</button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* ── Issue Revision Modal ── */}
+      {/* Issue Revision Modal */}
       {reviseDoc && (
         <Modal open={true} title={`Issue Revision — ${reviseDoc.refNumber}`} onClose={() => setReviseDoc(null)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -4817,6 +5318,17 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>{lbl('New Revision', true)}{inp(revForm.revision, v => setRevForm(f => ({...f, revision: v})), 'e.g. B, 1, P2')}</div>
               <div>{lbl('Issue Date')}{inp(revForm.issueDate, v => setRevForm(f => ({...f, issueDate: v})), '', 'date')}</div>
+              <div>
+                {lbl('Purpose of Issue')}
+                <select value={revForm.purposeOfIssue} onChange={e => setRevForm(f => ({...f, purposeOfIssue: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">— None —</option>
+                  {Object.entries(ENG_PURPOSE_LABELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+              <div>{lbl('Originator')}{inp(revForm.originatorName, v => setRevForm(f => ({...f, originatorName: v})), 'Originator name')}</div>
+              <div>{lbl('Checker')}{inp(revForm.checkerName, v => setRevForm(f => ({...f, checkerName: v})), 'Checker name')}</div>
+              <div>{lbl('Approver')}{inp(revForm.approverName, v => setRevForm(f => ({...f, approverName: v})), 'Approver name')}</div>
               <div style={{ gridColumn: '1 / -1' }}>
                 {lbl('Change Notes')}
                 <textarea value={revForm.notes} onChange={e => setRevForm(f => ({...f, notes: e.target.value}))} placeholder="What changed in this revision?"
@@ -4827,23 +5339,87 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin }: {
               {lbl('Revised File')}
               <div onClick={() => { if (!uploading) void pickFile((fid, fn) => setRevForm(f => ({...f, fileId: fid, filename: fn}))) }}
                 style={{ border: `2px dashed ${revForm.fileId ? theme.accent : theme.border}`, borderRadius: 10, padding: '16px', textAlign: 'center', cursor: uploading ? 'not-allowed' : 'pointer', background: revForm.fileId ? theme.accentBg : 'transparent' }}>
-                {uploading ? (
-                  <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
-                ) : revForm.fileId ? (
-                  <div style={{ fontSize: 13, fontWeight: 600, color: theme.accent }}>✓ {revForm.filename} <span style={{ fontSize: 11, color: theme.textMuted, fontWeight: 400 }}>— click to replace</span></div>
-                ) : (
-                  <div style={{ color: theme.textSecondary, fontSize: 13 }}>Click to attach revised file <span style={{ color: theme.textMuted }}>(optional)</span></div>
-                )}
+                {uploading ? <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
+                  : revForm.fileId ? <div style={{ fontSize: 13, fontWeight: 600, color: theme.accent }}>✓ {revForm.filename} <span style={{ fontSize: 11, color: theme.textMuted, fontWeight: 400 }}>— click to replace</span></div>
+                  : <div style={{ color: theme.textSecondary, fontSize: 13 }}>Click to attach revised file <span style={{ color: theme.textMuted }}>(optional)</span></div>}
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
               <button onClick={() => setReviseDoc(null)}
-                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>
-                Cancel
-              </button>
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
               <button disabled={!revForm.revision || uploading} onClick={() => void handleRevise()}
-                style={{ padding: '8px 22px', borderRadius: 8, background: revForm.revision && !uploading ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: revForm.revision && !uploading ? 'pointer' : 'not-allowed' }}>
-                Issue Revision
+                style={{ padding: '8px 22px', borderRadius: 8, background: revForm.revision && !uploading ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: revForm.revision && !uploading ? 'pointer' : 'not-allowed' }}>Issue Revision</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Distribution Entry Modal */}
+      {showDDMModal && (
+        <Modal open={true} title={editDDM ? 'Edit Distribution Entry' : 'Add Distribution Entry'} onClose={() => { setShowDDMModal(false); setEditDDM(null); setDDMForm(emptyDDM) }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Company / Recipient', true)}
+                {inp(ddmForm.companyName, v => setDDMForm(f => ({...f, companyName: v})), 'e.g. Client, EPC Contractor, Subcontractor')}
+              </div>
+              <div>{lbl('Contact Name')}{inp(ddmForm.contactName, v => setDDMForm(f => ({...f, contactName: v})), 'Full name')}</div>
+              <div>{lbl('Email')}{inp(ddmForm.contactEmail, v => setDDMForm(f => ({...f, contactEmail: v})), 'email@example.com', 'email')}</div>
+              <div>
+                {lbl('Discipline (blank = all)')}
+                <select value={ddmForm.discipline} onChange={e => setDDMForm(f => ({...f, discipline: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">All Disciplines</option>
+                  {ENG_DISCIPLINES.filter(d => d.key !== 'overview').map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Doc Type (blank = all)')}
+                <select value={ddmForm.docType} onChange={e => setDDMForm(f => ({...f, docType: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  <option value="">All Types</option>
+                  {ENG_DOC_TYPES.filter(t => t.key !== 'all').map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Status Trigger', true)}
+                <select value={ddmForm.statusTrigger} onChange={e => setDDMForm(f => ({...f, statusTrigger: e.target.value}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  {Object.entries(ENG_DOC_STATUSES).filter(([k]) => !['preliminary','for_review','for_construction','superseded','cancelled'].includes(k)).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                {lbl('Format')}
+                <select value={ddmForm.format} onChange={e => setDDMForm(f => ({...f, format: e.target.value as DDMEntry['format']}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const }}>
+                  {(['PDF','DWG','Native','Hard Copy'] as const).map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                {lbl('Copies')}
+                <input type="number" min={1} value={ddmForm.copies} onChange={e => setDDMForm(f => ({...f, copies: parseInt(e.target.value) || 1}))}
+                  style={{ width: '100%', padding: '9px 12px', border: `1px solid ${theme.border}`, borderRadius: 8, background: theme.bgCanvas, color: theme.textPrimary, fontSize: 13, boxSizing: 'border-box' as const, outline: 'none' }} />
+              </div>
+              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input type="checkbox" id="autoTransmit" checked={ddmForm.autoTransmit} onChange={e => setDDMForm(f => ({...f, autoTransmit: e.target.checked}))}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                <label htmlFor="autoTransmit" style={{ fontSize: 13, color: theme.textPrimary, cursor: 'pointer' }}>
+                  Auto-generate transmittal when document reaches this status
+                </label>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                {lbl('Notes')}
+                {inp(ddmForm.notes, v => setDDMForm(f => ({...f, notes: v})), 'Optional notes')}
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, borderTop: `1px solid ${theme.border}`, marginTop: 4 }}>
+              <button onClick={() => { setShowDDMModal(false); setEditDDM(null); setDDMForm(emptyDDM) }}
+                style={{ padding: '8px 18px', borderRadius: 8, background: 'transparent', border: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 13, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={!ddmForm.companyName} onClick={() => void handleSaveDDM()}
+                style={{ padding: '8px 22px', borderRadius: 8, background: ddmForm.companyName ? theme.accent : theme.border, color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, cursor: ddmForm.companyName ? 'pointer' : 'not-allowed' }}>
+                {editDDM ? 'Update Entry' : 'Add Entry'}
               </button>
             </div>
           </div>

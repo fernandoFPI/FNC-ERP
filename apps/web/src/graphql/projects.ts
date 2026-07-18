@@ -450,8 +450,11 @@ const ENG_DOC_FIELDS = gql`
     id projectId refNumber discipline docType seqNo title description
     scale paperSize revision status issueDate notes fileId docGroupId
     isCurrent uploadedByName downloadUrl filename createdAt
+    originatorName checkerName approverName purposeOfIssue
+    commentCount openCommentCount
     history {
       id refNumber revision status issueDate notes uploadedByName downloadUrl filename createdAt
+      originatorName checkerName approverName purposeOfIssue commentCount openCommentCount
     }
   }
 `
@@ -469,19 +472,29 @@ export const CREATE_ENG_DOC = gql`
     $projectId: ID! $discipline: String! $docType: String! $title: String!
     $fileId: ID $revision: String $description: String $scale: String
     $paperSize: String $issueDate: String $notes: String
+    $originatorName: String $checkerName: String $approverName: String $purposeOfIssue: String
   ) {
     createEngineeringDoc(
       projectId: $projectId discipline: $discipline docType: $docType title: $title
       fileId: $fileId revision: $revision description: $description scale: $scale
       paperSize: $paperSize issueDate: $issueDate notes: $notes
+      originatorName: $originatorName checkerName: $checkerName
+      approverName: $approverName purposeOfIssue: $purposeOfIssue
     ) { ...EngDocFields }
   }
 `
 
 export const REVISE_ENG_DOC = gql`
   ${ENG_DOC_FIELDS}
-  mutation ReviseEngineeringDoc($id: ID! $fileId: ID $revision: String! $notes: String $issueDate: String) {
-    reviseEngineeringDoc(id: $id fileId: $fileId revision: $revision notes: $notes issueDate: $issueDate) { ...EngDocFields }
+  mutation ReviseEngineeringDoc(
+    $id: ID! $fileId: ID $revision: String! $notes: String $issueDate: String
+    $originatorName: String $checkerName: String $approverName: String $purposeOfIssue: String
+  ) {
+    reviseEngineeringDoc(
+      id: $id fileId: $fileId revision: $revision notes: $notes issueDate: $issueDate
+      originatorName: $originatorName checkerName: $checkerName
+      approverName: $approverName purposeOfIssue: $purposeOfIssue
+    ) { ...EngDocFields }
   }
 `
 
@@ -491,8 +504,95 @@ export const UPDATE_ENG_DOC_STATUS = gql`
   }
 `
 
+export const UPDATE_ENG_DOC_META = gql`
+  ${ENG_DOC_FIELDS}
+  mutation UpdateEngineeringDocMeta(
+    $id: ID! $originatorName: String $checkerName: String $approverName: String $purposeOfIssue: String
+  ) {
+    updateEngineeringDocMeta(
+      id: $id originatorName: $originatorName checkerName: $checkerName
+      approverName: $approverName purposeOfIssue: $purposeOfIssue
+    ) { ...EngDocFields }
+  }
+`
+
 export const DELETE_ENG_DOC = gql`
   mutation DeleteEngineeringDoc($id: ID!) { deleteEngineeringDoc(id: $id) }
+`
+
+// ── Doc Comments (Phase 1) ────────────────────────────────────────────────
+
+const DOC_COMMENT_FIELDS = gql`
+  fragment DocCommentFields on DocComment {
+    id documentId revision reviewerId reviewerName commentNumber
+    locationRef commentText category
+    responseText responseById responseName responseDate resolution
+    createdAt
+  }
+`
+
+export const DOC_COMMENTS_QUERY = gql`
+  ${DOC_COMMENT_FIELDS}
+  query DocComments($documentId: ID!) {
+    docComments(documentId: $documentId) { ...DocCommentFields }
+  }
+`
+
+export const ADD_DOC_COMMENT = gql`
+  ${DOC_COMMENT_FIELDS}
+  mutation AddDocComment(
+    $documentId: ID! $revision: String! $locationRef: String $commentText: String! $category: String!
+  ) {
+    addDocComment(documentId: $documentId revision: $revision locationRef: $locationRef
+      commentText: $commentText category: $category) { ...DocCommentFields }
+  }
+`
+
+export const RESPOND_TO_COMMENT = gql`
+  ${DOC_COMMENT_FIELDS}
+  mutation RespondToComment($id: ID! $responseText: String! $resolution: String!) {
+    respondToComment(id: $id responseText: $responseText resolution: $resolution) { ...DocCommentFields }
+  }
+`
+
+export const DELETE_DOC_COMMENT = gql`
+  mutation DeleteDocComment($id: ID!) { deleteDocComment(id: $id) }
+`
+
+// ── Document Distribution Matrix (Phase 1) ────────────────────────────────
+
+const DDM_FIELDS = gql`
+  fragment DDMFields on DocDistributionEntry {
+    id projectId companyName contactName contactEmail
+    discipline docType statusTrigger copies format autoTransmit notes createdAt
+  }
+`
+
+export const DOC_DISTRIBUTION_QUERY = gql`
+  ${DDM_FIELDS}
+  query DocDistributionMatrix($projectId: ID!) {
+    docDistributionMatrix(projectId: $projectId) { ...DDMFields }
+  }
+`
+
+export const UPSERT_DISTRIBUTION_ENTRY = gql`
+  ${DDM_FIELDS}
+  mutation UpsertDistributionEntry(
+    $id: ID $projectId: ID! $companyName: String! $contactName: String $contactEmail: String
+    $discipline: String $docType: String $statusTrigger: String! $copies: Int
+    $format: String $autoTransmit: Boolean $notes: String
+  ) {
+    upsertDistributionEntry(
+      id: $id projectId: $projectId companyName: $companyName contactName: $contactName
+      contactEmail: $contactEmail discipline: $discipline docType: $docType
+      statusTrigger: $statusTrigger copies: $copies format: $format
+      autoTransmit: $autoTransmit notes: $notes
+    ) { ...DDMFields }
+  }
+`
+
+export const DELETE_DISTRIBUTION_ENTRY = gql`
+  mutation DeleteDistributionEntry($id: ID!) { deleteDistributionEntry(id: $id) }
 `
 
 // ── Engineering module (legacy) ───────────────────────────────────────────

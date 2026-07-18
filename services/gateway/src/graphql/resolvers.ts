@@ -635,28 +635,73 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
 
 function engDocToGQL(row: Record<string, unknown>, history: Array<{ row: Record<string, unknown>; url: string | null }>, downloadUrl: string | null = null): Record<string, unknown> {
   return {
-    id:             row['id'],
-    projectId:      row['project_id'],
-    refNumber:      row['ref_number'],
-    discipline:     row['discipline'],
-    docType:        row['doc_type'],
-    seqNo:          Number(row['seq_no']),
-    title:          row['title'],
-    description:    row['description'] ?? null,
-    scale:          row['scale'] ?? null,
-    paperSize:      row['paper_size'] ?? null,
-    revision:       row['revision'] ?? null,
-    status:         row['status'],
-    issueDate:      row['issue_date'] ? String(row['issue_date']).slice(0, 10) : null,
-    notes:          row['notes'] ?? null,
-    fileId:         row['file_id'] ?? null,
-    docGroupId:     row['doc_group_id'],
-    isCurrent:      Boolean(row['is_current']),
-    uploadedByName: row['uploaded_by_name'] ?? null,
+    id:               row['id'],
+    projectId:        row['project_id'],
+    refNumber:        row['ref_number'],
+    discipline:       row['discipline'],
+    docType:          row['doc_type'],
+    seqNo:            Number(row['seq_no']),
+    title:            row['title'],
+    description:      row['description'] ?? null,
+    scale:            row['scale'] ?? null,
+    paperSize:        row['paper_size'] ?? null,
+    revision:         row['revision'] ?? null,
+    status:           row['status'],
+    issueDate:        row['issue_date'] ? String(row['issue_date']).slice(0, 10) : null,
+    notes:            row['notes'] ?? null,
+    fileId:           row['file_id'] ?? null,
+    docGroupId:       row['doc_group_id'],
+    isCurrent:        Boolean(row['is_current']),
+    uploadedByName:   row['uploaded_by_name'] ?? null,
     downloadUrl,
-    filename:       row['filename'] ?? null,
-    history:        history.map(h => engDocToGQL(h.row, [], h.url)),
-    createdAt:      row['created_at'],
+    filename:         row['filename'] ?? null,
+    history:          history.map(h => engDocToGQL(h.row, [], h.url)),
+    createdAt:        row['created_at'],
+    // Phase 1 review metadata
+    originatorName:   row['originator_name'] ?? null,
+    checkerName:      row['checker_name'] ?? null,
+    approverName:     row['approver_name'] ?? null,
+    purposeOfIssue:   row['purpose_of_issue'] ?? null,
+    commentCount:     Number(row['comment_count'] ?? 0),
+    openCommentCount: Number(row['open_comment_count'] ?? 0),
+  }
+}
+
+function docCommentToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id:            row['id'],
+    documentId:    row['document_id'],
+    revision:      row['revision'],
+    reviewerId:    row['reviewer_id'],
+    reviewerName:  row['reviewer_name'] ?? null,
+    commentNumber: Number(row['comment_number']),
+    locationRef:   row['location_ref'] ?? null,
+    commentText:   row['comment_text'],
+    category:      row['category'],
+    responseText:  row['response_text'] ?? null,
+    responseById:  row['response_by_id'] ?? null,
+    responseName:  row['response_name'] ?? null,
+    responseDate:  row['response_date'] ? String(row['response_date']) : null,
+    resolution:    row['resolution'] ?? null,
+    createdAt:     row['created_at'],
+  }
+}
+
+function ddmToGQL(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id:            row['id'],
+    projectId:     row['project_id'],
+    companyName:   row['company_name'],
+    contactName:   row['contact_name'] ?? null,
+    contactEmail:  row['contact_email'] ?? null,
+    discipline:    row['discipline'] ?? null,
+    docType:       row['doc_type'] ?? null,
+    statusTrigger: row['status_trigger'],
+    copies:        Number(row['copies'] ?? 1),
+    format:        row['format'] ?? 'PDF',
+    autoTransmit:  Boolean(row['auto_transmit']),
+    notes:         row['notes'] ?? null,
+    createdAt:     row['created_at'],
   }
 }
 
@@ -5124,6 +5169,7 @@ export const resolvers = {
       projectId: string; discipline: string; docType: string; title: string;
       fileId?: string; revision?: string; description?: string; scale?: string;
       paperSize?: string; issueDate?: string; notes?: string;
+      originatorName?: string; checkerName?: string; approverName?: string; purposeOfIssue?: string;
     }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const projRes = await query(
@@ -5166,13 +5212,15 @@ export const resolvers = {
           `INSERT INTO engineering_documents
              (project_id, company_id, ref_number, discipline, doc_type, seq_no,
               title, description, scale, paper_size, revision, status,
-              issue_date, notes, file_id, uploaded_by_id, uploaded_by_name)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'preliminary',$12,$13,$14,$15,$16)
+              issue_date, notes, file_id, uploaded_by_id, uploaded_by_name,
+              originator_name, checker_name, approver_name, purpose_of_issue)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft',$12,$13,$14,$15,$16,$17,$18,$19,$20)
            RETURNING *`,
           [args.projectId, ctx.auth.companyId, refNumber, args.discipline, args.docType, seqNo,
            args.title, args.description ?? null, args.scale ?? null, args.paperSize ?? null,
            args.revision ?? null, args.issueDate ?? null, args.notes ?? null,
-           args.fileId ?? null, ctx.auth.userId, uploadedByName],
+           args.fileId ?? null, ctx.auth.userId, uploadedByName,
+           args.originatorName ?? null, args.checkerName ?? null, args.approverName ?? null, args.purposeOfIssue ?? null],
         )
         await client.query('COMMIT')
         const row = { ...ins.rows[0] as Record<string, unknown>, filename, file_key: null }
@@ -5186,6 +5234,7 @@ export const resolvers = {
 
     reviseEngineeringDoc: async (_: unknown, args: {
       id: string; fileId?: string; revision: string; notes?: string; issueDate?: string;
+      originatorName?: string; checkerName?: string; approverName?: string; purposeOfIssue?: string;
     }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const existing = await query(
@@ -5221,14 +5270,19 @@ export const resolvers = {
           `INSERT INTO engineering_documents
              (project_id, company_id, ref_number, discipline, doc_type, seq_no,
               title, description, scale, paper_size, revision, status,
-              issue_date, notes, file_id, doc_group_id, uploaded_by_id, uploaded_by_name)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+              issue_date, notes, file_id, doc_group_id, uploaded_by_id, uploaded_by_name,
+              originator_name, checker_name, approver_name, purpose_of_issue)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
            RETURNING *`,
           [old['project_id'], ctx.auth.companyId, old['ref_number'], old['discipline'], old['doc_type'], old['seq_no'],
            old['title'], old['description'] ?? null, old['scale'] ?? null, old['paper_size'] ?? null,
-           args.revision, String(old['status'] ?? 'preliminary') === 'superseded' ? 'for_review' : old['status'],
+           args.revision, String(old['status'] ?? 'draft') === 'superseded' ? 'IFR' : old['status'],
            args.issueDate ?? null, args.notes ?? null, args.fileId ?? null,
-           old['doc_group_id'], ctx.auth.userId, uploadedByName],
+           old['doc_group_id'], ctx.auth.userId, uploadedByName,
+           args.originatorName ?? old['originator_name'] ?? null,
+           args.checkerName    ?? old['checker_name']    ?? null,
+           args.approverName   ?? old['approver_name']   ?? null,
+           args.purposeOfIssue ?? old['purpose_of_issue'] ?? null],
         )
         await client.query('COMMIT')
         const row = { ...ins.rows[0] as Record<string, unknown>, filename, file_key: null }
@@ -5273,6 +5327,132 @@ export const resolvers = {
       }
       await logActivity(String(row['project_id']), ctx.auth.userId, 'engineering_doc_deleted', `Deleted ${row['ref_number']}`)
       return true
+    },
+
+    // ── Phase 1: Engineering Doc Metadata Update ─────────────────────────────
+
+    updateEngineeringDocMeta: async (_: unknown, args: {
+      id: string; originatorName?: string; checkerName?: string; approverName?: string; purposeOfIssue?: string;
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE engineering_documents ed SET
+           originator_name  = COALESCE($1, originator_name),
+           checker_name     = COALESCE($2, checker_name),
+           approver_name    = COALESCE($3, approver_name),
+           purpose_of_issue = COALESCE($4, purpose_of_issue)
+         FROM projects p WHERE p.id=ed.project_id AND p.company_id=$5 AND ed.id=$6
+         RETURNING ed.*, 0 AS comment_count, 0 AS open_comment_count`,
+        [args.originatorName ?? null, args.checkerName ?? null, args.approverName ?? null,
+         args.purposeOfIssue ?? null, ctx.auth.companyId, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Document not found')
+      return engDocToGQL(r.rows[0] as Record<string, unknown>, [])
+    },
+
+    // ── Phase 1: Document Review Comments ────────────────────────────────────
+
+    addDocComment: async (_: unknown, args: {
+      documentId: string; revision: string; locationRef?: string; commentText: string; category: string;
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const nameRes = await query(
+        `SELECT COALESCE(e.first_name||' '||e.last_name, u.email) AS name
+         FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`,
+        [ctx.auth.userId],
+      )
+      const reviewerName = nameRes.rows[0] ? String((nameRes.rows[0] as Record<string, unknown>)['name']) : null
+      const seqRes = await query(
+        `SELECT COALESCE(MAX(comment_number), 0) + 1 AS next FROM project_doc_comments WHERE document_id=$1`,
+        [args.documentId],
+      )
+      const commentNumber = Number((seqRes.rows[0] as Record<string, unknown>)['next'])
+      const ins = await query(
+        `INSERT INTO project_doc_comments
+           (document_id, revision, reviewer_id, reviewer_name, comment_number,
+            location_ref, comment_text, category)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING *`,
+        [args.documentId, args.revision, ctx.auth.userId, reviewerName, commentNumber,
+         args.locationRef ?? null, args.commentText, args.category],
+      )
+      return docCommentToGQL(ins.rows[0] as Record<string, unknown>)
+    },
+
+    respondToComment: async (_: unknown, args: {
+      id: string; responseText: string; resolution: string;
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const nameRes = await query(
+        `SELECT COALESCE(e.first_name||' '||e.last_name, u.email) AS name
+         FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`,
+        [ctx.auth.userId],
+      )
+      const responseName = nameRes.rows[0] ? String((nameRes.rows[0] as Record<string, unknown>)['name']) : null
+      const r = await query(
+        `UPDATE project_doc_comments SET
+           response_text  = $1,
+           response_by_id = $2,
+           response_name  = $3,
+           response_date  = NOW(),
+           resolution     = $4
+         WHERE id=$5
+         RETURNING *`,
+        [args.responseText, ctx.auth.userId, responseName, args.resolution, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Comment not found')
+      return docCommentToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteDocComment: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_doc_comments WHERE id=$1 RETURNING id`, [args.id])
+      return r.rows.length > 0
+    },
+
+    // ── Phase 1: Document Distribution Matrix ────────────────────────────────
+
+    upsertDistributionEntry: async (_: unknown, args: {
+      id?: string; projectId: string; companyName: string; contactName?: string; contactEmail?: string;
+      discipline?: string; docType?: string; statusTrigger: string; copies?: number;
+      format?: string; autoTransmit?: boolean; notes?: string;
+    }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      if (!proj.rows[0]) throw new Error('Project not found')
+      let r
+      if (args.id) {
+        r = await query(
+          `UPDATE project_doc_distribution_matrix SET
+             company_name=$1, contact_name=$2, contact_email=$3, discipline=$4, doc_type=$5,
+             status_trigger=$6, copies=$7, format=$8, auto_transmit=$9, notes=$10
+           WHERE id=$11 AND project_id=$12
+           RETURNING *`,
+          [args.companyName, args.contactName ?? null, args.contactEmail ?? null,
+           args.discipline ?? null, args.docType ?? null, args.statusTrigger,
+           args.copies ?? 1, args.format ?? 'PDF', args.autoTransmit ?? false,
+           args.notes ?? null, args.id, args.projectId],
+        )
+      } else {
+        r = await query(
+          `INSERT INTO project_doc_distribution_matrix
+             (project_id, company_name, contact_name, contact_email, discipline, doc_type,
+              status_trigger, copies, format, auto_transmit, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           RETURNING *`,
+          [args.projectId, args.companyName, args.contactName ?? null, args.contactEmail ?? null,
+           args.discipline ?? null, args.docType ?? null, args.statusTrigger,
+           args.copies ?? 1, args.format ?? 'PDF', args.autoTransmit ?? false, args.notes ?? null],
+        )
+      }
+      if (!r.rows[0]) throw new Error('Failed to upsert distribution entry')
+      return ddmToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteDistributionEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM project_doc_distribution_matrix WHERE id=$1 RETURNING id`, [args.id])
+      return r.rows.length > 0
     },
 
     // ── Engineering mutations ─────────────────────────────────────────────────
@@ -10484,18 +10664,26 @@ const phase5QueryResolvers = {
     if (args.discipline) { wheres.push(`ed.discipline=$${i++}`); vals.push(args.discipline) }
     if (args.docType)    { wheres.push(`ed.doc_type=$${i++}`);   vals.push(args.docType) }
     const r = await query(
-      `SELECT ed.*, f.original_filename AS filename, f.file_key
+      `SELECT ed.*, f.original_filename AS filename, f.file_key,
+              COUNT(c.id)                                        AS comment_count,
+              COUNT(c.id) FILTER (WHERE c.resolution IS NULL)   AS open_comment_count
        FROM engineering_documents ed
        LEFT JOIN files f ON f.id = ed.file_id
+       LEFT JOIN project_doc_comments c ON c.document_id = ed.id
        WHERE ${wheres.join(' AND ')}
+       GROUP BY ed.id, f.original_filename, f.file_key
        ORDER BY ed.discipline, ed.doc_type, ed.seq_no, ed.created_at`,
       vals,
     )
     const histRes = await query(
-      `SELECT ed.*, f.original_filename AS filename, f.file_key
+      `SELECT ed.*, f.original_filename AS filename, f.file_key,
+              COUNT(c.id)                                        AS comment_count,
+              COUNT(c.id) FILTER (WHERE c.resolution IS NULL)   AS open_comment_count
        FROM engineering_documents ed
        LEFT JOIN files f ON f.id = ed.file_id
+       LEFT JOIN project_doc_comments c ON c.document_id = ed.id
        WHERE ed.project_id=$1 AND ed.company_id=$2 AND ed.is_current=false
+       GROUP BY ed.id, f.original_filename, f.file_key
        ORDER BY ed.created_at DESC`,
       [args.projectId, ctx.auth.companyId],
     )
@@ -10522,6 +10710,30 @@ const phase5QueryResolvers = {
       } catch { /* best-effort */ }
       return engDocToGQL(row, histMap.get(String(row['doc_group_id'])) ?? [], url)
     }))
+  },
+
+  // ── Phase 1: Doc Comments query ─────────────────────────────────────────
+
+  docComments: async (_: unknown, args: { documentId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `SELECT * FROM project_doc_comments WHERE document_id=$1 ORDER BY comment_number ASC`,
+      [args.documentId],
+    )
+    return r.rows.map((row: Record<string, unknown>) => docCommentToGQL(row))
+  },
+
+  // ── Phase 1: Doc Distribution Matrix query ───────────────────────────────
+
+  docDistributionMatrix: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+    if (!proj.rows[0]) throw new Error('Project not found')
+    const r = await query(
+      `SELECT * FROM project_doc_distribution_matrix WHERE project_id=$1 ORDER BY company_name, status_trigger`,
+      [args.projectId],
+    )
+    return r.rows.map((row: Record<string, unknown>) => ddmToGQL(row))
   },
 
   // ── Engineering module ───────────────────────────────────────────────────

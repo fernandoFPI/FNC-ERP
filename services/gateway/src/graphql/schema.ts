@@ -2188,38 +2188,136 @@ export const typeDefs = `#graphql
     filename:        String
     history:         [EngineeringDoc!]!
     createdAt:       String!
+    # Phase 1 — Review metadata
+    originatorName:  String
+    checkerName:     String
+    approverName:    String
+    purposeOfIssue:  String
+    commentCount:    Int!
+    openCommentCount: Int!
+  }
+
+  # ── Document Review Comments (Phase 1) ──────────────────────
+
+  type DocComment {
+    id:            ID!
+    documentId:    ID!
+    revision:      String!
+    reviewerId:    ID!
+    reviewerName:  String
+    commentNumber: Int!
+    locationRef:   String
+    commentText:   String!
+    category:      String!
+    responseText:  String
+    responseById:  ID
+    responseName:  String
+    responseDate:  String
+    resolution:    String
+    createdAt:     String!
+  }
+
+  # ── Document Distribution Matrix (Phase 1) ──────────────────
+
+  type DocDistributionEntry {
+    id:            ID!
+    projectId:     ID!
+    companyName:   String!
+    contactName:   String
+    contactEmail:  String
+    discipline:    String
+    docType:       String
+    statusTrigger: String!
+    copies:        Int!
+    format:        String!
+    autoTransmit:  Boolean!
+    notes:         String
+    createdAt:     String!
   }
 
   extend type Query {
     engineeringDocuments(projectId: ID!, discipline: String, docType: String): [EngineeringDoc!]!
+    docComments(documentId: ID!): [DocComment!]!
+    docDistributionMatrix(projectId: ID!): [DocDistributionEntry!]!
   }
 
   extend type Mutation {
     createEngineeringDoc(
-      projectId:   ID!
-      discipline:  String!
-      docType:     String!
-      title:       String!
-      fileId:      ID
-      revision:    String
-      description: String
-      scale:       String
-      paperSize:   String
-      issueDate:   String
-      notes:       String
+      projectId:      ID!
+      discipline:     String!
+      docType:        String!
+      title:          String!
+      fileId:         ID
+      revision:       String
+      description:    String
+      scale:          String
+      paperSize:      String
+      issueDate:      String
+      notes:          String
+      originatorName: String
+      checkerName:    String
+      approverName:   String
+      purposeOfIssue: String
     ): EngineeringDoc!
 
     reviseEngineeringDoc(
-      id:        ID!
-      fileId:    ID
-      revision:  String!
-      notes:     String
-      issueDate: String
+      id:             ID!
+      fileId:         ID
+      revision:       String!
+      notes:          String
+      issueDate:      String
+      originatorName: String
+      checkerName:    String
+      approverName:   String
+      purposeOfIssue: String
     ): EngineeringDoc!
 
     updateEngineeringDocStatus(id: ID!, status: String!): EngineeringDoc!
 
+    updateEngineeringDocMeta(
+      id:             ID!
+      originatorName: String
+      checkerName:    String
+      approverName:   String
+      purposeOfIssue: String
+    ): EngineeringDoc!
+
     deleteEngineeringDoc(id: ID!): Boolean!
+
+    # Review comments
+    addDocComment(
+      documentId:  ID!
+      revision:    String!
+      locationRef: String
+      commentText: String!
+      category:    String!
+    ): DocComment!
+
+    respondToComment(
+      id:           ID!
+      responseText: String!
+      resolution:   String!
+    ): DocComment!
+
+    deleteDocComment(id: ID!): Boolean!
+
+    # Distribution matrix
+    upsertDistributionEntry(
+      id:            ID
+      projectId:     ID!
+      companyName:   String!
+      contactName:   String
+      contactEmail:  String
+      discipline:    String
+      docType:       String
+      statusTrigger: String!
+      copies:        Int
+      format:        String
+      autoTransmit:  Boolean
+      notes:         String
+    ): DocDistributionEntry!
+
+    deleteDistributionEntry(id: ID!): Boolean!
   }
 
   # ── Client Documents ──────────────────────────────────────────
