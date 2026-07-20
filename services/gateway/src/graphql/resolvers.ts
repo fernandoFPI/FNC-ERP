@@ -1,4 +1,4 @@
-import { query, pool, getAttachments, createAttachment, removeAttachment, withTransaction, nextDocumentNumber } from '@fnc-erp/db'
+﻿import { query, pool, getAttachments, createAttachment, removeAttachment, withTransaction, nextDocumentNumber } from '@fnc-erp/db'
 import { sendEmail, renderMeetingInvitationEmail, generateMeetingICS, renderMeetingMinutesEmail } from '@fnc-erp/email'
 import { env } from '@fnc-erp/config'
 import { resolveTransferPrice } from '@fnc-erp/fx'
@@ -633,7 +633,24 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
   }
 }
 
-function engDocToGQL(row: Record<string, unknown>, history: Array<{ row: Record<string, unknown>; url: string | null }>, downloadUrl: string | null = null): Record<string, unknown> {
+function activityToGQL(r: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id:             r['id'],
+    documentId:     r['document_id'],
+    fromStatus:     r['from_status'] ?? null,
+    toStatus:       r['to_status'],
+    action:         r['action'],
+    actorName:      r['actor_name'] ?? null,
+    responseCode:   r['response_code'] ?? null,
+    transmittalRef: r['transmittal_ref'] ?? null,
+    submittedTo:    r['submitted_to'] ?? null,
+    dueDate:        r['due_date'] ? String(r['due_date']).slice(0, 10) : null,
+    notes:          r['notes'] ?? null,
+    createdAt:      r['created_at'],
+  }
+}
+
+function engDocToGQL(row: Record<string, unknown>, history: Array<{ row: Record<string, unknown>; url: string | null }>, downloadUrl: string | null = null, activities: Record<string, unknown>[] = []): Record<string, unknown> {
   return {
     id:               row['id'],
     projectId:        row['project_id'],
@@ -656,15 +673,235 @@ function engDocToGQL(row: Record<string, unknown>, history: Array<{ row: Record<
     downloadUrl,
     filename:         row['filename'] ?? null,
     history:          history.map(h => engDocToGQL(h.row, [], h.url)),
+    activities:       activities.map(activityToGQL),
     createdAt:        row['created_at'],
-    // Phase 1 review metadata
+    // Review metadata
     originatorName:   row['originator_name'] ?? null,
     checkerName:      row['checker_name'] ?? null,
     approverName:     row['approver_name'] ?? null,
     purposeOfIssue:   row['purpose_of_issue'] ?? null,
-    commentCount:     Number(row['comment_count'] ?? 0),
-    openCommentCount: Number(row['open_comment_count'] ?? 0),
+    commentCount:           Number(row['comment_count'] ?? 0),
+    openCommentCount:       Number(row['open_comment_count'] ?? 0),
+    clientCommentCount:     Number(row['client_comment_count'] ?? 0),
+    openClientCommentCount: Number(row['open_client_comment_count'] ?? 0),
   }
+}
+
+function engClientCommentToGQL(r: Record<string, unknown>) {
+  return {
+    id:           r['id'],
+    documentId:   r['document_id'],
+    commentNo:    Number(r['comment_no']),
+    description:  r['description'],
+    clauseRef:    r['clause_ref'] ?? null,
+    category:     r['category'],
+    status:       r['status'],
+    resolution:   r['resolution'] ?? null,
+    raisedBy:     r['raised_by'] ?? null,
+    closedByName: r['closed_by_name'] ?? null,
+    closedAt:     r['closed_at'] ? String(r['closed_at']) : null,
+    createdAt:    String(r['created_at']),
+  }
+}
+
+async function logDocActivity(
+  documentId: string,
+  fromStatus: string | null,
+  toStatus: string,
+  action: string,
+  actorId: string,
+  actorName: string,
+  opts: { submittedTo?: string; dueDate?: string; transmittalRef?: string; responseCode?: string; notes?: string } = {},
+) {
+  await query(
+    `INSERT INTO engineering_doc_activities
+       (document_id, from_status, to_status, action, actor_id, actor_name,
+        response_code, transmittal_ref, submitted_to, due_date, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      documentId, fromStatus, toStatus, action, actorId, actorName,
+      opts.responseCode ?? null, opts.transmittalRef ?? null,
+      opts.submittedTo ?? null, opts.dueDate ?? null, opts.notes ?? null,
+    ],
+  )
+}
+
+// ── Notification helpers ────────────────────────────────────────────────────
+
+async function lookupUserByName(
+  companyId: string,
+  fullName: string | null | undefined,
+): Promise<{ id: string; email: string; firstName: string; lastName: string } | null> {
+  if (!fullName) return null
+  const res = await query(
+    `SELECT u.id, u.email, e.first_name, e.last_name
+     FROM employees e
+     JOIN users u ON u.id = e.user_id
+     WHERE e.company_id = $1
+       AND LOWER(TRIM(e.first_name || ' ' || e.last_name)) = LOWER(TRIM($2))
+       AND e.status = 'active'
+       AND e.user_id IS NOT NULL
+     LIMIT 1`,
+    [companyId, fullName],
+  )
+  const row = res.rows[0] as Record<string, unknown> | undefined
+  if (!row) return null
+  return {
+    id: String(row['id']),
+    email: String(row['email']),
+    firstName: String(row['first_name']),
+    lastName: String(row['last_name']),
+  }
+}
+
+async function notifyEngDocUser(opts: {
+  companyId:    string
+  recipientName: string | null | undefined
+  notifType:    string
+  title:        string
+  body:         string
+  priority:     'low' | 'normal' | 'high' | 'urgent' | 'critical'
+  entityId:     string
+  entityRef:    string
+  projectId:    string
+  // email
+  eventType:    import('@fnc-erp/email').EngDocEventType
+  role:         string
+  docTitle:     string
+  projectName:  string
+  fromName:     string
+  actionLabel:  string
+  dueDate?:     string | undefined
+  notes?:       string | undefined
+  appUrl:       string
+}): Promise<void> {
+  const user = await lookupUserByName(opts.companyId, opts.recipientName)
+  if (!user) return
+
+  // In-app notification
+  await query(
+    `INSERT INTO notifications (company_id, user_id, type, title, body, data, is_read)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, FALSE)`,
+    [
+      opts.companyId, user.id, opts.notifType, opts.title, opts.body,
+      JSON.stringify({
+        priority:   opts.priority,
+        entityType: 'engineering_document',
+        entityId:   opts.entityId,
+        entityRef:  opts.entityRef,
+        projectId:  opts.projectId,
+      }),
+    ],
+  )
+
+  // Email (fire and forget — never fail the resolver)
+  const { renderEngDocNotificationEmail, sendEmail } = await import('@fnc-erp/email')
+  const html = renderEngDocNotificationEmail({
+    recipientName: `${user.firstName} ${user.lastName}`,
+    eventType:     opts.eventType,
+    role:          opts.role,
+    docRef:        opts.entityRef,
+    docTitle:      opts.docTitle,
+    projectName:   opts.projectName,
+    fromName:      opts.fromName,
+    actionLabel:   opts.actionLabel,
+    dueDate:       opts.dueDate,
+    notes:         opts.notes,
+    appUrl:        opts.appUrl,
+  })
+  sendEmail({ to: user.email, subject: opts.title, html }).catch(() => { /* best-effort */ })
+}
+
+async function upsertDocReminder(opts: {
+  documentId:      string
+  projectId:       string
+  companyId:       string
+  role:            'checker' | 'approver'
+  reviewerName:    string | null | undefined
+  companyIdForLookup: string
+  dueDate:         string    // ISO date string
+}): Promise<void> {
+  const user = await lookupUserByName(opts.companyIdForLookup, opts.reviewerName)
+  const dueDatePg = opts.dueDate
+
+  // First reminder is sent on the due date (or 7 days if no due date given)
+  const nextRemindAt = dueDatePg
+    ? `(DATE '${dueDatePg}')::TIMESTAMPTZ`
+    : `NOW() + INTERVAL '7 days'`
+
+  await query(
+    `INSERT INTO eng_doc_review_reminders
+       (document_id, project_id, company_id, reviewer_user_id, reviewer_name, reviewer_email,
+        role, due_date, reminder_count, next_remind_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::DATE, CURRENT_DATE + 7), 0,
+             COALESCE($8::TIMESTAMPTZ, NOW() + INTERVAL '7 days'))
+     ON CONFLICT (document_id, role) DO UPDATE
+       SET reviewer_user_id = EXCLUDED.reviewer_user_id,
+           reviewer_name    = EXCLUDED.reviewer_name,
+           reviewer_email   = EXCLUDED.reviewer_email,
+           due_date         = EXCLUDED.due_date,
+           reminder_count   = 0,
+           last_reminded_at = NULL,
+           next_remind_at   = EXCLUDED.next_remind_at,
+           resolved_at      = NULL`,
+    [
+      opts.documentId, opts.projectId, opts.companyId,
+      user?.id ?? null, opts.reviewerName ?? null, user?.email ?? null,
+      opts.role, opts.dueDate ?? null,
+    ],
+  )
+}
+
+async function resolveDocReminders(documentId: string, role?: 'checker' | 'approver'): Promise<void> {
+  if (role) {
+    await query(
+      `UPDATE eng_doc_review_reminders SET resolved_at = NOW()
+       WHERE document_id = $1 AND role = $2 AND resolved_at IS NULL`,
+      [documentId, role],
+    )
+  } else {
+    await query(
+      `UPDATE eng_doc_review_reminders SET resolved_at = NOW()
+       WHERE document_id = $1 AND resolved_at IS NULL`,
+      [documentId],
+    )
+  }
+}
+
+// ── End notification helpers ─────────────────────────────────────────────────
+
+async function refetchEngDocWithActivities(
+  docId: string,
+  companyId: string,
+): Promise<Record<string, unknown>> {
+  const r = await query(
+    `SELECT ed.*, f.original_filename AS filename, f.file_key,
+            COUNT(c.id)                                         AS comment_count,
+            COUNT(c.id) FILTER (WHERE c.resolution IS NULL)    AS open_comment_count,
+            COUNT(ecc.id)                                       AS client_comment_count,
+            COUNT(ecc.id) FILTER (WHERE ecc.status = 'open')   AS open_client_comment_count
+     FROM engineering_documents ed
+     LEFT JOIN files f ON f.id = ed.file_id
+     LEFT JOIN project_doc_comments c ON c.document_id = ed.id
+     LEFT JOIN eng_client_comments ecc ON ecc.document_id = ed.id
+     WHERE ed.id=$1 AND ed.company_id=$2
+     GROUP BY ed.id, f.original_filename, f.file_key`,
+    [docId, companyId],
+  )
+  if (!r.rows[0]) throw new Error('Document not found')
+  const row = r.rows[0] as Record<string, unknown>
+  const actRes = await query(
+    `SELECT * FROM engineering_doc_activities WHERE document_id=$1 ORDER BY created_at DESC`,
+    [docId],
+  )
+  let url: string | null = null
+  try {
+    if (row['file_key']) {
+      const dl = await generateDownloadUrl(String(row['file_key']), String(row['filename'] ?? ''))
+      url = dl.downloadUrl
+    }
+  } catch { /* best-effort */ }
+  return engDocToGQL(row, [], url, actRes.rows as Record<string, unknown>[])
 }
 
 function docCommentToGQL(row: Record<string, unknown>): Record<string, unknown> {
@@ -705,64 +942,6 @@ function ddmToGQL(row: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
-function engTransmittalItemToGQL(row: Record<string, unknown>): Record<string, unknown> {
-  const dueDate  = row['due_date'] as string | null
-  return {
-    id:             row['id'],
-    transmittalId:  row['transmittal_id'],
-    documentId:     row['document_id'] ?? null,
-    extRefNumber:   row['ext_ref_number'] ?? null,
-    extTitle:       row['ext_title'] ?? null,
-    revision:       row['revision'] ?? null,
-    copies:         Number(row['copies'] ?? 1),
-    format:         row['format'] ?? 'PDF',
-    purposeOfIssue: row['purpose_of_issue'] ?? null,
-    remarks:        row['remarks'] ?? null,
-    createdAt:      row['created_at'],
-    // denormalized from engineering_documents JOIN
-    refNumber:      row['ref_number'] ?? null,
-    title:          row['doc_title'] ?? null,
-    discipline:     row['discipline'] ?? null,
-    docType:        row['doc_type'] ?? null,
-    downloadUrl:    row['download_url'] ?? null,
-  }
-}
-
-function engTransmittalToGQL(row: Record<string, unknown>, items: Record<string, unknown>[]): Record<string, unknown> {
-  const dueDate    = row['due_date'] ? String(row['due_date']).slice(0,10) : null
-  const sentDate   = row['sent_date'] ?? null
-  const recvDate   = row['received_date'] ?? null
-  const ackAt      = row['acknowledged_at'] ?? null
-  const now        = new Date()
-  const isOverdue  = dueDate != null &&
-                     !['acknowledged'].includes(String(row['status'])) &&
-                     new Date(dueDate) < now
-  return {
-    id:             row['id'],
-    projectId:      row['project_id'],
-    transmittalNo:  row['transmittal_no'],
-    direction:      row['direction'],
-    title:          row['title'],
-    subject:        row['subject'] ?? null,
-    toCompany:      row['to_company'],
-    toContact:      row['to_contact'] ?? null,
-    toEmail:        row['to_email'] ?? null,
-    fromCompany:    row['from_company'] ?? null,
-    fromContact:    row['from_contact'] ?? null,
-    status:         row['status'],
-    sentDate:       sentDate,
-    receivedDate:   recvDate,
-    acknowledgedAt: ackAt,
-    acknowledgedBy: row['acknowledged_by'] ?? null,
-    dueDate:        dueDate,
-    notes:          row['notes'] ?? null,
-    createdByName:  row['created_by_name'] ?? null,
-    createdAt:      row['created_at'],
-    items:          items.map(engTransmittalItemToGQL),
-    itemCount:      items.length,
-    isOverdue:      isOverdue,
-  }
-}
 
 function punchPhotoToGQL(row: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -813,98 +992,102 @@ async function punchItemToGQL(row: Record<string, unknown>): Promise<Record<stri
   }
 }
 
-function submittalRevisionToGQL(row: Record<string, unknown>): Record<string, unknown> {
+function riskLevel(score: number): string {
+  if (score >= 17) return 'critical'
+  if (score >= 10) return 'high'
+  if (score >= 5)  return 'medium'
+  return 'low'
+}
+
+function riskToGQL(row: Record<string, unknown>, reviews: Record<string, unknown>[] = []): Record<string, unknown> {
+  const prob  = Number(row['probability'])
+  const imp   = Number(row['impact'])
+  const score = prob * imp
+  const rProb = row['residual_probability'] != null ? Number(row['residual_probability']) : null
+  const rImp  = row['residual_impact']      != null ? Number(row['residual_impact'])      : null
+  const rScore = rProb != null && rImp != null ? rProb * rImp : null
   return {
-    id: row['id'],
-    submittalId: row['submittal_id'],
-    revision: row['revision'],
-    submittedDate: row['submitted_date'] ?? null,
-    reviewer: row['reviewer'] ?? null,
-    reviewedDate: row['reviewed_date'] ?? null,
-    reviewStatus: row['review_status'],
-    reviewComments: row['review_comments'] ?? null,
-    fileId: row['file_id'] ?? null,
-    fileUrl: row['file_url'] ?? null,
-    createdAt: row['created_at'],
+    id:                  row['id'],
+    projectId:           row['project_id'],
+    riskNo:              row['risk_no'],
+    category:            row['category'],
+    title:               row['title'],
+    description:         row['description']       ?? null,
+    cause:               row['cause']              ?? null,
+    consequence:         row['consequence']        ?? null,
+    owner:               row['owner']              ?? null,
+    probability:         prob,
+    impact:              imp,
+    riskScore:           score,
+    riskLevel:           riskLevel(score),
+    mitigationPlan:      row['mitigation_plan']   ?? null,
+    contingencyPlan:     row['contingency_plan']  ?? null,
+    residualProbability: rProb,
+    residualImpact:      rImp,
+    residualScore:       rScore,
+    residualLevel:       rScore != null ? riskLevel(rScore) : null,
+    status:              row['status'],
+    raisedBy:            row['raised_by']          ?? null,
+    raisedDate:          row['raised_date']  ? String(row['raised_date']).slice(0, 10)  : null,
+    reviewDate:          row['review_date']  ? String(row['review_date']).slice(0, 10)  : null,
+    createdAt:           row['created_at'],
+    updatedAt:           row['updated_at'],
+    reviews: reviews.map(r => ({
+      id:          r['id'],
+      riskId:      r['risk_id'],
+      probability: Number(r['probability']),
+      impact:      Number(r['impact']),
+      score:       Number(r['probability']) * Number(r['impact']),
+      notes:       r['notes']       ?? null,
+      reviewedBy:  r['reviewed_by'] ?? null,
+      reviewedAt:  r['reviewed_at'],
+    })),
   }
 }
 
-async function submittalToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const revRes = await query(
-    `SELECT * FROM project_submittal_revisions WHERE submittal_id=$1 ORDER BY created_at ASC`,
-    [row['id']],
-  )
-  const revisions = revRes.rows.map(r => submittalRevisionToGQL(r as Record<string, unknown>))
-  const latestRevision = revisions.length > 0 ? revisions[revisions.length - 1] : null
+async function riskWithReviews(id: string): Promise<Record<string, unknown>> {
+  const [rRes, revRes] = await Promise.all([
+    query(`SELECT * FROM project_risks WHERE id=$1`, [id]),
+    query(`SELECT * FROM project_risk_reviews WHERE risk_id=$1 ORDER BY reviewed_at ASC`, [id]),
+  ])
+  if (!rRes.rows[0]) throw new Error('Risk not found')
+  return riskToGQL(rRes.rows[0] as Record<string, unknown>, revRes.rows as Record<string, unknown>[])
+}
+
+
+
+function handoverItemToGQL(r: Record<string, unknown>): Record<string, unknown> {
   return {
-    id: row['id'],
-    projectId: row['project_id'],
-    submittalNo: row['submittal_no'],
-    type: row['type'],
-    discipline: row['discipline'] ?? null,
-    title: row['title'],
-    description: row['description'] ?? null,
-    subcontractor: row['subcontractor'] ?? null,
-    specifiedBy: row['specified_by'] ?? null,
-    specSection: row['spec_section'] ?? null,
-    status: row['status'],
-    requiredDate: row['required_date'] ?? null,
-    revisions,
-    revisionCount: revisions.length,
-    latestRevision,
-    createdAt: row['created_at'],
-    updatedAt: row['updated_at'],
+    id: r['id'], certificateId: r['certificate_id'], sequence: Number(r['sequence']),
+    category: r['category'], description: r['description'], status: r['status'],
+    verifiedBy: r['verified_by'] ?? null, verifiedAt: r['verified_at'] ? String(r['verified_at']) : null,
+    notes: r['notes'] ?? null, createdAt: String(r['created_at']),
   }
 }
 
-function actionToGQL(row: Record<string, unknown>): Record<string, unknown> {
-  const due = row['due_date'] ? new Date(String(row['due_date'])) : null
-  const status = String(row['status'])
+function handoverCertToGQL(r: Record<string, unknown>, items: Record<string, unknown>[]): Record<string, unknown> {
+  const gqlItems = items.map(handoverItemToGQL)
   return {
-    id:          row['id'],
-    interfaceId: row['interface_id'],
-    description: row['description'],
-    owner:       row['owner']      ?? null,
-    dueDate:     row['due_date']   ?? null,
-    status,
-    closedAt:    row['closed_at']  ?? null,
-    createdAt:   row['created_at'],
-    updatedAt:   row['updated_at'],
-    isOverdue:   due != null && status !== 'closed' && due < new Date(),
+    id: r['id'], projectId: r['project_id'], certificateNo: r['certificate_no'],
+    title: r['title'], areaZone: r['area_zone'] ?? null,
+    handoverDate: r['handover_date'] ? String(r['handover_date']).slice(0, 10) : null,
+    acceptedDate: r['accepted_date'] ? String(r['accepted_date']).slice(0, 10) : null,
+    contractorRep: r['contractor_rep'] ?? null, clientRep: r['client_rep'] ?? null,
+    status: r['status'],
+    defectLiabilityStart: r['defect_liability_start'] ? String(r['defect_liability_start']).slice(0, 10) : null,
+    defectLiabilityEnd:   r['defect_liability_end']   ? String(r['defect_liability_end']).slice(0, 10)   : null,
+    notes: r['notes'] ?? null, createdAt: String(r['created_at']), updatedAt: String(r['updated_at']),
+    items: gqlItems,
+    completedItemCount: gqlItems.filter(i => i['status'] === 'completed' || i['status'] === 'waived').length,
+    totalItemCount: gqlItems.length,
   }
 }
 
-async function interfaceToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const actionsRes = await query(
-    `SELECT * FROM project_interface_actions WHERE interface_id=$1 ORDER BY created_at ASC`,
-    [row['id']],
-  )
-  const actions = actionsRes.rows.map(a => actionToGQL(a as Record<string, unknown>))
-  const openActions    = actions.filter(a => a['status'] !== 'closed')
-  const overdueActions = actions.filter(a => a['isOverdue'])
-  const agreedDate = row['agreed_date'] ? new Date(String(row['agreed_date'])) : null
-  const status = String(row['status'])
-  const isOverdue = agreedDate != null && status !== 'closed' && status !== 'agreed' && agreedDate < new Date()
-  return {
-    id:                 row['id'],
-    projectId:          row['project_id'],
-    interfaceNo:        row['interface_no'],
-    partyA:             row['party_a'],
-    partyB:             row['party_b'],
-    disciplineA:        row['discipline_a']  ?? null,
-    disciplineB:        row['discipline_b']  ?? null,
-    title:              row['title'],
-    description:        row['description']   ?? null,
-    agreedDate:         row['agreed_date']   ?? null,
-    priority:           row['priority']      ?? 'normal',
-    status,
-    actions,
-    openActionCount:    openActions.length,
-    overdueActionCount: overdueActions.length,
-    createdAt:          row['created_at'],
-    updatedAt:          row['updated_at'],
-    isOverdue,
-  }
+async function refetchHandoverCert(id: string): Promise<Record<string, unknown>> {
+  const cRes = await query(`SELECT * FROM project_handover_certificates WHERE id=$1`, [id])
+  if (!cRes.rows[0]) throw new Error('Certificate not found')
+  const iRes = await query(`SELECT * FROM project_handover_items WHERE certificate_id=$1 ORDER BY sequence`, [id])
+  return handoverCertToGQL(cRes.rows[0] as Record<string, unknown>, iRes.rows as Record<string, unknown>[])
 }
 
 function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
@@ -936,47 +1119,6 @@ function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
-async function cdrToGQL(row: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const stepsRes = await query(
-    `SELECT * FROM project_cdr_approvals WHERE cdr_id=$1 ORDER BY step_order`,
-    [row['id']],
-  )
-  const steps = stepsRes.rows.map((s: Record<string, unknown>) => ({
-    id:           s['id'],
-    cdrId:        s['cdr_id'],
-    stepOrder:    Number(s['step_order']),
-    approverRole: s['approver_role'],
-    approverName: s['approver_name'] ?? null,
-    status:       s['status'],
-    comments:     s['comments'] ?? null,
-    actionedAt:   s['actioned_at'] ?? null,
-    createdAt:    s['created_at'],
-  }))
-  // current step = first pending step
-  const currentStep = steps.find(s => s['status'] === 'pending')?.['stepOrder'] ?? null
-  return {
-    id:                  row['id'],
-    projectId:           row['project_id'],
-    cdrNumber:           row['cdr_number'],
-    discipline:          row['discipline']           ?? null,
-    title:               row['title'],
-    description:         row['description']          ?? null,
-    documentRef:         row['document_ref']         ?? null,
-    clauseRef:           row['clause_ref']           ?? null,
-    technicalImpact:     row['technical_impact']     ?? null,
-    commercialImpact:    row['commercial_impact']    ?? null,
-    proposedAlternative: row['proposed_alternative'] ?? null,
-    status:              row['status'],
-    submittedAt:         row['submitted_at']         ?? null,
-    decidedAt:           row['decided_at']           ?? null,
-    decisionBy:          row['decision_by']          ?? null,
-    decisionNotes:       row['decision_notes']       ?? null,
-    approvalSteps:       steps,
-    createdAt:           row['created_at'],
-    updatedAt:           row['updated_at'],
-    currentStep,
-  }
-}
 
 function rfqLineToGQL(row: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -1831,7 +1973,17 @@ export const resolvers = {
       sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`
       params.push(args.limit ?? 50)
       const result = await query(sql, params)
-      return result.rows
+      return result.rows.map((r: Record<string, unknown>) => {
+        const d = r['data'] as Record<string, unknown> | null
+        return {
+          ...r,
+          priority:   d?.['priority']   ?? 'normal',
+          entityRef:  d?.['entityRef']  ?? null,
+          entityType: d?.['entityType'] ?? null,
+          entityId:   d?.['entityId']   ?? null,
+          projectId:  d?.['projectId']  ?? null,
+        }
+      })
     },
 
     unreadNotificationCount: async (_: unknown, __: unknown, ctx: GQLContext) => {
@@ -3709,6 +3861,158 @@ export const resolvers = {
       return { bank_name: null, currency_code: null, has_account: false }
     }
   },
+
+  // ── Phase 1: Doc Comments query ─────────────────────────────────────────
+
+  docComments: async (_: unknown, args: { documentId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `SELECT * FROM project_doc_comments WHERE document_id=$1 ORDER BY comment_number ASC`,
+      [args.documentId],
+    )
+    return r.rows.map((row: Record<string, unknown>) => docCommentToGQL(row))
+  },
+
+  // ── Client Comment Register ──────────────────────────────────────────────
+
+  engClientComments: async (_: unknown, args: { documentId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `SELECT * FROM eng_client_comments WHERE document_id=$1 ORDER BY comment_no ASC`,
+      [args.documentId],
+    )
+    return r.rows.map((row: Record<string, unknown>) => engClientCommentToGQL(row))
+  },
+
+  // ── Phase 1: Doc Distribution Matrix query ───────────────────────────────
+
+  docDistributionMatrix: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+    if (!proj.rows[0]) throw new Error('Project not found')
+    const r = await query(
+      `SELECT * FROM project_doc_distribution_matrix WHERE project_id=$1 ORDER BY company_name, status_trigger`,
+      [args.projectId],
+    )
+    return r.rows.map((row: Record<string, unknown>) => ddmToGQL(row))
+  },
+
+  // ── Phase 3: Technical Queries ──────────────────────────────────────────────
+
+  projectTQs: async (
+    _: unknown,
+    args: { projectId: string; status?: string; discipline?: string; priority?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions = [`project_id = $1`]
+    const params: unknown[] = [args.projectId]
+    if (args.status)     { conditions.push(`status = $${params.length + 1}`);     params.push(args.status) }
+    if (args.discipline) { conditions.push(`discipline = $${params.length + 1}`); params.push(args.discipline) }
+    if (args.priority)   { conditions.push(`priority = $${params.length + 1}`);   params.push(args.priority) }
+    const res = await query(
+      `SELECT * FROM project_tqs WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+      params,
+    )
+    return res.rows.map(tqToGQL)
+  },
+
+  projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_tqs WHERE id = $1`, [args.id])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('TQ not found')
+    return tqToGQL(r)
+  },
+
+  // ── Phase 5: Punch List ─────────────────────────────────────────────────────
+
+  projectPunchItems: async (
+    _: unknown,
+    args: { projectId: string; category?: string; status?: string; discipline?: string; subcontractor?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions = [`project_id = $1`]
+    const params: unknown[] = [args.projectId]
+    if (args.category)     { conditions.push(`category = $${params.length + 1}`);     params.push(args.category) }
+    if (args.status)       { conditions.push(`status = $${params.length + 1}`);       params.push(args.status) }
+    if (args.discipline)   { conditions.push(`discipline = $${params.length + 1}`);   params.push(args.discipline) }
+    if (args.subcontractor){ conditions.push(`subcontractor = $${params.length + 1}`); params.push(args.subcontractor) }
+    const res = await query(
+      `SELECT * FROM project_punch_items WHERE ${conditions.join(' AND ')} ORDER BY punch_no ASC`,
+      params,
+    )
+    return Promise.all(res.rows.map(r => punchItemToGQL(r as Record<string, unknown>)))
+  },
+
+  projectPunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(`SELECT * FROM project_punch_items WHERE id=$1`, [args.id])
+    const r = res.rows[0] as Record<string, unknown> | undefined
+    if (!r) throw new Error('Punch item not found')
+    return punchItemToGQL(r)
+  },
+
+  // ── Phase 7: Risk Register ──────────────────────────────────────────────────
+
+  projectRisks: async (
+    _: unknown,
+    args: { projectId: string; category?: string; status?: string; level?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const conditions: string[] = ['r.project_id=$1']
+    const params: unknown[] = [args.projectId]
+    if (args.category) { conditions.push(`r.category=$${params.length + 1}`); params.push(args.category) }
+    if (args.status)   { conditions.push(`r.status=$${params.length + 1}`);   params.push(args.status) }
+    const res = await query(
+      `SELECT r.* FROM project_risks r WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`,
+      params,
+    )
+    const rows = res.rows as Record<string, unknown>[]
+    if (!rows.length) return []
+    const ids = rows.map(r => r['id'] as string)
+    const revRes = await query(
+      `SELECT * FROM project_risk_reviews WHERE risk_id = ANY($1::uuid[]) ORDER BY reviewed_at ASC`,
+      [ids],
+    )
+    const reviewMap = new Map<string, Record<string, unknown>[]>()
+    for (const rv of revRes.rows as Record<string, unknown>[]) {
+      const rid = String(rv['risk_id'])
+      if (!reviewMap.has(rid)) reviewMap.set(rid, [])
+      reviewMap.get(rid)!.push(rv)
+    }
+    const all = rows.map(r => riskToGQL(r, reviewMap.get(String(r['id'])) ?? []))
+    if (args.level) return all.filter(r => r['riskLevel'] === args.level)
+    return all
+  },
+
+  projectRisk: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    return riskWithReviews(args.id)
+  },
+
+  projectHandoverCertificates: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const cRes = await query(
+      `SELECT * FROM project_handover_certificates WHERE project_id=$1 ORDER BY created_at`,
+      [args.projectId],
+    )
+    if (!cRes.rows.length) return []
+    const ids = cRes.rows.map(r => r['id'])
+    const iRes = await query(
+      `SELECT * FROM project_handover_items WHERE certificate_id = ANY($1) ORDER BY sequence`,
+      [ids],
+    )
+    return cRes.rows.map(c =>
+      handoverCertToGQL(
+        c as Record<string, unknown>,
+        (iRes.rows as Record<string, unknown>[]).filter(i => i['certificate_id'] === c['id']),
+      ),
+    )
+  },
+
   },
 
   Mutation: {
@@ -5567,18 +5871,272 @@ export const resolvers = {
       client.release()
     },
 
-    updateEngineeringDocStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
+    updateEngineeringDocStatus: async (_: unknown, args: { id: string; status: string; purposeOfIssue?: string; workflowNote?: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(
-        `UPDATE engineering_documents ed SET status=$1
-         FROM projects p WHERE p.id=ed.project_id AND p.company_id=$2 AND ed.id=$3
-         RETURNING ed.*`,
-        [args.status, ctx.auth.companyId, args.id],
-      )
+      let r
+      if (args.purposeOfIssue !== undefined) {
+        r = await query(
+          `UPDATE engineering_documents ed SET status=$1, purpose_of_issue=$2
+           FROM projects p WHERE p.id=ed.project_id AND p.company_id=$3 AND ed.id=$4
+           RETURNING ed.*`,
+          [args.status, args.purposeOfIssue, ctx.auth.companyId, args.id],
+        )
+      } else {
+        r = await query(
+          `UPDATE engineering_documents ed SET status=$1
+           FROM projects p WHERE p.id=ed.project_id AND p.company_id=$2 AND ed.id=$3
+           RETURNING ed.*`,
+          [args.status, ctx.auth.companyId, args.id],
+        )
+      }
       if (!r.rows[0]) throw new Error('Document not found')
       const row = r.rows[0] as Record<string, unknown>
-      await logActivity(String(row['project_id']), ctx.auth.userId, 'engineering_doc_status', `${row['ref_number']} → ${args.status}`)
+      const logMsg = args.workflowNote
+        ? `${row['ref_number']} → ${args.status} | ${args.workflowNote}`
+        : `${row['ref_number']} → ${args.status}`
+      await logActivity(String(row['project_id']), ctx.auth.userId, 'engineering_doc_status', logMsg)
       return engDocToGQL(row, [])
+    },
+
+    performDocWorkflowAction: async (
+      _: unknown,
+      args: { id: string; action: string; submittedTo?: string; dueDate?: string; notes?: string; transmittalRef?: string; issueType?: string; responseCode?: string; comments?: Array<{ description: string; clauseRef?: string; category?: string; raisedBy?: string }> },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+
+      // Fetch current doc + project info
+      const cur = await query(
+        `SELECT ed.*, p.name AS project_name,
+                (e.first_name || ' ' || e.last_name) AS manager_name,
+                u.first_name, u.last_name
+         FROM engineering_documents ed
+         JOIN projects p ON p.id = ed.project_id
+         LEFT JOIN employees e ON e.id = p.project_manager_id
+         LEFT JOIN users u ON u.id = $2
+         WHERE ed.id = $1 AND p.company_id = $3`,
+        [args.id, ctx.auth.userId, ctx.auth.companyId],
+      )
+      if (!cur.rows[0]) throw new Error('Document not found')
+      const doc = cur.rows[0] as Record<string, unknown>
+      const fromStatus  = String(doc['status'])
+      const actorName   = [doc['first_name'], doc['last_name']].filter(Boolean).join(' ') || ctx.auth.userId
+      const projectId   = String(doc['project_id'])
+      const projectName = String(doc['project_name'] ?? '')
+      const docRef      = String(doc['ref_number'])
+      const docTitle    = String(doc['title'])
+      const originator  = doc['originator_name'] as string | null
+      const checker     = doc['checker_name']    as string | null
+      const approver    = doc['approver_name']   as string | null
+      const appUrl      = `${process.env['APP_URL'] ?? 'http://localhost:5173'}/projects/${projectId}?tab=rfq_lines`
+
+      const TRANSITIONS: Record<string, { validFrom: string[]; toStatus: string; label: string }> = {
+        send_for_check:    { validFrom: ['draft','preliminary'],                        toStatus: 'under_check',   label: 'Sent for Internal Check' },
+        return_to_author:  { validFrom: ['under_check','under_approval','IFA','IFR','IFC','IFI','approved_with_comments','as_built'], toStatus: 'draft', label: 'Returned to Author' },
+        send_for_approval: { validFrom: ['under_check','draft'],                        toStatus: 'under_approval',label: 'Sent for Internal Approval' },
+        return_to_checker: { validFrom: ['under_approval'],                             toStatus: 'under_check',   label: 'Returned to Checker' },
+        approve_for_issue: { validFrom: ['under_approval'],                             toStatus: 'ready_to_issue',label: 'Approved for Issue' },
+        mark_as_built:     { validFrom: ['AFC','approved_with_comments','acknowledged'],toStatus: 'as_built',      label: 'Marked As-Built' },
+        move_to_bidding:   { validFrom: ['as_built'],                                  toStatus: 'bidding',        label: 'Moved to Bidding' },
+      }
+
+      let toStatus: string
+      let label: string
+      let purposeOfIssue: string | undefined
+      let transmittalRef: string | undefined = args.transmittalRef
+
+      if (args.action === 'issue') {
+        if (fromStatus !== 'ready_to_issue') throw new Error('Document must be Ready to Issue')
+        if (!args.issueType) throw new Error('issueType is required')
+        toStatus = args.issueType
+        purposeOfIssue = args.issueType
+        label = `Issued — ${args.issueType}`
+        // Auto-generate transmittal reference
+        transmittalRef = args.transmittalRef || await nextDocumentNumber(ctx.auth.companyId, 'transmittal', 'TR')
+      } else if (args.action === 'record_client_response') {
+        const issueStatuses = ['IFA','IFR','IFC','IFI']
+        if (!issueStatuses.includes(fromStatus)) throw new Error('Document must be in an issued state to record a client response')
+        if (!args.responseCode) throw new Error('responseCode is required (A/B/C/D)')
+        const codeMap: Record<string, string> = { A: 'AFC', B: 'approved_with_comments', C: 'draft', D: 'acknowledged' }
+        toStatus = codeMap[args.responseCode.toUpperCase()] ?? 'draft'
+        label = `Client Response: ${args.responseCode.toUpperCase()} — ${
+          args.responseCode.toUpperCase() === 'A' ? 'Approved' :
+          args.responseCode.toUpperCase() === 'B' ? 'Approved with Comments' :
+          args.responseCode.toUpperCase() === 'C' ? 'Not Approved — Resubmit' : 'For Information'
+        }`
+        transmittalRef = args.transmittalRef || await nextDocumentNumber(ctx.auth.companyId, 'transmittal', 'TR')
+      } else {
+        const t = TRANSITIONS[args.action]
+        if (!t) throw new Error(`Unknown workflow action: ${args.action}`)
+        if (!t.validFrom.includes(fromStatus)) throw new Error(`Action "${args.action}" is not valid from status "${fromStatus}"`)
+        toStatus = t.toStatus
+        label = t.label
+      }
+
+      // Update document status (and purposeOfIssue if issuing)
+      if (purposeOfIssue !== undefined) {
+        await query(
+          `UPDATE engineering_documents SET status=$1, purpose_of_issue=$2 WHERE id=$3`,
+          [toStatus, purposeOfIssue, args.id],
+        )
+      } else {
+        await query(`UPDATE engineering_documents SET status=$1 WHERE id=$2`, [toStatus, args.id])
+      }
+
+      // Log activity
+      const noteStr = [args.notes, transmittalRef && `Transmittal: ${transmittalRef}`].filter(Boolean).join(' | ') || undefined
+      await logDocActivity(args.id, fromStatus, toStatus, args.action, ctx.auth.userId, actorName, {
+        ...(args.submittedTo ? { submittedTo:    args.submittedTo } : {}),
+        ...(args.dueDate     ? { dueDate:        args.dueDate     } : {}),
+        ...(transmittalRef   ? { transmittalRef: transmittalRef   } : {}),
+        ...(args.responseCode? { responseCode:   args.responseCode} : {}),
+        ...(noteStr          ? { notes:          noteStr          } : {}),
+      })
+
+      // Insert client comments (Code B / D responses)
+      if (args.action === 'record_client_response' && args.comments?.length) {
+        const seqRes = await query(
+          `SELECT COALESCE(MAX(comment_no), 0) AS max FROM eng_client_comments WHERE document_id=$1`,
+          [args.id],
+        )
+        let nextNo = Number((seqRes.rows[0] as Record<string, unknown>)['max']) + 1
+        for (const c of args.comments) {
+          await query(
+            `INSERT INTO eng_client_comments (document_id, comment_no, description, clause_ref, category, raised_by)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [args.id, nextNo++, c.description, c.clauseRef ?? null, c.category ?? 'general', c.raisedBy ?? null],
+          )
+        }
+      }
+
+      // Log project activity
+      await logActivity(projectId, ctx.auth.userId, 'engineering_doc_workflow', `${docRef}: ${label}`)
+
+      // ── Notifications ────────────────────────────────────────────────────
+      const notifBase = {
+        companyId: ctx.auth.companyId, entityId: args.id, entityRef: docRef,
+        projectId, docTitle, projectName, fromName: actorName, appUrl,
+        notes: args.notes,
+      }
+
+      if (args.action === 'send_for_check') {
+        // Notify checker + create reminder
+        await notifyEngDocUser({
+          ...notifBase, recipientName: checker,
+          notifType: 'eng_doc_check_requested', priority: 'normal',
+          title: `Check Required: ${docRef}`,
+          body:  `${actorName} has sent ${docRef} — ${docTitle} for your internal check.${args.dueDate ? ` Due: ${args.dueDate}.` : ''}`,
+          eventType: 'assigned', role: 'checker', actionLabel: 'Internal Check Required',
+          dueDate: args.dueDate,
+        })
+        const dueForReminder = args.dueDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+        await upsertDocReminder({
+          documentId: args.id, projectId, companyId: ctx.auth.companyId,
+          role: 'checker', reviewerName: checker,
+          companyIdForLookup: ctx.auth.companyId, dueDate: dueForReminder,
+        })
+        await resolveDocReminders(args.id, 'approver')
+
+      } else if (args.action === 'send_for_approval') {
+        // Notify approver + create reminder
+        await notifyEngDocUser({
+          ...notifBase, recipientName: approver,
+          notifType: 'eng_doc_approval_requested', priority: 'normal',
+          title: `Approval Required: ${docRef}`,
+          body:  `${actorName} has sent ${docRef} — ${docTitle} for your approval.${args.dueDate ? ` Due: ${args.dueDate}.` : ''}`,
+          eventType: 'assigned', role: 'approver', actionLabel: 'Internal Approval Required',
+          dueDate: args.dueDate,
+        })
+        const dueForReminder = args.dueDate ?? new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10)
+        await upsertDocReminder({
+          documentId: args.id, projectId, companyId: ctx.auth.companyId,
+          role: 'approver', reviewerName: approver,
+          companyIdForLookup: ctx.auth.companyId, dueDate: dueForReminder,
+        })
+        await resolveDocReminders(args.id, 'checker')
+
+      } else if (args.action === 'return_to_author') {
+        // Notify originator
+        await notifyEngDocUser({
+          ...notifBase, recipientName: originator,
+          notifType: 'eng_doc_returned', priority: 'high',
+          title: `Document Returned: ${docRef}`,
+          body:  `${actorName} has returned ${docRef} — ${docTitle} to draft. Please review the comments and revise.`,
+          eventType: 'returned', role: 'originator', actionLabel: label,
+        })
+        await resolveDocReminders(args.id)
+
+      } else if (args.action === 'return_to_checker') {
+        // Notify checker
+        await notifyEngDocUser({
+          ...notifBase, recipientName: checker,
+          notifType: 'eng_doc_returned_to_checker', priority: 'high',
+          title: `Document Returned to You: ${docRef}`,
+          body:  `${actorName} has returned ${docRef} — ${docTitle} back to you for further review.`,
+          eventType: 'returned', role: 'checker', actionLabel: label,
+        })
+        await resolveDocReminders(args.id, 'approver')
+
+      } else if (args.action === 'approve_for_issue') {
+        // Notify originator — ready to issue
+        await notifyEngDocUser({
+          ...notifBase, recipientName: originator,
+          notifType: 'eng_doc_approved_for_issue', priority: 'normal',
+          title: `Document Approved for Issue: ${docRef}`,
+          body:  `${actorName} has approved ${docRef} — ${docTitle}. The document is now ready to issue to the client.`,
+          eventType: 'approved', role: 'originator', actionLabel: 'Approved for Issue — ready to send to client',
+        })
+        await resolveDocReminders(args.id)
+
+      } else if (args.action === 'issue') {
+        // Notify originator
+        await notifyEngDocUser({
+          ...notifBase, recipientName: originator,
+          notifType: 'eng_doc_issued', priority: 'normal',
+          title: `Document Issued (${args.issueType}): ${docRef}`,
+          body:  `${docRef} — ${docTitle} has been issued as ${args.issueType} by ${actorName}.${transmittalRef ? ` Transmittal: ${transmittalRef}.` : ''}`,
+          eventType: 'issued', role: 'originator',
+          actionLabel: `Issued as ${args.issueType}${transmittalRef ? ` — Transmittal: ${transmittalRef}` : ''}`,
+        })
+        await resolveDocReminders(args.id)
+
+      } else if (args.action === 'record_client_response') {
+        const codeLabel = args.responseCode === 'A' ? 'Approved for Construction' :
+                          args.responseCode === 'B' ? 'Approved with Comments' :
+                          args.responseCode === 'C' ? 'Not Approved — Resubmit' :
+                          args.responseCode === 'D' ? 'Acknowledged' : args.responseCode ?? ''
+        const responseBody = `Client response received for ${docRef}: Code ${args.responseCode} — ${codeLabel}. Recorded by ${actorName}.`
+        await notifyEngDocUser({
+          ...notifBase, recipientName: originator,
+          notifType: 'eng_doc_client_response', priority: args.responseCode === 'C' ? 'high' : 'normal',
+          title: `Client Response (${args.responseCode}): ${docRef}`,
+          body: responseBody, eventType: 'client_response', role: 'originator',
+          actionLabel: `Code ${args.responseCode} — ${codeLabel}`,
+        })
+        if (approver && approver !== originator) {
+          await notifyEngDocUser({
+            ...notifBase, recipientName: approver,
+            notifType: 'eng_doc_client_response', priority: 'normal',
+            title: `Client Response (${args.responseCode}): ${docRef}`,
+            body: responseBody, eventType: 'client_response', role: 'approver',
+            actionLabel: `Code ${args.responseCode} — ${codeLabel}`,
+          })
+        }
+        await resolveDocReminders(args.id)
+
+      } else if (args.action === 'mark_as_built') {
+        await notifyEngDocUser({
+          ...notifBase, recipientName: originator,
+          notifType: 'eng_doc_as_built', priority: 'low',
+          title: `Marked As-Built: ${docRef}`,
+          body:  `${docRef} — ${docTitle} has been marked as As-Built by ${actorName}.`,
+          eventType: 'update', role: 'originator', actionLabel: 'Marked As-Built',
+        })
+        await resolveDocReminders(args.id)
+      }
+      // ── End notifications ─────────────────────────────────────────────────
+
+      return refetchEngDocWithActivities(args.id, ctx.auth.companyId)
     },
 
     deleteEngineeringDoc: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -5683,6 +6241,94 @@ export const resolvers = {
       return r.rows.length > 0
     },
 
+    // ── Client Comment Register ──────────────────────────────────────────────
+
+    addEngClientComment: async (
+      _: unknown,
+      args: { documentId: string; description: string; clauseRef?: string; category?: string; raisedBy?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const seqRes = await query(
+        `SELECT COALESCE(MAX(comment_no), 0) + 1 AS next FROM eng_client_comments WHERE document_id=$1`,
+        [args.documentId],
+      )
+      const commentNo = Number((seqRes.rows[0] as Record<string, unknown>)['next'])
+      const r = await query(
+        `INSERT INTO eng_client_comments (document_id, comment_no, description, clause_ref, category, raised_by)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [args.documentId, commentNo, args.description, args.clauseRef ?? null, args.category ?? 'general', args.raisedBy ?? null],
+      )
+      return engClientCommentToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateEngClientComment: async (
+      _: unknown,
+      args: { id: string; description?: string; clauseRef?: string; category?: string; raisedBy?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE eng_client_comments SET
+           description = COALESCE($1, description),
+           clause_ref  = COALESCE($2, clause_ref),
+           category    = COALESCE($3, category),
+           raised_by   = COALESCE($4, raised_by),
+           updated_at  = NOW()
+         WHERE id=$5 RETURNING *`,
+        [args.description ?? null, args.clauseRef ?? null, args.category ?? null, args.raisedBy ?? null, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Comment not found')
+      return engClientCommentToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    closeEngClientComment: async (
+      _: unknown,
+      args: { id: string; resolution: string; closedByName?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const nameRes = await query(
+        `SELECT first_name || ' ' || last_name AS name FROM users WHERE id=$1`,
+        [ctx.auth.userId],
+      )
+      const closedByName = args.closedByName ?? (nameRes.rows[0] ? String((nameRes.rows[0] as Record<string, unknown>)['name']) : null)
+      const r = await query(
+        `UPDATE eng_client_comments SET
+           status         = 'closed',
+           resolution     = $1,
+           closed_by_name = $2,
+           closed_at      = NOW(),
+           updated_at     = NOW()
+         WHERE id=$3 RETURNING *`,
+        [args.resolution, closedByName, args.id],
+      )
+      if (!r.rows[0]) throw new Error('Comment not found')
+      return engClientCommentToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    reopenEngClientComment: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE eng_client_comments SET
+           status         = 'open',
+           resolution     = NULL,
+           closed_by_name = NULL,
+           closed_at      = NULL,
+           updated_at     = NOW()
+         WHERE id=$1 RETURNING *`,
+        [args.id],
+      )
+      if (!r.rows[0]) throw new Error('Comment not found')
+      return engClientCommentToGQL(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteEngClientComment: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`DELETE FROM eng_client_comments WHERE id=$1 RETURNING id`, [args.id])
+      return r.rows.length > 0
+    },
+
     // ── Phase 1: Document Distribution Matrix ────────────────────────────────
 
     upsertDistributionEntry: async (_: unknown, args: {
@@ -5728,197 +6374,6 @@ export const resolvers = {
       return r.rows.length > 0
     },
 
-    // ── Engineering Transmittal mutations (Phase 2) ───────────────────────────
-
-    createEngTransmittal: async (_: unknown, args: {
-      projectId: string; direction: string; title: string; subject?: string
-      toCompany: string; toContact?: string; toEmail?: string
-      fromCompany?: string; fromContact?: string
-      dueDate?: string; notes?: string
-      items?: { documentId?: string; extRefNumber?: string; extTitle?: string; revision?: string; copies?: number; format?: string; purposeOfIssue?: string; remarks?: string }[]
-    }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
-      if (!proj.rows[0]) throw new Error('Project not found')
-      // auto-number
-      const dir    = args.direction === 'incoming' ? 'IN' : 'OUT'
-      const ym     = new Date().toISOString().slice(0,7).replace('-','')
-      const cnt    = await query(`SELECT COUNT(*)+1 AS n FROM project_eng_transmittals WHERE project_id=$1 AND direction=$2`, [args.projectId, args.direction])
-      const seq    = String(Number((cnt.rows[0] as Record<string,unknown>)['n'] ?? 1)).padStart(3,'0')
-      const trsNo  = `TRS-${dir}-${ym}-${seq}`
-      // created_by_name from user
-      const user   = await query(`SELECT full_name FROM users WHERE id=$1`, [ctx.auth.userId])
-      const byName = (user.rows[0] as Record<string,unknown>)?.['full_name'] ?? null
-      const ins = await query(
-        `INSERT INTO project_eng_transmittals
-           (project_id,transmittal_no,direction,title,subject,to_company,to_contact,to_email,from_company,from_contact,due_date,notes,created_by_id,created_by_name)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-        [args.projectId, trsNo, args.direction, args.title, args.subject??null,
-         args.toCompany, args.toContact??null, args.toEmail??null,
-         args.fromCompany??null, args.fromContact??null,
-         args.dueDate??null, args.notes??null, ctx.auth.userId, byName],
-      )
-      const trs = ins.rows[0] as Record<string,unknown>
-      const addedItems: Record<string,unknown>[] = []
-      if (args.items?.length) {
-        for (const it of args.items) {
-          const ir = await query(
-            `INSERT INTO project_eng_transmittal_items
-               (transmittal_id,document_id,ext_ref_number,ext_title,revision,copies,format,purpose_of_issue,remarks)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-            [trs['id'], it.documentId??null, it.extRefNumber??null, it.extTitle??null,
-             it.revision??null, it.copies??1, it.format??'PDF', it.purposeOfIssue??null, it.remarks??null],
-          )
-          if (ir.rows[0]) addedItems.push(ir.rows[0] as Record<string,unknown>)
-        }
-      }
-      return engTransmittalToGQL(trs, addedItems)
-    },
-
-    updateEngTransmittal: async (_: unknown, args: {
-      id: string; title?: string; subject?: string
-      toCompany?: string; toContact?: string; toEmail?: string
-      fromCompany?: string; fromContact?: string
-      dueDate?: string; notes?: string
-    }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const fields: string[] = []; const vals: unknown[] = []; let idx = 1
-      if (args.title      != null) { fields.push(`title=$${idx++}`);       vals.push(args.title) }
-      if (args.subject    != null) { fields.push(`subject=$${idx++}`);     vals.push(args.subject) }
-      if (args.toCompany  != null) { fields.push(`to_company=$${idx++}`);  vals.push(args.toCompany) }
-      if (args.toContact  != null) { fields.push(`to_contact=$${idx++}`);  vals.push(args.toContact) }
-      if (args.toEmail    != null) { fields.push(`to_email=$${idx++}`);    vals.push(args.toEmail) }
-      if (args.fromCompany!= null) { fields.push(`from_company=$${idx++}`);vals.push(args.fromCompany) }
-      if (args.fromContact!= null) { fields.push(`from_contact=$${idx++}`);vals.push(args.fromContact) }
-      if (args.dueDate    != null) { fields.push(`due_date=$${idx++}`);    vals.push(args.dueDate) }
-      if (args.notes      != null) { fields.push(`notes=$${idx++}`);       vals.push(args.notes) }
-      if (!fields.length) throw new Error('No fields to update')
-      const r = await query(
-        `UPDATE project_eng_transmittals t SET ${fields.join(',')}
-         FROM projects p WHERE p.id=t.project_id AND p.company_id=$${idx} AND t.id=$${idx+1} RETURNING t.*`,
-        [...vals, ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('Transmittal not found')
-      const items = await query(
-        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
-         FROM project_eng_transmittal_items ti
-         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
-         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
-        [args.id],
-      )
-      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
-    },
-
-    issueEngTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(
-        `UPDATE project_eng_transmittals t SET status='sent', sent_date=NOW()
-         FROM projects p WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 AND t.status='draft' RETURNING t.*`,
-        [ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('Transmittal not found or not in draft status')
-      const items = await query(
-        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
-         FROM project_eng_transmittal_items ti
-         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
-         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
-        [args.id],
-      )
-      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
-    },
-
-    markEngTransmittalReceived: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(
-        `UPDATE project_eng_transmittals t SET status='received', received_date=NOW()
-         FROM projects p WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 AND t.status='sent' RETURNING t.*`,
-        [ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('Transmittal not found or not in sent status')
-      const items = await query(
-        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
-         FROM project_eng_transmittal_items ti
-         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
-         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
-        [args.id],
-      )
-      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
-    },
-
-    acknowledgeEngTransmittal: async (_: unknown, args: { id: string; acknowledgedBy?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(
-        `UPDATE project_eng_transmittals t SET status='acknowledged', acknowledged_at=NOW(), acknowledged_by=$1
-         FROM projects p WHERE p.id=t.project_id AND p.company_id=$2 AND t.id=$3
-         AND t.status IN ('sent','received') RETURNING t.*`,
-        [args.acknowledgedBy??null, ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('Transmittal not found or already acknowledged')
-      const items = await query(
-        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
-         FROM project_eng_transmittal_items ti
-         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
-         LEFT JOIN files f ON f.id = ed.file_id WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
-        [args.id],
-      )
-      return engTransmittalToGQL(r.rows[0] as Record<string,unknown>, items.rows as Record<string,unknown>[])
-    },
-
-    deleteEngTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(
-        `DELETE FROM project_eng_transmittals t USING projects p
-         WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 AND t.status='draft' RETURNING t.id`,
-        [ctx.auth.companyId, args.id],
-      )
-      if (!r.rows.length) throw new Error('Transmittal not found or cannot delete (only draft transmittals can be deleted)')
-      return true
-    },
-
-    addEngTransmittalItem: async (_: unknown, args: {
-      transmittalId: string; documentId?: string; extRefNumber?: string; extTitle?: string
-      revision?: string; copies?: number; format?: string; purposeOfIssue?: string; remarks?: string
-    }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const trs = await query(
-        `SELECT t.id FROM project_eng_transmittals t JOIN projects p ON p.id=t.project_id
-         WHERE t.id=$1 AND p.company_id=$2`,
-        [args.transmittalId, ctx.auth.companyId],
-      )
-      if (!trs.rows[0]) throw new Error('Transmittal not found')
-      const r = await query(
-        `INSERT INTO project_eng_transmittal_items
-           (transmittal_id,document_id,ext_ref_number,ext_title,revision,copies,format,purpose_of_issue,remarks)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (transmittal_id,document_id) DO UPDATE
-           SET revision=$5, copies=$6, format=$7, purpose_of_issue=$8, remarks=$9
-         RETURNING *`,
-        [args.transmittalId, args.documentId??null, args.extRefNumber??null, args.extTitle??null,
-         args.revision??null, args.copies??1, args.format??'PDF', args.purposeOfIssue??null, args.remarks??null],
-      )
-      // fetch joined doc info
-      const row = r.rows[0] as Record<string,unknown>
-      if (row['document_id']) {
-        const docRow = await query(`SELECT ref_number, title, discipline, doc_type, file_id FROM engineering_documents WHERE id=$1`, [row['document_id']])
-        if (docRow.rows[0]) {
-          const d = docRow.rows[0] as Record<string,unknown>
-          const fileRow = d['file_id'] ? await query(`SELECT download_url FROM files WHERE id=$1`, [d['file_id']]) : { rows: [] }
-          return engTransmittalItemToGQL({ ...row, ref_number: d['ref_number'], doc_title: d['title'], discipline: d['discipline'], doc_type: d['doc_type'], download_url: fileRow.rows[0] ? (fileRow.rows[0] as Record<string,unknown>)['download_url'] : null })
-        }
-      }
-      return engTransmittalItemToGQL(row)
-    },
-
-    removeEngTransmittalItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(
-        `DELETE FROM project_eng_transmittal_items ti
-         USING project_eng_transmittals t JOIN projects p ON p.id=t.project_id
-         WHERE t.id=ti.transmittal_id AND p.company_id=$1 AND ti.id=$2 RETURNING ti.id`,
-        [ctx.auth.companyId, args.id],
-      )
-      return r.rows.length > 0
-    },
 
     // ── Engineering mutations ─────────────────────────────────────────────────
 
@@ -6395,68 +6850,6 @@ export const resolvers = {
       return true
     },
 
-    createProjectSubmittal: async (_: unknown, args: { projectId: string; submittalNumber: string; title: string; submittalType: string; revision?: string; submittedDate?: string; reviewerName?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
-      const ins = await query(
-        `INSERT INTO project_submittals (project_id,submittal_number,title,submittal_type,revision,submitted_date,reviewer_name) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [args.projectId, args.submittalNumber, args.title, args.submittalType, args.revision ?? 'A', args.submittedDate ?? null, args.reviewerName ?? null],
-      )
-      const d = ins.rows[0] as Record<string, unknown>
-      await logActivity(args.projectId, ctx.auth.userId, 'submittal_created', `Submittal created: ${args.submittalNumber} — ${args.title}`)
-      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: null, remarks: null, files: [], createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    },
-
-    updateProjectSubmittal: async (_: unknown, args: { id: string; title?: string; submittalType?: string; revision?: string; submittedDate?: string; reviewerName?: string; reviewStatus?: string; returnDate?: string; remarks?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
-      if (args.title !== undefined)         { sets.push(`title=$${idx++}`);          vals.push(args.title) }
-      if (args.submittalType !== undefined)  { sets.push(`submittal_type=$${idx++}`); vals.push(args.submittalType || null) }
-      if (args.revision !== undefined)       { sets.push(`revision=$${idx++}`);       vals.push(args.revision) }
-      if (args.submittedDate !== undefined)  { sets.push(`submitted_date=$${idx++}`); vals.push(args.submittedDate || null) }
-      if (args.reviewerName !== undefined)   { sets.push(`reviewer_name=$${idx++}`);  vals.push(args.reviewerName) }
-      if (args.reviewStatus !== undefined)   { sets.push(`review_status=$${idx++}`);  vals.push(args.reviewStatus || null) }
-      if (args.returnDate !== undefined)     { sets.push(`return_date=$${idx++}`);    vals.push(args.returnDate || null) }
-      if (args.remarks !== undefined)        { sets.push(`remarks=$${idx++}`);        vals.push(args.remarks) }
-      sets.push(`updated_at=NOW()`)
-      const upd = await query(`UPDATE project_submittals s SET ${sets.join(',')} FROM projects p WHERE p.id=s.project_id AND p.company_id=$${idx} AND s.id=$${idx+1} RETURNING s.*`, [...vals, ctx.auth.companyId, args.id])
-      if (!upd.rows[0]) throw new Error('Submittal not found')
-      const d = upd.rows[0] as Record<string, unknown>
-      await logActivity(String(d['project_id']), ctx.auth.userId, 'submittal_updated', `Submittal updated: ${String(d['submittal_number'])}`)
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='submittal' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.id, ctx.auth.companyId])
-      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: d['return_date'] ? String(d['return_date']).slice(0, 10) : null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    },
-
-    deleteProjectSubmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(`DELETE FROM project_submittals s USING projects p WHERE p.id=s.project_id AND p.company_id=$1 AND s.id=$2 RETURNING s.project_id, s.submittal_number`, [ctx.auth.companyId, args.id])
-      if (!r.rows[0]) throw new Error('Submittal not found')
-      const row = r.rows[0] as Record<string, unknown>
-      await logActivity(String(row['project_id']), ctx.auth.userId, 'submittal_deleted', `Submittal deleted: ${String(row['submittal_number'])}`)
-      return true
-    },
-
-    uploadSubmittalFile: async (_: unknown, args: { submittalId: string; fileId: string; title?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const sR = await query(`SELECT s.*, p.company_id FROM project_submittals s JOIN projects p ON p.id=s.project_id WHERE s.id=$1 AND p.company_id=$2`, [args.submittalId, ctx.auth.companyId])
-      if (!sR.rows[0]) throw new Error('Submittal not found')
-      const d = sR.rows[0] as Record<string, unknown>
-      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
-      if (!fileR.rows[0]) throw new Error('File not found')
-      const f = fileR.rows[0] as Record<string, unknown>
-      await query(`INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'submittal',$2,$3,$4)`, [args.fileId, args.submittalId, args.title ?? f['original_filename'], ctx.auth.userId])
-      await logActivity(String(d['project_id']), ctx.auth.userId, 'submittal_file', `File attached to submittal ${String(d['submittal_number'])}`)
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='submittal' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [args.submittalId, ctx.auth.companyId])
-      const fileList = await Promise.all(files.rows.map(async (ff: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(ff['file_key'] as string, ff['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: ff['id'], fileId: ff['file_id'], filename: ff['original_filename'], mimeType: ff['mime_type'], sizeBytes: ff['size_bytes'], title: ff['label'] ?? ff['original_filename'], description: null, createdAt: ff['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: d['return_date'] ? String(d['return_date']).slice(0, 10) : null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    },
-
-    deleteSubmittalFile: async (_: unknown, args: { attachmentId: string; submittalId: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`DELETE FROM document_attachments da USING project_submittals s JOIN projects p ON p.id=s.project_id WHERE s.id=da.entity_id AND da.entity_type='submittal' AND p.company_id=$1 AND da.id=$2`, [ctx.auth.companyId, args.attachmentId])
-      return true
-    },
 
     createSiteInstruction: async (_: unknown, args: { projectId: string; siNumber: string; subject: string; description?: string; issuedBy?: string; issuedDate?: string; potentialVo?: boolean }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -6801,88 +7194,6 @@ export const resolvers = {
       return true
     },
 
-    createProjectTransmittal: async (_: unknown, args: { projectId: string; transmittalNumber: string; title: string; toCompany?: string; toContact?: string; fromName?: string; sentDate: string; purpose: string; notes?: string; items?: Array<{ documentTitle: string; documentNumber?: string; revision?: string; fileId?: string; copies?: number }> }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Project not found') })
-      const ins = await query(
-        `INSERT INTO project_transmittals (project_id,transmittal_number,title,to_company,to_contact,from_name,sent_date,purpose,notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [args.projectId, args.transmittalNumber, args.title, args.toCompany ?? null, args.toContact ?? null, args.fromName ?? null, args.sentDate, args.purpose, args.notes ?? null],
-      )
-      const d = ins.rows[0] as Record<string, unknown>
-      const tId = String(d['id'])
-      const itemRows = []
-      for (const item of (args.items ?? [])) {
-        const iR = await query(
-          `INSERT INTO project_transmittal_items (transmittal_id,document_title,document_number,revision,file_id,copies) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [tId, item.documentTitle, item.documentNumber ?? null, item.revision ?? null, item.fileId ?? null, item.copies ?? 1],
-        )
-        itemRows.push(iR.rows[0] as Record<string, unknown>)
-      }
-      await logActivity(args.projectId, ctx.auth.userId, 'transmittal_created', `Transmittal created: ${args.transmittalNumber} — ${args.title}`)
-      const mappedItems = await Promise.all(itemRows.map(async (it: Record<string, unknown>) => {
-        let filename: string | null = null; let downloadUrl: string | null = null
-        if (it['file_id']) {
-          const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']])
-          if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } }
-        }
-        return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
-      }))
-      return { id: d['id'], projectId: d['project_id'], transmittalNumber: d['transmittal_number'], title: d['title'], toCompany: d['to_company'] ?? null, toContact: d['to_contact'] ?? null, fromName: d['from_name'] ?? null, sentDate: String(d['sent_date']).slice(0, 10), purpose: d['purpose'], acknowledgedDate: null, notes: d['notes'] ?? null, status: d['status'], items: mappedItems, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    },
-
-    updateProjectTransmittal: async (_: unknown, args: { id: string; title?: string; toCompany?: string; toContact?: string; fromName?: string; sentDate?: string; purpose?: string; acknowledgedDate?: string; notes?: string; status?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const sets: string[] = []; const vals: unknown[] = []; let idx = 1
-      if (args.title !== undefined)           { sets.push(`title=$${idx++}`);            vals.push(args.title) }
-      if (args.toCompany !== undefined)       { sets.push(`to_company=$${idx++}`);       vals.push(args.toCompany) }
-      if (args.toContact !== undefined)       { sets.push(`to_contact=$${idx++}`);       vals.push(args.toContact) }
-      if (args.fromName !== undefined)        { sets.push(`from_name=$${idx++}`);        vals.push(args.fromName) }
-      if (args.sentDate !== undefined)        { sets.push(`sent_date=$${idx++}`);        vals.push(args.sentDate || null) }
-      if (args.purpose !== undefined)         { sets.push(`purpose=$${idx++}`);          vals.push(args.purpose || null) }
-      if (args.acknowledgedDate !== undefined){ sets.push(`acknowledged_date=$${idx++}`);vals.push(args.acknowledgedDate || null) }
-      if (args.notes !== undefined)           { sets.push(`notes=$${idx++}`);            vals.push(args.notes) }
-      if (args.status !== undefined)          { sets.push(`status=$${idx++}`);           vals.push(args.status) }
-      sets.push(`updated_at=NOW()`)
-      const upd = await query(`UPDATE project_transmittals t SET ${sets.join(',')} FROM projects p WHERE p.id=t.project_id AND p.company_id=$${idx} AND t.id=$${idx+1} RETURNING t.*`, [...vals, ctx.auth.companyId, args.id])
-      if (!upd.rows[0]) throw new Error('Transmittal not found')
-      const d = upd.rows[0] as Record<string, unknown>
-      await logActivity(String(d['project_id']), ctx.auth.userId, 'transmittal_updated', `Transmittal updated: ${String(d['transmittal_number'])}`)
-      const itemsR = await query(`SELECT * FROM project_transmittal_items WHERE transmittal_id=$1 ORDER BY created_at`, [args.id])
-      const mappedItems = await Promise.all(itemsR.rows.map(async (it: Record<string, unknown>) => {
-        let filename: string | null = null; let downloadUrl: string | null = null
-        if (it['file_id']) { const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']]); if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } } }
-        return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
-      }))
-      return { id: d['id'], projectId: d['project_id'], transmittalNumber: d['transmittal_number'], title: d['title'], toCompany: d['to_company'] ?? null, toContact: d['to_contact'] ?? null, fromName: d['from_name'] ?? null, sentDate: String(d['sent_date']).slice(0, 10), purpose: d['purpose'], acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, notes: d['notes'] ?? null, status: d['status'], items: mappedItems, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    },
-
-    deleteProjectTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const r = await query(`DELETE FROM project_transmittals t USING projects p WHERE p.id=t.project_id AND p.company_id=$1 AND t.id=$2 RETURNING t.project_id, t.transmittal_number`, [ctx.auth.companyId, args.id])
-      if (!r.rows[0]) throw new Error('Transmittal not found')
-      const row = r.rows[0] as Record<string, unknown>
-      await logActivity(String(row['project_id']), ctx.auth.userId, 'transmittal_deleted', `Transmittal deleted: ${String(row['transmittal_number'])}`)
-      return true
-    },
-
-    addTransmittalItem: async (_: unknown, args: { transmittalId: string; documentTitle: string; documentNumber?: string; revision?: string; fileId?: string; copies?: number }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`SELECT t.id FROM project_transmittals t JOIN projects p ON p.id=t.project_id WHERE t.id=$1 AND p.company_id=$2`, [args.transmittalId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Transmittal not found') })
-      const ins = await query(
-        `INSERT INTO project_transmittal_items (transmittal_id,document_title,document_number,revision,file_id,copies) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [args.transmittalId, args.documentTitle, args.documentNumber ?? null, args.revision ?? null, args.fileId ?? null, args.copies ?? 1],
-      )
-      const it = ins.rows[0] as Record<string, unknown>
-      let filename: string | null = null; let downloadUrl: string | null = null
-      if (it['file_id']) { const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']]); if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } } }
-      return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
-    },
-
-    deleteTransmittalItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`DELETE FROM project_transmittal_items ti USING project_transmittals t JOIN projects p ON p.id=t.project_id WHERE t.id=ti.transmittal_id AND p.company_id=$1 AND ti.id=$2`, [ctx.auth.companyId, args.id])
-      return true
-    },
 
     // ── Planning ─────────────────────────────────────────────────────────────
 
@@ -11121,20 +11432,24 @@ const phase5QueryResolvers = {
 
   // ── Engineering Documents (new discipline-based system) ──────────────────
 
-  engineeringDocuments: async (_: unknown, args: { projectId: string; discipline?: string; docType?: string }, ctx: GQLContext) => {
+  engineeringDocuments: async (_: unknown, args: { projectId: string; discipline?: string; docType?: string; status?: string[] }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const wheres = ['ed.project_id=$1', 'ed.company_id=$2', 'ed.is_current=true']
     const vals: unknown[] = [args.projectId, ctx.auth.companyId]
     let i = 3
-    if (args.discipline) { wheres.push(`ed.discipline=$${i++}`); vals.push(args.discipline) }
-    if (args.docType)    { wheres.push(`ed.doc_type=$${i++}`);   vals.push(args.docType) }
+    if (args.discipline)         { wheres.push(`ed.discipline=$${i++}`);          vals.push(args.discipline) }
+    if (args.docType)            { wheres.push(`ed.doc_type=$${i++}`);            vals.push(args.docType) }
+    if (args.status?.length)     { wheres.push(`ed.status = ANY($${i++}::text[])`); vals.push(args.status) }
     const r = await query(
       `SELECT ed.*, f.original_filename AS filename, f.file_key,
-              COUNT(c.id)                                        AS comment_count,
-              COUNT(c.id) FILTER (WHERE c.resolution IS NULL)   AS open_comment_count
+              COUNT(c.id)                                         AS comment_count,
+              COUNT(c.id) FILTER (WHERE c.resolution IS NULL)    AS open_comment_count,
+              COUNT(ecc.id)                                       AS client_comment_count,
+              COUNT(ecc.id) FILTER (WHERE ecc.status = 'open')   AS open_client_comment_count
        FROM engineering_documents ed
        LEFT JOIN files f ON f.id = ed.file_id
        LEFT JOIN project_doc_comments c ON c.document_id = ed.id
+       LEFT JOIN eng_client_comments ecc ON ecc.document_id = ed.id
        WHERE ${wheres.join(' AND ')}
        GROUP BY ed.id, f.original_filename, f.file_key
        ORDER BY ed.discipline, ed.doc_type, ed.seq_no, ed.created_at`,
@@ -11165,6 +11480,20 @@ const phase5QueryResolvers = {
       } catch { /* best-effort */ }
       histMap.get(gid)!.push({ row: h, url: hUrl })
     }
+    // Fetch activities for all docs in this project in one query
+    const allDocIds = (r.rows as Record<string, unknown>[]).map(d => d['id'])
+    const actRes = allDocIds.length
+      ? await query(
+          `SELECT * FROM engineering_doc_activities WHERE document_id = ANY($1) ORDER BY created_at DESC`,
+          [allDocIds],
+        )
+      : { rows: [] }
+    const actMap = new Map<string, Record<string, unknown>[]>()
+    for (const a of actRes.rows as Record<string, unknown>[]) {
+      const did = String(a['document_id'])
+      if (!actMap.has(did)) actMap.set(did, [])
+      actMap.get(did)!.push(a)
+    }
     return Promise.all((r.rows as Record<string, unknown>[]).map(async row => {
       let url: string | null = null
       try {
@@ -11173,78 +11502,8 @@ const phase5QueryResolvers = {
           url = dl.downloadUrl
         }
       } catch { /* best-effort */ }
-      return engDocToGQL(row, histMap.get(String(row['doc_group_id'])) ?? [], url)
+      return engDocToGQL(row, histMap.get(String(row['doc_group_id'])) ?? [], url, actMap.get(String(row['id'])) ?? [])
     }))
-  },
-
-  // ── Phase 1: Doc Comments query ─────────────────────────────────────────
-
-  docComments: async (_: unknown, args: { documentId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const r = await query(
-      `SELECT * FROM project_doc_comments WHERE document_id=$1 ORDER BY comment_number ASC`,
-      [args.documentId],
-    )
-    return r.rows.map((row: Record<string, unknown>) => docCommentToGQL(row))
-  },
-
-  // ── Phase 1: Doc Distribution Matrix query ───────────────────────────────
-
-  docDistributionMatrix: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
-    if (!proj.rows[0]) throw new Error('Project not found')
-    const r = await query(
-      `SELECT * FROM project_doc_distribution_matrix WHERE project_id=$1 ORDER BY company_name, status_trigger`,
-      [args.projectId],
-    )
-    return r.rows.map((row: Record<string, unknown>) => ddmToGQL(row))
-  },
-
-  // ── Engineering Transmittals (Phase 2) ────────────────────────────────────
-
-  engTransmittals: async (_: unknown, args: { projectId: string; direction?: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
-    if (!proj.rows[0]) throw new Error('Project not found')
-    let sql = `SELECT t.* FROM project_eng_transmittals t WHERE t.project_id=$1`
-    const params: unknown[] = [args.projectId]
-    if (args.direction) { sql += ` AND t.direction=$2`; params.push(args.direction) }
-    sql += ` ORDER BY t.created_at DESC`
-    const rows = await query(sql, params)
-    const results: Record<string, unknown>[] = []
-    for (const row of rows.rows as Record<string, unknown>[]) {
-      const items = await query(
-        `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
-         FROM project_eng_transmittal_items ti
-         LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
-         LEFT JOIN files f ON f.id = ed.file_id
-         WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
-        [row['id']],
-      )
-      results.push(engTransmittalToGQL(row, items.rows as Record<string, unknown>[]))
-    }
-    return results
-  },
-
-  engTransmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const r = await query(
-      `SELECT t.* FROM project_eng_transmittals t
-       JOIN projects p ON p.id = t.project_id
-       WHERE t.id=$1 AND p.company_id=$2`,
-      [args.id, ctx.auth.companyId],
-    )
-    if (!r.rows[0]) throw new Error('Transmittal not found')
-    const items = await query(
-      `SELECT ti.*, ed.ref_number, ed.title AS doc_title, ed.discipline, ed.doc_type, f.download_url
-       FROM project_eng_transmittal_items ti
-       LEFT JOIN engineering_documents ed ON ed.id = ti.document_id
-       LEFT JOIN files f ON f.id = ed.file_id
-       WHERE ti.transmittal_id=$1 ORDER BY ti.created_at`,
-      [args.id],
-    )
-    return engTransmittalToGQL(r.rows[0] as Record<string, unknown>, items.rows as Record<string, unknown>[])
   },
 
   // ── Engineering module ───────────────────────────────────────────────────
@@ -11417,89 +11676,6 @@ const phase5QueryResolvers = {
     }))
   },
 
-  projectSubmittals: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const rows = await query(`SELECT * FROM project_submittals WHERE project_id=$1 ORDER BY submittal_number, revision`, [args.projectId])
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='submittal' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
-      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], submittalNumber: d['submittal_number'], title: d['title'], submittalType: d['submittal_type'], revision: d['revision'], submittedDate: d['submitted_date'] ? String(d['submitted_date']).slice(0, 10) : null, reviewerName: d['reviewer_name'] ?? null, reviewStatus: d['review_status'], returnDate: d['return_date'] ? String(d['return_date']).slice(0, 10) : null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
-
-  projectSiteInstructions: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const rows = await query(`SELECT * FROM project_site_instructions WHERE project_id=$1 ORDER BY issued_date DESC`, [args.projectId])
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='site_instruction' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
-      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], siNumber: d['si_number'], subject: d['subject'], description: d['description'] ?? null, issuedBy: d['issued_by'] ?? null, issuedDate: String(d['issued_date']).slice(0, 10), acknowledgedByName: d['acknowledged_by_name'] ?? null, acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, potentialVo: Boolean(d['potential_vo']), voRef: d['vo_ref'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
-
-  projectITPs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const rows = await query(`SELECT * FROM project_itps WHERE project_id=$1 ORDER BY created_at`, [args.projectId])
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const items = await query(`SELECT * FROM project_itp_items WHERE itp_id=$1 ORDER BY sequence`, [d['id']])
-      return { id: d['id'], projectId: d['project_id'], title: d['title'], workPackage: d['work_package'] ?? null, discipline: d['discipline'] ?? null, revision: d['revision'], status: d['status'], createdByName: d['created_by_name'] ?? null, items: items.rows.map((it: Record<string, unknown>) => ({ id: it['id'], itpId: it['itp_id'], sequence: it['sequence'], activity: it['activity'], inspectionType: it['inspection_type'], contractorRole: it['contractor_role'] ?? null, clientRole: it['client_role'] ?? null, referenceDoc: it['reference_doc'] ?? null, acceptanceCriteria: it['acceptance_criteria'] ?? null, result: it['result'] ?? null, inspectorName: it['inspector_name'] ?? null, inspectionDate: it['inspection_date'] ? String(it['inspection_date']).slice(0, 10) : null, remarks: it['remarks'] ?? null })), createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
-
-  projectInspectionRequests: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const rows = await query(`SELECT * FROM project_inspection_requests WHERE project_id=$1 ORDER BY requested_date DESC`, [args.projectId])
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='inspection_request' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
-      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], irNumber: d['ir_number'], title: d['title'], itpId: d['itp_id'] ?? null, workPackage: d['work_package'] ?? null, location: d['location'] ?? null, requestedDate: String(d['requested_date']).slice(0, 10), requestedByName: d['requested_by_name'] ?? null, inspectorName: d['inspector_name'] ?? null, actualDate: d['actual_date'] ? String(d['actual_date']).slice(0, 10) : null, status: d['status'], result: d['result'] ?? null, remarks: d['remarks'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
-
-  projectNCRs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const rows = await query(`SELECT * FROM project_ncrs WHERE project_id=$1 ORDER BY raised_date DESC`, [args.projectId])
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='ncr' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
-      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], ncrNumber: d['ncr_number'], title: d['title'], description: d['description'], workPackage: d['work_package'] ?? null, location: d['location'] ?? null, raisedByName: d['raised_by_name'] ?? null, raisedDate: String(d['raised_date']).slice(0, 10), severity: d['severity'], rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, preventiveAction: d['preventive_action'] ?? null, dueDate: d['due_date'] ? String(d['due_date']).slice(0, 10) : null, closedDate: d['closed_date'] ? String(d['closed_date']).slice(0, 10) : null, closedByName: d['closed_by_name'] ?? null, status: d['status'], files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
-
-  projectHSERecords: async (_: unknown, args: { projectId: string; recordType?: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const sql = args.recordType
-      ? `SELECT * FROM project_hse_records WHERE project_id=$1 AND record_type=$2 ORDER BY record_date DESC`
-      : `SELECT * FROM project_hse_records WHERE project_id=$1 ORDER BY record_date DESC`
-    const params = args.recordType ? [args.projectId, args.recordType] : [args.projectId]
-    const rows = await query(sql, params)
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const files = await query(`SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='hse_record' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`, [d['id'], ctx.auth!.companyId])
-      const fileList = await Promise.all(files.rows.map(async (f: Record<string, unknown>) => { let dl: string | null = null; try { const r2 = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); dl = r2.downloadUrl } catch { /**/ } return { id: f['id'], fileId: f['file_id'], filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'], title: f['label'] ?? f['original_filename'], description: null, createdAt: f['created_at'], downloadUrl: dl } }))
-      return { id: d['id'], projectId: d['project_id'], recordType: d['record_type'], title: d['title'], recordDate: String(d['record_date']).slice(0, 10), conductedBy: d['conducted_by'] ?? null, location: d['location'] ?? null, description: d['description'] ?? null, attendeeCount: d['attendee_count'] ?? null, attendeeNames: d['attendee_names'] ?? null, incidentType: d['incident_type'] ?? null, severity: d['severity'] ?? null, injuredPerson: d['injured_person'] ?? null, rootCause: d['root_cause'] ?? null, correctiveAction: d['corrective_action'] ?? null, correctiveDueDate: d['corrective_due_date'] ? String(d['corrective_due_date']).slice(0, 10) : null, correctiveClosedDate: d['corrective_closed_date'] ? String(d['corrective_closed_date']).slice(0, 10) : null, observationType: d['observation_type'] ?? null, ptwType: d['ptw_type'] ?? null, ptwNumber: d['ptw_number'] ?? null, validFrom: d['valid_from'] ?? null, validTo: d['valid_to'] ?? null, approvedBy: d['approved_by'] ?? null, ptwStatus: d['ptw_status'] ?? null, status: d['status'], createdByName: d['created_by_name'] ?? null, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
-
-  projectTransmittals: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
-    const rows = await query(`SELECT * FROM project_transmittals WHERE project_id=$1 ORDER BY sent_date DESC`, [args.projectId])
-    return Promise.all(rows.rows.map(async (d: Record<string, unknown>) => {
-      const itemsR = await query(`SELECT * FROM project_transmittal_items WHERE transmittal_id=$1 ORDER BY created_at`, [d['id']])
-      const mappedItems = await Promise.all(itemsR.rows.map(async (it: Record<string, unknown>) => {
-        let filename: string | null = null; let downloadUrl: string | null = null
-        if (it['file_id']) { const fR = await query(`SELECT original_filename, file_key FROM files WHERE id=$1`, [it['file_id']]); if (fR.rows[0]) { const ff = fR.rows[0] as Record<string, unknown>; filename = String(ff['original_filename']); try { const dl = await generateDownloadUrl(ff['file_key'] as string, String(ff['original_filename'])); downloadUrl = dl.downloadUrl } catch { /**/ } } }
-        return { id: it['id'], transmittalId: it['transmittal_id'], documentTitle: it['document_title'], documentNumber: it['document_number'] ?? null, revision: it['revision'] ?? null, filename, downloadUrl, copies: Number(it['copies']) }
-      }))
-      return { id: d['id'], projectId: d['project_id'], transmittalNumber: d['transmittal_number'], title: d['title'], toCompany: d['to_company'] ?? null, toContact: d['to_contact'] ?? null, fromName: d['from_name'] ?? null, sentDate: String(d['sent_date']).slice(0, 10), purpose: d['purpose'], acknowledgedDate: d['acknowledged_date'] ? String(d['acknowledged_date']).slice(0, 10) : null, notes: d['notes'] ?? null, status: d['status'], items: mappedItems, createdAt: d['created_at'], updatedAt: d['updated_at'] }
-    }))
-  },
 
   // ── Cost Control Queries ──────────────────────────────────────────────────
 
@@ -13665,34 +13841,6 @@ Object.assign(resolvers.Mutation, {
     return true
   },
 
-  // ── Phase 3: Technical Queries ──────────────────────────────────────────────
-
-  projectTQs: async (
-    _: unknown,
-    args: { projectId: string; status?: string; discipline?: string; priority?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const conditions = [`project_id = $1`]
-    const params: unknown[] = [args.projectId]
-    if (args.status)     { conditions.push(`status = $${params.length + 1}`);     params.push(args.status) }
-    if (args.discipline) { conditions.push(`discipline = $${params.length + 1}`); params.push(args.discipline) }
-    if (args.priority)   { conditions.push(`priority = $${params.length + 1}`);   params.push(args.priority) }
-    const res = await query(
-      `SELECT * FROM project_tqs WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
-      params,
-    )
-    return res.rows.map(tqToGQL)
-  },
-
-  projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(`SELECT * FROM project_tqs WHERE id = $1`, [args.id])
-    const r = res.rows[0] as Record<string, unknown> | undefined
-    if (!r) throw new Error('TQ not found')
-    return tqToGQL(r)
-  },
-
   createTQ: async (
     _: unknown,
     args: {
@@ -13805,384 +13953,7 @@ Object.assign(resolvers.Mutation, {
     return true
   },
 
-  // ── Phase 3: Contractor Deviation Requests ──────────────────────────────────
 
-  projectCDRs: async (
-    _: unknown,
-    args: { projectId: string; status?: string; discipline?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const conditions = [`c.project_id = $1`]
-    const params: unknown[] = [args.projectId]
-    if (args.status)     { conditions.push(`c.status = $${params.length + 1}`);     params.push(args.status) }
-    if (args.discipline) { conditions.push(`c.discipline = $${params.length + 1}`); params.push(args.discipline) }
-    const res = await query(
-      `SELECT c.* FROM project_cdrs c WHERE ${conditions.join(' AND ')} ORDER BY c.created_at DESC`,
-      params,
-    )
-    return Promise.all(res.rows.map(r => cdrToGQL(r as Record<string, unknown>)))
-  },
-
-  projectCDR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(`SELECT * FROM project_cdrs WHERE id=$1`, [args.id])
-    const r = res.rows[0] as Record<string, unknown> | undefined
-    if (!r) throw new Error('CDR not found')
-    return cdrToGQL(r)
-  },
-
-  createCDR: async (
-    _: unknown,
-    args: {
-      projectId: string; discipline?: string; title: string; description?: string
-      documentRef?: string; clauseRef?: string; technicalImpact?: string
-      commercialImpact?: string; proposedAlternative?: string
-    },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
-    const countRes = await query(
-      `SELECT COUNT(*) FROM project_cdrs WHERE project_id=$1 AND cdr_number LIKE $2`,
-      [args.projectId, `CDR-${ym}-%`],
-    )
-    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
-    const cdrNumber = `CDR-${ym}-${seq}`
-    const res = await query(
-      `INSERT INTO project_cdrs
-        (project_id,cdr_number,discipline,title,description,document_ref,clause_ref,
-         technical_impact,commercial_impact,proposed_alternative,created_by_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [
-        args.projectId, cdrNumber, args.discipline ?? null, args.title,
-        args.description ?? null, args.documentRef ?? null, args.clauseRef ?? null,
-        args.technicalImpact ?? null, args.commercialImpact ?? null,
-        args.proposedAlternative ?? null, ctx.auth.userId,
-      ],
-    )
-    return cdrToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  updateCDR: async (
-    _: unknown,
-    args: {
-      id: string; discipline?: string; title?: string; description?: string
-      documentRef?: string; clauseRef?: string; technicalImpact?: string
-      commercialImpact?: string; proposedAlternative?: string
-    },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_cdrs WHERE id=$1`, [args.id])
-    const r0 = existing.rows[0] as Record<string, unknown> | undefined
-    if (!r0) throw new Error('CDR not found')
-    if (!['draft','submitted'].includes(String(r0['status']))) throw new Error('Cannot edit CDR in current status')
-    const res = await query(
-      `UPDATE project_cdrs SET
-        discipline=$2, title=COALESCE($3,title), description=$4,
-        document_ref=$5, clause_ref=$6, technical_impact=$7,
-        commercial_impact=$8, proposed_alternative=$9, updated_at=NOW()
-       WHERE id=$1 RETURNING *`,
-      [
-        args.id, args.discipline ?? null, args.title ?? null, args.description ?? null,
-        args.documentRef ?? null, args.clauseRef ?? null, args.technicalImpact ?? null,
-        args.commercialImpact ?? null, args.proposedAlternative ?? null,
-      ],
-    )
-    return cdrToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  submitCDR: async (
-    _: unknown,
-    args: { id: string; approverRoles?: string[] },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_cdrs WHERE id=$1`, [args.id])
-    const r0 = existing.rows[0] as Record<string, unknown> | undefined
-    if (!r0) throw new Error('CDR not found')
-    if (r0['status'] !== 'draft') throw new Error('Only draft CDRs can be submitted')
-    // Create approval chain
-    const roles = args.approverRoles ?? ['Project Engineer', 'Project Manager', 'Client Representative']
-    for (let i = 0; i < roles.length; i++) {
-      await query(
-        `INSERT INTO project_cdr_approvals (cdr_id, step_order, approver_role) VALUES ($1,$2,$3)
-         ON CONFLICT (cdr_id, step_order) DO UPDATE SET approver_role=$3`,
-        [args.id, i + 1, roles[i]],
-      )
-    }
-    const res = await query(
-      `UPDATE project_cdrs SET status='submitted', submitted_at=NOW(), updated_at=NOW()
-       WHERE id=$1 RETURNING *`,
-      [args.id],
-    )
-    return cdrToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  approveCDRStep: async (
-    _: unknown,
-    args: { id: string; stepOrder: number; approverName?: string; comments?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    // Update the step
-    await query(
-      `UPDATE project_cdr_approvals SET status='approved', approver_name=$3, comments=$4, actioned_at=NOW()
-       WHERE cdr_id=$1 AND step_order=$2`,
-      [args.id, args.stepOrder, args.approverName ?? null, args.comments ?? null],
-    )
-    // Check if all steps approved
-    const stepsRes = await query(
-      `SELECT status FROM project_cdr_approvals WHERE cdr_id=$1 ORDER BY step_order`,
-      [args.id],
-    )
-    const allApproved = stepsRes.rows.every(r => (r as Record<string, unknown>)['status'] === 'approved')
-    let newStatus = 'under_review'
-    let decidedAt: string | null = null
-    if (allApproved) { newStatus = 'approved'; decidedAt = 'NOW()' }
-    const res = await query(
-      decidedAt
-        ? `UPDATE project_cdrs SET status=$2, decided_at=NOW(), decision_by=$3, updated_at=NOW() WHERE id=$1 RETURNING *`
-        : `UPDATE project_cdrs SET status=$2, decision_by=$3, updated_at=NOW() WHERE id=$1 RETURNING *`,
-      [args.id, newStatus, args.approverName ?? null],
-    )
-    return cdrToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  rejectCDRStep: async (
-    _: unknown,
-    args: { id: string; stepOrder: number; approverName?: string; comments: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(
-      `UPDATE project_cdr_approvals SET status='rejected', approver_name=$3, comments=$4, actioned_at=NOW()
-       WHERE cdr_id=$1 AND step_order=$2`,
-      [args.id, args.stepOrder, args.approverName ?? null, args.comments],
-    )
-    // Mark remaining pending steps as skipped
-    await query(
-      `UPDATE project_cdr_approvals SET status='skipped' WHERE cdr_id=$1 AND step_order>$2 AND status='pending'`,
-      [args.id, args.stepOrder],
-    )
-    const res = await query(
-      `UPDATE project_cdrs SET status='rejected', decided_at=NOW(), decision_by=$2, decision_notes=$3, updated_at=NOW()
-       WHERE id=$1 RETURNING *`,
-      [args.id, args.approverName ?? null, args.comments],
-    )
-    return cdrToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  withdrawCDR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(
-      `UPDATE project_cdrs SET status='withdrawn', updated_at=NOW()
-       WHERE id=$1 AND status NOT IN ('approved','withdrawn') RETURNING *`,
-      [args.id],
-    )
-    if (!res.rows[0]) throw new Error('CDR not found or cannot be withdrawn in current status')
-    return cdrToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  deleteCDR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_cdrs WHERE id=$1`, [args.id])
-    const r = existing.rows[0] as Record<string, unknown> | undefined
-    if (!r) throw new Error('CDR not found')
-    if (r['status'] !== 'draft') throw new Error('Only draft CDRs can be deleted')
-    await query(`DELETE FROM project_cdrs WHERE id=$1`, [args.id])
-    return true
-  },
-
-  // ── Phase 4: Interface Management ──────────────────────────────────────────
-
-  projectInterfaces: async (
-    _: unknown,
-    args: { projectId: string; status?: string; disciplinePair?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const conditions = [`project_id = $1`]
-    const params: unknown[] = [args.projectId]
-    if (args.status) {
-      conditions.push(`status = $${params.length + 1}`)
-      params.push(args.status)
-    }
-    const res = await query(
-      `SELECT * FROM project_interfaces WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
-      params,
-    )
-    return Promise.all(res.rows.map(r => interfaceToGQL(r as Record<string, unknown>)))
-  },
-
-  projectInterface: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(`SELECT * FROM project_interfaces WHERE id=$1`, [args.id])
-    const r = res.rows[0] as Record<string, unknown> | undefined
-    if (!r) throw new Error('Interface not found')
-    return interfaceToGQL(r)
-  },
-
-  createInterface: async (
-    _: unknown,
-    args: {
-      projectId: string; partyA: string; partyB: string
-      disciplineA?: string; disciplineB?: string; title: string
-      description?: string; agreedDate?: string; priority?: string
-    },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
-    const countRes = await query(
-      `SELECT COUNT(*) FROM project_interfaces WHERE project_id=$1 AND interface_no LIKE $2`,
-      [args.projectId, `IFC-${ym}-%`],
-    )
-    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
-    const interfaceNo = `IFC-${ym}-${seq}`
-    const res = await query(
-      `INSERT INTO project_interfaces
-        (project_id,interface_no,party_a,party_b,discipline_a,discipline_b,
-         title,description,agreed_date,priority,created_by_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [
-        args.projectId, interfaceNo,
-        args.partyA, args.partyB,
-        args.disciplineA ?? null, args.disciplineB ?? null,
-        args.title, args.description ?? null,
-        args.agreedDate ?? null, args.priority ?? 'normal',
-        ctx.auth.userId,
-      ],
-    )
-    return interfaceToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  updateInterface: async (
-    _: unknown,
-    args: {
-      id: string; partyA?: string; partyB?: string
-      disciplineA?: string; disciplineB?: string; title?: string
-      description?: string; agreedDate?: string; priority?: string
-    },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(
-      `UPDATE project_interfaces SET
-        party_a=COALESCE($2,party_a), party_b=COALESCE($3,party_b),
-        discipline_a=$4, discipline_b=$5,
-        title=COALESCE($6,title), description=$7,
-        agreed_date=$8, priority=COALESCE($9,priority),
-        updated_at=NOW()
-       WHERE id=$1 RETURNING *`,
-      [
-        args.id,
-        args.partyA ?? null, args.partyB ?? null,
-        args.disciplineA ?? null, args.disciplineB ?? null,
-        args.title ?? null, args.description ?? null,
-        args.agreedDate ?? null, args.priority ?? null,
-      ],
-    )
-    if (!res.rows[0]) throw new Error('Interface not found')
-    return interfaceToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  updateInterfaceStatus: async (
-    _: unknown,
-    args: { id: string; status: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const valid = ['identified','active','pending_response','agreed','closed']
-    if (!valid.includes(args.status)) throw new Error('Invalid status')
-    const res = await query(
-      `UPDATE project_interfaces SET status=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,
-      [args.id, args.status],
-    )
-    if (!res.rows[0]) throw new Error('Interface not found')
-    return interfaceToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  deleteInterface: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT id FROM project_interfaces WHERE id=$1`, [args.id])
-    if (!existing.rows[0]) throw new Error('Interface not found')
-    await query(`DELETE FROM project_interfaces WHERE id=$1`, [args.id])
-    return true
-  },
-
-  createInterfaceAction: async (
-    _: unknown,
-    args: { interfaceId: string; description: string; owner?: string; dueDate?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(
-      `INSERT INTO project_interface_actions (interface_id,description,owner,due_date)
-       VALUES ($1,$2,$3,$4) RETURNING *`,
-      [args.interfaceId, args.description, args.owner ?? null, args.dueDate ?? null],
-    )
-    return actionToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  updateInterfaceAction: async (
-    _: unknown,
-    args: { id: string; description?: string; owner?: string; dueDate?: string; status?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const closedAt = args.status === 'closed' ? 'NOW()' : null
-    const res = await query(
-      closedAt
-        ? `UPDATE project_interface_actions SET
-            description=COALESCE($2,description), owner=$3, due_date=$4,
-            status=COALESCE($5,status), closed_at=NOW(), updated_at=NOW()
-           WHERE id=$1 RETURNING *`
-        : `UPDATE project_interface_actions SET
-            description=COALESCE($2,description), owner=$3, due_date=$4,
-            status=COALESCE($5,status), updated_at=NOW()
-           WHERE id=$1 RETURNING *`,
-      [args.id, args.description ?? null, args.owner ?? null, args.dueDate ?? null, args.status ?? null],
-    )
-    if (!res.rows[0]) throw new Error('Action not found')
-    return actionToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  deleteInterfaceAction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_interface_actions WHERE id=$1`, [args.id])
-    return true
-  },
-
-  // ── Phase 5: Punch List ─────────────────────────────────────────────────────
-
-  projectPunchItems: async (
-    _: unknown,
-    args: { projectId: string; category?: string; status?: string; discipline?: string; subcontractor?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const conditions = [`project_id = $1`]
-    const params: unknown[] = [args.projectId]
-    if (args.category)     { conditions.push(`category = $${params.length + 1}`);     params.push(args.category) }
-    if (args.status)       { conditions.push(`status = $${params.length + 1}`);       params.push(args.status) }
-    if (args.discipline)   { conditions.push(`discipline = $${params.length + 1}`);   params.push(args.discipline) }
-    if (args.subcontractor){ conditions.push(`subcontractor = $${params.length + 1}`); params.push(args.subcontractor) }
-    const res = await query(
-      `SELECT * FROM project_punch_items WHERE ${conditions.join(' AND ')} ORDER BY punch_no ASC`,
-      params,
-    )
-    return Promise.all(res.rows.map(r => punchItemToGQL(r as Record<string, unknown>)))
-  },
-
-  projectPunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(`SELECT * FROM project_punch_items WHERE id=$1`, [args.id])
-    const r = res.rows[0] as Record<string, unknown> | undefined
-    if (!r) throw new Error('Punch item not found')
-    return punchItemToGQL(r)
-  },
 
   createPunchItem: async (
     _: unknown,
@@ -14335,157 +14106,257 @@ Object.assign(resolvers.Mutation, {
     return true
   },
 
-  // ── Phase 6: Subcontractor Submittal Register ──────────────────────────────
 
-  projectSubmittals: async (
-    _: unknown,
-    args: { projectId: string; type?: string; status?: string; subcontractor?: string; discipline?: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const conditions: string[] = ['project_id=$1']
-    const params: unknown[] = [args.projectId]
-    let idx = 2
-    if (args.type)          { conditions.push(`type=$${idx++}`);               params.push(args.type) }
-    if (args.status)        { conditions.push(`status=$${idx++}`);             params.push(args.status) }
-    if (args.subcontractor) { conditions.push(`subcontractor ILIKE $${idx++}`); params.push(`%${args.subcontractor}%`) }
-    if (args.discipline)    { conditions.push(`discipline=$${idx++}`);          params.push(args.discipline) }
-    const res = await query(
-      `SELECT * FROM project_submittals WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
-      params,
-    )
-    return Promise.all(res.rows.map(r => submittalToGQL(r as Record<string, unknown>)))
-  },
+  // ── Phase 7: Risk Register ──────────────────────────────────────────────────
 
-  projectSubmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [args.id])
-    if (!res.rows[0]) return null
-    return submittalToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  createSubmittal: async (
+  createRisk: async (
     _: unknown,
     args: {
-      projectId: string; type: string; discipline?: string; title: string
-      description?: string; subcontractor?: string; specifiedBy?: string
-      specSection?: string; requiredDate?: string
+      projectId: string; category: string; title: string; description?: string
+      cause?: string; consequence?: string; owner?: string
+      probability: number; impact: number
+      mitigationPlan?: string; contingencyPlan?: string
+      residualProbability?: number; residualImpact?: number
+      raisedBy?: string; raisedDate?: string; reviewDate?: string
     },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const now = new Date()
-    const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-    const countRes = await query(`SELECT COUNT(*) FROM project_submittals WHERE project_id=$1`, [args.projectId])
-    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count'] ?? 0) + 1).padStart(3, '0')
-    const submittalNo = `SUB-${ym}-${seq}`
+    const ym = new Date().toISOString().slice(0, 7).replace('-', '')
+    const countRes = await query(
+      `SELECT COUNT(*) FROM project_risks WHERE project_id=$1 AND risk_no LIKE $2`,
+      [args.projectId, `R-${ym}-%`],
+    )
+    const seq = String(Number((countRes.rows[0] as Record<string, unknown>)['count']) + 1).padStart(3, '0')
+    const riskNo = `R-${ym}-${seq}`
     const res = await query(
-      `INSERT INTO project_submittals
-         (project_id,submittal_no,type,discipline,title,description,subcontractor,
-          specified_by,spec_section,required_date,created_by_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      `INSERT INTO project_risks
+         (project_id,risk_no,category,title,description,cause,consequence,owner,
+          probability,impact,mitigation_plan,contingency_plan,
+          residual_probability,residual_impact,
+          raised_by,raised_date,review_date,created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       RETURNING *`,
       [
-        args.projectId, submittalNo, args.type, args.discipline ?? null, args.title,
-        args.description ?? null, args.subcontractor ?? null,
-        args.specifiedBy ?? null, args.specSection ?? null,
-        args.requiredDate ?? null, ctx.auth.userId,
+        args.projectId, riskNo, args.category, args.title,
+        args.description ?? null, args.cause ?? null, args.consequence ?? null,
+        args.owner ?? null, args.probability, args.impact,
+        args.mitigationPlan ?? null, args.contingencyPlan ?? null,
+        args.residualProbability ?? null, args.residualImpact ?? null,
+        args.raisedBy ?? null, args.raisedDate ?? null, args.reviewDate ?? null,
+        ctx.auth.userId,
       ],
     )
-    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+    return riskToGQL(res.rows[0] as Record<string, unknown>)
   },
 
-  updateSubmittal: async (
+  updateRisk: async (
     _: unknown,
     args: {
-      id: string; type?: string; discipline?: string; title?: string; description?: string
-      subcontractor?: string; specifiedBy?: string; specSection?: string
-      requiredDate?: string; status?: string
+      id: string; category?: string; title?: string; description?: string
+      cause?: string; consequence?: string; owner?: string
+      probability?: number; impact?: number
+      mitigationPlan?: string; contingencyPlan?: string
+      residualProbability?: number; residualImpact?: number
+      raisedBy?: string; raisedDate?: string; reviewDate?: string
     },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const sets: string[] = ['updated_at=NOW()']
     const params: unknown[] = []
-    let idx = 1
-    if (args.type          !== undefined) { sets.push(`type=$${idx++}`);           params.push(args.type) }
-    if (args.discipline    !== undefined) { sets.push(`discipline=$${idx++}`);      params.push(args.discipline) }
-    if (args.title         !== undefined) { sets.push(`title=$${idx++}`);           params.push(args.title) }
-    if (args.description   !== undefined) { sets.push(`description=$${idx++}`);     params.push(args.description) }
-    if (args.subcontractor !== undefined) { sets.push(`subcontractor=$${idx++}`);   params.push(args.subcontractor) }
-    if (args.specifiedBy   !== undefined) { sets.push(`specified_by=$${idx++}`);    params.push(args.specifiedBy) }
-    if (args.specSection   !== undefined) { sets.push(`spec_section=$${idx++}`);    params.push(args.specSection) }
-    if (args.requiredDate  !== undefined) { sets.push(`required_date=$${idx++}`);   params.push(args.requiredDate) }
-    if (args.status        !== undefined) { sets.push(`status=$${idx++}`);          params.push(args.status) }
+    const add = (col: string, val: unknown) => { params.push(val); sets.push(`${col}=$${params.length}`) }
+    if (args.category            !== undefined) add('category',             args.category)
+    if (args.title               !== undefined) add('title',                args.title)
+    if (args.description         !== undefined) add('description',          args.description)
+    if (args.cause               !== undefined) add('cause',                args.cause)
+    if (args.consequence         !== undefined) add('consequence',          args.consequence)
+    if (args.owner               !== undefined) add('owner',                args.owner)
+    if (args.probability         !== undefined) add('probability',          args.probability)
+    if (args.impact              !== undefined) add('impact',               args.impact)
+    if (args.mitigationPlan      !== undefined) add('mitigation_plan',      args.mitigationPlan)
+    if (args.contingencyPlan     !== undefined) add('contingency_plan',     args.contingencyPlan)
+    if (args.residualProbability !== undefined) add('residual_probability', args.residualProbability)
+    if (args.residualImpact      !== undefined) add('residual_impact',      args.residualImpact)
+    if (args.raisedBy            !== undefined) add('raised_by',            args.raisedBy)
+    if (args.raisedDate          !== undefined) add('raised_date',          args.raisedDate)
+    if (args.reviewDate          !== undefined) add('review_date',          args.reviewDate)
     params.push(args.id)
-    const res = await query(
-      `UPDATE project_submittals SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
-      params,
-    )
-    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+    await query(`UPDATE project_risks SET ${sets.join(',')} WHERE id=$${params.length}`, params)
+    return riskWithReviews(args.id)
   },
 
-  addSubmittalRevision: async (
+  updateRiskStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const valid = ['open','mitigating','accepted','closed','transferred']
+    if (!valid.includes(args.status)) throw new Error(`Invalid status: ${args.status}`)
+    await query(`UPDATE project_risks SET status=$1, updated_at=NOW() WHERE id=$2`, [args.status, args.id])
+    return riskWithReviews(args.id)
+  },
+
+  addRiskReview: async (
     _: unknown,
-    args: { submittalId: string; revision: string; submittedDate?: string; fileUrl?: string; fileId?: string },
+    args: { riskId: string; probability: number; impact: number; notes?: string; reviewedBy?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await query(
-      `INSERT INTO project_submittal_revisions (submittal_id,revision,submitted_date,file_url,file_id)
+      `INSERT INTO project_risk_reviews (risk_id,probability,impact,notes,reviewed_by)
        VALUES ($1,$2,$3,$4,$5)`,
-      [args.submittalId, args.revision, args.submittedDate ?? null, args.fileUrl ?? null, args.fileId ?? null],
+      [args.riskId, args.probability, args.impact, args.notes ?? null, args.reviewedBy ?? null],
     )
     await query(
-      `UPDATE project_submittals SET status='submitted', updated_at=NOW() WHERE id=$1`,
-      [args.submittalId],
+      `UPDATE project_risks SET probability=$1, impact=$2, updated_at=NOW() WHERE id=$3`,
+      [args.probability, args.impact, args.riskId],
     )
-    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [args.submittalId])
-    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+    return riskWithReviews(args.riskId)
   },
 
-  updateRevisionStatus: async (
-    _: unknown,
-    args: { id: string; reviewStatus: string; reviewer?: string; reviewComments?: string; reviewedDate?: string },
-    ctx: GQLContext,
-  ) => {
+  deleteRisk: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const revRes = await query(
-      `UPDATE project_submittal_revisions
-       SET review_status=$1, reviewer=$2, review_comments=$3, reviewed_date=$4
-       WHERE id=$5 RETURNING submittal_id`,
-      [args.reviewStatus, args.reviewer ?? null, args.reviewComments ?? null, args.reviewedDate ?? null, args.id],
-    )
-    if (!revRes.rows[0]) throw new Error('Revision not found')
-    const submittalId = (revRes.rows[0] as Record<string, unknown>)['submittal_id'] as string
-    const statusMap: Record<string, string> = {
-      approved: 'approved', approved_with_comments: 'approved_with_comments',
-      rejected: 'rejected', resubmit: 'resubmit', pending: 'under_review',
-    }
-    const newStatus = statusMap[args.reviewStatus] ?? 'under_review'
-    await query(
-      `UPDATE project_submittals SET status=$1, updated_at=NOW() WHERE id=$2`,
-      [newStatus, submittalId],
-    )
-    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [submittalId])
-    return submittalToGQL(res.rows[0] as Record<string, unknown>)
-  },
-
-  deleteSubmittal: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_submittals WHERE id=$1`, [args.id])
+    await query(`DELETE FROM project_risks WHERE id=$1`, [args.id])
     return true
   },
 
-  deleteSubmittalRevision: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+  // ── Handover ──────────────────────────────────────────────────────────────
+
+  createHandoverCertificate: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const revRes = await query(
-      `DELETE FROM project_submittal_revisions WHERE id=$1 RETURNING submittal_id`,
+    const num = await nextDocumentNumber(ctx.auth.companyId, 'handover_certificate', 'HOC')
+    const res = await query(
+      `INSERT INTO project_handover_certificates
+         (project_id, certificate_no, title, area_zone, handover_date, contractor_rep, client_rep,
+          defect_liability_start, defect_liability_end, notes, created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [
+        args['projectId'], num, args['title'], args['areaZone'] ?? null,
+        args['handoverDate'] ?? null, args['contractorRep'] ?? null, args['clientRep'] ?? null,
+        args['defectLiabilityStart'] ?? null, args['defectLiabilityEnd'] ?? null,
+        args['notes'] ?? null, ctx.auth.userId,
+      ],
+    )
+    return handoverCertToGQL(res.rows[0] as Record<string, unknown>, [])
+  },
+
+  updateHandoverCertificate: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const sets: string[] = ['updated_at=NOW()']
+    const vals: unknown[] = []
+    const add = (col: string, val: unknown) => { vals.push(val); sets.push(`${col}=$${vals.length}`) }
+    if (args['title']                !== undefined) add('title',                  args['title'])
+    if (args['areaZone']             !== undefined) add('area_zone',              args['areaZone'])
+    if (args['handoverDate']         !== undefined) add('handover_date',          args['handoverDate'])
+    if (args['contractorRep']        !== undefined) add('contractor_rep',         args['contractorRep'])
+    if (args['clientRep']            !== undefined) add('client_rep',             args['clientRep'])
+    if (args['defectLiabilityStart'] !== undefined) add('defect_liability_start', args['defectLiabilityStart'])
+    if (args['defectLiabilityEnd']   !== undefined) add('defect_liability_end',   args['defectLiabilityEnd'])
+    if (args['notes']                !== undefined) add('notes',                  args['notes'])
+    vals.push(args['id'])
+    await query(`UPDATE project_handover_certificates SET ${sets.join(',')} WHERE id=$${vals.length}`, vals)
+    return refetchHandoverCert(String(args['id']))
+  },
+
+  issueHandoverCertificate: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(
+      `UPDATE project_handover_certificates SET status='issued', updated_at=NOW() WHERE id=$1`,
       [args.id],
     )
-    if (!revRes.rows[0]) throw new Error('Revision not found')
-    const submittalId = (revRes.rows[0] as Record<string, unknown>)['submittal_id'] as string
-    const res = await query(`SELECT * FROM project_submittals WHERE id=$1`, [submittalId])
-    return submittalToGQL(res.rows[0] as Record<string, unknown>)
+    return refetchHandoverCert(args.id)
+  },
+
+  acceptHandoverCertificate: async (_: unknown, args: { id: string; acceptedDate?: string; clientRep?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(
+      `UPDATE project_handover_certificates SET status='accepted', accepted_date=COALESCE($2,CURRENT_DATE), client_rep=COALESCE($3,client_rep), updated_at=NOW() WHERE id=$1`,
+      [args.id, args.acceptedDate ?? null, args.clientRep ?? null],
+    )
+    return refetchHandoverCert(args.id)
+  },
+
+  rejectHandoverCertificate: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(
+      `UPDATE project_handover_certificates SET status='rejected', notes=COALESCE($2,notes), updated_at=NOW() WHERE id=$1`,
+      [args.id, args.notes ?? null],
+    )
+    return refetchHandoverCert(args.id)
+  },
+
+  deleteHandoverCertificate: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`DELETE FROM project_handover_certificates WHERE id=$1`, [args.id])
+    return true
+  },
+
+  createHandoverItem: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `INSERT INTO project_handover_items (certificate_id, category, description, sequence, notes)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [args['certificateId'], args['category'], args['description'], args['sequence'] ?? 1, args['notes'] ?? null],
+    )
+    return handoverItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  updateHandoverItem: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const sets: string[] = []
+    const vals: unknown[] = []
+    const add = (col: string, val: unknown) => { vals.push(val); sets.push(`${col}=$${vals.length}`) }
+    if (args['category']    !== undefined) add('category',    args['category'])
+    if (args['description'] !== undefined) add('description', args['description'])
+    if (args['sequence']    !== undefined) add('sequence',    args['sequence'])
+    if (args['status']      !== undefined) add('status',      args['status'])
+    if (args['notes']       !== undefined) add('notes',       args['notes'])
+    if (!sets.length) throw new Error('Nothing to update')
+    vals.push(args['id'])
+    const res = await query(
+      `UPDATE project_handover_items SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING *`,
+      vals,
+    )
+    return handoverItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  verifyHandoverItem: async (_: unknown, args: { id: string; verifiedBy: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE project_handover_items SET status='completed', verified_by=$2, verified_at=NOW() WHERE id=$1 RETURNING *`,
+      [args.id, args.verifiedBy],
+    )
+    return handoverItemToGQL(res.rows[0] as Record<string, unknown>)
+  },
+
+  deleteHandoverItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`DELETE FROM project_handover_items WHERE id=$1`, [args.id])
+    return true
+  },
+
+  // ── Notification mutations ────────────────────────────────────────────────
+
+  markNotificationRead: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE notifications SET is_read=TRUE, read_at=NOW()
+       WHERE id=$1 AND user_id=$2 AND company_id=$3
+       RETURNING *`,
+      [args.id, ctx.auth.userId, ctx.auth.companyId],
+    )
+    if (!res.rows[0]) throw new Error('Notification not found')
+    const r = res.rows[0] as Record<string, unknown>
+    const d = r['data'] as Record<string, unknown> | null
+    return { ...r, priority: d?.['priority'] ?? 'normal', entityRef: d?.['entityRef'] ?? null, entityType: d?.['entityType'] ?? null, entityId: d?.['entityId'] ?? null, projectId: d?.['projectId'] ?? null }
+  },
+
+  markAllNotificationsRead: async (_: unknown, __: unknown, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const res = await query(
+      `UPDATE notifications SET is_read=TRUE, read_at=NOW()
+       WHERE user_id=$1 AND company_id=$2 AND is_read=FALSE`,
+      [ctx.auth.userId, ctx.auth.companyId],
+    )
+    return res.rowCount ?? 0
   },
 })
 

@@ -11,6 +11,7 @@ import { runMonthlyDepreciation } from './jobs/asset-depreciation.js'
 // Side-effect imports: register cron jobs on module load (instrumented internally)
 import './jobs/fx-sync.js'
 import './jobs/maintenance-alerts.js'
+import './jobs/eng-doc-reminders.js'
 
 const log = createServiceLogger('worker')
 

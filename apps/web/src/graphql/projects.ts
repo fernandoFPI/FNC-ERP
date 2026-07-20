@@ -1,4 +1,4 @@
-import { gql } from '@apollo/client'
+﻿import { gql } from '@apollo/client'
 
 const PROJECT_FIELDS = gql`
   fragment ProjectFields on Project {
@@ -451,10 +451,16 @@ const ENG_DOC_FIELDS = gql`
     scale paperSize revision status issueDate notes fileId docGroupId
     isCurrent uploadedByName downloadUrl filename createdAt
     originatorName checkerName approverName purposeOfIssue
-    commentCount openCommentCount
+    commentCount openCommentCount clientCommentCount openClientCommentCount
+    activities {
+      id documentId fromStatus toStatus action actorName
+      responseCode transmittalRef submittedTo dueDate notes createdAt
+    }
     history {
       id refNumber revision status issueDate notes uploadedByName downloadUrl filename createdAt
-      originatorName checkerName approverName purposeOfIssue commentCount openCommentCount
+      originatorName checkerName approverName purposeOfIssue
+      commentCount openCommentCount clientCommentCount openClientCommentCount
+      activities { id fromStatus toStatus action actorName responseCode createdAt notes }
     }
   }
 `
@@ -463,6 +469,13 @@ export const ENG_DOCS_QUERY = gql`
   ${ENG_DOC_FIELDS}
   query EngineeringDocuments($projectId: ID!) {
     engineeringDocuments(projectId: $projectId) { ...EngDocFields }
+  }
+`
+
+export const IFC_DOCS_QUERY = gql`
+  ${ENG_DOC_FIELDS}
+  query IFCDocuments($projectId: ID!, $status: [String]) {
+    engineeringDocuments(projectId: $projectId, status: $status) { ...EngDocFields }
   }
 `
 
@@ -499,9 +512,72 @@ export const REVISE_ENG_DOC = gql`
 `
 
 export const UPDATE_ENG_DOC_STATUS = gql`
-  mutation UpdateEngineeringDocStatus($id: ID!, $status: String!) {
-    updateEngineeringDocStatus(id: $id, status: $status) { id status }
+  mutation UpdateEngineeringDocStatus($id: ID!, $status: String!, $purposeOfIssue: String, $workflowNote: String) {
+    updateEngineeringDocStatus(id: $id, status: $status, purposeOfIssue: $purposeOfIssue, workflowNote: $workflowNote) { id status purposeOfIssue }
   }
+`
+
+export const PERFORM_DOC_WORKFLOW = gql`
+  ${ENG_DOC_FIELDS}
+  mutation PerformDocWorkflowAction(
+    $id: ID! $action: String! $submittedTo: String $dueDate: String
+    $notes: String $transmittalRef: String $issueType: String $responseCode: String
+    $comments: [EngClientCommentInput!]
+  ) {
+    performDocWorkflowAction(
+      id: $id action: $action submittedTo: $submittedTo dueDate: $dueDate
+      notes: $notes transmittalRef: $transmittalRef issueType: $issueType responseCode: $responseCode
+      comments: $comments
+    ) { ...EngDocFields }
+  }
+`
+
+// ── Client Comment Register ────────────────────────────────────────────────
+
+const CLIENT_COMMENT_FIELDS = gql`
+  fragment ClientCommentFields on EngClientComment {
+    id documentId commentNo description clauseRef category
+    status resolution raisedBy closedByName closedAt createdAt
+  }
+`
+
+export const ENG_CLIENT_COMMENTS_QUERY = gql`
+  ${CLIENT_COMMENT_FIELDS}
+  query EngClientComments($documentId: ID!) {
+    engClientComments(documentId: $documentId) { ...ClientCommentFields }
+  }
+`
+
+export const ADD_ENG_CLIENT_COMMENT = gql`
+  ${CLIENT_COMMENT_FIELDS}
+  mutation AddEngClientComment($documentId: ID!, $description: String!, $clauseRef: String, $category: String, $raisedBy: String) {
+    addEngClientComment(documentId: $documentId description: $description clauseRef: $clauseRef category: $category raisedBy: $raisedBy) { ...ClientCommentFields }
+  }
+`
+
+export const UPDATE_ENG_CLIENT_COMMENT = gql`
+  ${CLIENT_COMMENT_FIELDS}
+  mutation UpdateEngClientComment($id: ID!, $description: String, $clauseRef: String, $category: String, $raisedBy: String) {
+    updateEngClientComment(id: $id description: $description clauseRef: $clauseRef category: $category raisedBy: $raisedBy) { ...ClientCommentFields }
+  }
+`
+
+export const CLOSE_ENG_CLIENT_COMMENT = gql`
+  ${CLIENT_COMMENT_FIELDS}
+  mutation CloseEngClientComment($id: ID!, $resolution: String!) {
+    closeEngClientComment(id: $id resolution: $resolution) { ...ClientCommentFields }
+  }
+`
+
+export const REOPEN_ENG_CLIENT_COMMENT = gql`
+  ${CLIENT_COMMENT_FIELDS}
+  mutation ReopenEngClientComment($id: ID!) {
+    reopenEngClientComment(id: $id) { ...ClientCommentFields }
+  }
+`
+
+export const DELETE_ENG_CLIENT_COMMENT = gql`
+  mutation DeleteEngClientComment($id: ID!) { deleteEngClientComment(id: $id) }
 `
 
 export const UPDATE_ENG_DOC_META = gql`
@@ -856,40 +932,6 @@ export const UPLOAD_RFI_FILE = gql`
 `
 export const DELETE_RFI_FILE = gql`mutation DeleteRFIFile($attachmentId: ID!, $rfiId: ID!) { deleteRFIFile(attachmentId: $attachmentId, rfiId: $rfiId) }`
 
-// ── Submittals ────────────────────────────────────────────────────────────────
-const SUBMITTAL_FIELDS = `
-  fragment SubmittalFields on ProjectSubmittal {
-    id projectId submittalNumber title submittalType revision
-    submittedDate reviewerName reviewStatus returnDate remarks
-    files { ...ExecFileFields }
-    createdAt updatedAt
-  }
-`
-export const PROJECT_SUBMITTALS_QUERY = gql`
-  ${EXEC_FILE_FIELDS} ${SUBMITTAL_FIELDS}
-  query ProjectSubmittals($projectId: ID!) { projectSubmittals(projectId: $projectId) { ...SubmittalFields } }
-`
-export const CREATE_PROJECT_SUBMITTAL = gql`
-  ${EXEC_FILE_FIELDS} ${SUBMITTAL_FIELDS}
-  mutation CreateProjectSubmittal($projectId: ID!, $submittalNumber: String!, $title: String!, $submittalType: String!, $revision: String, $submittedDate: String, $reviewerName: String) {
-    createProjectSubmittal(projectId: $projectId, submittalNumber: $submittalNumber, title: $title, submittalType: $submittalType, revision: $revision, submittedDate: $submittedDate, reviewerName: $reviewerName) { ...SubmittalFields }
-  }
-`
-export const UPDATE_PROJECT_SUBMITTAL = gql`
-  ${EXEC_FILE_FIELDS} ${SUBMITTAL_FIELDS}
-  mutation UpdateProjectSubmittal($id: ID!, $title: String, $submittalType: String, $revision: String, $submittedDate: String, $reviewerName: String, $reviewStatus: String, $returnDate: String, $remarks: String) {
-    updateProjectSubmittal(id: $id, title: $title, submittalType: $submittalType, revision: $revision, submittedDate: $submittedDate, reviewerName: $reviewerName, reviewStatus: $reviewStatus, returnDate: $returnDate, remarks: $remarks) { ...SubmittalFields }
-  }
-`
-export const DELETE_PROJECT_SUBMITTAL = gql`mutation DeleteProjectSubmittal($id: ID!) { deleteProjectSubmittal(id: $id) }`
-export const UPLOAD_SUBMITTAL_FILE = gql`
-  ${EXEC_FILE_FIELDS} ${SUBMITTAL_FIELDS}
-  mutation UploadSubmittalFile($submittalId: ID!, $fileId: ID!, $title: String) {
-    uploadSubmittalFile(submittalId: $submittalId, fileId: $fileId, title: $title) { ...SubmittalFields }
-  }
-`
-export const DELETE_SUBMITTAL_FILE = gql`mutation DeleteSubmittalFile($attachmentId: ID!, $submittalId: ID!) { deleteSubmittalFile(attachmentId: $attachmentId, submittalId: $submittalId) }`
-
 // ── Site Instructions ─────────────────────────────────────────────────────────
 const SI_FIELDS = `
   fragment SIFields on ProjectSiteInstruction {
@@ -1070,40 +1112,6 @@ export const UPLOAD_HSE_FILE = gql`
 `
 export const DELETE_HSE_FILE = gql`mutation DeleteHSEFile($attachmentId: ID!, $hseId: ID!) { deleteHSEFile(attachmentId: $attachmentId, hseId: $hseId) }`
 
-// ── Transmittals ──────────────────────────────────────────────────────────────
-const TRANSMITTAL_FIELDS = `
-  fragment TransmittalFields on ProjectTransmittal {
-    id projectId transmittalNumber title toCompany toContact fromName
-    sentDate purpose acknowledgedDate notes status
-    items { id transmittalId documentTitle documentNumber revision filename downloadUrl copies }
-    createdAt updatedAt
-  }
-`
-export const PROJECT_TRANSMITTALS_QUERY = gql`
-  ${TRANSMITTAL_FIELDS}
-  query ProjectTransmittals($projectId: ID!) { projectTransmittals(projectId: $projectId) { ...TransmittalFields } }
-`
-export const CREATE_PROJECT_TRANSMITTAL = gql`
-  ${TRANSMITTAL_FIELDS}
-  mutation CreateProjectTransmittal($projectId: ID!, $transmittalNumber: String!, $title: String!, $toCompany: String, $toContact: String, $fromName: String, $sentDate: String!, $purpose: String!, $notes: String, $items: [TransmittalItemInput!]) {
-    createProjectTransmittal(projectId: $projectId, transmittalNumber: $transmittalNumber, title: $title, toCompany: $toCompany, toContact: $toContact, fromName: $fromName, sentDate: $sentDate, purpose: $purpose, notes: $notes, items: $items) { ...TransmittalFields }
-  }
-`
-export const UPDATE_PROJECT_TRANSMITTAL = gql`
-  ${TRANSMITTAL_FIELDS}
-  mutation UpdateProjectTransmittal($id: ID!, $title: String, $toCompany: String, $toContact: String, $fromName: String, $sentDate: String, $purpose: String, $acknowledgedDate: String, $notes: String, $status: String) {
-    updateProjectTransmittal(id: $id, title: $title, toCompany: $toCompany, toContact: $toContact, fromName: $fromName, sentDate: $sentDate, purpose: $purpose, acknowledgedDate: $acknowledgedDate, notes: $notes, status: $status) { ...TransmittalFields }
-  }
-`
-export const DELETE_PROJECT_TRANSMITTAL = gql`mutation DeleteProjectTransmittal($id: ID!) { deleteProjectTransmittal(id: $id) }`
-export const ADD_TRANSMITTAL_ITEM = gql`
-  mutation AddTransmittalItem($transmittalId: ID!, $documentTitle: String!, $documentNumber: String, $revision: String, $fileId: ID, $copies: Int) {
-    addTransmittalItem(transmittalId: $transmittalId, documentTitle: $documentTitle, documentNumber: $documentNumber, revision: $revision, fileId: $fileId, copies: $copies) {
-      id transmittalId documentTitle documentNumber revision filename downloadUrl copies
-    }
-  }
-`
-export const DELETE_TRANSMITTAL_ITEM = gql`mutation DeleteTransmittalItem($id: ID!) { deleteTransmittalItem(id: $id) }`
 
 // ── Planning ──────────────────────────────────────────────────────────────────
 
@@ -1539,104 +1547,6 @@ export const CANCEL_MATERIAL_ISSUE = gql`
   }
 `
 
-// ── Engineering Transmittals (Phase 2) ─────────────────────────────────────
-
-const ENG_TR_ITEM_FIELDS = `
-  id transmittalId documentId extRefNumber extTitle
-  revision copies format purposeOfIssue remarks createdAt
-  refNumber title discipline docType downloadUrl
-`
-
-const ENG_TR_FIELDS = `
-  id projectId transmittalNo direction title subject
-  toCompany toContact toEmail fromCompany fromContact
-  status sentDate receivedDate acknowledgedAt acknowledgedBy
-  dueDate notes createdByName createdAt itemCount isOverdue
-  items { ${ENG_TR_ITEM_FIELDS} }
-`
-
-export const ENG_TRANSMITTALS_QUERY = gql`
-  query EngTransmittals($projectId: ID!, $direction: String) {
-    engTransmittals(projectId: $projectId, direction: $direction) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const ENG_TRANSMITTAL_QUERY = gql`
-  query EngTransmittal($id: ID!) {
-    engTransmittal(id: $id) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const CREATE_ENG_TRANSMITTAL = gql`
-  mutation CreateEngTransmittal(
-    $projectId: ID! $direction: String! $title: String! $subject: String
-    $toCompany: String! $toContact: String $toEmail: String
-    $fromCompany: String $fromContact: String
-    $dueDate: String $notes: String $items: [EngTransmittalItemInput!]
-  ) {
-    createEngTransmittal(
-      projectId: $projectId direction: $direction title: $title subject: $subject
-      toCompany: $toCompany toContact: $toContact toEmail: $toEmail
-      fromCompany: $fromCompany fromContact: $fromContact
-      dueDate: $dueDate notes: $notes items: $items
-    ) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const UPDATE_ENG_TRANSMITTAL = gql`
-  mutation UpdateEngTransmittal(
-    $id: ID! $title: String $subject: String
-    $toCompany: String $toContact: String $toEmail: String
-    $fromCompany: String $fromContact: String
-    $dueDate: String $notes: String
-  ) {
-    updateEngTransmittal(
-      id: $id title: $title subject: $subject
-      toCompany: $toCompany toContact: $toContact toEmail: $toEmail
-      fromCompany: $fromCompany fromContact: $fromContact
-      dueDate: $dueDate notes: $notes
-    ) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const ISSUE_ENG_TRANSMITTAL = gql`
-  mutation IssueEngTransmittal($id: ID!) {
-    issueEngTransmittal(id: $id) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const MARK_ENG_TRANSMITTAL_RECEIVED = gql`
-  mutation MarkEngTransmittalReceived($id: ID!) {
-    markEngTransmittalReceived(id: $id) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const ACKNOWLEDGE_ENG_TRANSMITTAL = gql`
-  mutation AcknowledgeEngTransmittal($id: ID!, $acknowledgedBy: String) {
-    acknowledgeEngTransmittal(id: $id, acknowledgedBy: $acknowledgedBy) { ${ENG_TR_FIELDS} }
-  }
-`
-
-export const DELETE_ENG_TRANSMITTAL = gql`
-  mutation DeleteEngTransmittal($id: ID!) { deleteEngTransmittal(id: $id) }
-`
-
-export const ADD_ENG_TRANSMITTAL_ITEM = gql`
-  mutation AddEngTransmittalItem(
-    $transmittalId: ID! $documentId: ID $extRefNumber: String $extTitle: String
-    $revision: String $copies: Int $format: String $purposeOfIssue: String $remarks: String
-  ) {
-    addEngTransmittalItem(
-      transmittalId: $transmittalId documentId: $documentId extRefNumber: $extRefNumber
-      extTitle: $extTitle revision: $revision copies: $copies format: $format
-      purposeOfIssue: $purposeOfIssue remarks: $remarks
-    ) { ${ENG_TR_ITEM_FIELDS} }
-  }
-`
-
-export const REMOVE_ENG_TRANSMITTAL_ITEM = gql`
-  mutation RemoveEngTransmittalItem($id: ID!) { removeEngTransmittalItem(id: $id) }
-`
 
 // ── Phase 3: Technical Queries ───────────────────────────────────────────────
 
@@ -1703,162 +1613,7 @@ export const DELETE_TQ = gql`
   mutation DeleteTQ($id: ID!) { deleteTQ(id: $id) }
 `
 
-// ── Phase 3: Contractor Deviation Requests ───────────────────────────────────
 
-const CDR_APPROVAL_FIELDS = `id cdrId stepOrder approverRole approverName status comments actionedAt createdAt`
-
-const CDR_FIELDS = `
-  id projectId cdrNumber discipline title description
-  documentRef clauseRef technicalImpact commercialImpact proposedAlternative
-  status submittedAt decidedAt decisionBy decisionNotes currentStep
-  createdAt updatedAt
-  approvalSteps { ${CDR_APPROVAL_FIELDS} }
-`
-
-export const PROJECT_CDRS_QUERY = gql`
-  query ProjectCDRs($projectId: ID!, $status: String, $discipline: String) {
-    projectCDRs(projectId: $projectId, status: $status, discipline: $discipline) {
-      ${CDR_FIELDS}
-    }
-  }
-`
-
-export const CREATE_CDR = gql`
-  mutation CreateCDR(
-    $projectId: ID! $discipline: String $title: String!
-    $description: String $documentRef: String $clauseRef: String
-    $technicalImpact: String $commercialImpact: String $proposedAlternative: String
-  ) {
-    createCDR(
-      projectId: $projectId discipline: $discipline title: $title
-      description: $description documentRef: $documentRef clauseRef: $clauseRef
-      technicalImpact: $technicalImpact commercialImpact: $commercialImpact
-      proposedAlternative: $proposedAlternative
-    ) { ${CDR_FIELDS} }
-  }
-`
-
-export const UPDATE_CDR = gql`
-  mutation UpdateCDR(
-    $id: ID! $discipline: String $title: String
-    $description: String $documentRef: String $clauseRef: String
-    $technicalImpact: String $commercialImpact: String $proposedAlternative: String
-  ) {
-    updateCDR(
-      id: $id discipline: $discipline title: $title
-      description: $description documentRef: $documentRef clauseRef: $clauseRef
-      technicalImpact: $technicalImpact commercialImpact: $commercialImpact
-      proposedAlternative: $proposedAlternative
-    ) { ${CDR_FIELDS} }
-  }
-`
-
-export const SUBMIT_CDR = gql`
-  mutation SubmitCDR($id: ID!, $approverRoles: [String!]) {
-    submitCDR(id: $id, approverRoles: $approverRoles) { ${CDR_FIELDS} }
-  }
-`
-
-export const APPROVE_CDR_STEP = gql`
-  mutation ApproveCDRStep($id: ID!, $stepOrder: Int!, $approverName: String, $comments: String) {
-    approveCDRStep(id: $id, stepOrder: $stepOrder, approverName: $approverName, comments: $comments) { ${CDR_FIELDS} }
-  }
-`
-
-export const REJECT_CDR_STEP = gql`
-  mutation RejectCDRStep($id: ID!, $stepOrder: Int!, $approverName: String, $comments: String!) {
-    rejectCDRStep(id: $id, stepOrder: $stepOrder, approverName: $approverName, comments: $comments) { ${CDR_FIELDS} }
-  }
-`
-
-export const WITHDRAW_CDR = gql`
-  mutation WithdrawCDR($id: ID!) { withdrawCDR(id: $id) { ${CDR_FIELDS} } }
-`
-
-export const DELETE_CDR = gql`
-  mutation DeleteCDR($id: ID!) { deleteCDR(id: $id) }
-`
-
-// ── Phase 4: Interface Management ────────────────────────────────────────────
-
-const IFACE_ACTION_FIELDS = `id interfaceId description owner dueDate status closedAt createdAt updatedAt isOverdue`
-
-const IFACE_FIELDS = `
-  id projectId interfaceNo partyA partyB disciplineA disciplineB
-  title description agreedDate priority status
-  openActionCount overdueActionCount createdAt updatedAt isOverdue
-  actions { ${IFACE_ACTION_FIELDS} }
-`
-
-export const PROJECT_INTERFACES_QUERY = gql`
-  query ProjectInterfaces($projectId: ID!, $status: String, $disciplinePair: String) {
-    projectInterfaces(projectId: $projectId, status: $status, disciplinePair: $disciplinePair) {
-      ${IFACE_FIELDS}
-    }
-  }
-`
-
-export const CREATE_INTERFACE = gql`
-  mutation CreateInterface(
-    $projectId: ID! $partyA: String! $partyB: String!
-    $disciplineA: String $disciplineB: String
-    $title: String! $description: String $agreedDate: String $priority: String
-  ) {
-    createInterface(
-      projectId: $projectId partyA: $partyA partyB: $partyB
-      disciplineA: $disciplineA disciplineB: $disciplineB
-      title: $title description: $description agreedDate: $agreedDate priority: $priority
-    ) { ${IFACE_FIELDS} }
-  }
-`
-
-export const UPDATE_INTERFACE = gql`
-  mutation UpdateInterface(
-    $id: ID! $partyA: String $partyB: String
-    $disciplineA: String $disciplineB: String
-    $title: String $description: String $agreedDate: String $priority: String
-  ) {
-    updateInterface(
-      id: $id partyA: $partyA partyB: $partyB
-      disciplineA: $disciplineA disciplineB: $disciplineB
-      title: $title description: $description agreedDate: $agreedDate priority: $priority
-    ) { ${IFACE_FIELDS} }
-  }
-`
-
-export const UPDATE_INTERFACE_STATUS = gql`
-  mutation UpdateInterfaceStatus($id: ID!, $status: String!) {
-    updateInterfaceStatus(id: $id, status: $status) { ${IFACE_FIELDS} }
-  }
-`
-
-export const DELETE_INTERFACE = gql`
-  mutation DeleteInterface($id: ID!) { deleteInterface(id: $id) }
-`
-
-export const CREATE_INTERFACE_ACTION = gql`
-  mutation CreateInterfaceAction(
-    $interfaceId: ID! $description: String! $owner: String $dueDate: String
-  ) {
-    createInterfaceAction(
-      interfaceId: $interfaceId description: $description owner: $owner dueDate: $dueDate
-    ) { ${IFACE_ACTION_FIELDS} }
-  }
-`
-
-export const UPDATE_INTERFACE_ACTION = gql`
-  mutation UpdateInterfaceAction(
-    $id: ID! $description: String $owner: String $dueDate: String $status: String
-  ) {
-    updateInterfaceAction(
-      id: $id description: $description owner: $owner dueDate: $dueDate status: $status
-    ) { ${IFACE_ACTION_FIELDS} }
-  }
-`
-
-export const DELETE_INTERFACE_ACTION = gql`
-  mutation DeleteInterfaceAction($id: ID!) { deleteInterfaceAction(id: $id) }
-`
 
 // ── Phase 5: Punch List & Completions ────────────────────────────────────────
 
@@ -1950,98 +1705,185 @@ export const DELETE_PUNCH_PHOTO = gql`
   mutation DeletePunchPhoto($id: ID!) { deletePunchPhoto(id: $id) }
 `
 
-// ── Phase 6: PRODOM Subcontractor Submittal Register ─────────────────────────
-// Distinct from Execution submittals (single-rev). These support full revision
-// cycles (R0 → R1 → R2) with per-revision review decisions.
 
-const PRODOM_SUB_REV_FIELDS = `
-  id submittalId revision submittedDate
-  reviewer reviewedDate reviewStatus reviewComments
-  fileId fileUrl createdAt
+// ── Phase 7: Risk Register ─────────────────────────────────────────────────
+
+const RISK_REVIEW_FIELDS = `
+  id riskId probability impact score notes reviewedBy reviewedAt
 `
 
-const PRODOM_SUB_FIELDS = `
-  id projectId submittalNo type discipline title description
-  subcontractor specifiedBy specSection status requiredDate
-  revisionCount createdAt updatedAt
-  revisions { ${PRODOM_SUB_REV_FIELDS} }
-  latestRevision { ${PRODOM_SUB_REV_FIELDS} }
+const RISK_FIELDS = `
+  id projectId riskNo category title description cause consequence owner
+  probability impact riskScore riskLevel
+  mitigationPlan contingencyPlan
+  residualProbability residualImpact residualScore residualLevel
+  status raisedBy raisedDate reviewDate createdAt updatedAt
+  reviews { ${RISK_REVIEW_FIELDS} }
 `
 
-export const PRODOM_SUBMITTALS_QUERY = gql`
-  query ProdomSubmittals(
-    $projectId: ID!
-    $type: String
-    $status: String
-    $subcontractor: String
-    $discipline: String
+export const PROJECT_RISKS_QUERY = gql`
+  query ProjectRisks($projectId: ID!, $category: String, $status: String, $level: String) {
+    projectRisks(projectId: $projectId, category: $category, status: $status, level: $level) {
+      ${RISK_FIELDS}
+    }
+  }
+`
+
+export const PROJECT_RISK_QUERY = gql`
+  query ProjectRisk($id: ID!) {
+    projectRisk(id: $id) { ${RISK_FIELDS} }
+  }
+`
+
+export const CREATE_RISK = gql`
+  mutation CreateRisk(
+    $projectId: ID! $category: String! $title: String!
+    $description: String $cause: String $consequence: String $owner: String
+    $probability: Int! $impact: Int!
+    $mitigationPlan: String $contingencyPlan: String
+    $residualProbability: Int $residualImpact: Int
+    $raisedBy: String $raisedDate: String $reviewDate: String
   ) {
-    projectSubmittals(
-      projectId: $projectId
-      type: $type
-      status: $status
-      subcontractor: $subcontractor
-      discipline: $discipline
-    ) { ${PRODOM_SUB_FIELDS} }
+    createRisk(
+      projectId: $projectId category: $category title: $title
+      description: $description cause: $cause consequence: $consequence owner: $owner
+      probability: $probability impact: $impact
+      mitigationPlan: $mitigationPlan contingencyPlan: $contingencyPlan
+      residualProbability: $residualProbability residualImpact: $residualImpact
+      raisedBy: $raisedBy raisedDate: $raisedDate reviewDate: $reviewDate
+    ) { ${RISK_FIELDS} }
   }
 `
 
-export const PRODOM_CREATE_SUBMITTAL = gql`
-  mutation ProdomCreateSubmittal(
-    $projectId: ID! $type: String! $discipline: String $title: String!
-    $description: String $subcontractor: String $specifiedBy: String
-    $specSection: String $requiredDate: String
+export const UPDATE_RISK = gql`
+  mutation UpdateRisk(
+    $id: ID! $category: String $title: String
+    $description: String $cause: String $consequence: String $owner: String
+    $probability: Int $impact: Int
+    $mitigationPlan: String $contingencyPlan: String
+    $residualProbability: Int $residualImpact: Int
+    $raisedBy: String $raisedDate: String $reviewDate: String
   ) {
-    createSubmittal(
-      projectId: $projectId type: $type discipline: $discipline title: $title
-      description: $description subcontractor: $subcontractor specifiedBy: $specifiedBy
-      specSection: $specSection requiredDate: $requiredDate
-    ) { ${PRODOM_SUB_FIELDS} }
+    updateRisk(
+      id: $id category: $category title: $title
+      description: $description cause: $cause consequence: $consequence owner: $owner
+      probability: $probability impact: $impact
+      mitigationPlan: $mitigationPlan contingencyPlan: $contingencyPlan
+      residualProbability: $residualProbability residualImpact: $residualImpact
+      raisedBy: $raisedBy raisedDate: $raisedDate reviewDate: $reviewDate
+    ) { ${RISK_FIELDS} }
   }
 `
 
-export const PRODOM_UPDATE_SUBMITTAL = gql`
-  mutation ProdomUpdateSubmittal(
-    $id: ID! $type: String $discipline: String $title: String $description: String
-    $subcontractor: String $specifiedBy: String $specSection: String
-    $requiredDate: String $status: String
+export const UPDATE_RISK_STATUS = gql`
+  mutation UpdateRiskStatus($id: ID!, $status: String!) {
+    updateRiskStatus(id: $id, status: $status) { ${RISK_FIELDS} }
+  }
+`
+
+export const ADD_RISK_REVIEW = gql`
+  mutation AddRiskReview(
+    $riskId: ID! $probability: Int! $impact: Int!
+    $notes: String $reviewedBy: String
   ) {
-    updateSubmittal(
-      id: $id type: $type discipline: $discipline title: $title description: $description
-      subcontractor: $subcontractor specifiedBy: $specifiedBy specSection: $specSection
-      requiredDate: $requiredDate status: $status
-    ) { ${PRODOM_SUB_FIELDS} }
+    addRiskReview(
+      riskId: $riskId probability: $probability impact: $impact
+      notes: $notes reviewedBy: $reviewedBy
+    ) { ${RISK_FIELDS} }
   }
 `
 
-export const PRODOM_ADD_REVISION = gql`
-  mutation ProdomAddRevision(
-    $submittalId: ID! $revision: String! $submittedDate: String $fileUrl: String $fileId: ID
+export const DELETE_RISK = gql`
+  mutation DeleteRisk($id: ID!) { deleteRisk(id: $id) }
+`
+
+// ── Handover ──────────────────────────────────────────────────────────────
+
+const HANDOVER_ITEM_FIELDS = `
+  id certificateId sequence category description status verifiedBy verifiedAt notes createdAt
+`
+
+const HANDOVER_CERT_FIELDS = `
+  id projectId certificateNo title areaZone handoverDate acceptedDate
+  contractorRep clientRep status defectLiabilityStart defectLiabilityEnd
+  notes createdAt updatedAt completedItemCount totalItemCount
+  items { ${HANDOVER_ITEM_FIELDS} }
+`
+
+export const PROJECT_HANDOVER_QUERY = gql`
+  query ProjectHandover($projectId: ID!) {
+    projectHandoverCertificates(projectId: $projectId) { ${HANDOVER_CERT_FIELDS} }
+  }
+`
+
+export const CREATE_HANDOVER_CERT = gql`
+  mutation CreateHandoverCertificate(
+    $projectId: ID! $title: String! $areaZone: String
+    $handoverDate: String $contractorRep: String $clientRep: String
+    $defectLiabilityStart: String $defectLiabilityEnd: String $notes: String
   ) {
-    addSubmittalRevision(
-      submittalId: $submittalId revision: $revision submittedDate: $submittedDate
-      fileUrl: $fileUrl fileId: $fileId
-    ) { ${PRODOM_SUB_FIELDS} }
+    createHandoverCertificate(
+      projectId: $projectId title: $title areaZone: $areaZone
+      handoverDate: $handoverDate contractorRep: $contractorRep clientRep: $clientRep
+      defectLiabilityStart: $defectLiabilityStart defectLiabilityEnd: $defectLiabilityEnd notes: $notes
+    ) { ${HANDOVER_CERT_FIELDS} }
   }
 `
 
-export const PRODOM_UPDATE_REVISION_STATUS = gql`
-  mutation ProdomUpdateRevisionStatus(
-    $id: ID! $reviewStatus: String! $reviewer: String $reviewComments: String $reviewedDate: String
+export const UPDATE_HANDOVER_CERT = gql`
+  mutation UpdateHandoverCertificate(
+    $id: ID! $title: String $areaZone: String
+    $handoverDate: String $contractorRep: String $clientRep: String
+    $defectLiabilityStart: String $defectLiabilityEnd: String $notes: String
   ) {
-    updateRevisionStatus(
-      id: $id reviewStatus: $reviewStatus reviewer: $reviewer
-      reviewComments: $reviewComments reviewedDate: $reviewedDate
-    ) { ${PRODOM_SUB_FIELDS} }
+    updateHandoverCertificate(
+      id: $id title: $title areaZone: $areaZone
+      handoverDate: $handoverDate contractorRep: $contractorRep clientRep: $clientRep
+      defectLiabilityStart: $defectLiabilityStart defectLiabilityEnd: $defectLiabilityEnd notes: $notes
+    ) { ${HANDOVER_CERT_FIELDS} }
   }
 `
 
-export const PRODOM_DELETE_SUBMITTAL = gql`
-  mutation ProdomDeleteSubmittal($id: ID!) { deleteSubmittal(id: $id) }
+export const ISSUE_HANDOVER_CERT = gql`
+  mutation IssueHandoverCertificate($id: ID!) {
+    issueHandoverCertificate(id: $id) { ${HANDOVER_CERT_FIELDS} }
+  }
 `
 
-export const PRODOM_DELETE_REVISION = gql`
-  mutation ProdomDeleteRevision($id: ID!) {
-    deleteSubmittalRevision(id: $id) { ${PRODOM_SUB_FIELDS} }
+export const ACCEPT_HANDOVER_CERT = gql`
+  mutation AcceptHandoverCertificate($id: ID! $acceptedDate: String $clientRep: String) {
+    acceptHandoverCertificate(id: $id acceptedDate: $acceptedDate clientRep: $clientRep) { ${HANDOVER_CERT_FIELDS} }
   }
+`
+
+export const REJECT_HANDOVER_CERT = gql`
+  mutation RejectHandoverCertificate($id: ID! $notes: String) {
+    rejectHandoverCertificate(id: $id notes: $notes) { ${HANDOVER_CERT_FIELDS} }
+  }
+`
+
+export const DELETE_HANDOVER_CERT = gql`
+  mutation DeleteHandoverCertificate($id: ID!) { deleteHandoverCertificate(id: $id) }
+`
+
+export const CREATE_HANDOVER_ITEM = gql`
+  mutation CreateHandoverItem($certificateId: ID! $category: String! $description: String! $sequence: Int $notes: String) {
+    createHandoverItem(certificateId: $certificateId category: $category description: $description sequence: $sequence notes: $notes) { ${HANDOVER_ITEM_FIELDS} }
+  }
+`
+
+export const UPDATE_HANDOVER_ITEM = gql`
+  mutation UpdateHandoverItem($id: ID! $category: String $description: String $sequence: Int $status: String $notes: String) {
+    updateHandoverItem(id: $id category: $category description: $description sequence: $sequence status: $status notes: $notes) { ${HANDOVER_ITEM_FIELDS} }
+  }
+`
+
+export const VERIFY_HANDOVER_ITEM = gql`
+  mutation VerifyHandoverItem($id: ID! $verifiedBy: String!) {
+    verifyHandoverItem(id: $id verifiedBy: $verifiedBy) { ${HANDOVER_ITEM_FIELDS} }
+  }
+`
+
+export const DELETE_HANDOVER_ITEM = gql`
+  mutation DeleteHandoverItem($id: ID!) { deleteHandoverItem(id: $id) }
 `

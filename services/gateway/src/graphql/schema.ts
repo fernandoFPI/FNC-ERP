@@ -1,4 +1,4 @@
-export const typeDefs = `#graphql
+﻿export const typeDefs = `#graphql
   type Query {
     health: String
 
@@ -632,6 +632,11 @@ export const typeDefs = `#graphql
     body: String!
     is_read: Boolean!
     created_at: String!
+    priority: String
+    entityRef: String
+    entityType: String
+    entityId: ID
+    projectId: ID
   }
 
   type Project {
@@ -2165,6 +2170,21 @@ export const typeDefs = `#graphql
 
   # ── Engineering Documents ─────────────────────────────────────
 
+  type EngDocActivity {
+    id:             ID!
+    documentId:     ID!
+    fromStatus:     String
+    toStatus:       String!
+    action:         String!
+    actorName:      String
+    responseCode:   String
+    transmittalRef: String
+    submittedTo:    String
+    dueDate:        String
+    notes:          String
+    createdAt:      String!
+  }
+
   type EngineeringDoc {
     id:              ID!
     projectId:       ID!
@@ -2187,14 +2207,41 @@ export const typeDefs = `#graphql
     downloadUrl:     String
     filename:        String
     history:         [EngineeringDoc!]!
+    activities:      [EngDocActivity!]!
     createdAt:       String!
-    # Phase 1 — Review metadata
+    # Review metadata
     originatorName:  String
     checkerName:     String
     approverName:    String
     purposeOfIssue:  String
-    commentCount:    Int!
-    openCommentCount: Int!
+    commentCount:         Int!
+    openCommentCount:     Int!
+    clientCommentCount:     Int!
+    openClientCommentCount: Int!
+  }
+
+  # ── Client Comment Register ───────────────────────────────────
+
+  input EngClientCommentInput {
+    description: String!
+    clauseRef:   String
+    category:    String
+    raisedBy:    String
+  }
+
+  type EngClientComment {
+    id:           ID!
+    documentId:   ID!
+    commentNo:    Int!
+    description:  String!
+    clauseRef:    String
+    category:     String!
+    status:       String!
+    resolution:   String
+    raisedBy:     String
+    closedByName: String
+    closedAt:     String
+    createdAt:    String!
   }
 
   # ── Document Review Comments (Phase 1) ──────────────────────
@@ -2236,9 +2283,10 @@ export const typeDefs = `#graphql
   }
 
   extend type Query {
-    engineeringDocuments(projectId: ID!, discipline: String, docType: String): [EngineeringDoc!]!
+    engineeringDocuments(projectId: ID!, discipline: String, docType: String, status: [String]): [EngineeringDoc!]!
     docComments(documentId: ID!): [DocComment!]!
     docDistributionMatrix(projectId: ID!): [DocDistributionEntry!]!
+    engClientComments(documentId: ID!): [EngClientComment!]!
   }
 
   extend type Mutation {
@@ -2272,7 +2320,25 @@ export const typeDefs = `#graphql
       purposeOfIssue: String
     ): EngineeringDoc!
 
-    updateEngineeringDocStatus(id: ID!, status: String!): EngineeringDoc!
+    updateEngineeringDocStatus(id: ID!, status: String!, purposeOfIssue: String, workflowNote: String): EngineeringDoc!
+
+    performDocWorkflowAction(
+      id:             ID!
+      action:         String!
+      submittedTo:    String
+      dueDate:        String
+      notes:          String
+      transmittalRef: String
+      issueType:      String
+      responseCode:   String
+      comments:       [EngClientCommentInput!]
+    ): EngineeringDoc!
+
+    addEngClientComment(documentId: ID!, description: String!, clauseRef: String, category: String, raisedBy: String): EngClientComment!
+    updateEngClientComment(id: ID!, description: String, clauseRef: String, category: String, raisedBy: String): EngClientComment!
+    closeEngClientComment(id: ID!, resolution: String!, closedByName: String): EngClientComment!
+    reopenEngClientComment(id: ID!): EngClientComment!
+    deleteEngClientComment(id: ID!): Boolean!
 
     updateEngineeringDocMeta(
       id:             ID!
@@ -2320,118 +2386,6 @@ export const typeDefs = `#graphql
     deleteDistributionEntry(id: ID!): Boolean!
   }
 
-  # ── Engineering Transmittals (Phase 2) ───────────────────────
-
-  type EngTransmittalItem {
-    id:             ID!
-    transmittalId:  ID!
-    documentId:     ID
-    extRefNumber:   String
-    extTitle:       String
-    revision:       String
-    copies:         Int!
-    format:         String!
-    purposeOfIssue: String
-    remarks:        String
-    createdAt:      String!
-    # Denormalized from engineering_documents
-    refNumber:      String
-    title:          String
-    discipline:     String
-    docType:        String
-    downloadUrl:    String
-  }
-
-  type EngTransmittal {
-    id:             ID!
-    projectId:      ID!
-    transmittalNo:  String!
-    direction:      String!
-    title:          String!
-    subject:        String
-    toCompany:      String!
-    toContact:      String
-    toEmail:        String
-    fromCompany:    String
-    fromContact:    String
-    status:         String!
-    sentDate:       String
-    receivedDate:   String
-    acknowledgedAt: String
-    acknowledgedBy: String
-    dueDate:        String
-    notes:          String
-    createdByName:  String
-    createdAt:      String!
-    items:          [EngTransmittalItem!]!
-    itemCount:      Int!
-    isOverdue:      Boolean!
-  }
-
-  input EngTransmittalItemInput {
-    documentId:     ID
-    extRefNumber:   String
-    extTitle:       String
-    revision:       String
-    copies:         Int
-    format:         String
-    purposeOfIssue: String
-    remarks:        String
-  }
-
-  extend type Query {
-    engTransmittals(projectId: ID!, direction: String): [EngTransmittal!]!
-    engTransmittal(id: ID!): EngTransmittal
-  }
-
-  extend type Mutation {
-    createEngTransmittal(
-      projectId:   ID!
-      direction:   String!
-      title:       String!
-      subject:     String
-      toCompany:   String!
-      toContact:   String
-      toEmail:     String
-      fromCompany: String
-      fromContact: String
-      dueDate:     String
-      notes:       String
-      items:       [EngTransmittalItemInput!]
-    ): EngTransmittal!
-
-    updateEngTransmittal(
-      id:          ID!
-      title:       String
-      subject:     String
-      toCompany:   String
-      toContact:   String
-      toEmail:     String
-      fromCompany: String
-      fromContact: String
-      dueDate:     String
-      notes:       String
-    ): EngTransmittal!
-
-    issueEngTransmittal(id: ID!): EngTransmittal!
-    markEngTransmittalReceived(id: ID!): EngTransmittal!
-    acknowledgeEngTransmittal(id: ID!, acknowledgedBy: String): EngTransmittal!
-    deleteEngTransmittal(id: ID!): Boolean!
-
-    addEngTransmittalItem(
-      transmittalId:  ID!
-      documentId:     ID
-      extRefNumber:   String
-      extTitle:       String
-      revision:       String
-      copies:         Int
-      format:         String
-      purposeOfIssue: String
-      remarks:        String
-    ): EngTransmittalItem!
-
-    removeEngTransmittalItem(id: ID!): Boolean!
-  }
 
   # ── Client Documents ──────────────────────────────────────────
 
@@ -3762,23 +3716,6 @@ export const typeDefs = `#graphql
     updatedAt:        String!
   }
 
-  type ProjectSubmittal {
-    id:              ID!
-    projectId:       ID!
-    submittalNumber: String!
-    title:           String!
-    submittalType:   String!
-    revision:        String!
-    submittedDate:   String
-    reviewerName:    String
-    reviewStatus:    String!
-    returnDate:      String
-    remarks:         String
-    files:           [RFQPhaseFile!]!
-    createdAt:       String!
-    updatedAt:       String!
-  }
-
   type ProjectSiteInstruction {
     id:                  ID!
     projectId:           ID!
@@ -3902,34 +3839,6 @@ export const typeDefs = `#graphql
     updatedAt:             String!
   }
 
-  type ProjectTransmittalItem {
-    id:              ID!
-    transmittalId:   ID!
-    documentTitle:   String!
-    documentNumber:  String
-    revision:        String
-    filename:        String
-    downloadUrl:     String
-    copies:          Int!
-  }
-
-  type ProjectTransmittal {
-    id:                 ID!
-    projectId:          ID!
-    transmittalNumber:  String!
-    title:              String!
-    toCompany:          String
-    toContact:          String
-    fromName:           String
-    sentDate:           String!
-    purpose:            String!
-    acknowledgedDate:   String
-    notes:              String
-    status:             String!
-    items:              [ProjectTransmittalItem!]!
-    createdAt:          String!
-    updatedAt:          String!
-  }
 
   input ITPItemInput {
     id:                 ID
@@ -3942,23 +3851,12 @@ export const typeDefs = `#graphql
     acceptanceCriteria: String
   }
 
-  input TransmittalItemInput {
-    documentTitle:  String!
-    documentNumber: String
-    revision:       String
-    fileId:         ID
-    copies:         Int
-  }
-
   extend type Query {
     projectRFIs(projectId: ID!):               [ProjectRFI!]!
-    projectSubmittals(projectId: ID!):         [ProjectSubmittal!]!
-    projectSiteInstructions(projectId: ID!):   [ProjectSiteInstruction!]!
     projectITPs(projectId: ID!):               [ProjectITP!]!
     projectInspectionRequests(projectId: ID!): [ProjectInspectionRequest!]!
     projectNCRs(projectId: ID!):               [ProjectNCR!]!
     projectHSERecords(projectId: ID!, recordType: String): [ProjectHSERecord!]!
-    projectTransmittals(projectId: ID!):       [ProjectTransmittal!]!
   }
 
   extend type Mutation {
@@ -3969,13 +3867,6 @@ export const typeDefs = `#graphql
     deleteProjectRFI(id: ID!): Boolean!
     uploadRFIFile(rfiId: ID!, fileId: ID!, title: String): ProjectRFI!
     deleteRFIFile(attachmentId: ID!, rfiId: ID!): Boolean!
-
-    # Submittals
-    createProjectSubmittal(projectId: ID!, submittalNumber: String!, title: String!, submittalType: String!, revision: String, submittedDate: String, reviewerName: String): ProjectSubmittal!
-    updateProjectSubmittal(id: ID!, title: String, submittalType: String, revision: String, submittedDate: String, reviewerName: String, reviewStatus: String, returnDate: String, remarks: String): ProjectSubmittal!
-    deleteProjectSubmittal(id: ID!): Boolean!
-    uploadSubmittalFile(submittalId: ID!, fileId: ID!, title: String): ProjectSubmittal!
-    deleteSubmittalFile(attachmentId: ID!, submittalId: ID!): Boolean!
 
     # Site Instructions
     createSiteInstruction(projectId: ID!, siNumber: String!, subject: String!, description: String, issuedBy: String, issuedDate: String, potentialVo: Boolean): ProjectSiteInstruction!
@@ -4012,12 +3903,6 @@ export const typeDefs = `#graphql
     uploadHSEFile(hseId: ID!, fileId: ID!, title: String): ProjectHSERecord!
     deleteHSEFile(attachmentId: ID!, hseId: ID!): Boolean!
 
-    # Transmittals
-    createProjectTransmittal(projectId: ID!, transmittalNumber: String!, title: String!, toCompany: String, toContact: String, fromName: String, sentDate: String!, purpose: String!, notes: String, items: [TransmittalItemInput!]): ProjectTransmittal!
-    updateProjectTransmittal(id: ID!, title: String, toCompany: String, toContact: String, fromName: String, sentDate: String, purpose: String, acknowledgedDate: String, notes: String, status: String): ProjectTransmittal!
-    deleteProjectTransmittal(id: ID!): Boolean!
-    addTransmittalItem(transmittalId: ID!, documentTitle: String!, documentNumber: String, revision: String, fileId: ID, copies: Int): ProjectTransmittalItem!
-    deleteTransmittalItem(id: ID!): Boolean!
   }
 
   # ─── Planning ────────────────────────────────────────────────────────────────
@@ -4669,168 +4554,6 @@ export const typeDefs = `#graphql
     closeTQ(id: ID!): ProjectTQ!
     deleteTQ(id: ID!): Boolean!
   }
-
-  # ── Phase 3: Contractor Deviation Requests ────────────────────────────────────
-
-  type CdrApprovalStep {
-    id: ID!
-    cdrId: ID!
-    stepOrder: Int!
-    approverRole: String!
-    approverName: String
-    status: String!
-    comments: String
-    actionedAt: String
-    createdAt: String!
-  }
-
-  type ProjectCDR {
-    id: ID!
-    projectId: ID!
-    cdrNumber: String!
-    discipline: String
-    title: String!
-    description: String
-    documentRef: String
-    clauseRef: String
-    technicalImpact: String
-    commercialImpact: String
-    proposedAlternative: String
-    status: String!
-    submittedAt: String
-    decidedAt: String
-    decisionBy: String
-    decisionNotes: String
-    approvalSteps: [CdrApprovalStep!]!
-    createdAt: String!
-    updatedAt: String!
-    currentStep: Int
-  }
-
-  extend type Query {
-    projectCDRs(projectId: ID!, status: String, discipline: String): [ProjectCDR!]!
-    projectCDR(id: ID!): ProjectCDR
-  }
-
-  extend type Mutation {
-    createCDR(
-      projectId: ID!
-      discipline: String
-      title: String!
-      description: String
-      documentRef: String
-      clauseRef: String
-      technicalImpact: String
-      commercialImpact: String
-      proposedAlternative: String
-    ): ProjectCDR!
-
-    updateCDR(
-      id: ID!
-      discipline: String
-      title: String
-      description: String
-      documentRef: String
-      clauseRef: String
-      technicalImpact: String
-      commercialImpact: String
-      proposedAlternative: String
-    ): ProjectCDR!
-
-    submitCDR(id: ID!, approverRoles: [String!]): ProjectCDR!
-    approveCDRStep(id: ID!, stepOrder: Int!, approverName: String, comments: String): ProjectCDR!
-    rejectCDRStep(id: ID!, stepOrder: Int!, approverName: String, comments: String!): ProjectCDR!
-    withdrawCDR(id: ID!): ProjectCDR!
-    deleteCDR(id: ID!): Boolean!
-  }
-
-  # ── Phase 4: Interface Management ────────────────────────────────────────────
-
-  type InterfaceAction {
-    id: ID!
-    interfaceId: ID!
-    description: String!
-    owner: String
-    dueDate: String
-    status: String!
-    closedAt: String
-    createdAt: String!
-    updatedAt: String!
-    isOverdue: Boolean!
-  }
-
-  type ProjectInterface {
-    id: ID!
-    projectId: ID!
-    interfaceNo: String!
-    partyA: String!
-    partyB: String!
-    disciplineA: String
-    disciplineB: String
-    title: String!
-    description: String
-    agreedDate: String
-    priority: String!
-    status: String!
-    actions: [InterfaceAction!]!
-    openActionCount: Int!
-    overdueActionCount: Int!
-    createdAt: String!
-    updatedAt: String!
-    isOverdue: Boolean!
-  }
-
-  extend type Query {
-    projectInterfaces(projectId: ID!, status: String, disciplinePair: String): [ProjectInterface!]!
-    projectInterface(id: ID!): ProjectInterface
-  }
-
-  extend type Mutation {
-    createInterface(
-      projectId: ID!
-      partyA: String!
-      partyB: String!
-      disciplineA: String
-      disciplineB: String
-      title: String!
-      description: String
-      agreedDate: String
-      priority: String
-    ): ProjectInterface!
-
-    updateInterface(
-      id: ID!
-      partyA: String
-      partyB: String
-      disciplineA: String
-      disciplineB: String
-      title: String
-      description: String
-      agreedDate: String
-      priority: String
-    ): ProjectInterface!
-
-    updateInterfaceStatus(id: ID!, status: String!): ProjectInterface!
-    deleteInterface(id: ID!): Boolean!
-
-    createInterfaceAction(
-      interfaceId: ID!
-      description: String!
-      owner: String
-      dueDate: String
-    ): InterfaceAction!
-
-    updateInterfaceAction(
-      id: ID!
-      description: String
-      owner: String
-      dueDate: String
-      status: String
-    ): InterfaceAction!
-
-    deleteInterfaceAction(id: ID!): Boolean!
-  }
-
   # ── Phase 5: Punch List & Completions ────────────────────────────────────────
 
   type PunchPhoto {
@@ -4920,96 +4643,197 @@ export const typeDefs = `#graphql
     deletePunchPhoto(id: ID!): Boolean!
   }
 
-  # ── Phase 6: Subcontractor Submittal Register ────────────────────────────────
+  # ── Phase 7: Risk Register ────────────────────────────────────────────────
 
-  type SubmittalRevision {
-    id: ID!
-    submittalId: ID!
-    revision: String!
-    submittedDate: String
-    reviewer: String
-    reviewedDate: String
-    reviewStatus: String!
-    reviewComments: String
-    fileId: ID
-    fileUrl: String
-    createdAt: String!
+  type RiskReview {
+    id:          ID!
+    riskId:      ID!
+    probability: Int!
+    impact:      Int!
+    score:       Int!
+    notes:       String
+    reviewedBy:  String
+    reviewedAt:  String!
   }
 
-  type Submittal {
-    id: ID!
-    projectId: ID!
-    submittalNo: String!
-    type: String!
-    discipline: String
-    title: String!
-    description: String
-    subcontractor: String
-    specifiedBy: String
-    specSection: String
-    status: String!
-    requiredDate: String
-    revisions: [SubmittalRevision!]!
-    revisionCount: Int!
-    latestRevision: SubmittalRevision
-    createdAt: String!
-    updatedAt: String!
+  type Risk {
+    id:                  ID!
+    projectId:           ID!
+    riskNo:              String!
+    category:            String!
+    title:               String!
+    description:         String
+    cause:               String
+    consequence:         String
+    owner:               String
+    probability:         Int!
+    impact:              Int!
+    riskScore:           Int!
+    riskLevel:           String!
+    mitigationPlan:      String
+    contingencyPlan:     String
+    residualProbability: Int
+    residualImpact:      Int
+    residualScore:       Int
+    residualLevel:       String
+    status:              String!
+    raisedBy:            String
+    raisedDate:          String
+    reviewDate:          String
+    createdAt:           String!
+    updatedAt:           String!
+    reviews:             [RiskReview!]!
   }
 
   extend type Query {
-    projectSubmittals(
-      projectId: ID!
-      type: String
-      status: String
-      subcontractor: String
-      discipline: String
-    ): [Submittal!]!
-    projectSubmittal(id: ID!): Submittal
+    projectRisks(projectId: ID!, category: String, status: String, level: String): [Risk!]!
+    projectRisk(id: ID!): Risk
   }
 
   extend type Mutation {
-    createSubmittal(
-      projectId: ID!
-      type: String!
-      discipline: String
-      title: String!
+    createRisk(
+      projectId:           ID!
+      category:            String!
+      title:               String!
+      description:         String
+      cause:               String
+      consequence:         String
+      owner:               String
+      probability:         Int!
+      impact:              Int!
+      mitigationPlan:      String
+      contingencyPlan:     String
+      residualProbability: Int
+      residualImpact:      Int
+      raisedBy:            String
+      raisedDate:          String
+      reviewDate:          String
+    ): Risk!
+
+    updateRisk(
+      id:                  ID!
+      category:            String
+      title:               String
+      description:         String
+      cause:               String
+      consequence:         String
+      owner:               String
+      probability:         Int
+      impact:              Int
+      mitigationPlan:      String
+      contingencyPlan:     String
+      residualProbability: Int
+      residualImpact:      Int
+      raisedBy:            String
+      raisedDate:          String
+      reviewDate:          String
+    ): Risk!
+
+    updateRiskStatus(id: ID!, status: String!): Risk!
+
+    addRiskReview(
+      riskId:      ID!
+      probability: Int!
+      impact:      Int!
+      notes:       String
+      reviewedBy:  String
+    ): Risk!
+
+    deleteRisk(id: ID!): Boolean!
+  }
+
+  # ── Handover ────────────────────────────────────────────────────────────────
+
+  type HandoverItem {
+    id:            ID!
+    certificateId: ID!
+    sequence:      Int!
+    category:      String!
+    description:   String!
+    status:        String!
+    verifiedBy:    String
+    verifiedAt:    String
+    notes:         String
+    createdAt:     String!
+  }
+
+  type HandoverCertificate {
+    id:                   ID!
+    projectId:            ID!
+    certificateNo:        String!
+    title:                String!
+    areaZone:             String
+    handoverDate:         String
+    acceptedDate:         String
+    contractorRep:        String
+    clientRep:            String
+    status:               String!
+    defectLiabilityStart: String
+    defectLiabilityEnd:   String
+    notes:                String
+    createdAt:            String!
+    updatedAt:            String!
+    items:                [HandoverItem!]!
+    completedItemCount:   Int!
+    totalItemCount:       Int!
+  }
+
+  extend type Query {
+    projectHandoverCertificates(projectId: ID!): [HandoverCertificate!]!
+  }
+
+  extend type Mutation {
+    createHandoverCertificate(
+      projectId:            ID!
+      title:                String!
+      areaZone:             String
+      handoverDate:         String
+      contractorRep:        String
+      clientRep:            String
+      defectLiabilityStart: String
+      defectLiabilityEnd:   String
+      notes:                String
+    ): HandoverCertificate!
+
+    updateHandoverCertificate(
+      id:                   ID!
+      title:                String
+      areaZone:             String
+      handoverDate:         String
+      contractorRep:        String
+      clientRep:            String
+      defectLiabilityStart: String
+      defectLiabilityEnd:   String
+      notes:                String
+    ): HandoverCertificate!
+
+    issueHandoverCertificate(id: ID!): HandoverCertificate!
+    acceptHandoverCertificate(id: ID!, acceptedDate: String, clientRep: String): HandoverCertificate!
+    rejectHandoverCertificate(id: ID!, notes: String): HandoverCertificate!
+    deleteHandoverCertificate(id: ID!): Boolean!
+
+    createHandoverItem(
+      certificateId: ID!
+      category:      String!
+      description:   String!
+      sequence:      Int
+      notes:         String
+    ): HandoverItem!
+
+    updateHandoverItem(
+      id:          ID!
+      category:    String
       description: String
-      subcontractor: String
-      specifiedBy: String
-      specSection: String
-      requiredDate: String
-    ): Submittal!
+      sequence:    Int
+      status:      String
+      notes:       String
+    ): HandoverItem!
 
-    updateSubmittal(
-      id: ID!
-      type: String
-      discipline: String
-      title: String
-      description: String
-      subcontractor: String
-      specifiedBy: String
-      specSection: String
-      requiredDate: String
-      status: String
-    ): Submittal!
+    verifyHandoverItem(id: ID!, verifiedBy: String!): HandoverItem!
+    deleteHandoverItem(id: ID!): Boolean!
 
-    addSubmittalRevision(
-      submittalId: ID!
-      revision: String!
-      submittedDate: String
-      fileUrl: String
-      fileId: ID
-    ): Submittal!
-
-    updateRevisionStatus(
-      id: ID!
-      reviewStatus: String!
-      reviewer: String
-      reviewComments: String
-      reviewedDate: String
-    ): Submittal!
-
-    deleteSubmittal(id: ID!): Boolean!
-    deleteSubmittalRevision(id: ID!): Submittal!
+    # ── Notifications ─────────────────────────────────────────────────────────
+    markNotificationRead(id: ID!): Notification!
+    markAllNotificationsRead: Int!
   }
 `

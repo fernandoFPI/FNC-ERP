@@ -35,11 +35,6 @@ export function ProjectStageBar({ stages, overallPct, onStageClick }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: theme.textMuted }}>
-        <span>Overall Completion</span>
-        <span style={{ fontWeight: 600, color: theme.textPrimary }}>{overallPct ?? 0}%</span>
-      </div>
-
       {/* Segmented bar */}
       <div style={{ display: 'flex', height: '18px', borderRadius: '999px', overflow: 'hidden', background: theme.border, gap: '1px' }}>
         {sorted.map(stage => (
@@ -56,17 +51,6 @@ export function ProjectStageBar({ stages, overallPct, onStageClick }: Props) {
         ))}
       </div>
 
-      {/* Labels */}
-      {sorted.length > 0 && (
-        <div style={{ display: 'flex' }}>
-          {sorted.map(stage => (
-            <div key={stage.id} style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-              <div style={{ fontSize: '10px', color: theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stage.name}</div>
-              <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textPrimary }}>{stage.completionPct}%</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Tooltip */}
       {tooltip && (
