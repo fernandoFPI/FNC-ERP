@@ -168,6 +168,109 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           { key: 'projects.invoices.edit', label: 'Manage Project Invoices', sortOrder: 321 },
         ],
       },
+      {
+        key: 'client_documents',
+        label: 'Client Documents',
+        permissions: [
+          { key: 'projects.client_documents.view', label: 'View Client Documents',   sortOrder: 330 },
+          { key: 'projects.client_documents.edit', label: 'Manage Client Documents', sortOrder: 331 },
+        ],
+      },
+      {
+        key: 'engineering',
+        label: 'Engineering Documents',
+        permissions: [
+          { key: 'projects.engineering.view',    label: 'View Engineering Documents',    sortOrder: 335 },
+          { key: 'projects.engineering.edit',    label: 'Edit Engineering Documents',    sortOrder: 336 },
+          { key: 'projects.engineering.approve', label: 'Approve/Issue Engineering Docs', sortOrder: 337 },
+        ],
+      },
+      {
+        key: 'planning',
+        label: 'Planning & Schedule',
+        permissions: [
+          { key: 'projects.planning.view', label: 'View Planning & Schedule',   sortOrder: 340 },
+          { key: 'projects.planning.edit', label: 'Manage Planning & Schedule', sortOrder: 341 },
+        ],
+      },
+      {
+        key: 'bidding',
+        label: 'Bidding',
+        permissions: [
+          { key: 'projects.bidding.view',    label: 'View Bidding',    sortOrder: 345 },
+          { key: 'projects.bidding.edit',    label: 'Edit Bidding',    sortOrder: 346 },
+          { key: 'projects.bidding.approve', label: 'Approve Bids',    sortOrder: 347 },
+        ],
+      },
+      {
+        key: 'contracts',
+        label: 'Contract Management',
+        permissions: [
+          { key: 'projects.contracts.view',    label: 'View Contracts',    sortOrder: 350 },
+          { key: 'projects.contracts.edit',    label: 'Manage Contracts',  sortOrder: 351 },
+          { key: 'projects.contracts.approve', label: 'Approve Contracts', sortOrder: 352 },
+        ],
+      },
+      {
+        key: 'execution',
+        label: 'Execution',
+        permissions: [
+          { key: 'projects.execution.view',    label: 'View Execution',    sortOrder: 355 },
+          { key: 'projects.execution.edit',    label: 'Edit Execution',    sortOrder: 356 },
+          { key: 'projects.execution.approve', label: 'Approve Execution', sortOrder: 357 },
+        ],
+      },
+      {
+        key: 'procurement',
+        label: 'Project Procurement',
+        permissions: [
+          { key: 'projects.procurement.view', label: 'View Project Procurement',   sortOrder: 360 },
+          { key: 'projects.procurement.edit', label: 'Manage Project Procurement', sortOrder: 361 },
+        ],
+      },
+      {
+        key: 'cost_control',
+        label: 'Cost Control',
+        permissions: [
+          { key: 'projects.cost_control.view',    label: 'View Cost Control',    sortOrder: 365 },
+          { key: 'projects.cost_control.edit',    label: 'Edit Cost Control',    sortOrder: 366 },
+          { key: 'projects.cost_control.approve', label: 'Approve Cost Control', sortOrder: 367 },
+        ],
+      },
+      {
+        key: 'variations',
+        label: 'Variation Orders',
+        permissions: [
+          { key: 'projects.variations.view',    label: 'View Variation Orders',    sortOrder: 370 },
+          { key: 'projects.variations.edit',    label: 'Edit Variation Orders',    sortOrder: 371 },
+          { key: 'projects.variations.approve', label: 'Approve Variation Orders', sortOrder: 372 },
+        ],
+      },
+      {
+        key: 'risk',
+        label: 'Risk Register',
+        permissions: [
+          { key: 'projects.risk.view', label: 'View Risk Register',   sortOrder: 375 },
+          { key: 'projects.risk.edit', label: 'Manage Risk Register', sortOrder: 376 },
+        ],
+      },
+      {
+        key: 'handover',
+        label: 'Handover',
+        permissions: [
+          { key: 'projects.handover.view',    label: 'View Handover',   sortOrder: 380 },
+          { key: 'projects.handover.edit',    label: 'Edit Handover',   sortOrder: 381 },
+          { key: 'projects.handover.approve', label: 'Accept Handover', sortOrder: 382 },
+        ],
+      },
+      {
+        key: 'meetings',
+        label: 'Meetings (MOM)',
+        permissions: [
+          { key: 'projects.meetings.view', label: 'View Meetings',   sortOrder: 385 },
+          { key: 'projects.meetings.edit', label: 'Manage Meetings', sortOrder: 386 },
+        ],
+      },
     ],
   },
   {

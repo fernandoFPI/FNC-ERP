@@ -66,6 +66,7 @@ type UserRow = {
   locked_until: Date | null
   is_active: boolean
   profile_completed: boolean
+  employee_id: string | null
 }
 
 type RoleRow = {
@@ -95,9 +96,12 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
 
   try {
     const userResult = await query<UserRow>(
-      `SELECT id, email, password_hash, mfa_enabled, mfa_secret,
-              failed_login_attempts, locked_until, is_active, profile_completed
-       FROM users WHERE email = $1`,
+      `SELECT u.id, u.email, u.password_hash, u.mfa_enabled, u.mfa_secret,
+              u.failed_login_attempts, u.locked_until, u.is_active, u.profile_completed,
+              e.id AS employee_id
+       FROM users u
+       LEFT JOIN employees e ON e.user_id = u.id
+       WHERE u.email = $1`,
       [email.toLowerCase()],
     )
 
@@ -253,7 +257,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, email: user.email, mfaEnabled: user.mfa_enabled, profileCompleted: user.profile_completed },
+        user: { id: user.id, email: user.email, mfaEnabled: user.mfa_enabled, profileCompleted: user.profile_completed, employeeId: user.employee_id },
         companies: companiesResult.rows,
       },
     })
@@ -286,7 +290,9 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
     }
 
     const userResult = await query<UserRow>(
-      `SELECT id, email, mfa_secret, mfa_enabled, profile_completed FROM users WHERE id = $1 AND is_active = true`,
+      `SELECT u.id, u.email, u.mfa_secret, u.mfa_enabled, u.profile_completed, e.id AS employee_id
+       FROM users u LEFT JOIN employees e ON e.user_id = u.id
+       WHERE u.id = $1 AND u.is_active = true`,
       [tempPayload.sub],
     )
 
@@ -358,7 +364,7 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, email: user.email, mfaEnabled: user.mfa_enabled, profileCompleted: user.profile_completed },
+        user: { id: user.id, email: user.email, mfaEnabled: user.mfa_enabled, profileCompleted: user.profile_completed, employeeId: user.employee_id },
         companies: companiesResult.rows,
         deviceToken: trustDevice ? signDeviceTrustToken(user.id) : undefined,
       },
@@ -604,8 +610,9 @@ authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promis
   if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
 
   try {
-    const userResult = await query<{ id: string; email: string; mfa_enabled: boolean; last_login: Date | null; created_at: Date }>(
-      `SELECT id, email, mfa_enabled, last_login, created_at FROM users WHERE id = $1`,
+    const userResult = await query<{ id: string; email: string; mfa_enabled: boolean; last_login: Date | null; created_at: Date; employee_id: string | null }>(
+      `SELECT u.id, u.email, u.mfa_enabled, u.last_login, u.created_at, e.id AS employee_id
+       FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = $1`,
       [auth.userId],
     )
     const user = userResult.rows[0]
@@ -624,6 +631,7 @@ authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promis
       data: {
         id: user.id,
         email: user.email,
+        employeeId: user.employee_id,
         mfaEnabled: user.mfa_enabled,
         lastLogin: user.last_login,
         createdAt: user.created_at,

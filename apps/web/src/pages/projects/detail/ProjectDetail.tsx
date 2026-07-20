@@ -97,7 +97,7 @@ const ALL_TABS = [
   { key: 'overview',         label: 'Overview' },
   { key: 'client_documents', label: 'Client Documents' },
   { key: 'rfq_lines',        label: 'Preliminary Engineering' },
-  { key: 'bidding',          label: 'Bidding' },
+  { key: 'bidding',          label: 'Bidding Stage' },
   { key: 'contracts',        label: 'Contract Management' },
   { key: 'engineering',      label: 'Planning & Detailed Engineering' },
   { key: 'execution',        label: 'Execution' },
@@ -467,6 +467,34 @@ export default function ProjectDetail() {
   const [updateCostCode] = useMutation(UPDATE_COST_CODE, { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
   const [deleteCostCode] = useMutation(DELETE_COST_CODE, { onCompleted: () => { void refetchCCCodes(); void refetchCCSummary() }, onError: ccError })
 
+  // Cost sub-entities — project-level operational cost tracking (committed, subcontracts, labor, equipment, cash flow, forecast, client billing)
+  const { data: ccCommittedData, refetch: refetchCommitted } = useQuery(PROJECT_COMMITTED_COSTS_QUERY, { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccSubData,       refetch: refetchSub }       = useQuery(PROJECT_SUBCONTRACTS_QUERY,    { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccLaborData,     refetch: refetchLabor }     = useQuery(PROJECT_LABOR_ENTRIES_QUERY,   { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccEquipData,     refetch: refetchEquip }     = useQuery(PROJECT_EQUIPMENT_LOG_QUERY,   { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccCashData,      refetch: refetchCash }      = useQuery(PROJECT_CASH_FLOW_QUERY,       { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccForecastData,  refetch: refetchForecast }  = useQuery(PROJECT_COST_FORECAST_QUERY,   { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const { data: ccBillingData,   refetch: refetchBilling }   = useQuery(PROJECT_CLIENT_BILLINGS_QUERY, { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
+  const refetchCostAll = () => { void refetchCCCodes(); void refetchCCSummary(); void refetchCommitted(); void refetchSub(); void refetchLabor(); void refetchEquip(); void refetchCash(); void refetchForecast(); void refetchBilling() }
+  const [createCommittedM] = useMutation(CREATE_COMMITTED_COST,   { onCompleted: refetchCostAll, onError: ccError })
+  const [updateCommittedM] = useMutation(UPDATE_COMMITTED_COST,   { onCompleted: refetchCostAll, onError: ccError })
+  const [deleteCommittedM] = useMutation(DELETE_COMMITTED_COST,   { onCompleted: refetchCostAll, onError: ccError })
+  const [syncPOCommitM]    = useMutation(SYNC_PO_COMMITMENTS,     { onCompleted: refetchCostAll, onError: ccError })
+  const [createSubM]       = useMutation(CREATE_SUBCONTRACT,      { onCompleted: refetchCostAll, onError: ccError })
+  const [updateSubM]       = useMutation(UPDATE_SUBCONTRACT,      { onCompleted: refetchCostAll, onError: ccError })
+  const [deleteSubM]       = useMutation(DELETE_SUBCONTRACT,      { onCompleted: refetchCostAll, onError: ccError })
+  const [createLaborM]     = useMutation(CREATE_LABOR_ENTRY,      { onCompleted: refetchCostAll, onError: ccError })
+  const [updateLaborM]     = useMutation(UPDATE_LABOR_ENTRY,      { onCompleted: refetchCostAll, onError: ccError })
+  const [deleteLaborM]     = useMutation(DELETE_LABOR_ENTRY,      { onCompleted: refetchCostAll, onError: ccError })
+  const [createEquipM]     = useMutation(CREATE_EQUIPMENT_LOG,    { onCompleted: refetchCostAll, onError: ccError })
+  const [updateEquipM]     = useMutation(UPDATE_EQUIPMENT_LOG,    { onCompleted: refetchCostAll, onError: ccError })
+  const [deleteEquipM]     = useMutation(DELETE_EQUIPMENT_LOG,    { onCompleted: refetchCostAll, onError: ccError })
+  const [upsertCashM]      = useMutation(UPSERT_CASH_FLOW_PERIOD, { onCompleted: refetchCostAll, onError: ccError })
+  const [upsertForecastM]  = useMutation(UPSERT_COST_FORECAST,    { onCompleted: refetchCostAll, onError: ccError })
+  const [createBillingM]   = useMutation(CREATE_CLIENT_BILLING,   { onCompleted: refetchCostAll, onError: ccError })
+  const [updateBillingM]   = useMutation(UPDATE_CLIENT_BILLING,   { onCompleted: refetchCostAll, onError: ccError })
+  const [deleteBillingM]   = useMutation(DELETE_CLIENT_BILLING,   { onCompleted: refetchCostAll, onError: ccError })
+
   // ── Variation Orders ───────────────────────────────────────────────────────
   const skipVO = !id || tab !== 'variation_orders'
   const { data: voData, refetch: refetchVO } = useQuery(PROJECT_VARIATION_ORDERS_QUERY, { variables: { projectId: id }, skip: skipVO, fetchPolicy: 'cache-and-network' })
@@ -530,10 +558,16 @@ export default function ProjectDetail() {
 
   const isRfqPhase = p.isRfq && !RFQ_POST_DECISION.has(p.status)
 
-  // ── Project-role derivation (name-match against managerName / team) ───────
+  // ── Project-role derivation (ID-based; falls back to name only when the
+  //    logged-in user has no linked employee record — safe rollout path) ─────
   type ProjectRole = 'admin' | 'pm' | 'technical' | 'commercial' | 'both' | 'none'
-  const myTeamEntry = liveTeam.find(m => m.employee_name === currentUserName)
-  const isPM        = !isAdmin && p.managerName === currentUserName
+  const myEmployeeId = currentUser?.employeeId ?? null
+  const myTeamEntry = myEmployeeId
+    ? liveTeam.find(m => m.employee_id === myEmployeeId)
+    : liveTeam.find(m => m.employee_name === currentUserName)
+  const isPM        = !isAdmin && (myEmployeeId
+    ? p.managerId === myEmployeeId
+    : p.managerName === currentUserName)
   const projectRole: ProjectRole = isAdmin
     ? 'admin'
     : isPM
@@ -1825,6 +1859,31 @@ export default function ProjectDetail() {
             onDeleteCostCode={(id) => void deleteCostCode({ variables: { id } })}
             projectAnalyticAccountId={p?.analyticAccountId ?? null}
             projectAnalyticAccountName={p?.analyticAccountName ?? null}
+            committedCosts={ccCommittedData?.projectCommittedCosts ?? []}
+            subcontracts={ccSubData?.projectSubcontracts ?? []}
+            laborEntries={ccLaborData?.projectLaborEntries ?? []}
+            equipmentLog={ccEquipData?.projectEquipmentLog ?? []}
+            cashFlow={ccCashData?.projectCashFlow ?? []}
+            costForecast={ccForecastData?.projectCostForecast ?? []}
+            clientBillings={ccBillingData?.projectClientBillings ?? []}
+            onCreateCommitted={(v) => void createCommittedM({ variables: v })}
+            onUpdateCommitted={(v) => void updateCommittedM({ variables: v })}
+            onDeleteCommitted={(cid) => void deleteCommittedM({ variables: { id: cid } })}
+            onSyncPO={(v) => void syncPOCommitM({ variables: v })}
+            onCreateSub={(v) => void createSubM({ variables: v })}
+            onUpdateSub={(v) => void updateSubM({ variables: v })}
+            onDeleteSub={(sid) => void deleteSubM({ variables: { id: sid } })}
+            onCreateLabor={(v) => void createLaborM({ variables: v })}
+            onUpdateLabor={(v) => void updateLaborM({ variables: v })}
+            onDeleteLabor={(lid) => void deleteLaborM({ variables: { id: lid } })}
+            onCreateEquip={(v) => void createEquipM({ variables: v })}
+            onUpdateEquip={(v) => void updateEquipM({ variables: v })}
+            onDeleteEquip={(eid) => void deleteEquipM({ variables: { id: eid } })}
+            onUpsertCash={(v) => void upsertCashM({ variables: v })}
+            onUpsertForecast={(v) => void upsertForecastM({ variables: v })}
+            onCreateBilling={(v) => void createBillingM({ variables: v })}
+            onUpdateBilling={(v) => void updateBillingM({ variables: v })}
+            onDeleteBilling={(bid) => void deleteBillingM({ variables: { id: bid } })}
           />
         )}
 
@@ -10468,17 +10527,38 @@ function PlanningTab(props: PlanningProps) {
 type CCCostCode = { id: string; projectId: string; wbsId: string | null; analyticAccountId: string | null; code: string; name: string; category: string; budgetAmount: number; sequence: number; committedAmount: number; actualAmount: number; forecastEAC: number; remainingBudget: number; percentConsumed: number }
 type CCSummary = { totalBudget: number; totalCommitted: number; totalActual: number; totalForecastEAC: number; totalRemaining: number; totalVariance: number; percentConsumed: number; totalBilled: number; totalCertified: number; totalPaidByClient: number; totalRetentionHeld: number; outstandingReceivable: number; byCategory: Array<{ category: string; budgetAmount: number; committedAmount: number; actualAmount: number; forecastEAC: number; variance: number }> }
 
+type CCCommitted = { id: string; costCodeId: string | null; costCodeName: string | null; commitmentType: string; referenceNumber: string | null; description: string; vendorName: string | null; committedAmount: number; invoicedAmount: number; paidAmount: number; currencyCode: string; commitmentDate: string | null; expectedInvoiceDate: string | null; status: string; notes: string | null }
+type CCSubcontract = { id: string; costCodeId: string | null; subcontractNumber: string; subcontractorName: string; description: string | null; scopeOfWork: string | null; contractValue: number; revisedValue: number | null; retentionPercentage: number | null; retentionReleased: number | null; certifiedAmount: number; paidAmount: number; currencyCode: string; startDate: string | null; endDate: string | null; status: string }
+type CCLabor = { id: string; costCodeId: string | null; workDate: string; trade: string; workerName: string | null; regularHours: number; overtimeHours: number; costPerHour: number; totalCost: number; notes: string | null }
+type CCEquipment = { id: string; costCodeId: string | null; logDate: string; equipmentName: string; equipmentType: string | null; ownership: string | null; workingHours: number; standbyHours: number; costPerHour: number; standbyRate: number | null; totalCost: number; notes: string | null }
+type CCCashFlow = { id: string; periodYear: number; periodMonth: number; label: string; plannedOutflow: number; actualOutflow: number; forecastOutflow: number; plannedInflow: number; actualInflow: number; forecastInflow: number; notes: string | null }
+type CCForecast = { id: string; costCodeId: string | null; costCodeName: string | null; forecastDate: string; etcAmount: number; eacAmount: number; notes: string | null }
+type CCBilling = { id: string; billingNumber: string; billingDate: string; periodFrom: string | null; periodTo: string | null; grossAmount: number; retentionPercentage: number | null; retentionAmount: number | null; netAmount: number; certifiedAmount: number; certifiedDate: string | null; paidAmount: number; paidDate: string | null; status: string; notes: string | null }
+
 type CostControlProps = {
   projectId: string; th: Record<string, string>; isEditable: boolean; isAdmin: boolean
   costCodes: CCCostCode[]; summary: CCSummary | null
   projectAnalyticAccountId: string | null; projectAnalyticAccountName: string | null
   onCreateCostCode: (v: Record<string, unknown>) => void; onUpdateCostCode: (v: Record<string, unknown>) => void; onDeleteCostCode: (id: string) => void
+  committedCosts: CCCommitted[]; subcontracts: CCSubcontract[]; laborEntries: CCLabor[]; equipmentLog: CCEquipment[]; cashFlow: CCCashFlow[]; costForecast: CCForecast[]; clientBillings: CCBilling[]
+  onCreateCommitted: (v: Record<string, unknown>) => void; onUpdateCommitted: (v: Record<string, unknown>) => void; onDeleteCommitted: (id: string) => void; onSyncPO: (v: Record<string, unknown>) => void
+  onCreateSub: (v: Record<string, unknown>) => void; onUpdateSub: (v: Record<string, unknown>) => void; onDeleteSub: (id: string) => void
+  onCreateLabor: (v: Record<string, unknown>) => void; onUpdateLabor: (v: Record<string, unknown>) => void; onDeleteLabor: (id: string) => void
+  onCreateEquip: (v: Record<string, unknown>) => void; onUpdateEquip: (v: Record<string, unknown>) => void; onDeleteEquip: (id: string) => void
+  onUpsertCash: (v: Record<string, unknown>) => void
+  onUpsertForecast: (v: Record<string, unknown>) => void
+  onCreateBilling: (v: Record<string, unknown>) => void; onUpdateBilling: (v: Record<string, unknown>) => void; onDeleteBilling: (id: string) => void
 }
 
 function CostControlTab(props: CostControlProps) {
-  const { projectId, th, isEditable, isAdmin, costCodes, summary, projectAnalyticAccountId, projectAnalyticAccountName, onCreateCostCode, onUpdateCostCode, onDeleteCostCode } = props
+  const { projectId, th, isEditable, isAdmin, costCodes, summary, projectAnalyticAccountId, projectAnalyticAccountName, onCreateCostCode, onUpdateCostCode, onDeleteCostCode,
+    committedCosts, subcontracts, laborEntries, equipmentLog, cashFlow, costForecast, clientBillings,
+    onCreateCommitted, onUpdateCommitted, onDeleteCommitted, onSyncPO,
+    onCreateSub, onUpdateSub, onDeleteSub, onCreateLabor, onUpdateLabor, onDeleteLabor,
+    onCreateEquip, onUpdateEquip, onDeleteEquip, onUpsertCash, onUpsertForecast,
+    onCreateBilling, onUpdateBilling, onDeleteBilling } = props
 
-  type CCSection = 'overview' | 'budget'
+  type CCSection = 'overview' | 'budget' | 'committed' | 'subcontract' | 'labor' | 'equipment' | 'cash' | 'forecast' | 'billing'
   const [section, setSection] = React.useState<CCSection>('overview')
 
   const [codeModal, setCodeModal] = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<CCCostCode> }>({ open: false, mode: 'create', item: {} })
@@ -10487,6 +10567,13 @@ function CostControlTab(props: CostControlProps) {
   const nav: Array<{ key: CCSection; label: string }> = [
     { key: 'overview', label: 'Overview' },
     { key: 'budget', label: 'Budget' },
+    { key: 'committed', label: 'Committed' },
+    { key: 'subcontract', label: 'Subcontracts' },
+    { key: 'labor', label: 'Labor' },
+    { key: 'equipment', label: 'Equipment' },
+    { key: 'cash', label: 'Cash Flow' },
+    { key: 'forecast', label: 'Forecast' },
+    { key: 'billing', label: 'Client Billing' },
   ]
 
   const card = { background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '8px', padding: '16px', marginBottom: '12px' } as React.CSSProperties
@@ -10635,7 +10722,244 @@ function CostControlTab(props: CostControlProps) {
     </div>
   )
 
-  // ── [removed: Committed, Cash Flow, Invoices, Subcontracts, Labor, Equipment, Forecast moved to Finance module] ──
+  // ── Cost sub-entities (project-level operational cost tracking) ───────────
+  type CCEntity = 'committed' | 'subcontract' | 'labor' | 'equipment' | 'cash' | 'forecast' | 'billing'
+  const [rowModal, setRowModal] = React.useState<{ entity: CCEntity; mode: 'create' | 'edit'; id?: string } | null>(null)
+  const [rowForm, setRowForm] = React.useState<Record<string, string>>({})
+  const codeSelOpts = [{ value: '', label: '— No Cost Code —' }, ...costCodes.map(c => ({ value: c.id, label: `${c.code} ${c.name}` }))]
+
+  type FieldDef = { k: string; label: string; type?: 'text' | 'number' | 'date' | 'select' | 'textarea'; opts?: Array<{ value: string; label: string }>; required?: boolean; editOnly?: boolean; createOnly?: boolean }
+  const ENTITY_FORM: Record<CCEntity, FieldDef[]> = {
+    committed: [
+      { k: 'commitmentType', label: 'Type', type: 'select', opts: [{ value: 'purchase_order', label: 'Purchase Order' }, { value: 'subcontract', label: 'Subcontract' }, { value: 'other', label: 'Other' }], required: true, createOnly: true },
+      { k: 'referenceNumber', label: 'Reference #' },
+      { k: 'description', label: 'Description', required: true },
+      { k: 'vendorName', label: 'Vendor' },
+      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts },
+      { k: 'committedAmount', label: 'Committed Amount', type: 'number', required: true },
+      { k: 'invoicedAmount', label: 'Invoiced', type: 'number', editOnly: true },
+      { k: 'paidAmount', label: 'Paid', type: 'number', editOnly: true },
+      { k: 'commitmentDate', label: 'Commitment Date', type: 'date' },
+      { k: 'expectedInvoiceDate', label: 'Expected Invoice', type: 'date' },
+      { k: 'status', label: 'Status', type: 'select', opts: statusOpts(['open', 'partial', 'closed', 'cancelled']), editOnly: true },
+      { k: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    subcontract: [
+      { k: 'subcontractNumber', label: 'Subcontract #', required: true, createOnly: true },
+      { k: 'subcontractorName', label: 'Subcontractor', required: true },
+      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts },
+      { k: 'description', label: 'Description' },
+      { k: 'scopeOfWork', label: 'Scope of Work', type: 'textarea' },
+      { k: 'contractValue', label: 'Contract Value', type: 'number', required: true },
+      { k: 'revisedValue', label: 'Revised Value', type: 'number', editOnly: true },
+      { k: 'retentionPercentage', label: 'Retention %', type: 'number' },
+      { k: 'certifiedAmount', label: 'Certified', type: 'number', editOnly: true },
+      { k: 'paidAmount', label: 'Paid', type: 'number', editOnly: true },
+      { k: 'startDate', label: 'Start Date', type: 'date' },
+      { k: 'endDate', label: 'End Date', type: 'date' },
+      { k: 'status', label: 'Status', type: 'select', opts: statusOpts(['active', 'completed', 'terminated', 'on_hold']), editOnly: true },
+    ],
+    labor: [
+      { k: 'workDate', label: 'Work Date', type: 'date', required: true, createOnly: true },
+      { k: 'trade', label: 'Trade', required: true },
+      { k: 'workerName', label: 'Worker Name' },
+      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts, createOnly: true },
+      { k: 'regularHours', label: 'Regular Hours', type: 'number', required: true },
+      { k: 'overtimeHours', label: 'Overtime Hours', type: 'number' },
+      { k: 'costPerHour', label: 'Cost / Hour', type: 'number', required: true },
+      { k: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    equipment: [
+      { k: 'logDate', label: 'Log Date', type: 'date', required: true, createOnly: true },
+      { k: 'equipmentName', label: 'Equipment', required: true },
+      { k: 'equipmentType', label: 'Type' },
+      { k: 'ownership', label: 'Ownership', type: 'select', opts: [{ value: 'owned', label: 'Owned' }, { value: 'rented', label: 'Rented' }], createOnly: true },
+      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts, createOnly: true },
+      { k: 'workingHours', label: 'Working Hours', type: 'number', required: true },
+      { k: 'standbyHours', label: 'Standby Hours', type: 'number' },
+      { k: 'costPerHour', label: 'Cost / Hour', type: 'number', required: true },
+      { k: 'standbyRate', label: 'Standby Rate', type: 'number' },
+      { k: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    cash: [
+      { k: 'periodYear', label: 'Year', type: 'number', required: true },
+      { k: 'periodMonth', label: 'Month (1-12)', type: 'number', required: true },
+      { k: 'plannedOutflow', label: 'Planned Outflow', type: 'number' },
+      { k: 'actualOutflow', label: 'Actual Outflow', type: 'number' },
+      { k: 'forecastOutflow', label: 'Forecast Outflow', type: 'number' },
+      { k: 'plannedInflow', label: 'Planned Inflow', type: 'number' },
+      { k: 'actualInflow', label: 'Actual Inflow', type: 'number' },
+      { k: 'forecastInflow', label: 'Forecast Inflow', type: 'number' },
+      { k: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    forecast: [
+      { k: 'costCodeId', label: 'Cost Code', type: 'select', opts: codeSelOpts },
+      { k: 'forecastDate', label: 'Forecast Date', type: 'date', required: true },
+      { k: 'etcAmount', label: 'ETC (Est. to Complete)', type: 'number', required: true },
+      { k: 'eacAmount', label: 'EAC (Est. at Completion)', type: 'number', required: true },
+      { k: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+    billing: [
+      { k: 'billingNumber', label: 'Billing #', required: true, createOnly: true },
+      { k: 'billingDate', label: 'Billing Date', type: 'date', required: true },
+      { k: 'periodFrom', label: 'Period From', type: 'date' },
+      { k: 'periodTo', label: 'Period To', type: 'date' },
+      { k: 'grossAmount', label: 'Gross Amount', type: 'number', required: true },
+      { k: 'retentionPercentage', label: 'Retention %', type: 'number' },
+      { k: 'retentionAmount', label: 'Retention Amount', type: 'number' },
+      { k: 'netAmount', label: 'Net Amount', type: 'number', required: true },
+      { k: 'certifiedAmount', label: 'Certified', type: 'number', editOnly: true },
+      { k: 'certifiedDate', label: 'Certified Date', type: 'date', editOnly: true },
+      { k: 'paidAmount', label: 'Paid', type: 'number', editOnly: true },
+      { k: 'paidDate', label: 'Paid Date', type: 'date', editOnly: true },
+      { k: 'status', label: 'Status', type: 'select', opts: statusOpts(['draft', 'submitted', 'certified', 'paid']), editOnly: true },
+      { k: 'notes', label: 'Notes', type: 'textarea' },
+    ],
+  }
+  const NUM_FIELDS = new Set(['committedAmount', 'invoicedAmount', 'paidAmount', 'contractValue', 'revisedValue', 'retentionPercentage', 'certifiedAmount', 'regularHours', 'overtimeHours', 'costPerHour', 'workingHours', 'standbyHours', 'standbyRate', 'periodYear', 'periodMonth', 'plannedOutflow', 'actualOutflow', 'forecastOutflow', 'plannedInflow', 'actualInflow', 'forecastInflow', 'etcAmount', 'eacAmount', 'grossAmount', 'retentionAmount', 'netAmount'])
+
+  const openRow = (entity: CCEntity, mode: 'create' | 'edit', item?: Record<string, unknown>) => {
+    setRowModal({ entity, mode, id: item?.['id'] as string | undefined })
+    const f: Record<string, string> = {}
+    if (item) for (const fld of ENTITY_FORM[entity]) { const val = item[fld.k]; f[fld.k] = val == null ? '' : String(val) }
+    setRowForm(f)
+  }
+  const closeRow = () => { setRowModal(null); setRowForm({}) }
+  const saveRow = () => {
+    if (!rowModal) return
+    const { entity, mode, id } = rowModal
+    const fields = ENTITY_FORM[entity].filter(f => mode === 'create' ? !f.editOnly : !f.createOnly)
+    for (const f of fields) if (f.required && !(rowForm[f.k] ?? '').trim()) { alert(`${f.label} is required`); return }
+    const v: Record<string, unknown> = {}
+    for (const f of fields) { const raw = rowForm[f.k]; if (raw === undefined || raw === '') continue; v[f.k] = NUM_FIELDS.has(f.k) ? Number(raw) : raw }
+    const createFn: Record<CCEntity, (x: Record<string, unknown>) => void> = { committed: onCreateCommitted, subcontract: onCreateSub, labor: onCreateLabor, equipment: onCreateEquip, cash: onUpsertCash, forecast: onUpsertForecast, billing: onCreateBilling }
+    const updateFn: Record<CCEntity, (x: Record<string, unknown>) => void> = { committed: onUpdateCommitted, subcontract: onUpdateSub, labor: onUpdateLabor, equipment: onUpdateEquip, cash: onUpsertCash, forecast: onUpsertForecast, billing: onUpdateBilling }
+    if (entity === 'cash' || entity === 'forecast' || mode === 'create') createFn[entity]({ projectId, ...v })
+    else updateFn[entity]({ id, ...v })
+    closeRow()
+  }
+  const deleteRow = () => {
+    if (!rowModal?.id) return
+    const del: Partial<Record<CCEntity, (id: string) => void>> = { committed: onDeleteCommitted, subcontract: onDeleteSub, labor: onDeleteLabor, equipment: onDeleteEquip, billing: onDeleteBilling }
+    del[rowModal.entity]?.(rowModal.id)
+    closeRow()
+  }
+
+  function dataTable<T extends { id: string }>(rows: T[], cols: Array<{ h: string; align?: 'right' | 'center' | 'left'; render: (r: T) => React.ReactNode; w?: string }>, onRow: (r: T) => void, empty: string) {
+    const grid = cols.map(c => c.w ?? '1fr').join(' ')
+    return (
+      <div style={{ border: `1px solid ${th.border}`, borderRadius: '8px', overflowX: 'auto' }}>
+        <div style={{ minWidth: '680px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: grid, columnGap: '8px', padding: '8px 12px', background: th.bgSurface, borderBottom: `1px solid ${th.border}`, fontSize: '10px', fontWeight: 600, color: th.textSecondary, textTransform: 'uppercase' }}>
+            {cols.map((c, i) => <span key={i} style={{ textAlign: c.align ?? 'left' }}>{c.h}</span>)}
+          </div>
+          {rows.length === 0 && <div style={{ padding: '24px', textAlign: 'center', color: th.textSecondary, fontSize: '13px' }}>{empty}</div>}
+          {rows.map(r => (
+            <div key={r.id} onClick={() => onRow(r)} style={{ display: 'grid', gridTemplateColumns: grid, columnGap: '8px', padding: '8px 12px', borderBottom: `1px solid ${th.border}`, background: th.bgCanvas, cursor: 'pointer', alignItems: 'center', boxSizing: 'border-box' }}>
+              {cols.map((c, i) => <span key={i} style={{ textAlign: c.align ?? 'left', fontSize: '12px', color: th.textPrimary, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.render(r)}</span>)}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  const secHeader = (title: string, entity: CCEntity, extra?: React.ReactNode) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ fontSize: '15px', fontWeight: 600, color: th.textPrimary }}>{title}</div>
+      <div style={{ display: 'flex', gap: '8px' }}>{extra}{isEditable && <button style={btn()} onClick={() => openRow(entity, 'create')}>+ Add</button>}</div>
+    </div>
+  )
+  const dstr = (d: string | null) => d ? String(d).slice(0, 10) : '—'
+
+  const renderCommitted = () => (
+    <div>
+      {secHeader('Committed Costs', 'committed', isEditable ? <button style={btn({ background: th.bgSurface, color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => onSyncPO({ projectId })}>Sync POs</button> : null)}
+      {dataTable<CCCommitted>(committedCosts, [
+        { h: 'Reference', w: '120px', render: r => r.referenceNumber ?? '—' },
+        { h: 'Description', w: '1fr', render: r => r.description },
+        { h: 'Vendor', w: '130px', render: r => r.vendorName ?? '—' },
+        { h: 'Committed', w: '110px', align: 'right', render: r => fmt(r.committedAmount) },
+        { h: 'Invoiced', w: '100px', align: 'right', render: r => fmt(r.invoicedAmount) },
+        { h: 'Status', w: '90px', render: r => r.status },
+      ], r => openRow('committed', 'edit', r as unknown as Record<string, unknown>), 'No committed costs yet.')}
+    </div>
+  )
+  const renderSub = () => (
+    <div>
+      {secHeader('Subcontracts', 'subcontract')}
+      {dataTable<CCSubcontract>(subcontracts, [
+        { h: 'Number', w: '120px', render: r => r.subcontractNumber },
+        { h: 'Subcontractor', w: '1fr', render: r => r.subcontractorName },
+        { h: 'Value', w: '110px', align: 'right', render: r => fmt(r.revisedValue ?? r.contractValue) },
+        { h: 'Certified', w: '100px', align: 'right', render: r => fmt(r.certifiedAmount) },
+        { h: 'Paid', w: '100px', align: 'right', render: r => fmt(r.paidAmount) },
+        { h: 'Status', w: '90px', render: r => r.status },
+      ], r => openRow('subcontract', 'edit', r as unknown as Record<string, unknown>), 'No subcontracts yet.')}
+    </div>
+  )
+  const renderLabor = () => (
+    <div>
+      {secHeader('Labor Entries', 'labor')}
+      {dataTable<CCLabor>(laborEntries, [
+        { h: 'Date', w: '100px', render: r => dstr(r.workDate) },
+        { h: 'Trade', w: '1fr', render: r => r.trade },
+        { h: 'Worker', w: '130px', render: r => r.workerName ?? '—' },
+        { h: 'Reg Hrs', w: '80px', align: 'right', render: r => r.regularHours },
+        { h: 'OT Hrs', w: '80px', align: 'right', render: r => r.overtimeHours },
+        { h: 'Total', w: '110px', align: 'right', render: r => fmt(r.totalCost) },
+      ], r => openRow('labor', 'edit', r as unknown as Record<string, unknown>), 'No labor entries yet.')}
+    </div>
+  )
+  const renderEquip = () => (
+    <div>
+      {secHeader('Equipment Log', 'equipment')}
+      {dataTable<CCEquipment>(equipmentLog, [
+        { h: 'Date', w: '100px', render: r => dstr(r.logDate) },
+        { h: 'Equipment', w: '1fr', render: r => r.equipmentName },
+        { h: 'Type', w: '110px', render: r => r.equipmentType ?? '—' },
+        { h: 'Work Hrs', w: '90px', align: 'right', render: r => r.workingHours },
+        { h: 'Standby', w: '90px', align: 'right', render: r => r.standbyHours },
+        { h: 'Total', w: '110px', align: 'right', render: r => fmt(r.totalCost) },
+      ], r => openRow('equipment', 'edit', r as unknown as Record<string, unknown>), 'No equipment log entries yet.')}
+    </div>
+  )
+  const renderCash = () => (
+    <div>
+      {secHeader('Cash Flow', 'cash')}
+      {dataTable<CCCashFlow>([...cashFlow].sort((a, b) => a.periodYear - b.periodYear || a.periodMonth - b.periodMonth), [
+        { h: 'Period', w: '120px', render: r => r.label || `${r.periodYear}-${String(r.periodMonth).padStart(2, '0')}` },
+        { h: 'Planned Out', w: '1fr', align: 'right', render: r => fmt(r.plannedOutflow) },
+        { h: 'Actual Out', w: '110px', align: 'right', render: r => fmt(r.actualOutflow) },
+        { h: 'Planned In', w: '110px', align: 'right', render: r => fmt(r.plannedInflow) },
+        { h: 'Actual In', w: '110px', align: 'right', render: r => fmt(r.actualInflow) },
+      ], r => openRow('cash', 'edit', r as unknown as Record<string, unknown>), 'No cash flow periods yet.')}
+    </div>
+  )
+  const renderForecast = () => (
+    <div>
+      {secHeader('Cost Forecast', 'forecast')}
+      {dataTable<CCForecast>(costForecast, [
+        { h: 'Date', w: '120px', render: r => dstr(r.forecastDate) },
+        { h: 'Cost Code', w: '1fr', render: r => r.costCodeName ?? 'Project-wide' },
+        { h: 'ETC', w: '130px', align: 'right', render: r => fmt(r.etcAmount) },
+        { h: 'EAC', w: '130px', align: 'right', render: r => fmt(r.eacAmount) },
+      ], r => openRow('forecast', 'edit', r as unknown as Record<string, unknown>), 'No forecasts yet.')}
+    </div>
+  )
+  const renderBilling = () => (
+    <div>
+      {secHeader('Client Billing', 'billing')}
+      {dataTable<CCBilling>(clientBillings, [
+        { h: 'Number', w: '120px', render: r => r.billingNumber },
+        { h: 'Date', w: '100px', render: r => dstr(r.billingDate) },
+        { h: 'Gross', w: '1fr', align: 'right', render: r => fmt(r.grossAmount) },
+        { h: 'Retention', w: '100px', align: 'right', render: r => fmt(r.retentionAmount ?? 0) },
+        { h: 'Net', w: '110px', align: 'right', render: r => fmt(r.netAmount) },
+        { h: 'Status', w: '90px', render: r => r.status },
+      ], r => openRow('billing', 'edit', r as unknown as Record<string, unknown>), 'No client billings yet.')}
+    </div>
+  )
+
   return (
     <div style={{ fontFamily: 'system-ui,sans-serif', color: th.textPrimary }}>
       {/* Sub-nav */}
@@ -10648,8 +10972,15 @@ function CostControlTab(props: CostControlProps) {
         ))}
       </div>
 
-      {section === 'overview' && renderOverview()}
-      {section === 'budget'   && renderBudget()}
+      {section === 'overview'    && renderOverview()}
+      {section === 'budget'      && renderBudget()}
+      {section === 'committed'   && renderCommitted()}
+      {section === 'subcontract' && renderSub()}
+      {section === 'labor'       && renderLabor()}
+      {section === 'equipment'   && renderEquip()}
+      {section === 'cash'        && renderCash()}
+      {section === 'forecast'    && renderForecast()}
+      {section === 'billing'     && renderBilling()}
 
       {/* Cost Code Modal */}
       {codeModal.open && (
@@ -10672,6 +11003,30 @@ function CostControlTab(props: CostControlProps) {
           </div>
         </div>
       )}
+
+      {/* Unified Cost Sub-entity Modal */}
+      {rowModal && (() => {
+        const fields = ENTITY_FORM[rowModal.entity].filter(f => rowModal.mode === 'create' ? !f.editOnly : !f.createOnly)
+        const titleMap: Record<CCEntity, string> = { committed: 'Committed Cost', subcontract: 'Subcontract', labor: 'Labor Entry', equipment: 'Equipment Log', cash: 'Cash Flow Period', forecast: 'Cost Forecast', billing: 'Client Billing' }
+        const canDelete = rowModal.mode === 'edit' && rowModal.entity !== 'cash' && rowModal.entity !== 'forecast'
+        return (
+          <div style={modalOverlay} onClick={closeRow}>
+            <div style={modalBox} onClick={e => e.stopPropagation()}>
+              {mHdr(`${rowModal.mode === 'create' ? 'Add' : 'Edit'} ${titleMap[rowModal.entity]}`)}
+              {fields.map(f => (
+                <React.Fragment key={f.k}>
+                  {ff(f.label + (f.required ? ' *' : ''),
+                    f.type === 'select' ? fs(rowForm[f.k] ?? '', v => setRowForm(p => ({ ...p, [f.k]: v })), f.opts ?? [])
+                    : f.type === 'textarea' ? <textarea style={{ ...inputSt, minHeight: '60px', resize: 'vertical' }} value={rowForm[f.k] ?? ''} onChange={e => setRowForm(p => ({ ...p, [f.k]: e.target.value }))} />
+                    : fi(rowForm[f.k] ?? '', v => setRowForm(p => ({ ...p, [f.k]: v })), '', f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'))}
+                </React.Fragment>
+              ))}
+              {mBtns(saveRow, closeRow)}
+              {canDelete && isAdmin && <button style={btn({ background: '#ef4444', width: '100%', marginTop: '8px', textAlign: 'center' })} onClick={() => { if (confirm('Delete this record?')) deleteRow() }}>Delete</button>}
+            </div>
+          </div>
+        )
+      })()}
 
     </div>
   )

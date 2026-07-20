@@ -11,6 +11,7 @@ export interface User {
   mfaEnabled: boolean
   system_admin?: boolean
   companyId?: string
+  employeeId?: string | null   // linked HR employee record; used for ID-based project-role matching
   permissions: Record<string, AccessLevel>
   profileCompleted: boolean
   firstName?: string

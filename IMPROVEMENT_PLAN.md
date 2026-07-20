@@ -114,8 +114,11 @@ they still need the client's corrections before enforcing.
 2. Revisioning inconsistent — 4 patterns (Client Docs `uploadRevision`; Eng Docs
    `docGroupId + isCurrent + history`; Drawings `parentDrawingId`; Bids/Contracts none).
 3. Cost Control's backend is richer than its screen.
-4. Tab labels mislead ("Preliminary Engineering" = doc control; "Planning &
-   Detailed Engineering" = scheduling).
+4. Tab labels follow the **client's process vocabulary**, not the component's
+   internal structure ("Preliminary Engineering" = the doc-control tab used in the
+   preliminary phase; "Planning & Detailed Engineering" = scheduling). **The
+   client requested these names — keep them, do NOT rename.** (Only label change
+   made: Bidding → "Bidding Stage", per client request.)
 5. Some modules out-run team maturity (Primavera import, resource leveling, EVM).
 
 ---
@@ -127,8 +130,10 @@ before any permission edit; never broaden access silently; verification checklis
 per change; migrations additive & reversible.
 
 **Phase 0 — Quick Clarity Wins** (S · no deps) — *recommended start*
-- Rename misleading tabs (use the client's vocabulary: Engineering, Planning & Schedule).
-- Surface Cost Control's hidden sections (wire existing GraphQL into new nav).
+- ~~Rename misleading tabs~~ — CLIENT WANTS THE NAMES KEPT. Only change made:
+  Bidding → "Bidding Stage" (done). Do not rename Preliminary Engineering /
+  Planning & Detailed Engineering.
+- Surface Cost Control's hidden sections (wire existing GraphQL into new nav). ← next
 
 **Phase 1 — Permission & Identity Foundation** (M · gates Phase 3)
 - 🐛 Fix identity: name-matching → `user_id`/`employee_id`.
@@ -222,7 +227,7 @@ they are now recorded in `schema_migrations`. Local dev DB is at migration 165.
 
 ## 9. Recommended next action
 
-Start **Phase 0** (tab rename + Cost Control surfacing) — fast, safe, visible —
+Start **Phase 0** (Bidding→"Bidding Stage" done; Cost Control surfacing next) — fast, safe, visible —
 then bring the **Phase 1 identity fix** with a root-cause → evidence →
 minimal-fix → risk writeup **and a role × action table** for approval before
 editing (permission change; do not cowboy it).
