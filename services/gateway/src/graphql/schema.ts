@@ -2168,6 +2168,30 @@
     rfqPhases(projectId: ID!): [RFQPhase!]!
   }
 
+  # ── Lifecycle configuration (company-scoped) ──────────────────
+
+  type LifecyclePhase {
+    key:      String!
+    label:    String!
+    sequence: Int!
+    optional: Boolean!
+  }
+
+  type LifecycleModuleGate {
+    moduleKey:   String!
+    minPhaseKey: String!
+    sequence:    Int!
+  }
+
+  type LifecycleConfig {
+    phases:  [LifecyclePhase!]!
+    modules: [LifecycleModuleGate!]!
+  }
+
+  extend type Query {
+    lifecycleConfig: LifecycleConfig!
+  }
+
   # ── Engineering Documents ─────────────────────────────────────
 
   type EngDocActivity {

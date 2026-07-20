@@ -41,6 +41,15 @@ export const PROJECT_QUERY = gql`
   }
 `
 
+export const LIFECYCLE_CONFIG_QUERY = gql`
+  query LifecycleConfig {
+    lifecycleConfig {
+      phases { key label sequence optional }
+      modules { moduleKey minPhaseKey sequence }
+    }
+  }
+`
+
 export const PROJECT_COMPLETION_BLOCKERS_QUERY = gql`
   query ProjectCompletionBlockers($id: ID!) {
     projectCompletionBlockers(id: $id) {

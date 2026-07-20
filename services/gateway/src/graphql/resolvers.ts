@@ -11287,6 +11287,26 @@ const phase5QueryResolvers = {
     return r.rows.map(rfqLineToGQL)
   },
 
+  lifecycleConfig: async (_: unknown, __: unknown, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const phases = await query(
+      `SELECT key, label, sequence, optional FROM lifecycle_phases WHERE company_id=$1 ORDER BY sequence`,
+      [ctx.auth.companyId],
+    )
+    const modules = await query(
+      `SELECT module_key, min_phase_key, sequence FROM lifecycle_phase_modules WHERE company_id=$1 ORDER BY sequence`,
+      [ctx.auth.companyId],
+    )
+    return {
+      phases: phases.rows.map((r: Record<string, unknown>) => ({
+        key: r['key'], label: r['label'], sequence: Number(r['sequence']), optional: Boolean(r['optional']),
+      })),
+      modules: modules.rows.map((r: Record<string, unknown>) => ({
+        moduleKey: r['module_key'], minPhaseKey: r['min_phase_key'], sequence: Number(r['sequence']),
+      })),
+    }
+  },
+
   rfqPhases: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     // Verify project belongs to this company

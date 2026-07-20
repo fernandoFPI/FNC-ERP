@@ -2,7 +2,7 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
 import {
-  PROJECT_QUERY, ADMIN_SET_PROJECT_STATUS, ADMIN_SET_PHASE, RFQ_LINES_QUERY, UPSERT_RFQ_LINES, RFQ_PHASES_QUERY, UPDATE_RFQ_PHASE,
+  PROJECT_QUERY, LIFECYCLE_CONFIG_QUERY, ADMIN_SET_PROJECT_STATUS, ADMIN_SET_PHASE, RFQ_LINES_QUERY, UPSERT_RFQ_LINES, RFQ_PHASES_QUERY, UPDATE_RFQ_PHASE,
   CLIENT_DOCUMENTS_QUERY, UPLOAD_CLIENT_DOCUMENT, UPLOAD_CLIENT_DOCUMENT_REVISION,
   UPDATE_CLIENT_DOCUMENT, UPDATE_CLIENT_DOCUMENT_STATUS, DELETE_CLIENT_DOCUMENT,
   ENG_DOCS_QUERY, IFC_DOCS_QUERY, CREATE_ENG_DOC, REVISE_ENG_DOC, UPDATE_ENG_DOC_STATUS, DELETE_ENG_DOC, UPDATE_ENG_DOC_META, PERFORM_DOC_WORKFLOW,
@@ -115,7 +115,9 @@ const ALL_TABS = [
 // Statuses where an RFQ project has been decided (approved, won, or closed)
 const RFQ_POST_DECISION = new Set(['approved', 'ongoing', 'completed', 'on_hold', 'cancelled', 'cancelled_after_approval'])
 
-const LIFECYCLE_STAGES = [
+// Fallbacks used only until the company lifecycle config loads (or if it's empty).
+// The real values come from the lifecycleConfig query (migration 166).
+const DEFAULT_LIFECYCLE_STAGES = [
   { key: 'enquiry',         label: 'Client Enquiry'  },
   { key: 'scope_review',    label: 'Scope Review'    },
   { key: 'bidding',         label: 'Bidding'         },
@@ -123,14 +125,11 @@ const LIFECYCLE_STAGES = [
   { key: 'execution',       label: 'Execution'       },
   { key: 'closeout',        label: 'Closeout'        },
 ]
-
-const PHASE_ORDER = ['enquiry', 'scope_review', 'bidding', 'client_approval', 'execution', 'closeout']
-const phaseGte = (phase: string, min: string) =>
-  PHASE_ORDER.indexOf(phase) >= PHASE_ORDER.indexOf(min)
-
-function lifecycleIdx(phase: string): number {
-  const idx = LIFECYCLE_STAGES.findIndex(s => s.key === phase)
-  return idx >= 0 ? idx : 0
+// Tab → minimum phase fallback (mirrors the migration-166 seed).
+const DEFAULT_MODULE_MIN_PHASE: Record<string, string> = {
+  rfq_lines: 'scope_review', contracts: 'bidding', engineering: 'scope_review',
+  execution: 'execution', handover: 'execution', procurement: 'scope_review',
+  meetings: 'scope_review', cost_control: 'scope_review', variation_orders: 'execution',
 }
 
 function lifecycleBadgeVariant(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
@@ -458,6 +457,9 @@ export default function ProjectDetail() {
     fetchPolicy: 'cache-and-network',
   })
 
+  // ── Lifecycle config (company-scoped phases + tab gating; migration 166) ────
+  const { data: lifecycleData } = useQuery(LIFECYCLE_CONFIG_QUERY, { fetchPolicy: 'cache-first' })
+
   // ── Cost Control queries ───────────────────────────────────────────────────
   const skipCC = !id || tab !== 'cost_control'
   const { data: ccCodesData,   refetch: refetchCCCodes }   = useQuery(PROJECT_COST_CODES_QUERY,   { variables: { projectId: id }, skip: skipCC, fetchPolicy: 'cache-and-network' })
@@ -614,18 +616,33 @@ export default function ProjectDetail() {
 
   const phase = p.lifecyclePhase ?? 'enquiry'
 
+  // Lifecycle from company config, with hardcoded fallback until it loads.
+  const lifecycleStages: Array<{ key: string; label: string }> =
+    (lifecycleData?.lifecycleConfig?.phases?.length
+      ? lifecycleData.lifecycleConfig.phases.map((ph: { key: string; label: string }) => ({ key: ph.key, label: ph.label }))
+      : DEFAULT_LIFECYCLE_STAGES)
+  const phaseOrder = lifecycleStages.map(s => s.key)
+  const moduleMinPhase: Record<string, string> = { ...DEFAULT_MODULE_MIN_PHASE }
+  for (const m of (lifecycleData?.lifecycleConfig?.modules ?? []) as Array<{ moduleKey: string; minPhaseKey: string }>) {
+    moduleMinPhase[m.moduleKey] = m.minPhaseKey
+  }
+  const phaseGte = (ph: string, min: string) => phaseOrder.indexOf(ph) >= phaseOrder.indexOf(min)
+  const lifecycleIdx = (ph: string) => { const i = lifecycleStages.findIndex(s => s.key === ph); return i >= 0 ? i : 0 }
+  // Tab visible once the project reaches the module's configured minimum phase.
+  const moduleGate = (tabKey: string) => { const min = moduleMinPhase[tabKey]; return min ? phaseGte(phase, min) : true }
+
   const TABS = ALL_TABS
     .filter(() => teamLoading || isMember || Object.values(myOverrides).some(v => v !== 'none'))
-    .filter(t => t.key !== 'rfq_lines'        || (p.isRfq && phaseGte(phase, 'scope_review')))
+    .filter(t => t.key !== 'rfq_lines'        || (p.isRfq && moduleGate('rfq_lines')))
     .filter(t => t.key !== 'bidding'          || p.isRfq)
-    .filter(t => t.key !== 'contracts'        || phaseGte(phase, 'bidding'))
-    .filter(t => t.key !== 'engineering'      || phaseGte(phase, 'scope_review'))
-    .filter(t => t.key !== 'execution'        || phaseGte(phase, 'execution'))
-    .filter(t => t.key !== 'handover'         || phaseGte(phase, 'execution'))
-    .filter(t => t.key !== 'procurement'      || phaseGte(phase, 'scope_review'))
-    .filter(t => t.key !== 'meetings'         || phaseGte(phase, 'scope_review'))
-    .filter(t => t.key !== 'cost_control'     || (canView.costControl && phaseGte(phase, 'scope_review')))
-    .filter(t => t.key !== 'variation_orders' || (canView.variationOrders && phaseGte(phase, 'execution')))
+    .filter(t => t.key !== 'contracts'        || moduleGate('contracts'))
+    .filter(t => t.key !== 'engineering'      || moduleGate('engineering'))
+    .filter(t => t.key !== 'execution'        || moduleGate('execution'))
+    .filter(t => t.key !== 'handover'         || moduleGate('handover'))
+    .filter(t => t.key !== 'procurement'      || moduleGate('procurement'))
+    .filter(t => t.key !== 'meetings'         || moduleGate('meetings'))
+    .filter(t => t.key !== 'cost_control'     || (canView.costControl && moduleGate('cost_control')))
+    .filter(t => t.key !== 'variation_orders' || (canView.variationOrders && moduleGate('variation_orders')))
 
   const parse = (v: unknown): unknown[] => { try { return Array.isArray(v) ? v : JSON.parse(String(v ?? '[]')) } catch { return [] } }
   const stages        = parse(p.stages)        as Stage[]
@@ -686,7 +703,7 @@ export default function ProjectDetail() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <h1 style={{ fontSize: '20px', fontWeight: 700, color: theme.textPrimary, margin: 0, lineHeight: 1.2 }}>{p.name}</h1>
               <Badge variant={lifecycleBadgeVariant(p.status)}>
-                {LIFECYCLE_STAGES[lifecycleIdx(p.lifecyclePhase ?? 'enquiry')]?.label ?? p.status.replace(/_/g, ' ')}
+                {lifecycleStages[lifecycleIdx(p.lifecyclePhase ?? 'enquiry')]?.label ?? p.status.replace(/_/g, ' ')}
               </Badge>
               {p.isRfq && isRfqPhase && <Badge variant="info">RFQ</Badge>}
             </div>
@@ -800,7 +817,7 @@ export default function ProjectDetail() {
 
         {/* Lifecycle progress bar */}
         <div style={{ display: 'flex', alignItems: 'center', paddingBottom: '16px' }}>
-          {LIFECYCLE_STAGES.map((stage, idx) => {
+          {lifecycleStages.map((stage, idx) => {
             const cur = lifecycleIdx(p.lifecyclePhase ?? 'enquiry')
             const isActive = idx === cur
             const isPast   = idx < cur
