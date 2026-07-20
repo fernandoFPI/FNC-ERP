@@ -12,7 +12,7 @@ export const CAP_RANK: Record<CapLevel, number> = { none: 0, view: 1, edit: 2, a
 // Canonical project modules (distinct from tab keys, which are historically named).
 export const PROJECT_MODULES = [
   'overview', 'client_documents', 'engineering', 'planning', 'bidding', 'contracts',
-  'execution', 'handover', 'procurement', 'cost_control', 'variations', 'risk', 'meetings', 'team',
+  'execution', 'handover', 'procurement', 'cost_control', 'variations', 'risk', 'meetings', 'team', 'attachments',
 ] as const
 export type ProjectModule = typeof PROJECT_MODULES[number]
 
@@ -33,6 +33,7 @@ export const TAB_TO_MODULE: Record<string, ProjectModule> = {
   risk_register: 'risk',
   meetings: 'meetings',
   team: 'team',
+  attachments: 'attachments',
 }
 
 type RoleMap = Partial<Record<ProjectModule, CapLevel>>
@@ -42,21 +43,21 @@ const PM_MAP: RoleMap = {
   overview: 'edit', client_documents: 'edit', engineering: 'approve', planning: 'edit',
   bidding: 'approve', contracts: 'approve', execution: 'edit', handover: 'approve',
   procurement: 'edit', cost_control: 'approve', variations: 'approve', risk: 'edit',
-  meetings: 'edit', team: 'edit',
+  meetings: 'edit', team: 'edit', attachments: 'edit',
 }
 // Engineering / technical — owns design & site quality; reads commercial.
 const TECH_MAP: RoleMap = {
   overview: 'view', client_documents: 'edit', engineering: 'edit', planning: 'view',
   bidding: 'view', contracts: 'none', execution: 'edit', handover: 'edit',
   procurement: 'none', cost_control: 'none', variations: 'view', risk: 'edit',
-  meetings: 'edit', team: 'none',
+  meetings: 'edit', team: 'none', attachments: 'edit',
 }
 // Commercial — owns bidding, cost, contracts, variations; reads technical.
 const COMM_MAP: RoleMap = {
   overview: 'view', client_documents: 'view', engineering: 'view', planning: 'view',
   bidding: 'edit', contracts: 'edit', execution: 'none', handover: 'none',
   procurement: 'view', cost_control: 'edit', variations: 'edit', risk: 'view',
-  meetings: 'edit', team: 'none',
+  meetings: 'edit', team: 'none', attachments: 'edit',
 }
 
 const mergeMax = (a: RoleMap, b: RoleMap): RoleMap => {

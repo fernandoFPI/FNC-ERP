@@ -19,6 +19,8 @@ import {
 export type { CapLevel, ProjectModule }
 export type ProjectRoleKey = 'admin' | 'pm' | 'technical' | 'commercial' | 'both' | 'none'
 
+type GlobalCan = (key: string, min: 'view' | 'edit' | 'approve' | 'admin') => boolean
+
 export interface ProjectCapabilityCtx {
   /** system_admin / company_admin, or a project-admin grant */
   isAdmin: boolean
@@ -33,20 +35,24 @@ export interface ProjectCapabilityCtx {
 const asLevel = (s: string | undefined): CapLevel | null =>
   s === 'none' || s === 'view' || s === 'edit' || s === 'approve' ? s : null
 
-export function useProjectCapability(ctx: ProjectCapabilityCtx) {
-  const { can: globalCan, isSystemLevel } = usePermission()
-
+/**
+ * Pure resolver — safe to call anywhere (incl. after an early return), unlike a
+ * hook. Pass the caller's `globalCan` (from usePermission) and `isSystemLevel`.
+ */
+export function resolveProjectCapability(
+  ctx: ProjectCapabilityCtx & { globalCan: GlobalCan; isSystemLevel: boolean },
+) {
   // Company-wide grant from the permission registry (projects.<module>.<action>).
   const registryLevel = (module: string): CapLevel => {
     const base = `projects.${module}`
-    if (globalCan(`${base}.approve`, 'approve')) return 'approve'
-    if (globalCan(`${base}.edit`, 'edit')) return 'edit'
-    if (globalCan(`${base}.view`, 'view')) return 'view'
+    if (ctx.globalCan(`${base}.approve`, 'approve')) return 'approve'
+    if (ctx.globalCan(`${base}.edit`, 'edit')) return 'edit'
+    if (ctx.globalCan(`${base}.view`, 'view')) return 'view'
     return 'none'
   }
 
   const rawLevel = (module: ProjectModule): CapLevel => {
-    if (ctx.isAdmin || isSystemLevel) return 'approve'
+    if (ctx.isAdmin || ctx.isSystemLevel) return 'approve'
     const override = asLevel(ctx.overrides[module])
     if (override) return override
     const roleLevel = PROJECT_ROLE_MATRIX[ctx.projectRole]?.[module] ?? 'none'
@@ -54,15 +60,18 @@ export function useProjectCapability(ctx: ProjectCapabilityCtx) {
     return CAP_RANK[grantLevel] >= CAP_RANK[roleLevel] ? grantLevel : roleLevel
   }
 
-  /** Effective level for a module (after the phase gate). */
   const level = (module: ProjectModule): CapLevel => {
     if (ctx.isModuleInPhase && !ctx.isModuleInPhase(module)) return 'none'
     return rawLevel(module)
   }
-
-  /** True if the user has at least `min` on `module`. */
   const can = (module: ProjectModule, min: CapLevel = 'view'): boolean =>
     CAP_RANK[level(module)] >= CAP_RANK[min]
 
   return { level, can }
+}
+
+/** Hook wrapper for consumers that can call it at the top of a component. */
+export function useProjectCapability(ctx: ProjectCapabilityCtx) {
+  const { can: globalCan, isSystemLevel } = usePermission()
+  return resolveProjectCapability({ ...ctx, globalCan, isSystemLevel })
 }

@@ -69,6 +69,8 @@ import {
 import { MANUFACTURING_REQUESTS_QUERY } from '../../../graphql/manufacturing-requests'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
+import { resolveProjectCapability } from '../../../hooks/useProjectCapability'
+import { TAB_TO_MODULE, type ProjectModule } from '../../../lib/projectCapabilityMatrix'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -150,7 +152,7 @@ export default function ProjectDetail() {
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
   const pagePadding = usePagePadding()
-  const { can }         = usePermission()
+  const { can, isSystemLevel } = usePermission()
   const isAdmin         = can('projects.edit')
   const currentUser     = useAuthStore(s => s.user)
   const currentUserName = currentUser
@@ -578,40 +580,37 @@ export default function ProjectDetail() {
     ? ((myTeamEntry.member_type ?? 'technical') as ProjectRole)
     : 'none'
   const isMember = projectRole !== 'none'
-  const isTech   = projectRole === 'technical' || projectRole === 'both'
-  const isComm   = projectRole === 'commercial' || projectRole === 'both'
 
-  // Individual overrides: 'edit' | 'view' | 'none' — take precedence over role defaults
+  // Individual overrides: 'edit' | 'view' | 'none' — take precedence over role defaults.
   const myOverrides = myTeamEntry?.permissions ?? {}
-  // resolve(tab, roleCanEdit) → { canView, canEdit }
-  const resolve = (tab: string, roleCanEdit: boolean): { canView: boolean; canEdit: boolean } => {
-    if (isAdmin) return { canView: true, canEdit: true }
-    const ov = myOverrides[tab]
-    if (ov === 'edit')  return { canView: true,  canEdit: true  }
-    if (ov === 'view')  return { canView: true,  canEdit: false }
-    if (ov === 'none')  return { canView: false, canEdit: false }
-    // No override — fall back to role default
-    const roleView = isPM || isMember
-    return { canView: roleCanEdit || roleView, canEdit: roleCanEdit }
+  // Overrides are stored by tab key; remap to canonical module keys for the resolver.
+  const moduleOverrides: Record<string, string> = {}
+  for (const [tabKey, lvl] of Object.entries(myOverrides)) {
+    moduleOverrides[TAB_TO_MODULE[tabKey] ?? tabKey] = lvl as string
   }
+
+  // ── Unified capability (Phase 3) ──────────────────────────────────────────
+  // admin > per-user override > max(company grant, project-role default), from the
+  // confirmed capability matrix. Replaces the old ad-hoc resolve() logic.
+  const cap = resolveProjectCapability({ isAdmin, projectRole, overrides: moduleOverrides, globalCan: can, isSystemLevel })
 
   const canEdit = {
-    overview:    resolve('overview',    isPM).canEdit,
-    clientDocs:  resolve('client_documents', isMember).canEdit,
-    engineering: resolve('rfq_lines',   isPM || isTech).canEdit,
-    bidding:     resolve('bidding',     isComm).canEdit,
-    team:        resolve('team',        isPM).canEdit,
-    execution:   resolve('execution',   isMember).canEdit,
-    procurement: resolve('procurement', false).canEdit,
-    costControl: resolve('cost_control',false).canEdit,
-    variation:   resolve('variation_orders', false).canEdit,
-    meetings:    resolve('meetings',    isMember).canEdit,
-    planning:    resolve('planning',    isPM).canEdit,
-    attachments: resolve('attachments', isMember).canEdit,
+    overview:    cap.can('overview', 'edit'),
+    clientDocs:  cap.can('client_documents', 'edit'),
+    engineering: cap.can('engineering', 'edit'),
+    bidding:     cap.can('bidding', 'edit'),
+    team:        cap.can('team', 'edit'),
+    execution:   cap.can('execution', 'edit'),
+    procurement: cap.can('procurement', 'edit'),
+    costControl: cap.can('cost_control', 'edit'),
+    variation:   cap.can('variations', 'edit'),
+    meetings:    cap.can('meetings', 'edit'),
+    planning:    cap.can('planning', 'edit'),
+    attachments: cap.can('attachments', 'edit'),
   }
   const canView = {
-    costControl:    resolve('cost_control',     isPM).canView,
-    variationOrders:resolve('variation_orders', isPM).canView,
+    costControl:     cap.can('cost_control', 'view'),
+    variationOrders: cap.can('variations', 'view'),
   }
 
   const phase = p.lifecyclePhase ?? 'enquiry'
