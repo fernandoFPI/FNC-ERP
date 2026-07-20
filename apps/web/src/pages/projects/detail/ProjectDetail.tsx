@@ -114,6 +114,16 @@ const ALL_TABS = [
   { key: 'history',          label: 'History' },
 ]
 
+// Phase-group labels for the tab bar (groups are contiguous in ALL_TABS order,
+// so hiding tabs never fragments a group). Overview is the ungrouped lead tab.
+const TAB_GROUP: Record<string, string> = {
+  client_documents: 'Pre-Award', rfq_lines: 'Pre-Award', bidding: 'Pre-Award', contracts: 'Pre-Award',
+  engineering: 'Delivery', execution: 'Delivery', handover: 'Delivery',
+  procurement: 'Commercial', cost_control: 'Commercial', variation_orders: 'Commercial',
+  risk_register: 'Governance', meetings: 'Governance',
+  attachments: 'Project', team: 'Project', history: 'Project',
+}
+
 // Statuses where an RFQ project has been decided (approved, won, or closed)
 const RFQ_POST_DECISION = new Set(['approved', 'ongoing', 'completed', 'on_hold', 'cancelled', 'cancelled_after_approval'])
 
@@ -647,7 +657,7 @@ export default function ProjectDetail() {
     .filter(t => t.key !== 'meetings'         || moduleGate('meetings'))
     .filter(t => t.key !== 'cost_control'     || moduleGate('cost_control'))
     .filter(t => t.key !== 'variation_orders' || moduleGate('variation_orders'))
-    .map(t => ({ ...t, label: moduleLabels[t.key] ?? t.label }))
+    .map(t => ({ ...t, label: moduleLabels[t.key] ?? t.label, group: TAB_GROUP[t.key] }))
 
   // If the active tab isn't available to this user (capability/phase), fall back
   // to the first visible tab — prevents a hidden tab's content from rendering.

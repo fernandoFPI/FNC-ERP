@@ -5,6 +5,7 @@ interface Tab {
   key: string
   label: string
   badge?: number
+  group?: string
 }
 
 interface TabBarProps {
@@ -23,11 +24,19 @@ export function TabBar({ tabs, active, onChange }: TabBarProps) {
       borderBottom: `1px solid ${theme.border}`,
       overflowX: 'auto',
     }}>
-      {tabs.map((tab) => {
+      {tabs.map((tab, i) => {
         const isActive = tab.key === active
+        const prevGroup = i > 0 ? tabs[i - 1].group : undefined
+        const newGroup = tab.group && tab.group !== prevGroup
         return (
+          <React.Fragment key={tab.key}>
+          {newGroup && i > 0 && (
+            <div aria-hidden style={{
+              flexShrink: 0, alignSelf: 'center',
+              width: '1px', height: '18px', background: theme.border, margin: '0 12px',
+            }} />
+          )}
           <button
-            key={tab.key}
             onClick={() => onChange(tab.key)}
             style={{
               background: 'transparent',
@@ -64,6 +73,7 @@ export function TabBar({ tabs, active, onChange }: TabBarProps) {
               </span>
             )}
           </button>
+          </React.Fragment>
         )
       })}
     </div>
