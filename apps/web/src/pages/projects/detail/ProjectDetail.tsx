@@ -608,11 +608,6 @@ export default function ProjectDetail() {
     planning:    cap.can('planning', 'edit'),
     attachments: cap.can('attachments', 'edit'),
   }
-  const canView = {
-    costControl:     cap.can('cost_control', 'view'),
-    variationOrders: cap.can('variations', 'view'),
-  }
-
   const phase = p.lifecyclePhase ?? 'enquiry'
 
   // Lifecycle from company config, with hardcoded fallback until it loads.
@@ -632,8 +627,16 @@ export default function ProjectDetail() {
   // Tab visible once the project reaches the module's configured minimum phase.
   const moduleGate = (tabKey: string) => { const min = moduleMinPhase[tabKey]; return min ? phaseGte(phase, min) : true }
 
+  // Per-module capability visibility (Phase 3 slice 2): a tab shows only if the
+  // user has at least 'view' on its module. Unmapped tabs (e.g. history) show to
+  // any member/admin. Admin/system get 'approve' on everything via the resolver.
+  const tabVisible = (tabKey: string): boolean => {
+    const mod = TAB_TO_MODULE[tabKey]
+    return mod ? cap.can(mod as ProjectModule, 'view') : (isAdmin || isMember)
+  }
+
   const TABS = ALL_TABS
-    .filter(() => teamLoading || isMember || Object.values(myOverrides).some(v => v !== 'none'))
+    .filter(t => teamLoading || tabVisible(t.key))
     .filter(t => t.key !== 'rfq_lines'        || (p.isRfq && moduleGate('rfq_lines')))
     .filter(t => t.key !== 'bidding'          || p.isRfq)
     .filter(t => t.key !== 'contracts'        || moduleGate('contracts'))
@@ -642,9 +645,15 @@ export default function ProjectDetail() {
     .filter(t => t.key !== 'handover'         || moduleGate('handover'))
     .filter(t => t.key !== 'procurement'      || moduleGate('procurement'))
     .filter(t => t.key !== 'meetings'         || moduleGate('meetings'))
-    .filter(t => t.key !== 'cost_control'     || (canView.costControl && moduleGate('cost_control')))
-    .filter(t => t.key !== 'variation_orders' || (canView.variationOrders && moduleGate('variation_orders')))
+    .filter(t => t.key !== 'cost_control'     || moduleGate('cost_control'))
+    .filter(t => t.key !== 'variation_orders' || moduleGate('variation_orders'))
     .map(t => ({ ...t, label: moduleLabels[t.key] ?? t.label }))
+
+  // If the active tab isn't available to this user (capability/phase), fall back
+  // to the first visible tab — prevents a hidden tab's content from rendering.
+  if (!teamLoading && TABS.length > 0 && !TABS.some(t => t.key === tab)) {
+    setTab(TABS[0].key)
+  }
 
   const parse = (v: unknown): unknown[] => { try { return Array.isArray(v) ? v : JSON.parse(String(v ?? '[]')) } catch { return [] } }
   const stages        = parse(p.stages)        as Stage[]
