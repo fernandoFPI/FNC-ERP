@@ -153,6 +153,7 @@ const CompanySettingsPage = lazy(() => import('../pages/settings/company/Company
 const AccountingSettingsPage = lazy(() => import('../pages/settings/company/accounting/AccountingSettingsPage'))
 const IntegrationsPage = lazy(() => import('../pages/settings/company/integrations/IntegrationsPage'))
 const DocumentNumberingPage = lazy(() => import('../pages/settings/company/numbering/DocumentNumberingPage'))
+const LifecycleSettingsPage = lazy(() => import('../pages/settings/company/lifecycle/LifecycleSettingsPage'))
 const InviteHistoryPage = lazy(() => import('../pages/settings/users/InviteHistoryPage'))
 const POPositionsPage = lazy(() => import('../pages/procurement/positions/POPositionsPage'))
 
@@ -529,6 +530,7 @@ export const router = createBrowserRouter([
           { path: 'company/accounting', element: withPerm('admin.companies.view', <AccountingSettingsPage />) },
           { path: 'company/integrations', element: withPerm('admin.companies.admin', <IntegrationsPage />, 'admin') },
           { path: 'company/numbering', element: withPerm('admin.companies.admin', <DocumentNumberingPage />, 'admin') },
+          { path: 'company/lifecycle', element: withPerm('admin.companies.admin', <LifecycleSettingsPage />, 'admin') },
 
           // Users & Roles (system_admin)
           { path: 'users', element: withPerm('admin.users.view', <UsersPage />) },

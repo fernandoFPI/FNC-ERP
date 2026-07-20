@@ -623,8 +623,10 @@ export default function ProjectDetail() {
       : DEFAULT_LIFECYCLE_STAGES)
   const phaseOrder = lifecycleStages.map(s => s.key)
   const moduleMinPhase: Record<string, string> = { ...DEFAULT_MODULE_MIN_PHASE }
-  for (const m of (lifecycleData?.lifecycleConfig?.modules ?? []) as Array<{ moduleKey: string; minPhaseKey: string }>) {
+  const moduleLabels: Record<string, string> = {}
+  for (const m of (lifecycleData?.lifecycleConfig?.modules ?? []) as Array<{ moduleKey: string; minPhaseKey: string; label?: string | null }>) {
     moduleMinPhase[m.moduleKey] = m.minPhaseKey
+    if (m.label) moduleLabels[m.moduleKey] = m.label
   }
   const phaseGte = (ph: string, min: string) => phaseOrder.indexOf(ph) >= phaseOrder.indexOf(min)
   const lifecycleIdx = (ph: string) => { const i = lifecycleStages.findIndex(s => s.key === ph); return i >= 0 ? i : 0 }
@@ -643,6 +645,7 @@ export default function ProjectDetail() {
     .filter(t => t.key !== 'meetings'         || moduleGate('meetings'))
     .filter(t => t.key !== 'cost_control'     || (canView.costControl && moduleGate('cost_control')))
     .filter(t => t.key !== 'variation_orders' || (canView.variationOrders && moduleGate('variation_orders')))
+    .map(t => ({ ...t, label: moduleLabels[t.key] ?? t.label }))
 
   const parse = (v: unknown): unknown[] => { try { return Array.isArray(v) ? v : JSON.parse(String(v ?? '[]')) } catch { return [] } }
   const stages        = parse(p.stages)        as Stage[]

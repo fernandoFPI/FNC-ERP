@@ -6243,6 +6243,51 @@ export const resolvers = {
 
     // ── Client Comment Register ──────────────────────────────────────────────
 
+    updateLifecyclePhase: async (
+      _: unknown,
+      args: { key: string; label?: string; sequence?: number; optional?: boolean },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      const r = await query(
+        `UPDATE lifecycle_phases SET
+           label    = COALESCE($1, label),
+           sequence = COALESCE($2, sequence),
+           optional = COALESCE($3, optional),
+           updated_at = NOW()
+         WHERE company_id=$4 AND key=$5
+         RETURNING key, label, sequence, optional`,
+        [args.label ?? null, args.sequence ?? null, args.optional ?? null, ctx.auth.companyId, args.key],
+      )
+      if (!r.rows[0]) throw new Error('Phase not found')
+      const row = r.rows[0] as Record<string, unknown>
+      return { key: row['key'], label: row['label'], sequence: Number(row['sequence']), optional: Boolean(row['optional']) }
+    },
+
+    updateLifecycleModule: async (
+      _: unknown,
+      args: { moduleKey: string; label?: string; minPhaseKey?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      // If a target phase is being set, verify it exists for this company
+      if (args.minPhaseKey) {
+        const ph = await query(`SELECT 1 FROM lifecycle_phases WHERE company_id=$1 AND key=$2`, [ctx.auth.companyId, args.minPhaseKey])
+        if (!ph.rows[0]) throw new Error('Target phase does not exist')
+      }
+      const r = await query(
+        `INSERT INTO lifecycle_phase_modules (company_id, module_key, min_phase_key, label)
+         VALUES ($1, $2, COALESCE($3, 'enquiry'), $4)
+         ON CONFLICT (company_id, module_key) DO UPDATE SET
+           min_phase_key = COALESCE($3, lifecycle_phase_modules.min_phase_key),
+           label         = COALESCE($4, lifecycle_phase_modules.label)
+         RETURNING module_key, min_phase_key, label, sequence`,
+        [ctx.auth.companyId, args.moduleKey, args.minPhaseKey ?? null, args.label ?? null],
+      )
+      const row = r.rows[0] as Record<string, unknown>
+      return { moduleKey: row['module_key'], minPhaseKey: row['min_phase_key'], label: row['label'] ?? null, sequence: Number(row['sequence']) }
+    },
+
     addEngClientComment: async (
       _: unknown,
       args: { documentId: string; description: string; clauseRef?: string; category?: string; raisedBy?: string },
@@ -11294,7 +11339,7 @@ const phase5QueryResolvers = {
       [ctx.auth.companyId],
     )
     const modules = await query(
-      `SELECT module_key, min_phase_key, sequence FROM lifecycle_phase_modules WHERE company_id=$1 ORDER BY sequence`,
+      `SELECT module_key, min_phase_key, label, sequence FROM lifecycle_phase_modules WHERE company_id=$1 ORDER BY sequence`,
       [ctx.auth.companyId],
     )
     return {
@@ -11302,7 +11347,7 @@ const phase5QueryResolvers = {
         key: r['key'], label: r['label'], sequence: Number(r['sequence']), optional: Boolean(r['optional']),
       })),
       modules: modules.rows.map((r: Record<string, unknown>) => ({
-        moduleKey: r['module_key'], minPhaseKey: r['min_phase_key'], sequence: Number(r['sequence']),
+        moduleKey: r['module_key'], minPhaseKey: r['min_phase_key'], label: r['label'] ?? null, sequence: Number(r['sequence']),
       })),
     }
   },

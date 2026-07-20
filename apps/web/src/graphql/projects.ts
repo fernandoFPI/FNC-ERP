@@ -45,8 +45,20 @@ export const LIFECYCLE_CONFIG_QUERY = gql`
   query LifecycleConfig {
     lifecycleConfig {
       phases { key label sequence optional }
-      modules { moduleKey minPhaseKey sequence }
+      modules { moduleKey minPhaseKey label sequence }
     }
+  }
+`
+
+export const UPDATE_LIFECYCLE_PHASE = gql`
+  mutation UpdateLifecyclePhase($key: String!, $label: String, $sequence: Int, $optional: Boolean) {
+    updateLifecyclePhase(key: $key, label: $label, sequence: $sequence, optional: $optional) { key label sequence optional }
+  }
+`
+
+export const UPDATE_LIFECYCLE_MODULE = gql`
+  mutation UpdateLifecycleModule($moduleKey: String!, $label: String, $minPhaseKey: String) {
+    updateLifecycleModule(moduleKey: $moduleKey, label: $label, minPhaseKey: $minPhaseKey) { moduleKey minPhaseKey label sequence }
   }
 `
 

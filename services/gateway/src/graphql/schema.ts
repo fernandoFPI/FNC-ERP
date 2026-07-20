@@ -2180,6 +2180,7 @@
   type LifecycleModuleGate {
     moduleKey:   String!
     minPhaseKey: String!
+    label:       String
     sequence:    Int!
   }
 
@@ -2190,6 +2191,11 @@
 
   extend type Query {
     lifecycleConfig: LifecycleConfig!
+  }
+
+  extend type Mutation {
+    updateLifecyclePhase(key: String!, label: String, sequence: Int, optional: Boolean): LifecyclePhase!
+    updateLifecycleModule(moduleKey: String!, label: String, minPhaseKey: String): LifecycleModuleGate!
   }
 
   # ── Engineering Documents ─────────────────────────────────────
