@@ -618,6 +618,11 @@ export default function ProjectDetail() {
     planning:    cap.can('planning', 'edit'),
     attachments: cap.can('attachments', 'edit'),
   }
+  // Approve level — gates sign-off actions (issue eng docs, approve bids).
+  const canApprove = {
+    engineering: cap.can('engineering', 'approve'),
+    bidding:     cap.can('bidding', 'approve'),
+  }
   const phase = p.lifecyclePhase ?? 'enquiry'
 
   // Lifecycle from company config, with hardcoded fallback until it loads.
@@ -932,7 +937,8 @@ export default function ProjectDetail() {
             projectId={id!}
             projectCode={String(p?.rfqNumber ?? p?.code ?? '')}
             theme={theme}
-            isAdmin={isAdmin}
+            isAdmin={canEdit.engineering}
+            canApprove={canApprove.engineering}
             isSysAdmin={currentUser?.role === 'system_admin'}
             currentUserName={currentUserName}
             projectManagerName={p?.managerName ?? undefined}
@@ -4579,11 +4585,30 @@ const DOC_RESOLUTION_META: Record<string, { label: string; color: string; bg: st
   withdrawn: { label: 'Withdrawn', color: '#6b7280', bg: '#f9fafb' },
 }
 
-function EngineeringTab({ projectId, projectCode, theme, isAdmin, isSysAdmin, currentUserName, projectManagerName, teamMembers }: {
+// Linear pipeline view of the two-track eng-doc workflow (for the stepper).
+const ENG_STEPPER_STAGES = [
+  { key: 'draft',    label: 'Draft' },
+  { key: 'check',    label: 'Check' },
+  { key: 'approval', label: 'Approval' },
+  { key: 'ready',    label: 'Ready' },
+  { key: 'issued',   label: 'Issued' },
+  { key: 'response', label: 'Response' },
+  { key: 'as_built', label: 'As-Built' },
+]
+const ENG_STATUS_STAGE: Record<string, number> = {
+  draft: 0, under_check: 1, under_approval: 2, ready_to_issue: 3,
+  IFA: 4, IFR: 4, IFC: 4, IFI: 4,
+  AFC: 5, approved_with_comments: 5, acknowledged: 5,
+  as_built: 6, bidding: 6,
+  preliminary: 0, for_review: 4, for_construction: 4,
+}
+
+function EngineeringTab({ projectId, projectCode, theme, isAdmin, canApprove, isSysAdmin, currentUserName, projectManagerName, teamMembers }: {
   projectId: string
   projectCode: string
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
+  canApprove?: boolean
   isSysAdmin?: boolean
   currentUserName?: string
   projectManagerName?: string
@@ -5151,27 +5176,35 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin, isSysAdmin, cu
                 {doc.activities.length}
               </button>
             )}
-            {/* "Send to client" step label for ready_to_issue */}
-            {isAdmin && !isHistory && doc.status === 'ready_to_issue' && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 5, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                Internal approved — issue to client:
-              </span>
-            )}
-            {/* Dynamic workflow actions per status */}
-            {isAdmin && !isHistory && (WORKFLOW[doc.status] ?? []).map(btn => {
-              const st = VARIANT_STYLE[btn.variant]!
+            {/* Dynamic workflow actions per status — approve-level actions
+                (approve_for_issue, issue) need approve capability; the rest need edit. */}
+            {!isHistory && (() => {
+              const wfBtns = (WORKFLOW[doc.status] ?? []).filter(b =>
+                (b.action === 'approve_for_issue' || b.action === 'issue') ? !!canApprove : !!isAdmin)
               return (
-                <button key={btn.action + (btn.issueType ?? '')}
-                  onClick={() => openWorkflow(doc, btn)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: `1px solid ${st.border}`, background: st.bg, color: st.color, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  {btn.label}
-                </button>
+                <>
+                  {doc.status === 'ready_to_issue' && canApprove && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 5, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><polyline points="20 6 9 17 4 12" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      Internal approved — issue to client:
+                    </span>
+                  )}
+                  {wfBtns.map(btn => {
+                    const st = VARIANT_STYLE[btn.variant]!
+                    return (
+                      <button key={btn.action + (btn.issueType ?? '')}
+                        onClick={() => openWorkflow(doc, btn)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 6, border: `1px solid ${st.border}`, background: st.bg, color: st.color, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {btn.label}
+                      </button>
+                    )
+                  })}
+                  {wfBtns.length > 0 && (
+                    <span style={{ width: 1, height: 16, background: theme.border, margin: '0 2px', flexShrink: 0 }} />
+                  )}
+                </>
               )
-            })}
-            {isAdmin && !isHistory && (WORKFLOW[doc.status]?.length ?? 0) > 0 && (
-              <span style={{ width: 1, height: 16, background: theme.border, margin: '0 2px', flexShrink: 0 }} />
-            )}
+            })()}
             {doc.downloadUrl && iconActionBtn('Preview', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>, () => window.open(doc.downloadUrl!, '_blank'))}
             {doc.downloadUrl && iconActionBtn('Download', <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><polyline points="7 10 12 15 17 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>, () => window.open(doc.downloadUrl!, '_blank'), 'accent')}
             {!isHistory && (doc.downloadUrl ? <span style={{ width: 1, height: 16, background: theme.border, margin: '0 2px', flexShrink: 0 }} /> : null)}
@@ -5190,6 +5223,39 @@ function EngineeringTab({ projectId, projectCode, theme, isAdmin, isSysAdmin, cu
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke={theme.accent} strokeWidth="2"/><polyline points="12 6 12 12 16 14" stroke={theme.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               <span style={{ fontSize: 11, fontWeight: 700, color: theme.textSecondary, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Activity Log — {doc.activities.length} event{doc.activities.length !== 1 ? 's' : ''}</span>
             </div>
+            {/* Pipeline stepper — the document's position in the two-track lifecycle */}
+            {(() => {
+              const cur = ENG_STATUS_STAGE[doc.status] ?? -1
+              const terminal = doc.status === 'superseded' || doc.status === 'cancelled'
+              return (
+                <div style={{ padding: '14px 16px 10px', borderBottom: `1px solid ${theme.border}`, background: theme.bgCanvas }}>
+                  <div style={{ fontSize: 9, fontWeight: 800, color: theme.textMuted, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>Pipeline</div>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto' }}>
+                    {ENG_STEPPER_STAGES.map((stage, si) => {
+                      const done = cur > si
+                      const current = cur === si
+                      return (
+                        <div key={stage.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64, flexShrink: 0, position: 'relative' }}>
+                          {si < ENG_STEPPER_STAGES.length - 1 && (
+                            <div style={{ position: 'absolute', top: 11, left: '50%', width: '100%', height: 2, background: done ? '#15803d' : theme.border, zIndex: 0 }} />
+                          )}
+                          <div style={{ position: 'relative', zIndex: 1, width: 24, height: 24, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: done ? '#15803d' : current ? theme.accent : theme.bgSurface, border: `2px solid ${done ? '#15803d' : current ? theme.accent : theme.border}`, fontSize: 10, fontWeight: 800, color: (done || current) ? '#fff' : theme.textMuted, boxShadow: current ? `0 0 0 3px ${theme.accentBg}` : 'none' }}>
+                            {done ? '✓' : si + 1}
+                          </div>
+                          <span style={{ fontSize: 9.5, fontWeight: current ? 700 : 600, color: current ? theme.accent : done ? theme.textSecondary : theme.textMuted, marginTop: 5, textAlign: 'center', lineHeight: 1.2, whiteSpace: 'nowrap' }}>{stage.label}</span>
+                          {current && <span style={{ fontSize: 8, fontWeight: 800, color: theme.accent, textTransform: 'uppercase', letterSpacing: '0.03em', marginTop: 1 }}>you are here</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {terminal && (
+                    <div style={{ marginTop: 8, fontSize: 10, fontWeight: 700, color: doc.status === 'cancelled' ? '#dc2626' : theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {doc.status === 'cancelled' ? '✕ Cancelled' : '⊘ Superseded'}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
             <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 0 }}>
               {[...doc.activities].reverse().map((act, i) => {
                 const fromSt = act.fromStatus ? (ENG_DOC_STATUSES[act.fromStatus]?.label ?? act.fromStatus) : '—'
