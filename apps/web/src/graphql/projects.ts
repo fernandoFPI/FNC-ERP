@@ -876,6 +876,8 @@ const BID_COMMERCIAL_SUMMARY_FIELDS = gql`
     id projectId overheadPct marginPct discountPct contingencyPct currencyCode
     directCostTotal overheadAmount contingencyAmount marginAmount discountAmount bidPrice
     approvalStatus submittedByName submittedAt approvedByName approvedAt rejectionReason notes updatedAt
+    revision
+    revisions { id revision directCostTotal overheadPct overheadAmount contingencyPct contingencyAmount marginPct marginAmount discountPct discountAmount bidPrice currencyCode changeSummary createdByName createdAt }
   }
 `
 
@@ -911,6 +913,13 @@ export const REJECT_BID = gql`
   ${BID_COMMERCIAL_SUMMARY_FIELDS}
   mutation RejectBid($projectId: ID!, $reason: String!) {
     rejectBid(projectId: $projectId, reason: $reason) { ...BidCommercialSummaryFields }
+  }
+`
+
+export const REVISE_BID = gql`
+  ${BID_COMMERCIAL_SUMMARY_FIELDS}
+  mutation ReviseBid($projectId: ID!, $changeSummary: String!) {
+    reviseBid(projectId: $projectId, changeSummary: $changeSummary) { ...BidCommercialSummaryFields }
   }
 `
 

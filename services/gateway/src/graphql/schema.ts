@@ -3715,6 +3715,27 @@
     rejectionReason:   String
     notes:             String
     updatedAt:         String
+    revision:          Int!
+    revisions:         [BidRevision!]!
+  }
+
+  type BidRevision {
+    id:                ID!
+    revision:          Int!
+    directCostTotal:   Float!
+    overheadPct:       Float!
+    overheadAmount:    Float!
+    contingencyPct:    Float!
+    contingencyAmount: Float!
+    marginPct:         Float!
+    marginAmount:      Float!
+    discountPct:       Float!
+    discountAmount:    Float!
+    bidPrice:          Float!
+    currencyCode:      String!
+    changeSummary:     String!
+    createdByName:     String
+    createdAt:         String!
   }
 
   extend type Query {
@@ -3735,6 +3756,7 @@
     updateBidSupplierQuotation(id: ID!, status: String, supplierName: String, itemDescription: String, amount: Float, validityDate: String, notes: String): BidSupplierQuotation!
     deleteBidSupplierQuotation(id: ID!): Boolean!
     updateBidCommercialSummary(projectId: ID!, overheadPct: Float, marginPct: Float, discountPct: Float, contingencyPct: Float, currencyCode: String, notes: String): BidCommercialSummary!
+    reviseBid(projectId: ID!, changeSummary: String!): BidCommercialSummary!
     submitBidForApproval(projectId: ID!): BidCommercialSummary!
     approveBid(projectId: ID!): BidCommercialSummary!
     rejectBid(projectId: ID!, reason: String!): BidCommercialSummary!

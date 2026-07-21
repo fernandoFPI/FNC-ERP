@@ -687,6 +687,42 @@ function engDocToGQL(row: Record<string, unknown>, history: Array<{ row: Record<
   }
 }
 
+// Shared bid pricing formula (mirrors the client-side calc in BiddingTab and the
+// three existing call sites in bidCommercialSummary/updateBidCommercialSummary).
+function computeBidPricing(directCostTotal: number, overheadPct: number, marginPct: number, discountPct: number, contingencyPct: number) {
+  const overheadAmount    = directCostTotal * overheadPct / 100
+  const contingencyAmount = directCostTotal * contingencyPct / 100
+  const subtotal          = directCostTotal + overheadAmount + contingencyAmount
+  const marginAmount      = subtotal * marginPct / 100
+  const discountAmount    = (subtotal + marginAmount) * discountPct / 100
+  const bidPrice          = subtotal + marginAmount - discountAmount
+  return { overheadAmount, contingencyAmount, marginAmount, discountAmount, bidPrice }
+}
+
+async function fetchBidRevisionState(projectId: string, currentRevision: unknown) {
+  const revisionsR = await query(
+    `SELECT * FROM project_bid_revisions WHERE project_id=$1 ORDER BY revision`,
+    [projectId],
+  )
+  return {
+    revision: Number(currentRevision ?? 1),
+    revisions: revisionsR.rows.map((r) => bidRevisionToGQL(r as Record<string, unknown>)),
+  }
+}
+
+function bidRevisionToGQL(r: Record<string, unknown>) {
+  return {
+    id: r['id'], revision: Number(r['revision']),
+    directCostTotal: parseFloat(String(r['direct_cost_total'])),
+    overheadPct: parseFloat(String(r['overhead_pct'])), overheadAmount: parseFloat(String(r['overhead_amount'])),
+    contingencyPct: parseFloat(String(r['contingency_pct'])), contingencyAmount: parseFloat(String(r['contingency_amount'])),
+    marginPct: parseFloat(String(r['margin_pct'])), marginAmount: parseFloat(String(r['margin_amount'])),
+    discountPct: parseFloat(String(r['discount_pct'])), discountAmount: parseFloat(String(r['discount_amount'])),
+    bidPrice: parseFloat(String(r['bid_price'])), currencyCode: r['currency_code'],
+    changeSummary: r['change_summary'], createdByName: r['created_by_name'] ?? null, createdAt: r['created_at'],
+  }
+}
+
 function engClientCommentToGQL(r: Record<string, unknown>) {
   return {
     id:           r['id'],
@@ -6778,7 +6814,7 @@ export const resolvers = {
       const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
       const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
       const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
-      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: String(summary['approval_status'] ?? 'draft'), submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: summary['approved_by_name'] ?? null, approvedAt: summary['approved_at'] ?? null, rejectionReason: summary['rejection_reason'] ?? null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: String(summary['approval_status'] ?? 'draft'), submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: summary['approved_by_name'] ?? null, approvedAt: summary['approved_at'] ?? null, rejectionReason: summary['rejection_reason'] ?? null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null, ...(await fetchBidRevisionState(args.projectId, summary['revision'])) }
     },
 
     submitBidForApproval: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
@@ -6805,7 +6841,7 @@ export const resolvers = {
       const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
       const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
       const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
-      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'submitted', submittedByName: submitterName, submittedAt: summary['submitted_at'], approvedByName: null, approvedAt: null, rejectionReason: null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'submitted', submittedByName: submitterName, submittedAt: summary['submitted_at'], approvedByName: null, approvedAt: null, rejectionReason: null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null, ...(await fetchBidRevisionState(args.projectId, summary['revision'])) }
     },
 
     approveBid: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
@@ -6824,7 +6860,7 @@ export const resolvers = {
       const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
       const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
       const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
-      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'approved', submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: approverName, approvedAt: summary['approved_at'], rejectionReason: null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'approved', submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: approverName, approvedAt: summary['approved_at'], rejectionReason: null, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null, ...(await fetchBidRevisionState(args.projectId, summary['revision'])) }
     },
 
     rejectBid: async (_: unknown, args: { projectId: string; reason: string }, ctx: GQLContext) => {
@@ -6841,7 +6877,55 @@ export const resolvers = {
       const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)?.['total'] ?? 0)
       const op = Number(summary['overhead_pct']); const mp = Number(summary['margin_pct']); const dp = Number(summary['discount_pct']); const cp = Number(summary['contingency_pct'])
       const oa = directCostTotal * op / 100; const ca = directCostTotal * cp / 100; const sub = directCostTotal + oa + ca; const ma = sub * mp / 100; const da = (sub + ma) * dp / 100
-      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'rejected', submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: null, approvedAt: null, rejectionReason: args.reason, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null }
+      return { id: summary['id'], projectId: args.projectId, overheadPct: op, marginPct: mp, discountPct: dp, contingencyPct: cp, currencyCode: String(summary['currency_code'] ?? 'USD'), directCostTotal, overheadAmount: oa, contingencyAmount: ca, marginAmount: ma, discountAmount: da, bidPrice: sub + ma - da, approvalStatus: 'rejected', submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null, approvedByName: null, approvedAt: null, rejectionReason: args.reason, notes: summary['notes'] ?? null, updatedAt: summary['updated_at'] ?? null, ...(await fetchBidRevisionState(args.projectId, summary['revision'])) }
+    },
+
+    reviseBid: async (_: unknown, args: { projectId: string; changeSummary: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+        .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+      const summaryR = await query(`SELECT * FROM bid_commercial_summary WHERE project_id=$1`, [args.projectId])
+      const summary = summaryR.rows[0] as Record<string, unknown> | undefined
+      if (!summary) throw new Error('No commercial summary yet — set overhead/margin/discount/contingency before revising')
+
+      const costsR = await query(`SELECT COALESCE(SUM(COALESCE(total_cost, quantity * unit_cost, 0)), 0) AS total FROM bid_cost_items WHERE project_id=$1`, [args.projectId])
+      const directCostTotal = Number((costsR.rows[0] as Record<string, unknown>)['total'])
+      const overheadPct = Number(summary['overhead_pct']); const marginPct = Number(summary['margin_pct'])
+      const discountPct = Number(summary['discount_pct']); const contingencyPct = Number(summary['contingency_pct'])
+      const { overheadAmount, contingencyAmount, marginAmount, discountAmount, bidPrice } =
+        computeBidPricing(directCostTotal, overheadPct, marginPct, discountPct, contingencyPct)
+
+      const nextRev = Number(summary['revision'] ?? 1) + 1
+      const nameR = await query(`SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`, [ctx.auth.userId])
+      const creatorName = String((nameR.rows[0] as Record<string, unknown>)?.['n'] ?? 'Unknown')
+
+      await query(
+        `INSERT INTO project_bid_revisions
+           (project_id, revision, direct_cost_total, overhead_pct, overhead_amount,
+            contingency_pct, contingency_amount, margin_pct, margin_amount,
+            discount_pct, discount_amount, bid_price, currency_code, change_summary,
+            created_by_id, created_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [args.projectId, nextRev, directCostTotal, overheadPct, overheadAmount,
+         contingencyPct, contingencyAmount, marginPct, marginAmount,
+         discountPct, discountAmount, bidPrice, summary['currency_code'] ?? 'USD', args.changeSummary,
+         ctx.auth.userId, creatorName],
+      )
+      await query(`UPDATE bid_commercial_summary SET revision=$1, updated_at=NOW() WHERE project_id=$2`, [nextRev, args.projectId])
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_revised', `Bid revised to Rev ${nextRev}: ${args.changeSummary}`)
+
+      return {
+        id: summary['id'], projectId: args.projectId,
+        overheadPct, marginPct, discountPct, contingencyPct,
+        currencyCode: String(summary['currency_code'] ?? 'USD'),
+        directCostTotal, overheadAmount, contingencyAmount, marginAmount, discountAmount, bidPrice,
+        approvalStatus: String(summary['approval_status'] ?? 'draft'),
+        submittedByName: summary['submitted_by_name'] ?? null, submittedAt: summary['submitted_at'] ?? null,
+        approvedByName: summary['approved_by_name'] ?? null, approvedAt: summary['approved_at'] ?? null,
+        rejectionReason: summary['rejection_reason'] ?? null, notes: summary['notes'] ?? null,
+        updatedAt: new Date().toISOString(),
+        ...(await fetchBidRevisionState(args.projectId, nextRev)),
+      }
     },
 
     // ── Execution mutations ───────────────────────────────────────────────────
@@ -11792,12 +11876,12 @@ const phase5QueryResolvers = {
     const marginPct       = Number(summary?.['margin_pct']      ?? 0)
     const discountPct     = Number(summary?.['discount_pct']    ?? 0)
     const contingencyPct  = Number(summary?.['contingency_pct'] ?? 0)
-    const overheadAmount     = directCostTotal * overheadPct / 100
-    const contingencyAmount  = directCostTotal * contingencyPct / 100
-    const subtotal           = directCostTotal + overheadAmount + contingencyAmount
-    const marginAmount       = subtotal * marginPct / 100
-    const discountAmount     = (subtotal + marginAmount) * discountPct / 100
-    const bidPrice           = subtotal + marginAmount - discountAmount
+    const { overheadAmount, contingencyAmount, marginAmount, discountAmount, bidPrice } =
+      computeBidPricing(directCostTotal, overheadPct, marginPct, discountPct, contingencyPct)
+    const revisionsR = await query(
+      `SELECT * FROM project_bid_revisions WHERE project_id=$1 ORDER BY revision`,
+      [args.projectId],
+    )
     return {
       id: summary?.['id'] ?? null, projectId: args.projectId,
       overheadPct, marginPct, discountPct, contingencyPct,
@@ -11807,6 +11891,8 @@ const phase5QueryResolvers = {
       submittedByName: summary?.['submitted_by_name'] ?? null, submittedAt: summary?.['submitted_at'] ?? null,
       approvedByName: summary?.['approved_by_name'] ?? null, approvedAt: summary?.['approved_at'] ?? null,
       rejectionReason: summary?.['rejection_reason'] ?? null, notes: summary?.['notes'] ?? null,
+      revision: Number(summary?.['revision'] ?? 1),
+      revisions: revisionsR.rows.map((r) => bidRevisionToGQL(r as Record<string, unknown>)),
       updatedAt: summary?.['updated_at'] ?? null,
     }
   },

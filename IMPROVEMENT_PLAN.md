@@ -4,7 +4,7 @@
 > phased implementation plan we agreed on, so any future session can pick up
 > without re-deriving everything. Read this top-to-bottom before starting work.
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 ---
 
@@ -123,73 +123,162 @@ they still need the client's corrections before enforcing.
 
 ---
 
-## 5. The six-phase implementation plan
+## 5. The six-phase implementation plan — STATUS: Phases 0-3 DONE, Phase 4 in progress
 
 Guiding rule: connect, standardize, clarify. Guardrails: role × action table
 before any permission edit; never broaden access silently; verification checklist
 per change; migrations additive & reversible.
 
-**Phase 0 — Quick Clarity Wins** (S · no deps) — *recommended start*
+**Phase 0 — Quick Clarity Wins** ✅ DONE
 - ~~Rename misleading tabs~~ — CLIENT WANTS THE NAMES KEPT. Only change made:
-  Bidding → "Bidding Stage" (done). Do not rename Preliminary Engineering /
-  Planning & Detailed Engineering.
-- Surface Cost Control's hidden sections (wire existing GraphQL into new nav). ← next
+  Bidding → "Bidding Stage" (done). Preliminary Engineering / Planning & Detailed
+  Engineering names untouched, per client request.
+- Cost Control hidden sections surfaced: 7 new sections (Committed, Subcontracts,
+  Labor, Equipment, Cash Flow, Forecast, Client Billing) with full CRUD, config-
+  driven table + unified modal. Note: these were once deliberately moved to
+  Finance — user chose to rebuild in Cost Control anyway (possible overlap with
+  Finance AR/AP/Retention, not yet reconciled — candidate for Phase 5).
 
-**Phase 1 — Permission & Identity Foundation** (M · gates Phase 3)
-- 🐛 Fix identity: name-matching → `user_id`/`employee_id`.
-- Add project sub-modules to the permission registry.
-- Build `useProjectCapability(module)` unified resolver.
-- Seed role templates from the confirmed capability matrix.
+**Phase 1 — Permission & Identity Foundation** ✅ DONE
+- 🐛 Identity fixed: auth service (login/mfa/me) now joins `employees` and
+  returns `employeeId`; `authStore.User` + `useAuth` thread it through;
+  `ProjectDetail` derives PM/team by `employeeId`, falling back to name-match
+  only when a user has no linked employee record (safe rollout).
+- 11 project sub-modules added to both permission registries (backend +
+  frontend copy): client_documents, engineering, planning, bidding, contracts,
+  execution, procurement, cost_control, variations, risk, handover, meetings.
+- `useProjectCapability` hook + `projectCapabilityMatrix.ts` built
+  (`resolveProjectCapability` pure fn: admin > override > max(grant, role) >
+  phase gate). Matrix cells confirmed by user.
+- Role-template seeding from the matrix: NOT done (deferred — capability
+  resolver reads the matrix directly in code, not via seeded DB role templates).
 
-**Phase 2 — Lifecycle as Config** (M–L · no deps)
-- Migration: `lifecycle_phases` + `phase_modules`; seed the 6-phase spine.
-- Refactor hardcoded `PHASE_ORDER`/`LIFECYCLE_STAGES` + tab filters to read config.
-- Keep commercial status a separate axis. Add the **conditional design gate**.
-- Admin screen to edit phases/labels/module placement.
+**Phase 2 — Lifecycle as Config** ✅ DONE
+- Migration 166: `lifecycle_phases` + `lifecycle_phase_modules`, seeded per
+  company with the OLD phase keys (no risky phase-value migration; behavior
+  preserved). Migration 167: added `label` column so tab names are also
+  configurable, not just phase names.
+- `lifecycleConfig` GraphQL query; `ProjectDetail` reads phases/labels/tab-gating
+  from config with hardcoded fallback if config is empty/unloaded.
+- Admin screen: **Settings → Company → Project Lifecycle** — rename phases, mark
+  a phase "skippable" (the conditional design gate flag from the client's mind
+  map — stored, not yet wired into workflow logic), rename tabs, set which phase
+  each tab appears from. `updateLifecyclePhase` + `updateLifecycleModule`
+  mutations, admin-gated + company-scoped.
 
-**Phase 3 — Adaptive UI** (L · needs P1 + P2)
-- Apply capability rule everywhere (hidden/read-only/actions/sign-off).
-- Phase-grouped navigation (16 tabs → 6 groups + cross-cutting).
-- Eng-doc pipeline stepper + single "next action" CTA.
-- Bidding per role (Commercial / Technical / PM) with the two-envelope layout.
+**Phase 3 — Adaptive UI** ✅ DONE (5 slices)
+- Slice 1: `resolveProjectCapability` replaced the old ad-hoc `resolve()` —
+  canEdit/canView now follow the confirmed matrix per role.
+- Slice 2: per-module tab visibility — a tab shows only with ≥`view` capability;
+  reconcile guard bounces a user off a now-hidden active tab.
+- Slice 3: phase-grouped tab bar — dividers only (no text labels; inline
+  uppercase group labels were tried and rejected as confusing, per feedback).
+- Slice 4 + 4b: eng-doc `canEdit`/`canApprove` gating (approve-level actions —
+  approve_for_issue, issue — now require engineering-approve, not just edit);
+  read-only 7-stage pipeline stepper in the doc's expanded activity panel.
+- Slice 5: bidding Approve/Reject gated by `canApprove.bidding`, not raw admin.
 
-**Phase 4 — Unified Revisioning** (M · can run in parallel)
-- One pattern: `revision_group_id + is_current + revision + history` + helpers.
-- Migrate Client Docs, Eng Docs, Drawings; add to Bids & Contracts.
-- Standard revision UI: current badge, compare, supersede trail (reuse the guard).
-- Client's scoping: revisions at design stage, variations at execution.
+**Phase 4 — Unified Revisioning** ✅ DONE (approach: "standardize + fill gaps" —
+adopt a shared pattern where a gap genuinely existed; do NOT rewrite the working
+eng-doc/drawings/client-doc/submittal models)
+- ✅ **P4.1** — Contract revisioning (contracts had NONE before). Migration 168:
+  `project_contract_revisions` log (revisions-log pattern — fits a contract's
+  dependent milestones/invoices better than new-row-per-revision), seeded Rev 1
+  "Original contract". `reviseContract` mutation (snapshots new terms, bumps
+  revision). New shared `components/ui/RevisionHistory.tsx` — reusable
+  read-only timeline (current badge, who/when, summary, meta fields). Contract
+  UI: Rev-N badge, Revise button, Revision History card, revise modal with live
+  value delta + required change summary.
+- ✅ **P4.2** — Bids had no revisioning either. Migration 169:
+  `project_bid_revisions` (same aggregate-snapshot pattern — a bid isn't one row,
+  it's `bid_commercial_summary` + `bid_cost_items`, so the revision snapshots the
+  *computed* price + the 4 %s, not a line-item copy). New `reviseBid` mutation
+  reuses the same price formula as the read resolver (factored into
+  `computeBidPricing()` to kill a 4th copy-paste). Same UI pattern as contracts:
+  Rev-N badge, Revise button, `RevisionHistory` card, revise modal.
+- ❌ **P4.3 — decided NOT to do, on inspection.** The plan assumed Eng Docs and
+  Client Docs could adopt the same `RevisionHistory` component. They can't
+  without a real regression: their revisions are **actionable documents** (open/
+  download an old file, see its status) — `RevisionHistory` is deliberately
+  read-only (built for Contracts/Bids, where a "revision" is just numbers, not a
+  file). Forcing them onto it would delete the open/download action on old
+  revisions for the sake of visual sameness. The original audit finding
+  ("revisioning inconsistent — 4 patterns") was true structurally, but the
+  user-facing gap was never "these look different" — it was "no revision
+  compare" and "no transmittal link," neither of which this would have fixed.
+  Eng Docs/Client Docs keep their existing, richer, file-based revisioning as-is.
+  (If genuine visual unification is wanted later, `RevisionHistory` would need
+  an optional per-revision action slot first — not attempted, decide before
+  starting if it comes up again.)
 
-**Phase 5 — Module Linking** (L · highest value, incremental)
-- VO → contract value + cost budget (do first — financial integrity).
-- Quote → cost line. PO → cost commitment.
-- Then: SI → VO hard link; transmittal → eng doc; meeting action → task; risk → issue.
-- Adopt the client's scope taxonomy (main/variation/addition/descope).
+**Phase 5 — Module Linking** ⬜ NOT STARTED (highest value per the audit's #1
+cross-cutting finding — modules are silos)
+- VO → contract value + cost budget (do first — financial integrity; an approved
+  VO currently doesn't update either).
+- Quote → cost line (pull a supplier quotation straight into the bidding cost
+  sheet instead of manual re-entry).
+- PO → cost commitment (PO approval should create/update the committed cost;
+  Cost Control's new "Committed Costs" section has a "Sync POs" button already
+  wired to `syncPOCommitments` — worth checking if this already covers it before
+  building more).
+- Then: SI → VO hard link (currently a text ref); transmittal → eng doc; meeting
+  action → task/notification; risk → issue.
+- Adopt the client's scope taxonomy (main/variation/addition/descope) for the
+  Contract & Scope model.
+- Also worth reconciling here: Cost Control (Phase 0) vs Finance AR/AP/Retention
+  — two entry points for related data now exist.
 
-**Sequence:** 0 + 1 together → 2 → 3 → 5, with 4 woven in when there's capacity.
+**Sequence actually taken:** 0 → 1 → 2 → 3 → 4 (in progress) — Phase 5 not yet
+started. Original plan said "4 woven in when there's capacity"; in practice it
+became the direct next phase after 3.
 
 ---
 
 ## 6. Key file locations (so a new session finds things fast)
 
+Note: line numbers below drift as the file grows (~11.7k lines and counting) —
+treat as approximate, always grep to confirm.
+
 - **Project detail (all tabs, inline):** `apps/web/src/pages/projects/detail/ProjectDetail.tsx`
-  - `ALL_TABS` list: ~line 96
-  - `LIFECYCLE_STAGES` / `PHASE_ORDER` (hardcoded lifecycle): ~lines 118–127
-  - Tab phase-gate `.filter()` chain: ~lines 583–594
-  - 🐛 **Identity name-matching (Phase 1 fix target):** ~lines 535–536
-    (`p.managerName === currentUserName`, `m.employee_name === currentUserName`)
-  - `resolve()` project-permission logic: ~lines 548–560; `canEdit`/`canView`: ~562–579
-  - Tab components (all inline): ClientDocumentsTab 3151, BiddingTab 3784,
-    EngineeringTab (doc control) 4485, AttachmentsTab 7047, HandoverTab 7356,
-    RiskRegisterTab 7719, ContractManagementTab 8153, ExecutionTab 8689,
-    PlanningTab 9790, CostControlTab 10478 (nav only `overview`+`budget` ~10487),
-    VariationOrdersTab 10697, MeetingsTab 11208
+  - `ALL_TABS` list + `TAB_GROUP` map (Phase 3 grouping): near the top
+  - Lifecycle config read (`lifecycleData` query, `moduleGate`, `phaseGte`,
+    `moduleLabels`) + `DEFAULT_LIFECYCLE_STAGES`/`DEFAULT_MODULE_MIN_PHASE`
+    fallbacks: replaced the old hardcoded `LIFECYCLE_STAGES`/`PHASE_ORDER`
+  - ✅ Identity fix landed: `myEmployeeId = currentUser?.employeeId`, matches
+    `p.managerId`/`m.employee_id` first, falls back to name only if unlinked
+  - ✅ `resolveProjectCapability` (from `hooks/useProjectCapability.ts`) replaced
+    the old ad-hoc `resolve()` — `canEdit`/`canView`/`canApprove` all derive
+    from it now
+  - `tabVisible()` — per-module capability-based tab hiding (Phase 3 slice 2)
+  - Eng-doc pipeline stepper (`ENG_STEPPER_STAGES`, `ENG_STATUS_STAGE`) — in the
+    expanded activity panel of `EngineeringTab`
+  - Tab components (all inline, search by name): ClientDocumentsTab,
+    BiddingTab (now takes `canApprove` prop), EngineeringTab (doc control, now
+    takes `canApprove` prop), AttachmentsTab, HandoverTab, RiskRegisterTab,
+    ContractManagementTab (now has `onReviseContract` + revision UI),
+    ExecutionTab, PlanningTab, CostControlTab (nav now has 9 sections, not 2:
+    overview/budget/committed/subcontract/labor/equipment/cash/forecast/billing),
+    VariationOrdersTab, MeetingsTab
+- **Shared revision UI:** `apps/web/src/components/ui/RevisionHistory.tsx` —
+  module-agnostic revision timeline; adopted by Contracts (P4.1); Bids (P4.2)
+  and Eng/Client Docs (P4.3) still to adopt it
+- **Capability foundation:** `apps/web/src/lib/projectCapabilityMatrix.ts`
+  (matrix + `TAB_TO_MODULE` map), `apps/web/src/hooks/useProjectCapability.ts`
+  (`resolveProjectCapability` pure fn + hook wrapper)
 - **Permission hook:** `apps/web/src/hooks/usePermission.ts`
-- **Permission registry:** `apps/web/src/lib/permissionRegistry.ts`
-  (projects module lacks sub-modules — Phase 1 adds them)
+- **Permission registry:** `apps/web/src/lib/permissionRegistry.ts` +
+  `packages/permissions/src/registry.ts` (kept in sync manually — 11 project
+  sub-modules added in Phase 1)
+- **Lifecycle settings page:** `apps/web/src/pages/settings/company/lifecycle/LifecycleSettingsPage.tsx`
+  (route: `/settings/company/lifecycle`)
+- **Auth identity:** `services/auth/src/routes/auth.ts` (login/mfa/me now
+  `LEFT JOIN employees`), `apps/web/src/store/authStore.ts` (`User.employeeId`)
 - **Gateway GraphQL:** `services/gateway/src/graphql/schema.ts`, `resolvers.ts`
-  - Eng-doc workflow `TRANSITIONS` map + `performDocWorkflowAction`: resolvers ~5900
+  - Eng-doc workflow `TRANSITIONS` map + `performDocWorkflowAction`: search resolvers
+  - Lifecycle config: `lifecycleConfig` query, `updateLifecyclePhase`/`updateLifecycleModule` mutations
+  - Contract revisions: `reviseContract` mutation, `project_contract_revisions` queries
 - **Frontend GraphQL:** `apps/web/src/graphql/projects.ts`
-- **Migrations:** `packages/db/migrations/` (latest committed here = 165)
+- **Migrations:** `packages/db/migrations/` (latest = **168**, `168_contract_revisions.sql`)
 
 ---
 
@@ -206,28 +295,54 @@ These are private artifacts on claude.ai (visual references):
 
 ---
 
-## 8. Already shipped (in this checkpoint commit)
+## 8. Already shipped
 
-Engineering-document workflow work is DONE and migrated:
-- Auto-generated transmittal refs (issue + client response actions).
-- Client Comment Register for Code B/D responses — **migration 164**, full CRUD +
-  inline register UI + counts on the doc row.
-- As-built → "Move to Bidding" status — **migration 165**.
-- Supersede guard (typed `SUPERSEDE` confirmation + warning banner) and fixed
-  `return_to_author` transitions (now valid from `approved_with_comments`, `as_built`).
-- Plus prior uncommitted work: risk register (158), engineering discipline expand
-  (159), drop PRODOM modules (160), handover (161), eng-doc workflow (162),
-  notification reminders (163), notifications GraphQL, eng-doc email template,
-  eng-doc reminders worker job.
+**Engineering-document workflow** (pre-dates this program, DONE and migrated):
+auto-generated transmittal refs, Client Comment Register for Code B/D responses
+(migration 164), As-built → "Move to Bidding" status (migration 165), Supersede
+guard (typed `SUPERSEDE` confirmation) + fixed `return_to_author` transitions.
+Plus: risk register (158), engineering discipline expand (159), drop PRODOM
+modules (160), handover (161), eng-doc workflow (162), notification reminders
+(163), notifications GraphQL, eng-doc email template, eng-doc reminders worker job.
+
+**This improvement program** (Phases 0-4.1, all committed on `dev`):
+- `881da5f` — Phase 0-1: Bidding Stage rename, Cost Control 7 sections, identity
+  fix, capability registry + hook foundation
+- `e91e162` — Phase 2: config-driven lifecycle (migration 166)
+- `348b12c` — Phase 2 admin screen + editable phase/tab names (migration 167)
+- `c1c88d4` / `8baf219` / `945f5a1` / `21b08f4` / `7db87ba` — Phase 3 slices 1-5
+  (capability wiring, tab visibility, grouped nav, eng-doc gating + stepper,
+  bidding approve gating)
+- `4896b5d` — Phase 4.1: contract revisioning + shared RevisionHistory component
+  (migration 168)
 
 Migrations 162 & 163 were applied directly to the dev DB before being tracked;
-they are now recorded in `schema_migrations`. Local dev DB is at migration 165.
+recorded in `schema_migrations` retroactively. **Local dev DB is at migration 168.**
+
+**Also this session:** ran `/graphify` on the full repo (955 files) — knowledge
+graph at `graphify-out/` (6577 nodes, 12326 edges, 499 communities), updated once
+to backfill this file's own content + the notification spec + user guide. Use it
+for "how does X work" orientation questions; still verify against live files
+before citing as current fact or acting on it (see global CLAUDE.md).
 
 ---
 
 ## 9. Recommended next action
 
-Start **Phase 0** (Bidding→"Bidding Stage" done; Cost Control surfacing next) — fast, safe, visible —
-then bring the **Phase 1 identity fix** with a root-cause → evidence →
-minimal-fix → risk writeup **and a role × action table** for approval before
-editing (permission change; do not cowboy it).
+**Phase 4 is complete** (4.1 contracts, 4.2 bids; 4.3 deliberately dropped after
+inspection — see §5). Next up: **Phase 5 — Module Linking**, the highest-value
+phase per the original audit's #1 cross-cutting finding (modules are silos).
+Start with **VO → contract value + cost budget** (financial integrity: an
+approved variation order currently updates neither). Then quote→cost line,
+PO→cost commitment (check whether Cost Control's existing "Sync POs" button on
+Committed Costs already covers this before building more), SI→VO hard link,
+transmittal→eng doc, meeting action→task, risk→issue, and the client's scope
+taxonomy (main/variation/addition/descope).
+
+**Operational reminders that keep coming up:**
+- Gateway + auth services need a restart, and users need to **re-login**, before
+  any Phase 1-3 permission/identity/lifecycle change is actually visible/testable.
+- Every schema/migration change needs `pnpm migrate` with `DATABASE_URL` set
+  (see any recent commit for the exact command used in this environment).
+- Commit at phase/slice boundaries, not mid-slice — this file's §8 list is the
+  audit trail of what's safely checkpointed.

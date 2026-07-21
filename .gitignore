@@ -7,6 +7,9 @@ dist/
 *.tsbuildinfo
 .turbo/
 
+# graphify knowledge graph (regeneratable via `/graphify . --update`)
+graphify-out/
+
 # Environment
 .env
 .env.local

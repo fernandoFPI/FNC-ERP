@@ -20,7 +20,7 @@ import {
   UPLOAD_BID_DELIVERABLE_FILE, DELETE_BID_DELIVERABLE_FILE,
   BID_COST_ITEMS_QUERY, UPSERT_BID_COST_ITEMS,
   BID_SUPPLIER_QUOTATIONS_QUERY, CREATE_BID_SUPPLIER_QUOTATION, UPDATE_BID_SUPPLIER_QUOTATION, DELETE_BID_SUPPLIER_QUOTATION,
-  BID_COMMERCIAL_SUMMARY_QUERY, UPDATE_BID_COMMERCIAL_SUMMARY, SUBMIT_BID_FOR_APPROVAL, APPROVE_BID, REJECT_BID,
+  BID_COMMERCIAL_SUMMARY_QUERY, UPDATE_BID_COMMERCIAL_SUMMARY, SUBMIT_BID_FOR_APPROVAL, APPROVE_BID, REJECT_BID, REVISE_BID,
   PROJECT_RFIS_QUERY, CREATE_PROJECT_RFI, UPDATE_PROJECT_RFI, RESPOND_TO_RFI, DELETE_PROJECT_RFI, UPLOAD_RFI_FILE, DELETE_RFI_FILE,
   PROJECT_SITE_INSTRUCTIONS_QUERY, CREATE_SITE_INSTRUCTION, UPDATE_SITE_INSTRUCTION, DELETE_SITE_INSTRUCTION, UPLOAD_SI_FILE, DELETE_SI_FILE,
   PROJECT_ITPS_QUERY, CREATE_PROJECT_ITP, UPDATE_PROJECT_ITP, DELETE_PROJECT_ITP, UPSERT_ITP_ITEMS, RECORD_ITP_ITEM_RESULT,
@@ -355,6 +355,10 @@ export default function ProjectDetail() {
   })
   const [rejectBid, { loading: rejectingBid }] = useMutation(REJECT_BID, {
     onCompleted: () => { addToast({ type: 'success', message: 'Bid rejected' }); void refetchBidSummary() },
+    onError: (e) => addToast({ type: 'error', message: e.message }),
+  })
+  const [reviseBidM, { loading: revisingBid }] = useMutation(REVISE_BID, {
+    onCompleted: () => { addToast({ type: 'success', message: 'Bid revised' }); void refetchBidSummary() },
     onError: (e) => addToast({ type: 'error', message: e.message }),
   })
 
@@ -2154,6 +2158,8 @@ export default function ProjectDetail() {
             onApproveBid={() => void approveBid({ variables: { projectId: id } })}
             rejectingBid={rejectingBid}
             onRejectBid={(reason) => void rejectBid({ variables: { projectId: id, reason } })}
+            revisingBid={revisingBid}
+            onReviseBid={(changeSummary) => void reviseBidM({ variables: { projectId: id, changeSummary } })}
           />
         )}
 
@@ -3849,7 +3855,8 @@ function ClientDocumentsTab({ projectId, theme, isAdmin }: {
 interface BidDeliverable { id: string; projectId: string; name: string; deliverableType: string; discipline: string | null; status: string; assignedTo: string | null; dueDate: string | null; notes: string | null; sequence: number; createdByName: string | null; fileCount: number; files: { id: string; fileId: string; filename: string; mimeType: string; sizeBytes: number | null; title: string | null; description: string | null; createdAt: string; downloadUrl: string | null }[]; createdAt: string; updatedAt: string }
 interface BidCostItem { id: string; costType: string; description: string; quantity: number | null; unit: string | null; unitCost: number | null; totalCost: number | null; currencyCode: string; supplierRef: string | null; notes: string | null; sequence: number }
 interface BidQuotation { id: string; supplierName: string; itemDescription: string; amount: number | null; currencyCode: string; validityDate: string | null; downloadUrl: string | null; filename: string | null; notes: string | null; status: string; createdAt: string }
-interface BidSummary { id: string | null; projectId: string; overheadPct: number; marginPct: number; discountPct: number; contingencyPct: number; currencyCode: string; directCostTotal: number; overheadAmount: number; contingencyAmount: number; marginAmount: number; discountAmount: number; bidPrice: number; approvalStatus: string; submittedByName: string | null; submittedAt: string | null; approvedByName: string | null; approvedAt: string | null; rejectionReason: string | null; notes: string | null; updatedAt: string | null }
+interface BidRevision { id: string; revision: number; directCostTotal: number; overheadPct: number; overheadAmount: number; contingencyPct: number; contingencyAmount: number; marginPct: number; marginAmount: number; discountPct: number; discountAmount: number; bidPrice: number; currencyCode: string; changeSummary: string; createdByName: string | null; createdAt: string }
+interface BidSummary { id: string | null; projectId: string; overheadPct: number; marginPct: number; discountPct: number; contingencyPct: number; currencyCode: string; directCostTotal: number; overheadAmount: number; contingencyAmount: number; marginAmount: number; discountAmount: number; bidPrice: number; approvalStatus: string; submittedByName: string | null; submittedAt: string | null; approvedByName: string | null; approvedAt: string | null; rejectionReason: string | null; notes: string | null; updatedAt: string | null; revision: number; revisions: BidRevision[] }
 
 const DELIVERABLE_TYPES: Record<string, { label: string; color: string }> = {
   mto:                { label: 'MTO',                color: '#3b82f6' },
@@ -3895,6 +3902,7 @@ function BiddingTab({
   quotations, onCreateQuotation, onUpdateQuotation, onDeleteQuotation,
   summary, savingSummary, onUpdateSummary,
   submittingBid, onSubmitBid, approvingBid, onApproveBid, rejectingBid, onRejectBid,
+  revisingBid, onReviseBid,
 }: {
   projectId: string
   isEditable: boolean
@@ -3925,6 +3933,8 @@ function BiddingTab({
   onApproveBid: () => void
   rejectingBid: boolean
   onRejectBid: (reason: string) => void
+  revisingBid: boolean
+  onReviseBid: (changeSummary: string) => void
 }) {
   const addToast = useToastStore((s) => s.addToast)
   const [bidSub, setBidSub] = React.useState<'technical' | 'commercial' | 'clarifications'>('technical')
@@ -4020,6 +4030,8 @@ function BiddingTab({
   const [showAddQuotation, setShowAddQuotation] = React.useState(false)
   const [rejectReason, setRejectReason]          = React.useState('')
   const [showRejectModal, setShowRejectModal]    = React.useState(false)
+  const [showReviseModal, setShowReviseModal]    = React.useState(false)
+  const [reviseChangeSummary, setReviseChangeSummary] = React.useState('')
   const quotForm = React.useRef({ supplierName: '', itemDescription: '', amount: '', currencyCode: 'USD', validityDate: '', notes: '' })
 
   const fmt = (n: number, currency = 'USD') => n.toLocaleString('en-US', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 })
@@ -4198,6 +4210,35 @@ function BiddingTab({
       {/* ═══ COMMERCIAL BID ══════════════════════════════════════════ */}
       {bidSub === 'commercial' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* ── Revision badge + Revise button ─────────────────────── */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: theme.textMuted, padding: '3px 8px', borderRadius: 999, background: theme.bgCanvas, border: `1px solid ${theme.border}` }}>Rev {summary?.revision ?? 1}</span>
+            {isEditable && summary && (
+              <button onClick={() => { setReviseChangeSummary(''); setShowReviseModal(true) }} style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${theme.accent}`, background: theme.accentBg, color: theme.accent, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                Revise
+              </button>
+            )}
+          </div>
+
+          {/* ── Revision history ───────────────────────────────────── */}
+          {summary && summary.revisions.length > 0 && (
+            <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 20 }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 700, color: theme.textPrimary }}>Revision History</h3>
+              <RevisionHistory th={theme as unknown as Record<string, string>} revisions={summary.revisions.map(rv => ({
+                revision: rv.revision,
+                date: rv.createdAt,
+                by: rv.createdByName,
+                summary: rv.changeSummary,
+                current: rv.revision === summary.revision,
+                meta: [
+                  { label: 'Bid Price', value: fmt(rv.bidPrice, rv.currencyCode) },
+                  { label: 'Direct Cost', value: fmt(rv.directCostTotal, rv.currencyCode) },
+                  { label: 'Margin', value: `${rv.marginPct}%` },
+                ],
+              }))} />
+            </div>
+          )}
 
           {/* ── Approval Status Banner ─────────────────────────────── */}
           {summary && summary.approvalStatus !== 'draft' && (() => {
@@ -4455,6 +4496,23 @@ function BiddingTab({
                 <button onClick={() => setShowRejectModal(false)} style={{ padding: '8px 16px', borderRadius: 7, border: `1px solid ${theme.border}`, background: 'none', color: theme.textPrimary, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
                 <button onClick={() => { if (!rejectReason.trim()) { addToast({ type: 'error', message: 'Reason required' }); return }; onRejectBid(rejectReason); setShowRejectModal(false); setRejectReason('') }} disabled={rejectingBid} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: '#ef4444', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: rejectingBid ? 'not-allowed' : 'pointer', opacity: rejectingBid ? 0.7 : 1 }}>
                   {rejectingBid ? 'Rejecting…' : 'Reject Bid'}
+                </button>
+              </div>
+            </div>
+          </Modal>
+
+          {/* ── Revise Bid Modal ───────────────────────────────────── */}
+          <Modal open={showReviseModal} onClose={() => setShowReviseModal(false)} title={`Revise Bid — Rev ${(summary?.revision ?? 1) + 1}`}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 0' }}>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                Snapshots the current computed price ({fmt(summary?.bidPrice ?? 0, summary?.currencyCode)}) and the overhead/margin/discount/contingency percentages into the revision history, then bumps the bid to Rev {(summary?.revision ?? 1) + 1}. Edit cost items or percentages first, then revise.
+              </div>
+              {lbl('Change Summary *')}
+              <textarea rows={3} value={reviseChangeSummary} onChange={e => setReviseChangeSummary(e.target.value)} placeholder="Why is the bid being revised? (e.g. client requested re-price, lost previous round, scope change)" style={{ ...inp, resize: 'vertical' }} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowReviseModal(false)} style={{ padding: '8px 16px', borderRadius: 7, border: `1px solid ${theme.border}`, background: 'none', color: theme.textPrimary, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={() => { if (!reviseChangeSummary.trim()) { addToast({ type: 'error', message: 'Change summary required' }); return }; onReviseBid(reviseChangeSummary.trim()); setShowReviseModal(false); setReviseChangeSummary('') }} disabled={revisingBid} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: theme.accent, color: '#fff', fontSize: '13px', fontWeight: 600, cursor: revisingBid ? 'not-allowed' : 'pointer', opacity: revisingBid ? 0.7 : 1 }}>
+                  {revisingBid ? 'Revising…' : 'Save Revision'}
                 </button>
               </div>
             </div>
