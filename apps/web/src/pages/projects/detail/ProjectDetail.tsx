@@ -60,7 +60,7 @@ import {
   UPDATE_PROJECT_STAGE,
   PROJECT_CONTRACTS_QUERY, PROJECT_INVOICES_QUERY,
   REACH_MILESTONE, CREATE_CONTRACT_MILESTONE, UPDATE_CONTRACT_MILESTONE, DELETE_CONTRACT_MILESTONE,
-  CREATE_PROJECT_CONTRACT, UPDATE_PROJECT_CONTRACT,
+  CREATE_PROJECT_CONTRACT, UPDATE_PROJECT_CONTRACT, REVISE_CONTRACT,
   PROJECT_HANDOVER_QUERY,
   CREATE_HANDOVER_CERT, UPDATE_HANDOVER_CERT, ISSUE_HANDOVER_CERT, ACCEPT_HANDOVER_CERT, REJECT_HANDOVER_CERT, DELETE_HANDOVER_CERT,
   CREATE_HANDOVER_ITEM, UPDATE_HANDOVER_ITEM, VERIFY_HANDOVER_ITEM, DELETE_HANDOVER_ITEM,
@@ -77,6 +77,7 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { TabBar } from '../../../components/ui/TabBar'
+import { RevisionHistory } from '../../../components/ui/RevisionHistory'
 import { ProjectStatusBar } from '../../../components/projects/ProjectStatusBar'
 import { ProjectStageBar } from '../../../components/projects/ProjectStageBar'
 import { ProjectKPIRow } from '../../../components/projects/ProjectKPIRow'
@@ -555,6 +556,7 @@ export default function ProjectDetail() {
   const [deleteContractMilestone]= useMutation(DELETE_CONTRACT_MILESTONE,{ onCompleted: contractRefresh, onError: contractError })
   const [createProjectContract]  = useMutation(CREATE_PROJECT_CONTRACT,  { onCompleted: () => { contractRefresh(); addToast({ type: 'success', message: 'Contract created' }) }, onError: contractError })
   const [updateProjectContract]  = useMutation(UPDATE_PROJECT_CONTRACT,  { onCompleted: () => { contractRefresh(); addToast({ type: 'success', message: 'Contract updated' }) }, onError: contractError })
+  const [reviseContractM]        = useMutation(REVISE_CONTRACT,          { onCompleted: () => { contractRefresh(); addToast({ type: 'success', message: 'Contract revised' }) }, onError: contractError })
 
   const p = data?.project
 
@@ -1017,6 +1019,7 @@ export default function ProjectDetail() {
             onDeleteMilestone={(id2) => void deleteContractMilestone({ variables: { id: id2 } })}
             onCreateContract={(input) => void createProjectContract({ variables: { projectId: id, input } })}
             onUpdateContract={(contractId, input) => void updateProjectContract({ variables: { id: contractId, input } })}
+            onReviseContract={(v) => void reviseContractM({ variables: v })}
           />
         )}
 
@@ -8256,13 +8259,15 @@ function RiskRegisterTab({ projectId, theme, isAdmin }: { projectId: string; the
 
 interface ContractMilestone { id: string; name: string; sequence: number; billableAmount: number; currencyCode: string; status: string; reachedAt: string | null }
 interface ContractInvoiceSummary { id: string; invoiceNumber: string; billingMethod: string; grossTotal: number; netPayable: number; status: string; invoiceDate: string; dueDate: string | null }
+interface ContractRevision { id: string; revision: number; contractValue: number; currencyCode: string; retentionPct: number; endDate: string | null; changeSummary: string; effectiveDate: string | null; createdByName: string | null; createdAt: string }
 interface ProjectContract {
   id: string; contractNumber: string; contractName: string; clientName: string | null
   contractValue: number; currencyCode: string; defaultBillingMethod: string
-  retentionPct: number; status: string
+  retentionPct: number; status: string; revision: number
   totalInvoiced: number; totalPaid: number; outstanding: number
   milestones: ContractMilestone[]
   invoices: ContractInvoiceSummary[]
+  revisions: ContractRevision[]
 }
 interface InvoiceSummary { id: string; invoiceNumber: string; billingMethod: string; grossTotal: number; retentionAmount: number; netPayable: number; status: string; invoiceDate: string; dueDate: string | null }
 
@@ -8281,6 +8286,7 @@ interface ContractMgmtProps {
   onDeleteMilestone: (id: string) => void
   onCreateContract: (input: Record<string, unknown>) => void
   onUpdateContract: (contractId: string, input: Record<string, unknown>) => void
+  onReviseContract: (v: { id: string; contractValue: number; retentionPct: number; endDate?: string; changeSummary: string; effectiveDate?: string }) => void
 }
 
 const CONTRACT_STATUS_STYLE: Record<string, { bg: string; color: string; border: string }> = {
@@ -8315,13 +8321,32 @@ const CONTRACT_BILLING_METHODS = ['lump_sum', 'remeasure', 'cost_plus', 'unit_ra
 const CONTRACT_STATUS_LIST = ['draft', 'active', 'suspended', 'completed', 'terminated']
 const CURRENCIES = ['USD', 'SAR', 'AED', 'EUR', 'GBP', 'QAR', 'KWD', 'BHD', 'OMR', 'EGP']
 
-function ContractManagementTab({ projectId: _projectId, projectName, projectClientName, projectCurrency, contracts, invoices, theme, isAdmin, onReachMilestone, onCreateMilestone, onUpdateMilestone, onDeleteMilestone, onCreateContract, onUpdateContract }: ContractMgmtProps) {
+function ContractManagementTab({ projectId: _projectId, projectName, projectClientName, projectCurrency, contracts, invoices, theme, isAdmin, onReachMilestone, onCreateMilestone, onUpdateMilestone, onDeleteMilestone, onCreateContract, onUpdateContract, onReviseContract }: ContractMgmtProps) {
   const th = theme as unknown as Record<string, string>
   const [selectedContractId, setSelectedContractId] = React.useState<string | null>(contracts[0]?.id ?? null)
   const [milestoneModal, setMilestoneModal]         = React.useState<{ mode: 'create' | 'edit'; contractId: string; milestone?: ContractMilestone } | null>(null)
   const [msForm, setMsForm]                         = React.useState({ name: '', sequence: 1, billableAmount: '', currencyCode: 'USD', status: 'pending' })
   const [contractModal, setContractModal]           = React.useState<{ mode: 'create' | 'edit'; contract?: ProjectContract } | null>(null)
   const [cForm, setCForm]                           = React.useState({ contractName: projectName ?? '', clientName: projectClientName ?? '', contractValue: '', currencyCode: projectCurrency ?? 'USD', defaultBillingMethod: 'lump_sum', retentionPct: '10', status: 'draft' })
+  const [reviseModal, setReviseModal]               = React.useState<{ contract: ProjectContract } | null>(null)
+  const [reviseForm, setReviseForm]                 = React.useState({ contractValue: '', retentionPct: '', effectiveDate: '', changeSummary: '' })
+
+  const openReviseContract = (c: ProjectContract) => {
+    setReviseModal({ contract: c })
+    setReviseForm({ contractValue: String(c.contractValue), retentionPct: String(c.retentionPct), effectiveDate: '', changeSummary: '' })
+  }
+  const saveRevise = () => {
+    if (!reviseModal) return
+    if (!reviseForm.changeSummary.trim()) { alert('A change summary is required'); return }
+    onReviseContract({
+      id: reviseModal.contract.id,
+      contractValue: Number(reviseForm.contractValue) || 0,
+      retentionPct: Number(reviseForm.retentionPct) || 0,
+      changeSummary: reviseForm.changeSummary.trim(),
+      effectiveDate: reviseForm.effectiveDate || undefined,
+    })
+    setReviseModal(null)
+  }
 
   React.useEffect(() => {
     if (!selectedContractId && contracts[0]) setSelectedContractId(contracts[0].id)
@@ -8402,6 +8427,44 @@ function ContractManagementTab({ projectId: _projectId, projectName, projectClie
           </button>
         )}
         {contractModal && renderContractModal()}
+        {reviseModal && renderReviseModal()}
+      </div>
+    )
+  }
+
+  function renderReviseModal() {
+    if (!reviseModal) return null
+    const c = reviseModal.contract
+    const delta = (Number(reviseForm.contractValue) || 0) - c.contractValue
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+        <div style={{ background: th.bgSurface, borderRadius: '12px', padding: '28px', width: '520px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: '16px', color: th.textPrimary }}>Revise Contract — Rev {c.revision + 1}</h3>
+          <p style={{ margin: '0 0 18px', fontSize: '12px', color: th.textMuted }}>Records an amendment: the current terms are saved to the revision history and the contract updates to the new values.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <div>
+              <label style={labelStyle}>New Contract Value *</label>
+              <input type="number" min={0} step="0.01" value={reviseForm.contractValue} onChange={e => setReviseForm(f => ({ ...f, contractValue: e.target.value }))} style={inputStyle} />
+              {delta !== 0 && <div style={{ fontSize: '11px', marginTop: '3px', color: delta > 0 ? '#15803d' : '#dc2626' }}>{delta > 0 ? '+' : ''}{fmt(delta, c.currencyCode)} vs Rev {c.revision}</div>}
+            </div>
+            <div>
+              <label style={labelStyle}>Retention %</label>
+              <input type="number" min={0} max={100} step="0.5" value={reviseForm.retentionPct} onChange={e => setReviseForm(f => ({ ...f, retentionPct: e.target.value }))} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginBottom: '12px' }}>
+            <label style={labelStyle}>Effective Date</label>
+            <input type="date" value={reviseForm.effectiveDate} onChange={e => setReviseForm(f => ({ ...f, effectiveDate: e.target.value }))} style={inputStyle} />
+          </div>
+          <div style={{ marginBottom: '20px' }}>
+            <label style={labelStyle}>Change Summary *</label>
+            <textarea value={reviseForm.changeSummary} onChange={e => setReviseForm(f => ({ ...f, changeSummary: e.target.value }))} style={{ ...inputStyle, minHeight: '70px', resize: 'vertical' }} placeholder="Why is the contract being amended? (e.g. approved VO-003, scope addition)" />
+          </div>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+            <button onClick={() => setReviseModal(null)} style={{ padding: '8px 16px', borderRadius: '6px', border: `1px solid ${th.border}`, background: 'transparent', color: th.textSecondary, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={saveRevise} style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: th.accent, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>Save Revision</button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -8501,6 +8564,12 @@ function ContractManagementTab({ projectId: _projectId, projectName, projectClie
                 <div style={{ fontSize: '13px', color: th.textSecondary, marginTop: '2px' }}>{selectedContract.contractNumber} · {selectedContract.clientName ?? '—'}</div>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: th.textMuted, padding: '3px 8px', borderRadius: '999px', background: th.bgCanvas, border: `1px solid ${th.border}` }}>Rev {selectedContract.revision}</span>
+                {isAdmin && (
+                  <button onClick={() => openReviseContract(selectedContract)} style={{ padding: '6px 12px', borderRadius: '6px', border: `1px solid ${th.accent}`, background: th.accentBg, color: th.accent, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                    Revise
+                  </button>
+                )}
                 {isAdmin && (
                   <button onClick={() => openEditContract(selectedContract)} style={{ padding: '6px 12px', borderRadius: '6px', border: `1px solid ${th.border}`, background: 'transparent', color: th.textSecondary, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                     Edit
@@ -8528,6 +8597,25 @@ function ContractManagementTab({ projectId: _projectId, projectName, projectClie
               <div><span style={{ fontWeight: 600 }}>Currency: </span>{selectedContract.currencyCode}</div>
             </div>
           </div>
+
+          {/* Revision history */}
+          {selectedContract.revisions.length > 0 && (
+            <div style={{ background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+              <h3 style={{ margin: '0 0 14px', fontSize: '14px', fontWeight: 700, color: th.textPrimary }}>Revision History</h3>
+              <RevisionHistory th={th} revisions={selectedContract.revisions.map(rv => ({
+                revision: rv.revision,
+                date: rv.createdAt,
+                by: rv.createdByName,
+                summary: rv.changeSummary,
+                current: rv.revision === selectedContract.revision,
+                meta: [
+                  { label: 'Value', value: fmt(rv.contractValue, rv.currencyCode) },
+                  { label: 'Retention', value: `${rv.retentionPct}%` },
+                  ...(rv.effectiveDate ? [{ label: 'Effective', value: rv.effectiveDate }] : []),
+                ],
+              }))} />
+            </div>
+          )}
 
           {/* Milestones */}
           <div style={{ background: th.bgSurface, border: `1px solid ${th.border}`, borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
@@ -8657,6 +8745,7 @@ function ContractManagementTab({ projectId: _projectId, projectName, projectClie
 
       {/* Contract Create/Edit Modal */}
       {contractModal && renderContractModal()}
+        {reviseModal && renderReviseModal()}
     </div>
   )
 }

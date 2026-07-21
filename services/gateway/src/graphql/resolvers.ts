@@ -2582,6 +2582,32 @@ export const resolvers = {
       }
       sql += ' ORDER BY pc.created_at DESC LIMIT 100'
       const rows = (await query(sql, params)).rows as Record<string, unknown>[]
+      // Fetch revisions for all returned contracts in one query, group by contract.
+      const ids = rows.map((r) => r['id'])
+      const revRows = ids.length
+        ? ((await query(
+            `SELECT cr.*, (u.first_name || ' ' || u.last_name) AS created_by_name
+             FROM project_contract_revisions cr
+             LEFT JOIN users u ON u.id = cr.created_by_id
+             WHERE cr.contract_id = ANY($1) ORDER BY cr.revision`,
+            [ids],
+          )).rows as Record<string, unknown>[])
+        : []
+      const revsByContract = new Map<string, Record<string, unknown>[]>()
+      for (const rv of revRows) {
+        const cid = String(rv['contract_id'])
+        if (!revsByContract.has(cid)) revsByContract.set(cid, [])
+        revsByContract.get(cid)!.push(rv)
+      }
+      const mapRev = (rv: Record<string, unknown>) => ({
+        id: rv['id'], revision: Number(rv['revision']),
+        contractValue: parseFloat(String(rv['contract_value'])), currencyCode: rv['currency_code'],
+        retentionPct: parseFloat(String(rv['retention_pct'])),
+        endDate: rv['end_date'] ? String(rv['end_date']).slice(0, 10) : null,
+        changeSummary: rv['change_summary'],
+        effectiveDate: rv['effective_date'] ? String(rv['effective_date']).slice(0, 10) : null,
+        createdByName: rv['created_by_name'] ?? null, createdAt: rv['created_at'],
+      })
       return rows.map((r) => ({
         id: r['id'],
         contractNumber: r['contract_number'],
@@ -2593,11 +2619,13 @@ export const resolvers = {
         defaultMarginPct: parseFloat(String(r['default_margin_pct'])),
         retentionPct: parseFloat(String(r['retention_pct'])),
         status: r['status'],
+        revision: Number(r['revision'] ?? 1),
         totalInvoiced: parseFloat(String(r['total_invoiced'])),
         totalPaid: parseFloat(String(r['total_paid'])),
         outstanding: parseFloat(String(r['total_invoiced'])) - parseFloat(String(r['total_paid'])),
         milestones: [],
         invoices: [],
+        revisions: (revsByContract.get(String(r['id'])) ?? []).map(mapRev),
       }))
     },
 
@@ -8660,7 +8688,7 @@ export const resolvers = {
         currencyCode: row['currency_code'], defaultBillingMethod: row['default_billing_method'],
         defaultMarginPct: parseFloat(String(row['default_margin_pct'])),
         retentionPct: parseFloat(String(row['retention_pct'])),
-        status: row['status'], milestones: [], invoices: [], totalInvoiced: 0, totalPaid: 0, outstanding: 0,
+        status: row['status'], revision: Number(row['revision'] ?? 1), milestones: [], invoices: [], revisions: [], totalInvoiced: 0, totalPaid: 0, outstanding: 0,
       }
     },
 
@@ -8694,7 +8722,62 @@ export const resolvers = {
         currencyCode: row['currency_code'], defaultBillingMethod: row['default_billing_method'],
         defaultMarginPct: parseFloat(String(row['default_margin_pct'])),
         retentionPct: parseFloat(String(row['retention_pct'])),
-        status: row['status'], milestones: [], invoices: [], totalInvoiced: 0, totalPaid: 0, outstanding: 0,
+        status: row['status'], revision: Number(row['revision'] ?? 1), milestones: [], invoices: [], revisions: [], totalInvoiced: 0, totalPaid: 0, outstanding: 0,
+      }
+    },
+
+    reviseContract: async (
+      _: unknown,
+      args: { id: string; contractValue: number; retentionPct: number; endDate?: string; changeSummary: string; effectiveDate?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      // Load current contract (scoped to company)
+      const cur = await query(
+        `SELECT * FROM project_contracts WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!cur.rows[0]) throw new Error('Contract not found')
+      const c = cur.rows[0] as Record<string, unknown>
+      const nextRev = Number(c['revision'] ?? 1) + 1
+
+      // Log the new revision as a snapshot, then apply the new terms to the contract.
+      await query(
+        `INSERT INTO project_contract_revisions
+           (contract_id, revision, contract_value, currency_code, retention_pct, end_date, change_summary, effective_date, created_by_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [args.id, nextRev, args.contractValue, c['currency_code'], args.retentionPct,
+         args.endDate ?? null, args.changeSummary, args.effectiveDate ?? null, ctx.auth.userId],
+      )
+      await query(
+        `UPDATE project_contracts SET contract_value=$1, retention_pct=$2, end_date=COALESCE($3,end_date),
+           revision=$4, updated_at=NOW() WHERE id=$5 AND company_id=$6`,
+        [args.contractValue, args.retentionPct, args.endDate ?? null, nextRev, args.id, ctx.auth.companyId],
+      )
+
+      // Return the updated contract with its full revision history.
+      const revs = (await query(
+        `SELECT cr.*, (u.first_name || ' ' || u.last_name) AS created_by_name
+         FROM project_contract_revisions cr LEFT JOIN users u ON u.id = cr.created_by_id
+         WHERE cr.contract_id=$1 ORDER BY cr.revision`,
+        [args.id],
+      )).rows as Record<string, unknown>[]
+      return {
+        id: c['id'], contractNumber: c['contract_number'], contractName: c['contract_name'],
+        clientName: c['client_name'], contractValue: args.contractValue,
+        currencyCode: c['currency_code'], defaultBillingMethod: c['default_billing_method'],
+        defaultMarginPct: parseFloat(String(c['default_margin_pct'])),
+        retentionPct: args.retentionPct, status: c['status'], revision: nextRev,
+        milestones: [], invoices: [], totalInvoiced: 0, totalPaid: 0, outstanding: 0,
+        revisions: revs.map((rv) => ({
+          id: rv['id'], revision: Number(rv['revision']),
+          contractValue: parseFloat(String(rv['contract_value'])), currencyCode: rv['currency_code'],
+          retentionPct: parseFloat(String(rv['retention_pct'])),
+          endDate: rv['end_date'] ? String(rv['end_date']).slice(0, 10) : null,
+          changeSummary: rv['change_summary'],
+          effectiveDate: rv['effective_date'] ? String(rv['effective_date']).slice(0, 10) : null,
+          createdByName: rv['created_by_name'] ?? null, createdAt: rv['created_at'],
+        })),
       }
     },
 

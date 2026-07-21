@@ -256,9 +256,19 @@ export const PROJECT_CONTRACTS_QUERY = gql`
   query ProjectContracts($projectId: ID, $status: String) {
     projectContracts(projectId: $projectId, status: $status) {
       id contractNumber contractName clientName contractValue currencyCode
-      defaultBillingMethod retentionPct status totalInvoiced totalPaid outstanding
+      defaultBillingMethod retentionPct status revision totalInvoiced totalPaid outstanding
       milestones { id name sequence billableAmount currencyCode status reachedAt }
       invoices { id invoiceNumber billingMethod grossTotal netPayable status invoiceDate dueDate }
+      revisions { id revision contractValue currencyCode retentionPct endDate changeSummary effectiveDate createdByName createdAt }
+    }
+  }
+`
+
+export const REVISE_CONTRACT = gql`
+  mutation ReviseContract($id: ID!, $contractValue: Float!, $retentionPct: Float!, $endDate: String, $changeSummary: String!, $effectiveDate: String) {
+    reviseContract(id: $id, contractValue: $contractValue, retentionPct: $retentionPct, endDate: $endDate, changeSummary: $changeSummary, effectiveDate: $effectiveDate) {
+      id revision contractValue retentionPct
+      revisions { id revision contractValue currencyCode retentionPct endDate changeSummary effectiveDate createdByName createdAt }
     }
   }
 `
