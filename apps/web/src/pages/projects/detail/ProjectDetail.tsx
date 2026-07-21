@@ -2125,6 +2125,7 @@ export default function ProjectDetail() {
             projectId={id}
             isEditable={isRfqPhase || canEdit.bidding}
             isAdmin={isAdmin}
+            canApprove={canApprove.bidding}
             theme={theme}
             teamMembers={liveTeam.map(m => ({ id: m.employee_id, name: m.employee_name }))}
             deliverables={bidDeliverableData?.bidDeliverables ?? []}
@@ -3885,7 +3886,7 @@ const APPROVAL_STATUS: Record<string, { label: string; color: string; bg: string
 }
 
 function BiddingTab({
-  projectId, isEditable, isAdmin, theme, teamMembers,
+  projectId, isEditable, isAdmin, canApprove, theme, teamMembers,
   deliverables, creatingDeliverable, onCreateDeliverable, onUpdateDeliverable, onDeleteDeliverable, onUploadDeliverableFile, onDeleteDeliverableFile,
   costItems, savingCosts, onSaveCosts,
   quotations, onCreateQuotation, onUpdateQuotation, onDeleteQuotation,
@@ -3895,6 +3896,7 @@ function BiddingTab({
   projectId: string
   isEditable: boolean
   isAdmin: boolean
+  canApprove?: boolean
   theme: ReturnType<typeof useTheme>['theme']
   teamMembers: { id: string; name: string }[]
   deliverables: BidDeliverable[]
@@ -4213,7 +4215,7 @@ function BiddingTab({
                       {summary.approvalStatus === 'rejected' && `Rejection reason: ${summary.rejectionReason}`}
                     </div>
                   </div>
-                  {isAdmin && summary.approvalStatus === 'submitted' && (
+                  {canApprove && summary.approvalStatus === 'submitted' && (
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                       <button onClick={onApproveBid} disabled={approvingBid} style={{ padding: '8px 20px', border: 'none', borderRadius: 8, background: '#22c55e', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: approvingBid ? 'not-allowed' : 'pointer', opacity: approvingBid ? 0.7 : 1 }}>
                         {approvingBid ? 'Approving…' : 'Approve Bid'}
