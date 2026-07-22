@@ -44,8 +44,4 @@ ALTER TABLE po_lines
     DEFAULT 'pending',
   ADD COLUMN IF NOT EXISTS audit_note TEXT;
 
--- 6. Record migration
-INSERT INTO schema_migrations (filename) VALUES ('094_po_workflow_redesign.sql')
-  ON CONFLICT DO NOTHING;
-
 COMMIT;
