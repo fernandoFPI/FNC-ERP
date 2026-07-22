@@ -37,12 +37,12 @@ function eventTypeForCount(count: number): 'overdue' | 'urgent' | 'critical' {
   return 'critical'
 }
 
-function urgencySubject(count: number, docRef: string, role: string): string {
+function urgencySubject(count: number, docRef: string, role: string, overdueDays: number): string {
   const roleLabel = role === 'checker' ? 'Check' : 'Approval'
   if (count <= 1) return `Reminder: Document ${roleLabel} Overdue — ${docRef}`
   if (count === 2) return `⚠️ OVERDUE: Document ${roleLabel} Required — ${docRef}`
   if (count === 3) return `🚨 URGENT: Document ${roleLabel} Severely Overdue — ${docRef}`
-  return `🔴 CRITICAL: Document ${roleLabel} ${daysOverdue} Days Overdue — ${docRef}`
+  return `🔴 CRITICAL: Document ${roleLabel} ${overdueDays} Days Overdue — ${docRef}`
 }
 
 export async function checkEngDocReminders(): Promise<void> {
@@ -57,10 +57,14 @@ export async function checkEngDocReminders(): Promise<void> {
         ed.ref_number, ed.title AS doc_title,
         ed.originator_name, ed.checker_name, ed.approver_name,
         p.name AS project_name, p.code AS project_code,
-        p.manager_name AS pm_name, p.id AS proj_id, p.company_id
+        p.id AS proj_id, p.company_id,
+        pm_emp.first_name AS pm_first_name, pm_emp.last_name AS pm_last_name,
+        pm_user.id AS pm_user_id, pm_user.email AS pm_email
       FROM eng_doc_review_reminders r
       JOIN engineering_documents ed ON ed.id = r.document_id
       JOIN projects p ON p.id = r.project_id
+      LEFT JOIN employees pm_emp ON pm_emp.id = p.project_manager_id AND pm_emp.status = 'active'
+      LEFT JOIN users pm_user ON pm_user.id = pm_emp.user_id
       WHERE r.resolved_at IS NULL
         AND r.next_remind_at <= NOW()
       ORDER BY r.due_date ASC
@@ -91,7 +95,7 @@ export async function checkEngDocReminders(): Promise<void> {
           [
             companyId, reviewerUserId,
             `eng_doc_${role}_${eventType}`,
-            urgencySubject(count, docRef, role),
+            urgencySubject(count, docRef, role, overdueDays),
             `${docRef} — ${docTitle} requires your ${role} action. ${overdueDays > 0 ? `Now ${overdueDays} day${overdueDays !== 1 ? 's' : ''} overdue.` : 'Due today.'}`,
             JSON.stringify({ priority, entityType: 'engineering_document', entityId: rem['document_id'], entityRef: docRef, projectId: projId }),
           ],
@@ -115,64 +119,49 @@ export async function checkEngDocReminders(): Promise<void> {
         })
         await sendEmail({
           to: reviewerEmail,
-          subject: urgencySubject(count, docRef, role),
+          subject: urgencySubject(count, docRef, role, overdueDays),
           html,
         }).catch((e: unknown) => log.error({ err: e }, 'Email send failed for reviewer reminder'))
       }
 
       // Critical escalation: also notify the project manager
       if (count >= 3) {
-        const pmName = rem['pm_name'] ? String(rem['pm_name']) : null
-        if (pmName) {
-          const pmRes = await pool.query<Record<string, unknown>>(
-            `SELECT u.id, u.email, e.first_name, e.last_name
-             FROM employees e
-             JOIN users u ON u.id = e.user_id
-             WHERE e.company_id = $1
-               AND LOWER(TRIM(e.first_name || ' ' || e.last_name)) = LOWER(TRIM($2))
-               AND e.status = 'active'
-               AND e.user_id IS NOT NULL
-             LIMIT 1`,
-            [companyId, pmName],
+        const pmUserId = rem['pm_user_id'] ? String(rem['pm_user_id']) : null
+        const pmEmail  = rem['pm_email'] ? String(rem['pm_email']) : null
+        if (pmUserId && pmEmail) {
+          const pmFullName = `${rem['pm_first_name']} ${rem['pm_last_name']}`
+
+          await pool.query(
+            `INSERT INTO notifications (company_id, user_id, type, title, body, data, is_read)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, FALSE)`,
+            [
+              companyId, pmUserId,
+              'eng_doc_critical_pm_alert',
+              `🔴 Critical: ${docRef} ${role} overdue ${overdueDays} days`,
+              `${reviewerName} has not completed the ${role} for ${docRef} — ${docTitle}. Now ${overdueDays} days overdue.`,
+              JSON.stringify({ priority: 'critical', entityType: 'engineering_document', entityId: rem['document_id'], entityRef: docRef, projectId: projId }),
+            ],
           )
-          const pm = pmRes.rows[0]
-          if (pm) {
-            const pmFullName = `${pm['first_name']} ${pm['last_name']}`
-            const pmUserId   = String(pm['id'])
-            const pmEmail    = String(pm['email'])
 
-            await pool.query(
-              `INSERT INTO notifications (company_id, user_id, type, title, body, data, is_read)
-               VALUES ($1, $2, $3, $4, $5, $6::jsonb, FALSE)`,
-              [
-                companyId, pmUserId,
-                'eng_doc_critical_pm_alert',
-                `🔴 Critical: ${docRef} ${role} overdue ${overdueDays} days`,
-                `${reviewerName} has not completed the ${role} for ${docRef} — ${docTitle}. Now ${overdueDays} days overdue.`,
-                JSON.stringify({ priority: 'critical', entityType: 'engineering_document', entityId: rem['document_id'], entityRef: docRef, projectId: projId }),
-              ],
-            )
-
-            const pmHtml = renderEngDocNotificationEmail({
-              recipientName: pmFullName,
-              eventType:     'critical',
-              role:          'pm',
-              docRef,
-              docTitle,
-              projectName:   projName,
-              fromName:      'FNC ERP System',
-              actionLabel:   `${role === 'checker' ? 'Check' : 'Approval'} assigned to ${reviewerName}`,
-              dueDate:       dueDateStr,
-              daysOverdue:   overdueDays,
-              appUrl:        `${APP_URL}/projects/${projId}?tab=rfq_lines`,
-            })
-            await sendEmail({
-              to: pmEmail,
-              subject: `🔴 CRITICAL: ${docRef} ${role} ${overdueDays}d overdue — Project Manager Alert`,
-              html: pmHtml,
-            }).catch((e: unknown) => log.error({ err: e }, 'Email send failed for PM critical alert'))
-            pmAlerts++
-          }
+          const pmHtml = renderEngDocNotificationEmail({
+            recipientName: pmFullName,
+            eventType:     'critical',
+            role:          'pm',
+            docRef,
+            docTitle,
+            projectName:   projName,
+            fromName:      'FNC ERP System',
+            actionLabel:   `${role === 'checker' ? 'Check' : 'Approval'} assigned to ${reviewerName}`,
+            dueDate:       dueDateStr,
+            daysOverdue:   overdueDays,
+            appUrl:        `${APP_URL}/projects/${projId}?tab=rfq_lines`,
+          })
+          await sendEmail({
+            to: pmEmail,
+            subject: `🔴 CRITICAL: ${docRef} ${role} ${overdueDays}d overdue — Project Manager Alert`,
+            html: pmHtml,
+          }).catch((e: unknown) => log.error({ err: e }, 'Email send failed for PM critical alert'))
+          pmAlerts++
         }
       }
 
