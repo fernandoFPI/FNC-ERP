@@ -196,12 +196,21 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       }
 
       // ── New device detection ────────────────────────────────────
+      // Checked against user_known_devices (persists across logout), not the
+      // live `sessions` table (hard-deleted on logout — using it here made
+      // every post-logout login look like a brand-new device).
       const effectiveDeviceId = deviceId ?? 'web'
       const knownDeviceResult = await client.query<{ count: string }>(
-        `SELECT COUNT(*) AS count FROM sessions WHERE user_id=$1 AND device_id=$2`,
+        `SELECT COUNT(*) AS count FROM user_known_devices WHERE user_id=$1 AND device_id=$2`,
         [user.id, effectiveDeviceId],
       )
       const isNewDevice = parseInt(knownDeviceResult.rows[0]?.count ?? '0') === 0
+
+      await client.query(
+        `INSERT INTO user_known_devices (user_id, device_id) VALUES ($1,$2)
+         ON CONFLICT (user_id, device_id) DO UPDATE SET last_seen_at = NOW()`,
+        [user.id, effectiveDeviceId],
+      )
 
       if (isNewDevice) {
         await client.query(
