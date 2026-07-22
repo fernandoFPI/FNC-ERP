@@ -22,8 +22,8 @@ if (!connectionString) {
 
 const pool = new Pool({ connectionString })
 
-const ADMIN_EMAIL = 'admin@fnc-erp.local'
-const ADMIN_PASSWORD_PLAIN = 'ChangeMe123!'
+const ADMIN_EMAIL = 'fernando.yousif@farage.com'
+const ADMIN_PASSWORD_PLAIN = 'Xerox@2026'
 
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12)
@@ -73,8 +73,12 @@ async function runSeeds() {
     await seedFxRates(client)
     await seedHR(client)
     await seedManufacturing(client)
-    await seedProjects(client, adminId)
-    await seedInvoicing(client, adminId)
+    // seedProjects/seedInvoicing temporarily disabled for the first production
+    // seed run — both only ever create 2 fake sample projects (PRJ-NYK-001,
+    // PRJ-NF-001) + matching demo contracts/invoices, unrelated to the real
+    // imported project data. Re-enable for a fresh dev/test environment.
+    // await seedProjects(client, adminId)
+    // await seedInvoicing(client, adminId)
     await seedCompanyRoles(client, ADMIN_EMAIL)
 
     await client.query('COMMIT')
