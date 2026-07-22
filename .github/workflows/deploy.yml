@@ -41,4 +41,4 @@ jobs:
             pnpm install --frozen-lockfile
             pnpm build
             pnpm migrate
-            pm2 reload ecosystem.config.js --env production
+            pm2 reload ecosystem.config.cjs --env production

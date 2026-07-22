@@ -4,8 +4,35 @@
 
 'use strict'
 
+const fs = require('fs')
+const path = require('path')
+
 const LOG_DIR = '/var/log/fnc-erp'
 const BASE = '/opt/fnc-erp'
+
+// packages/config/src/env.ts stops auto-loading .env once NODE_ENV=production,
+// so PM2 has to hand every process its environment explicitly. Parsed once here
+// and spread into each app's env_production below. No dotenv dependency needed —
+// this file has no package.json of its own for pnpm to resolve one against.
+function loadEnvFile(filePath) {
+  const out = {}
+  if (!fs.existsSync(filePath)) return out
+  for (const line of fs.readFileSync(filePath, 'utf8').split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eq = trimmed.indexOf('=')
+    if (eq === -1) continue
+    const key = trimmed.slice(0, eq).trim()
+    let value = trimmed.slice(eq + 1).trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    out[key] = value
+  }
+  return out
+}
+
+const sharedEnv = loadEnvFile(path.join(BASE, '.env'))
 
 function makeApp(name, script, port, extraEnv = {}) {
   return {
@@ -14,6 +41,7 @@ function makeApp(name, script, port, extraEnv = {}) {
     exec_mode: 'fork',
     instances: 1,
     env_production: {
+      ...sharedEnv,
       NODE_ENV: 'production',
       SERVICE_NAME: name,
       PORT: port,
@@ -52,6 +80,7 @@ module.exports = {
       exec_mode: 'fork',
       instances: 1,
       env_production: {
+        ...sharedEnv,
         NODE_ENV: 'production',
         SERVICE_NAME: 'worker',
       },
