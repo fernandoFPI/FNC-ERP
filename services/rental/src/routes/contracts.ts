@@ -90,10 +90,6 @@ contractsRouter.post('/', requirePermission('rental.contracts.edit', 'edit'), as
     if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
     const d = parsed.data
 
-    if (d.rental_type === 'internal' && !d.to_company_id) {
-      return sendError(res, 400, 'VALIDATION_ERROR', 'to_company_id required for internal rental')
-    }
-
     // Validate all assets are available
     for (const line of d.lines) {
       const asset = await query<{ status: string }>('SELECT status FROM equipment_assets WHERE id=$1 AND company_id=$2', [line.asset_id, companyId])

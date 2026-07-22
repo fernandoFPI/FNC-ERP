@@ -5,7 +5,7 @@ import { sendEmail, renderEngDocNotificationEmail } from '@fnc-erp/email'
 
 const log = createServiceLogger('eng-doc-reminders')
 
-const APP_URL = process.env.APP_URL ?? 'http://localhost:5173'
+const APP_URL = process.env['APP_URL'] ?? 'http://localhost:5173'
 
 // Escalation schedule: (reminder_count → days until next reminder)
 const NEXT_REMIND_DAYS: Record<number, number> = {
