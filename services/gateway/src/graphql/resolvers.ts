@@ -1683,7 +1683,19 @@ export const resolvers = {
          WHERE e.id = $1 AND e.company_id = $2`,
         [args.id, ctx.auth.companyId],
       )
-      return result.rows[0] ?? null
+      const row = result.rows[0]
+      if (!row) return null
+      // photo_url column actually holds a storage fileKey, not a URL — presigned
+      // URLs expire, so a fresh one is generated on every read.
+      if (row['photo_url']) {
+        try {
+          const dl = await generateDownloadUrl(String(row['photo_url']), 'avatar')
+          row['photo_url'] = dl.downloadUrl
+        } catch {
+          row['photo_url'] = null
+        }
+      }
+      return row
     },
 
     departments: async (_: unknown, __: unknown, ctx: GQLContext) => {

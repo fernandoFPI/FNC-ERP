@@ -16,6 +16,19 @@ const profileSchema = z.object({
   emergencyPhone: z.string().max(30).optional(),
 })
 
+// users.profile_picture stores a stable storage fileKey (e.g. avatars/{userId}.jpg),
+// not a URL — presigned download URLs expire (PRESIGNED_URL_TTL_SECONDS), so a fresh
+// one must be generated on every read rather than persisted.
+async function freshAvatarUrl(fileKey: unknown): Promise<string | null> {
+  if (!fileKey) return null
+  try {
+    const { downloadUrl } = await generateDownloadUrl(String(fileKey), 'avatar')
+    return downloadUrl
+  } catch {
+    return null
+  }
+}
+
 // GET /api/v1/users/me/profile
 userProfileRouter.get('/me/profile', async (req: Request, res: Response): Promise<void> => {
   const userId = req.auth?.userId
@@ -37,7 +50,7 @@ userProfileRouter.get('/me/profile', async (req: Request, res: Response): Promis
       email:            u['email'],
       firstName:        u['first_name'],
       lastName:         u['last_name'],
-      profilePicture:   u['profile_picture'],
+      profilePicture:   await freshAvatarUrl(u['profile_picture']),
       jobTitle:         u['job_title'],
       phone:            u['phone'],
       emergencyPhone:   u['emergency_phone'],
@@ -78,7 +91,7 @@ userProfileRouter.put('/me/profile', async (req: Request, res: Response): Promis
       email:            u['email'],
       firstName:        u['first_name'],
       lastName:         u['last_name'],
-      profilePicture:   u['profile_picture'],
+      profilePicture:   await freshAvatarUrl(u['profile_picture']),
       jobTitle:         u['job_title'],
       phone:            u['phone'],
       emergencyPhone:   u['emergency_phone'],
@@ -104,13 +117,13 @@ userProfileRouter.post(
 
     const fileKey = `avatars/${userId}.${ext}`
     await uploadBuffer(req.file.buffer, fileKey, req.file.mimetype)
-    const { downloadUrl } = await generateDownloadUrl(fileKey, `avatar.${ext}`)
 
     await query(
       `UPDATE users SET profile_picture = $1, updated_at = NOW() WHERE id = $2`,
-      [downloadUrl, userId],
+      [fileKey, userId],
     )
 
+    const { downloadUrl } = await generateDownloadUrl(fileKey, `avatar.${ext}`)
     res.json({ success: true, data: { profilePicture: downloadUrl } })
   },
 )
