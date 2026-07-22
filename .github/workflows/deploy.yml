@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [production]
 
 jobs:
   deploy:
@@ -15,11 +15,11 @@ jobs:
 
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 11.3.0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -37,8 +37,11 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             cd /opt/fnc-erp
-            git pull origin main
+            git pull origin production
             pnpm install --frozen-lockfile
             pnpm build
+            set -a
+            source .env
+            set +a
             pnpm migrate
             pm2 reload ecosystem.config.cjs --env production
