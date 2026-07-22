@@ -10,6 +10,7 @@ import {
   deleteFile,
   validateFile,
   uploadBuffer,
+  downloadBuffer,
 } from '@fnc-erp/storage'
 
 export const filesRouter: IRouter = Router()
@@ -184,6 +185,30 @@ filesRouter.post(
     }
   },
 )
+
+// ── GET /api/v1/files/:fileId/content ─────────────────────────
+// Proxy download: streams file bytes through the gateway (same-origin) so the
+// browser can read them via fetch() — e.g. to parse a ZIP client-side — without
+// hitting storage-provider CORS restrictions. The plain "Download" button still
+// uses the presigned download-url directly; this is only for in-browser reads.
+filesRouter.get('/:fileId/content', requireAuth(), async (req, res) => {
+  const fileId = req.params['fileId']!
+  const file = await query<{ file_key: string; mime_type: string; status: string }>(
+    `SELECT file_key, mime_type, status FROM files WHERE id=$1 AND company_id=$2`,
+    [fileId, req.auth!.companyId],
+  )
+  if (!file.rows[0] || file.rows[0].status === 'deleted') {
+    res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found' } })
+    return
+  }
+  try {
+    const buffer = await downloadBuffer(file.rows[0].file_key)
+    res.setHeader('Content-Type', file.rows[0].mime_type)
+    res.send(buffer)
+  } catch (err) {
+    res.status(500).json({ success: false, error: { code: 'DOWNLOAD_FAILED', message: (err as Error).message } })
+  }
+})
 
 // ── GET /api/v1/files/attachments?entityType=X&entityId=Y ──────
 filesRouter.get('/attachments', requireAuth(), async (req, res) => {

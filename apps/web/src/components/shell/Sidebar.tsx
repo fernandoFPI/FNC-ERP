@@ -1,6 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@apollo/client'
 import { useTheme } from '../../theme/ThemeContext'
 import { useApprovalStore } from '../../store/approvalStore'
 import { useMyPOQueueCount } from '../../hooks/useMyPOQueueCount'
@@ -8,7 +7,6 @@ import { useAPPendingCount } from '../../hooks/useAPPendingCount'
 import { usePermission } from '../../hooks/usePermission'
 import { useCompanyStore } from '../../store/companyStore'
 import { useAuthStore } from '../../store/authStore'
-import { NOTIFICATIONS_QUERY, MARK_NOTIFICATION_READ, MARK_ALL_NOTIFICATIONS_READ } from '../../graphql/notifications'
 
 interface NavChild {
   label: string
@@ -286,36 +284,6 @@ export function Sidebar({ mobile = false, expanded = false, onClose, rail = fals
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('fnc-sidebar-collapsed') === 'true'
   })
-  const [notifOpen, setNotifOpen] = useState(false)
-  const notifPanelRef = useRef<HTMLDivElement>(null)
-
-  const { data: notifData, refetch: refetchNotifs } = useQuery(NOTIFICATIONS_QUERY, {
-    variables: { limit: 30 },
-    fetchPolicy: 'cache-and-network',
-    pollInterval: 30_000,
-  })
-  const [markRead] = useMutation(MARK_NOTIFICATION_READ, { onCompleted: () => void refetchNotifs() })
-  const [markAllRead] = useMutation(MARK_ALL_NOTIFICATIONS_READ, { onCompleted: () => void refetchNotifs() })
-
-  const notifications: Array<{
-    id: string; type: string; title: string; body: string; is_read: boolean
-    created_at: string; priority: string | null; entityRef: string | null
-    entityType: string | null; entityId: string | null; projectId: string | null
-  }> = notifData?.notifications ?? []
-  const unreadCount: number = notifData?.unreadNotificationCount ?? 0
-
-  // Close panel on outside click
-  useEffect(() => {
-    if (!notifOpen) return
-    const handler = (e: MouseEvent) => {
-      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target as Node)) {
-        setNotifOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [notifOpen])
-
   const [expandedItems, setExpandedItems] = useState<Set<string>>(() => {
     const path = window.location.pathname
     const expanded = new Set<string>()
@@ -696,98 +664,6 @@ export function Sidebar({ mobile = false, expanded = false, onClose, rail = fals
         })}
       </div>
 
-      {/* ── Notification Panel ───────────────────────────────────────────── */}
-      {notifOpen && (
-        <div ref={notifPanelRef} style={{
-          position: 'fixed',
-          top: 0, left: width, bottom: 0,
-          width: 360, zIndex: 300,
-          background: theme.bgSurface,
-          borderRight: `1px solid ${theme.border}`,
-          boxShadow: '4px 0 24px rgba(0,0,0,0.12)',
-          display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          {/* Header */}
-          <div style={{ padding: '16px 18px 12px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15, color: theme.textPrimary }}>Notifications</div>
-              {unreadCount > 0 && (
-                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>{unreadCount} unread</div>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {unreadCount > 0 && (
-                <button onClick={() => void markAllRead()}
-                  style={{ fontSize: 11, color: theme.accent, background: 'none', border: 'none', cursor: 'pointer', padding: '3px 6px', borderRadius: 5, fontWeight: 600 }}>
-                  Mark all read
-                </button>
-              )}
-              <button onClick={() => setNotifOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, padding: 4, display: 'flex', alignItems: 'center', borderRadius: 5 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-          </div>
-          {/* List */}
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {notifications.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: theme.textMuted }}>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.3, display: 'block', margin: '0 auto 10px' }}>
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-                <div style={{ fontSize: 13 }}>No notifications</div>
-              </div>
-            ) : notifications.map(n => {
-              const PRIORITY_DOT: Record<string, string> = { normal: '#94a3b8', high: '#f59e0b', urgent: '#f97316', critical: '#ef4444', low: '#94a3b8' }
-              const dot = PRIORITY_DOT[n.priority ?? 'normal'] ?? '#94a3b8'
-              const timeAgo = (() => {
-                const diff = Date.now() - new Date(n.created_at).getTime()
-                const m = Math.floor(diff / 60000)
-                if (m < 1) return 'just now'
-                if (m < 60) return `${m}m ago`
-                const h = Math.floor(m / 60)
-                if (h < 24) return `${h}h ago`
-                return `${Math.floor(h / 24)}d ago`
-              })()
-              return (
-                <div key={n.id}
-                  onClick={() => {
-                    if (!n.is_read) void markRead({ variables: { id: n.id } })
-                    if (n.projectId) { navigate(`/projects/${n.projectId}?tab=rfq_lines`); setNotifOpen(false) }
-                  }}
-                  style={{
-                    padding: '12px 18px', borderBottom: `1px solid ${theme.border}`,
-                    background: n.is_read ? 'transparent' : `${dot}08`,
-                    cursor: n.projectId ? 'pointer' : 'default',
-                    display: 'flex', gap: 12, alignItems: 'flex-start',
-                    transition: 'background 0.15s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-                  onMouseLeave={e => { e.currentTarget.style.background = n.is_read ? 'transparent' : `${dot}08` }}
-                >
-                  {/* Priority dot */}
-                  <div style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0, marginTop: 5 }} />
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 2 }}>
-                      <div style={{ fontSize: 12, fontWeight: n.is_read ? 500 : 700, color: theme.textPrimary, lineHeight: 1.4 }}>{n.title}</div>
-                      <div style={{ fontSize: 10, color: theme.textMuted, whiteSpace: 'nowrap', flexShrink: 0 }}>{timeAgo}</div>
-                    </div>
-                    {n.entityRef && (
-                      <div style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: theme.accent, marginBottom: 3 }}>{n.entityRef}</div>
-                    )}
-                    <div style={{ fontSize: 11, color: theme.textSecondary, lineHeight: 1.5 }}>{n.body}</div>
-                  </div>
-                  {!n.is_read && (
-                    <div style={{ width: 6, height: 6, borderRadius: 999, background: theme.accent, flexShrink: 0, marginTop: 6 }} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
       <div style={{ borderTop: `0.5px solid ${theme.border}`, padding: '8px 0', flexShrink: 0 }}>
         {user?.system_admin && (
           <NavLink to="/admin" style={{ textDecoration: 'none', display: 'block' }} onClick={handleNavClick}>
@@ -812,52 +688,6 @@ export function Sidebar({ mobile = false, expanded = false, onClose, rail = fals
             </div>
           </NavLink>
         )}
-        {/* Notification Bell */}
-        <button
-          title={effectiveCollapsed ? 'Notifications' : undefined}
-          onClick={() => setNotifOpen(o => !o)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            padding: effectiveCollapsed ? '9px 0' : '9px 16px',
-            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-            minHeight: touchMinHeight,
-            color: notifOpen ? theme.accent : unreadCount > 0 ? theme.textPrimary : theme.textSecondary,
-            cursor: 'pointer', background: notifOpen ? theme.accentBg : 'none',
-            border: 'none', width: '100%',
-            borderLeft: notifOpen ? `2.5px solid ${theme.accent}` : '2.5px solid transparent',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-          onMouseEnter={e => { if (!notifOpen) e.currentTarget.style.background = theme.bgSurfaceHover }}
-          onMouseLeave={e => { if (!notifOpen) e.currentTarget.style.background = 'transparent' }}
-        >
-          <span style={{ display: 'flex', flexShrink: 0, position: 'relative' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-            {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute', top: -5, right: -6,
-                minWidth: 14, height: 14, borderRadius: 999,
-                background: '#ef4444', color: '#fff',
-                fontSize: 8, fontWeight: 800,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '0 3px', lineHeight: 1,
-              }}>
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-          </span>
-          {!effectiveCollapsed && (
-            <span style={{ fontSize: '13px', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
-              Notifications
-              {unreadCount > 0 && (
-                <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700 }}>
-                  {unreadCount > 99 ? '99+' : unreadCount}
-                </span>
-              )}
-            </span>
-          )}
-        </button>
 
         <NavLink to="/settings" style={{ textDecoration: 'none', display: 'block' }} onClick={handleNavClick}>
           <div

@@ -7,7 +7,7 @@ import { Button } from '../../../../components/ui/Button'
 import { Input } from '../../../../components/ui/Input'
 import { useToastStore } from '../../../../store/toastStore'
 import {
-  LIFECYCLE_CONFIG_QUERY, UPDATE_LIFECYCLE_PHASE, UPDATE_LIFECYCLE_MODULE,
+  LIFECYCLE_CONFIG_QUERY, UPDATE_LIFECYCLE_PHASE, UPDATE_LIFECYCLE_MODULE, UPDATE_BID_SIMPLE_MODE, UPDATE_HIDE_RISK_REGISTER,
 } from '../../../../graphql/projects'
 
 interface Phase { key: string; label: string; sequence: number; optional: boolean }
@@ -28,14 +28,20 @@ export default function LifecycleSettingsPage() {
   const addToast = useToastStore((s) => s.addToast)
 
   const { data, loading, refetch } = useQuery(LIFECYCLE_CONFIG_QUERY, { fetchPolicy: 'cache-and-network' })
-  const [savePhase]  = useMutation(UPDATE_LIFECYCLE_PHASE)
-  const [saveModule] = useMutation(UPDATE_LIFECYCLE_MODULE)
+  const [savePhase]         = useMutation(UPDATE_LIFECYCLE_PHASE)
+  const [saveModule]        = useMutation(UPDATE_LIFECYCLE_MODULE)
+  const [saveSimpleMode]    = useMutation(UPDATE_BID_SIMPLE_MODE)
+  const [saveHideRisk]      = useMutation(UPDATE_HIDE_RISK_REGISTER)
 
   const phases: Phase[]       = data?.lifecycleConfig?.phases ?? []
   const modules: ModuleGate[] = data?.lifecycleConfig?.modules ?? []
+  const bidSimpleModeEnabled: boolean = data?.lifecycleConfig?.bidSimpleModeEnabled ?? false
+  const hideRiskRegister: boolean = data?.lifecycleConfig?.hideRiskRegister ?? true
 
   const [phaseEdits, setPhaseEdits]             = useState<Record<string, { label: string; optional: boolean }>>({})
   const [moduleLabelEdits, setModuleLabelEdits] = useState<Record<string, string>>({})
+  const [simpleModeEdit, setSimpleModeEdit]     = useState(false)
+  const [hideRiskEdit, setHideRiskEdit]         = useState(true)
   const [savingKey, setSavingKey]               = useState<string | null>(null)
 
   useEffect(() => {
@@ -48,6 +54,10 @@ export default function LifecycleSettingsPage() {
       const seed: Record<string, string> = {}
       for (const m of modules) seed[m.moduleKey] = moduleName(m)
       setModuleLabelEdits(seed)
+    }
+    if (data?.lifecycleConfig) {
+      setSimpleModeEdit(bidSimpleModeEnabled)
+      setHideRiskEdit(hideRiskRegister)
     }
   }, [data]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -82,6 +92,26 @@ export default function LifecycleSettingsPage() {
     try {
       await saveModule({ variables: { moduleKey, label } })
       addToast({ type: 'success', message: `Tab renamed to "${label}"` })
+      await refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+    finally { setSavingKey(null) }
+  }
+
+  async function commitSimpleMode() {
+    setSavingKey('simpleMode')
+    try {
+      await saveSimpleMode({ variables: { enabled: simpleModeEdit } })
+      addToast({ type: 'success', message: `Simple bid mode ${simpleModeEdit ? 'enabled' : 'disabled'}` })
+      await refetch()
+    } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
+    finally { setSavingKey(null) }
+  }
+
+  async function commitHideRisk() {
+    setSavingKey('hideRisk')
+    try {
+      await saveHideRisk({ variables: { hidden: hideRiskEdit } })
+      addToast({ type: 'success', message: `Risk Register tab ${hideRiskEdit ? 'hidden' : 'shown'}` })
       await refetch()
     } catch (e: unknown) { addToast({ type: 'error', message: (e as Error).message }) }
     finally { setSavingKey(null) }
@@ -161,6 +191,50 @@ export default function LifecycleSettingsPage() {
             </div>
           )
         })}
+      </Card>
+
+      {/* ── Bidding display mode ───────────────────────────────── */}
+      <Card style={{ marginTop: '20px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary, marginBottom: '4px' }}>Bidding Display Mode</div>
+        <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
+          By default, Technical Bid and Commercial Bid show the full detailed tracking (deliverables table, cost items, quotations, approval workflow). Turning this on replaces both with a single ZIP upload zone per section instead — a simpler interim view. Nothing already entered is deleted when you switch either way.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: th.textPrimary, cursor: 'pointer' }}>
+            <input type="checkbox" checked={simpleModeEdit} onChange={(e) => setSimpleModeEdit(e.target.checked)} />
+            Simple bid mode (ZIP upload only)
+          </label>
+          <Button
+            size="sm"
+            variant={simpleModeEdit !== bidSimpleModeEnabled ? 'primary' : 'secondary'}
+            disabled={simpleModeEdit === bidSimpleModeEnabled || savingKey === 'simpleMode'}
+            onClick={() => void commitSimpleMode()}
+          >
+            {savingKey === 'simpleMode' ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </Card>
+
+      {/* ── Risk Register visibility ──────────────────────────────── */}
+      <Card style={{ marginTop: '20px' }}>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: th.textPrimary, marginBottom: '4px' }}>Risk Register</div>
+        <div style={{ fontSize: '12px', color: th.textMuted, marginBottom: '14px' }}>
+          Hides the Risk Register tab from every project. Nothing already logged is deleted — turn this back off to see it again.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: th.textPrimary, cursor: 'pointer' }}>
+            <input type="checkbox" checked={hideRiskEdit} onChange={(e) => setHideRiskEdit(e.target.checked)} />
+            Hide Risk Register tab
+          </label>
+          <Button
+            size="sm"
+            variant={hideRiskEdit !== hideRiskRegister ? 'primary' : 'secondary'}
+            disabled={hideRiskEdit === hideRiskRegister || savingKey === 'hideRisk'}
+            onClick={() => void commitHideRisk()}
+          >
+            {savingKey === 'hideRisk' ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
       </Card>
     </div>
   )

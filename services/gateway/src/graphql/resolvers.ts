@@ -515,6 +515,50 @@ function voMapDrawing(r: Record<string, unknown>) {
   return { id: r['id'], voId: r['vo_id'], drawingNumber: r['drawing_number'], revision: r['revision'] ?? null, title: r['title'] ?? null, notes: r['notes'] ?? null, createdAt: r['created_at'] }
 }
 
+async function fetchLifecycleConfig(companyId: string) {
+  const phases = await query(
+    `SELECT key, label, sequence, optional FROM lifecycle_phases WHERE company_id=$1 ORDER BY sequence`,
+    [companyId],
+  )
+  const modules = await query(
+    `SELECT module_key, min_phase_key, label, sequence FROM lifecycle_phase_modules WHERE company_id=$1 ORDER BY sequence`,
+    [companyId],
+  )
+  const cfg = await query(`SELECT bid_simple_mode_enabled, hide_risk_register FROM system_configuration WHERE company_id=$1`, [companyId])
+  const cfgRow = cfg.rows[0] as Record<string, unknown> | undefined
+  return {
+    phases: phases.rows.map((r: Record<string, unknown>) => ({
+      key: r['key'], label: r['label'], sequence: Number(r['sequence']), optional: Boolean(r['optional']),
+    })),
+    modules: modules.rows.map((r: Record<string, unknown>) => ({
+      moduleKey: r['module_key'], minPhaseKey: r['min_phase_key'], label: r['label'] ?? null, sequence: Number(r['sequence']),
+    })),
+    bidSimpleModeEnabled: Boolean(cfgRow?.['bid_simple_mode_enabled'] ?? false),
+    hideRiskRegister: Boolean(cfgRow?.['hide_risk_register'] ?? true),
+  }
+}
+
+async function bidPackageFileList(projectId: string, companyId: string) {
+  const files = await query(
+    `SELECT da.id, da.file_id, da.entity_type, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key
+     FROM document_attachments da JOIN files f ON f.id=da.file_id
+     WHERE da.entity_type IN ('bid_package_technical','bid_package_commercial') AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
+     ORDER BY da.created_at`,
+    [projectId, companyId],
+  )
+  return Promise.all(files.rows.map(async (f: Record<string, unknown>) => {
+    let downloadUrl: string | null = null
+    try { const dl = await generateDownloadUrl(f['file_key'] as string, f['original_filename'] as string); downloadUrl = dl.downloadUrl } catch { /* best-effort */ }
+    return {
+      id: f['id'], fileId: f['file_id'],
+      bidType: f['entity_type'] === 'bid_package_technical' ? 'technical' : 'commercial',
+      filename: f['original_filename'], mimeType: f['mime_type'], sizeBytes: f['size_bytes'],
+      title: f['label'] ?? f['original_filename'], description: f['description'] ?? null,
+      createdAt: f['created_at'], downloadUrl,
+    }
+  }))
+}
+
 function voMapVO(r: Record<string, unknown>, costItems: object[], correspondence: object[], drawings: object[]) {
   return {
     id: r['id'], projectId: r['project_id'], voNumber: r['vo_number'], title: r['title'],
@@ -529,9 +573,91 @@ function voMapVO(r: Record<string, unknown>, costItems: object[], correspondence
     status: r['status'],
     submittedAt: r['submitted_at'] ?? null, decidedAt: r['decided_at'] ?? null,
     rejectionReason: r['rejection_reason'] ?? null,
+    contractId: r['contract_id'] ?? null, appliedValue: r['applied_value'] != null ? Number(r['applied_value']) : null,
     costItems, correspondence, drawings,
     createdAt: r['created_at'], updatedAt: r['updated_at'],
   }
+}
+
+// Resolves which contract an approved VO applies to: the VO's own contract_id if
+// set, otherwise auto-links when the project has exactly one contract. Returns null
+// when the project has no contract yet (approval proceeds — only the cost-code
+// budget line is created). Throws only when >1 contract exists with no explicit
+// selection, since that ambiguity can't be resolved automatically.
+async function voResolveContractId(
+  client: import('@fnc-erp/db').PoolClient,
+  projectId: string,
+  existingContractId: string | null,
+): Promise<string | null> {
+  if (existingContractId) return existingContractId
+  const contracts = await client.query(`SELECT id FROM project_contracts WHERE project_id=$1`, [projectId])
+  if (contracts.rows.length === 0) return null
+  if (contracts.rows.length === 1) return String((contracts.rows[0] as Record<string, unknown>)['id'])
+  throw new Error('This project has multiple contracts — select which contract this VO applies to')
+}
+
+// Reconciles an approved VO's financial effects (contract value + a dedicated
+// cost-code budget line) with its current status, reversibly. applied_value
+// tracks what's currently reflected downstream so calling this again after the
+// VO bounces between 'approved' and any other status (via setVOStatus, reject,
+// or re-approval with a different value) never drifts — it always reconciles to
+// exactly (current status === 'approved' ? approved_value : 0).
+async function syncVOFinancialLinks(
+  client: import('@fnc-erp/db').PoolClient,
+  userId: string,
+  voId: string,
+): Promise<void> {
+  const voR = await client.query(`SELECT * FROM project_variation_orders WHERE id=$1 FOR UPDATE`, [voId])
+  const vo = voR.rows[0] as Record<string, unknown> | undefined
+  if (!vo) throw new Error('VO not found')
+  const isApproved = vo['status'] === 'approved'
+  const appliedBefore = vo['applied_value'] != null ? Number(vo['applied_value']) : 0
+  let target = 0
+  let contractId = vo['contract_id'] as string | null
+
+  if (isApproved) {
+    if (vo['approved_value'] == null) throw new Error('VO has no approved value to apply')
+    target = Number(vo['approved_value'])
+    contractId = await voResolveContractId(client, String(vo['project_id']), contractId)
+  }
+
+  const delta = target - appliedBefore
+  if (delta !== 0 && contractId) {
+    const contractR = await client.query(`SELECT * FROM project_contracts WHERE id=$1 FOR UPDATE`, [contractId])
+    const contract = contractR.rows[0] as Record<string, unknown> | undefined
+    if (!contract) throw new Error('Linked contract not found')
+    const newValue = Number(contract['contract_value']) + delta
+    const nextRev = Number(contract['revision'] ?? 1) + 1
+    await client.query(
+      `INSERT INTO project_contract_revisions (contract_id, revision, contract_value, currency_code, retention_pct, end_date, change_summary, created_by_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [contractId, nextRev, newValue, contract['currency_code'], contract['retention_pct'], contract['end_date'],
+       `VO ${vo['vo_number']} ${isApproved ? 'approved' : 'reverted'}: contract value ${delta >= 0 ? '+' : ''}${delta.toFixed(2)}`, userId],
+    )
+    await client.query(`UPDATE project_contracts SET contract_value=$1, revision=$2, updated_at=NOW() WHERE id=$3`, [newValue, nextRev, contractId])
+  }
+
+  if (target > 0 || appliedBefore > 0) {
+    const catR = await client.query(
+      `SELECT category, SUM(amount) AS total FROM project_vo_cost_items WHERE vo_id=$1 GROUP BY category ORDER BY total DESC LIMIT 1`,
+      [voId],
+    )
+    const marginToContingency: Record<string, string> = { margin: 'contingency' }
+    const rawCat = catR.rows[0] ? String((catR.rows[0] as Record<string, unknown>)['category']) : 'other'
+    const category = marginToContingency[rawCat] ?? rawCat
+    await client.query(
+      `INSERT INTO project_cost_codes (project_id, source_vo_id, code, name, category, budget_amount)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (source_vo_id) WHERE source_vo_id IS NOT NULL
+       DO UPDATE SET budget_amount=EXCLUDED.budget_amount, category=EXCLUDED.category, updated_at=NOW()`,
+      [vo['project_id'], voId, `VO-${vo['vo_number']}`, `VO ${vo['vo_number']}: ${vo['title']}`, category, target],
+    )
+  }
+
+  await client.query(
+    `UPDATE project_variation_orders SET applied_value=$1, contract_id=$2, updated_at=NOW() WHERE id=$3`,
+    [isApproved ? target : null, contractId, voId],
+  )
 }
 
 async function voLoadChildren(voIds: string[]) {
@@ -6352,6 +6478,26 @@ export const resolvers = {
       return { moduleKey: row['module_key'], minPhaseKey: row['min_phase_key'], label: row['label'] ?? null, sequence: Number(row['sequence']) }
     },
 
+    updateBidSimpleMode: async (_: unknown, args: { enabled: boolean }, ctx: GQLContext) => {
+      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      await query(
+        `INSERT INTO system_configuration (company_id, bid_simple_mode_enabled) VALUES ($1,$2)
+         ON CONFLICT (company_id) DO UPDATE SET bid_simple_mode_enabled=$2`,
+        [ctx.auth.companyId, args.enabled],
+      )
+      return fetchLifecycleConfig(ctx.auth.companyId)
+    },
+
+    updateHideRiskRegister: async (_: unknown, args: { hidden: boolean }, ctx: GQLContext) => {
+      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      await query(
+        `INSERT INTO system_configuration (company_id, hide_risk_register) VALUES ($1,$2)
+         ON CONFLICT (company_id) DO UPDATE SET hide_risk_register=$2`,
+        [ctx.auth.companyId, args.hidden],
+      )
+      return fetchLifecycleConfig(ctx.auth.companyId)
+    },
+
     addEngClientComment: async (
       _: unknown,
       args: { documentId: string; description: string; clauseRef?: string; category?: string; raisedBy?: string },
@@ -6726,6 +6872,31 @@ export const resolvers = {
       const delR = await query(`SELECT bd.*, p.company_id FROM bid_deliverables bd JOIN projects p ON p.id=bd.project_id WHERE bd.id=$1 AND p.company_id=$2`, [args.deliverableId, ctx.auth.companyId])
       if (!delR.rows[0]) throw new Error('Deliverable not found')
       await query(`DELETE FROM document_attachments WHERE id=$1 AND entity_type='bid_deliverable' AND entity_id=$2`, [args.attachmentId, args.deliverableId])
+      return true
+    },
+
+    uploadBidPackageFile: async (_: unknown, args: { projectId: string; bidType: string; fileId: string; title?: string; description?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (args.bidType !== 'technical' && args.bidType !== 'commercial') throw new Error('bidType must be "technical" or "commercial"')
+      const projR = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      if (!projR.rows[0]) throw new Error('Project not found')
+      const fileR = await query(`SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`, [args.fileId, ctx.auth.companyId])
+      if (!fileR.rows[0]) throw new Error('File not found')
+      const f = fileR.rows[0] as Record<string, unknown>
+      const entityType = args.bidType === 'technical' ? 'bid_package_technical' : 'bid_package_commercial'
+      await query(
+        `INSERT INTO document_attachments (file_id, entity_type, entity_id, label, description, uploaded_by) VALUES ($1,$2,$3,$4,$5,$6)`,
+        [args.fileId, entityType, args.projectId, args.title ?? f['original_filename'], args.description ?? null, ctx.auth.userId],
+      )
+      await logActivity(args.projectId, ctx.auth.userId, 'bid_package_file', `${args.bidType === 'technical' ? 'Technical' : 'Commercial'} bid package file attached: ${String(f['original_filename'])}`)
+      return bidPackageFileList(args.projectId, ctx.auth.companyId)
+    },
+
+    deleteBidPackageFile: async (_: unknown, args: { attachmentId: string; projectId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const projR = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      if (!projR.rows[0]) throw new Error('Project not found')
+      await query(`DELETE FROM document_attachments WHERE id=$1 AND entity_type IN ('bid_package_technical','bid_package_commercial') AND entity_id=$2`, [args.attachmentId, args.projectId])
       return true
     },
 
@@ -7912,20 +8083,25 @@ export const resolvers = {
 
     // ── Variation Orders ──────────────────────────────────────────────────────
 
-    createVariationOrder: async (_: unknown, args: { projectId: string; voNumber: string; title: string; description?: string; changeType?: string; initiatedBy?: string; instructionDate?: string; receivedDate?: string; scheduleImpactDays?: number; voValue: number; currencyCode?: string; clientRef?: string; impactAnalysis?: string; technicalNotes?: string }, ctx: GQLContext) => {
+    createVariationOrder: async (_: unknown, args: { projectId: string; voNumber: string; title: string; description?: string; changeType?: string; initiatedBy?: string; instructionDate?: string; receivedDate?: string; scheduleImpactDays?: number; voValue: number; currencyCode?: string; clientRef?: string; impactAnalysis?: string; technicalNotes?: string; contractId?: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId]).then(r => { if (!r.rows[0]) throw new Error('Not found') })
       const r = await query(
-        `INSERT INTO project_variation_orders (project_id,vo_number,title,description,change_type,initiated_by,instruction_date,received_date,schedule_impact_days,vo_value,currency_code,client_ref,impact_analysis,technical_notes,created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-        [args.projectId, args.voNumber, args.title, args.description || null, args.changeType || 'additional_work', args.initiatedBy || 'client', args.instructionDate || null, args.receivedDate || null, args.scheduleImpactDays ?? 0, args.voValue, args.currencyCode || 'USD', args.clientRef || null, args.impactAnalysis || null, args.technicalNotes || null, ctx.auth.userId],
+        `INSERT INTO project_variation_orders (project_id,vo_number,title,description,change_type,initiated_by,instruction_date,received_date,schedule_impact_days,vo_value,currency_code,client_ref,impact_analysis,technical_notes,contract_id,created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+        [args.projectId, args.voNumber, args.title, args.description || null, args.changeType || 'additional_work', args.initiatedBy || 'client', args.instructionDate || null, args.receivedDate || null, args.scheduleImpactDays ?? 0, args.voValue, args.currencyCode || 'USD', args.clientRef || null, args.impactAnalysis || null, args.technicalNotes || null, args.contractId || null, ctx.auth.userId],
       )
       void voNotify(args.projectId, ctx.auth.companyId, args.voNumber, 'created', ctx.auth.userId)
       return voMapVO(r.rows[0] as Record<string, unknown>, [], [], [])
     },
 
-    updateVariationOrder: async (_: unknown, args: { id: string; title?: string; description?: string; changeType?: string; initiatedBy?: string; instructionDate?: string; receivedDate?: string; scheduleImpactDays?: number; voValue?: number; currencyCode?: string; clientRef?: string; impactAnalysis?: string; technicalNotes?: string }, ctx: GQLContext) => {
+    updateVariationOrder: async (_: unknown, args: { id: string; title?: string; description?: string; changeType?: string; initiatedBy?: string; instructionDate?: string; receivedDate?: string; scheduleImpactDays?: number; voValue?: number; currencyCode?: string; clientRef?: string; impactAnalysis?: string; technicalNotes?: string; contractId?: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      if (args.voValue !== undefined || args.contractId !== undefined) {
+        const cur = await query(`SELECT pvo.status FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE p.company_id=$1 AND pvo.id=$2`, [ctx.auth.companyId, args.id])
+        if (!cur.rows[0]) throw new Error('Not found or unauthorized')
+        if ((cur.rows[0] as Record<string, unknown>)['status'] === 'approved') throw new Error('Cannot edit value or contract of an approved VO — revert its status first')
+      }
       const sets: string[] = []; const vals: unknown[] = []; let idx = 1
       if (args.title            !== undefined) { sets.push(`title=$${idx++}`);                vals.push(args.title) }
       if (args.description      !== undefined) { sets.push(`description=$${idx++}`);          vals.push(args.description || null) }
@@ -7939,6 +8115,7 @@ export const resolvers = {
       if (args.clientRef        !== undefined) { sets.push(`client_ref=$${idx++}`);           vals.push(args.clientRef || null) }
       if (args.impactAnalysis   !== undefined) { sets.push(`impact_analysis=$${idx++}`);      vals.push(args.impactAnalysis || null) }
       if (args.technicalNotes   !== undefined) { sets.push(`technical_notes=$${idx++}`);      vals.push(args.technicalNotes || null) }
+      if (args.contractId       !== undefined) { sets.push(`contract_id=$${idx++}`);          vals.push(args.contractId || null) }
       if (sets.length === 0) throw new Error('Nothing to update')
       sets.push(`updated_at=NOW()`); vals.push(args.id)
       const r = await query(
@@ -7969,13 +8146,17 @@ export const resolvers = {
       return voMapVO(row, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
     },
 
-    approveVariationOrder: async (_: unknown, args: { id: string; approvedValue: number }, ctx: GQLContext) => {
+    approveVariationOrder: async (_: unknown, args: { id: string; approvedValue: number; contractId?: string }, ctx: GQLContext) => {
       if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
-      const r = await query(
-        `UPDATE project_variation_orders pvo SET status='approved', approved_value=$1, decided_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$2 AND pvo.id=$3 RETURNING pvo.*`,
-        [args.approvedValue, ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('VO not found')
+      await withTransaction({ companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role }, async (client) => {
+        const r = await client.query(
+          `UPDATE project_variation_orders pvo SET status='approved', approved_value=$1, contract_id=COALESCE($2, pvo.contract_id), decided_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$3 AND pvo.id=$4 RETURNING pvo.id`,
+          [args.approvedValue, args.contractId || null, ctx.auth!.companyId, args.id],
+        )
+        if (!r.rows[0]) throw new Error('VO not found')
+        await syncVOFinancialLinks(client, ctx.auth!.userId, args.id)
+      })
+      const r = await query(`SELECT * FROM project_variation_orders WHERE id=$1`, [args.id])
       const row = r.rows[0] as Record<string, unknown>
       void voNotify(String(row['project_id']), ctx.auth.companyId, String(row['vo_number']), 'approved', ctx.auth.userId)
       const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
@@ -7984,11 +8165,18 @@ export const resolvers = {
 
     rejectVariationOrder: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
       if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
-      const r = await query(
-        `UPDATE project_variation_orders pvo SET status='rejected', rejection_reason=$1, decided_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$2 AND pvo.id=$3 RETURNING pvo.*`,
-        [args.reason, ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('VO not found')
+      await withTransaction({ companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role }, async (client) => {
+        const before = await client.query(`SELECT pvo.status FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE p.company_id=$1 AND pvo.id=$2`, [ctx.auth!.companyId, args.id])
+        if (!before.rows[0]) throw new Error('VO not found')
+        const wasApproved = (before.rows[0] as Record<string, unknown>)['status'] === 'approved'
+        const r = await client.query(
+          `UPDATE project_variation_orders SET status='rejected', rejection_reason=$1, decided_at=NOW(), updated_at=NOW() WHERE id=$2 RETURNING id`,
+          [args.reason, args.id],
+        )
+        if (!r.rows[0]) throw new Error('VO not found')
+        if (wasApproved) await syncVOFinancialLinks(client, ctx.auth!.userId, args.id)
+      })
+      const r = await query(`SELECT * FROM project_variation_orders WHERE id=$1`, [args.id])
       const row = r.rows[0] as Record<string, unknown>
       void voNotify(String(row['project_id']), ctx.auth.companyId, String(row['vo_number']), 'rejected', ctx.auth.userId)
       const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
@@ -7997,11 +8185,18 @@ export const resolvers = {
 
     setVOStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
       if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')) throw new Error('Admin required')
-      const r = await query(
-        `UPDATE project_variation_orders pvo SET status=$1, updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$2 AND pvo.id=$3 RETURNING pvo.*`,
-        [args.status, ctx.auth.companyId, args.id],
-      )
-      if (!r.rows[0]) throw new Error('VO not found')
+      await withTransaction({ companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role }, async (client) => {
+        const before = await client.query(`SELECT pvo.status FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE p.company_id=$1 AND pvo.id=$2`, [ctx.auth!.companyId, args.id])
+        if (!before.rows[0]) throw new Error('VO not found')
+        const oldStatus = (before.rows[0] as Record<string, unknown>)['status']
+        const r = await client.query(
+          `UPDATE project_variation_orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING id`,
+          [args.status, args.id],
+        )
+        if (!r.rows[0]) throw new Error('VO not found')
+        if (oldStatus === 'approved' || args.status === 'approved') await syncVOFinancialLinks(client, ctx.auth!.userId, args.id)
+      })
+      const r = await query(`SELECT * FROM project_variation_orders WHERE id=$1`, [args.id])
       const row = r.rows[0] as Record<string, unknown>
       const voId = String(row['id']); const { itemsByVO, corrByVO, drawsByVO } = await voLoadChildren([voId])
       return voMapVO(row, itemsByVO.get(voId) ?? [], corrByVO.get(voId) ?? [], drawsByVO.get(voId) ?? [])
@@ -11501,22 +11696,7 @@ const phase5QueryResolvers = {
 
   lifecycleConfig: async (_: unknown, __: unknown, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const phases = await query(
-      `SELECT key, label, sequence, optional FROM lifecycle_phases WHERE company_id=$1 ORDER BY sequence`,
-      [ctx.auth.companyId],
-    )
-    const modules = await query(
-      `SELECT module_key, min_phase_key, label, sequence FROM lifecycle_phase_modules WHERE company_id=$1 ORDER BY sequence`,
-      [ctx.auth.companyId],
-    )
-    return {
-      phases: phases.rows.map((r: Record<string, unknown>) => ({
-        key: r['key'], label: r['label'], sequence: Number(r['sequence']), optional: Boolean(r['optional']),
-      })),
-      modules: modules.rows.map((r: Record<string, unknown>) => ({
-        moduleKey: r['module_key'], minPhaseKey: r['min_phase_key'], label: r['label'] ?? null, sequence: Number(r['sequence']),
-      })),
-    }
+    return fetchLifecycleConfig(ctx.auth.companyId)
   },
 
   rfqPhases: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
@@ -11829,6 +12009,13 @@ const phase5QueryResolvers = {
         fileCount: fileList.length, files: fileList, createdAt: d['created_at'], updatedAt: d['updated_at'],
       }
     }))
+  },
+
+  bidPackageFiles: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [args.projectId, ctx.auth.companyId])
+      .then(r => { if (!r.rows[0]) throw new Error('Project not found') })
+    return bidPackageFileList(args.projectId, ctx.auth.companyId)
   },
 
   bidCostItems: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {

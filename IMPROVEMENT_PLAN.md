@@ -211,10 +211,24 @@ eng-doc/drawings/client-doc/submittal models)
   an optional per-revision action slot first — not attempted, decide before
   starting if it comes up again.)
 
-**Phase 5 — Module Linking** ⬜ NOT STARTED (highest value per the audit's #1
+**Phase 5 — Module Linking** 🔶 IN PROGRESS (highest value per the audit's #1
 cross-cutting finding — modules are silos)
-- VO → contract value + cost budget (do first — financial integrity; an approved
-  VO currently doesn't update either).
+- ✅ **VO → contract value + cost budget.** Migration 170: `contract_id` +
+  `applied_value` on `project_variation_orders`; `source_vo_id` on
+  `project_cost_codes` (one dedicated budget line per VO, upserted via a
+  partial unique index). `syncVOFinancialLinks()` in resolvers.ts reconciles
+  both on every status change (`approveVariationOrder`, `rejectVariationOrder`,
+  `setVOStatus`) — reversible by design: `applied_value` tracks what's
+  currently reflected downstream, so re-approving or reverting a VO never
+  drifts the contract value or cost budget. Contract selection: auto-linked
+  when a project has exactly one contract, required via a dropdown when it has
+  >1 (confirmed with user). Approving also logs an automatic entry in the
+  existing contract revision history (reuses `project_contract_revisions` from
+  P4.1) with a change summary like "VO VO-004 approved: contract value
+  +25000.00" — same audit trail the user already reads for manual revisions.
+  Editing `voValue`/`contractId` is locked once a VO is `'approved'` (matches
+  the "approved = locked snapshot" pattern from Contracts/Bids revisioning) —
+  revert status first to amend.
 - Quote → cost line (pull a supplier quotation straight into the bidding cost
   sheet instead of manual re-entry).
 - PO → cost commitment (PO approval should create/update the committed cost;
@@ -277,8 +291,11 @@ treat as approximate, always grep to confirm.
   - Eng-doc workflow `TRANSITIONS` map + `performDocWorkflowAction`: search resolvers
   - Lifecycle config: `lifecycleConfig` query, `updateLifecyclePhase`/`updateLifecycleModule` mutations
   - Contract revisions: `reviseContract` mutation, `project_contract_revisions` queries
+  - VO→contract/cost linking (P5): `voResolveContractId` + `syncVOFinancialLinks`
+    helpers (just above `voMapVO`), called from `approveVariationOrder` /
+    `rejectVariationOrder` / `setVOStatus`, all now `withTransaction`-wrapped
 - **Frontend GraphQL:** `apps/web/src/graphql/projects.ts`
-- **Migrations:** `packages/db/migrations/` (latest = **168**, `168_contract_revisions.sql`)
+- **Migrations:** `packages/db/migrations/` (latest = **170**, `170_vo_contract_cost_link.sql`)
 
 ---
 
@@ -315,9 +332,13 @@ modules (160), handover (161), eng-doc workflow (162), notification reminders
   bidding approve gating)
 - `4896b5d` — Phase 4.1: contract revisioning + shared RevisionHistory component
   (migration 168)
+- `c65644a` — Phase 4.2 + Phase 4 closure: bid revisioning (migration 169),
+  P4.3 dropped after inspection (documented, not built)
+- *(pending commit)* — Phase 5 slice 1: VO → contract value + cost budget
+  linking (migration 170) — see §5 for detail
 
 Migrations 162 & 163 were applied directly to the dev DB before being tracked;
-recorded in `schema_migrations` retroactively. **Local dev DB is at migration 168.**
+recorded in `schema_migrations` retroactively. **Local dev DB is at migration 170.**
 
 **Also this session:** ran `/graphify` on the full repo (955 files) — knowledge
 graph at `graphify-out/` (6577 nodes, 12326 edges, 499 communities), updated once
@@ -330,10 +351,9 @@ before citing as current fact or acting on it (see global CLAUDE.md).
 ## 9. Recommended next action
 
 **Phase 4 is complete** (4.1 contracts, 4.2 bids; 4.3 deliberately dropped after
-inspection — see §5). Next up: **Phase 5 — Module Linking**, the highest-value
-phase per the original audit's #1 cross-cutting finding (modules are silos).
-Start with **VO → contract value + cost budget** (financial integrity: an
-approved variation order currently updates neither). Then quote→cost line,
+inspection — see §5). **Phase 5 slice 1 (VO → contract value + cost budget) is
+built, migrated, and typechecked — awaiting user verification before commit**
+(see §5 for full detail; migration 170). Next after that: quote→cost line,
 PO→cost commitment (check whether Cost Control's existing "Sync POs" button on
 Committed Costs already covers this before building more), SI→VO hard link,
 transmittal→eng doc, meeting action→task, risk→issue, and the client's scope

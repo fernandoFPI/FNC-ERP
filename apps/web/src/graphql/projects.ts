@@ -46,6 +46,8 @@ export const LIFECYCLE_CONFIG_QUERY = gql`
     lifecycleConfig {
       phases { key label sequence optional }
       modules { moduleKey minPhaseKey label sequence }
+      bidSimpleModeEnabled
+      hideRiskRegister
     }
   }
 `
@@ -59,6 +61,26 @@ export const UPDATE_LIFECYCLE_PHASE = gql`
 export const UPDATE_LIFECYCLE_MODULE = gql`
   mutation UpdateLifecycleModule($moduleKey: String!, $label: String, $minPhaseKey: String) {
     updateLifecycleModule(moduleKey: $moduleKey, label: $label, minPhaseKey: $minPhaseKey) { moduleKey minPhaseKey label sequence }
+  }
+`
+
+export const UPDATE_BID_SIMPLE_MODE = gql`
+  mutation UpdateBidSimpleMode($enabled: Boolean!) {
+    updateBidSimpleMode(enabled: $enabled) {
+      phases { key label sequence optional }
+      modules { moduleKey minPhaseKey label sequence }
+      bidSimpleModeEnabled
+    }
+  }
+`
+
+export const UPDATE_HIDE_RISK_REGISTER = gql`
+  mutation UpdateHideRiskRegister($hidden: Boolean!) {
+    updateHideRiskRegister(hidden: $hidden) {
+      phases { key label sequence optional }
+      modules { moduleKey minPhaseKey label sequence }
+      hideRiskRegister
+    }
   }
 `
 
@@ -827,6 +849,28 @@ export const DELETE_BID_DELIVERABLE_FILE = gql`
   }
 `
 
+export const BID_PACKAGE_FILES_QUERY = gql`
+  query BidPackageFiles($projectId: ID!) {
+    bidPackageFiles(projectId: $projectId) {
+      id fileId bidType filename mimeType sizeBytes title description createdAt downloadUrl
+    }
+  }
+`
+
+export const UPLOAD_BID_PACKAGE_FILE = gql`
+  mutation UploadBidPackageFile($projectId: ID!, $bidType: String!, $fileId: ID!, $title: String, $description: String) {
+    uploadBidPackageFile(projectId: $projectId, bidType: $bidType, fileId: $fileId, title: $title, description: $description) {
+      id fileId bidType filename mimeType sizeBytes title description createdAt downloadUrl
+    }
+  }
+`
+
+export const DELETE_BID_PACKAGE_FILE = gql`
+  mutation DeleteBidPackageFile($attachmentId: ID!, $projectId: ID!) {
+    deleteBidPackageFile(attachmentId: $attachmentId, projectId: $projectId)
+  }
+`
+
 export const BID_COST_ITEMS_QUERY = gql`
   query BidCostItems($projectId: ID!) {
     bidCostItems(projectId: $projectId) {
@@ -1490,6 +1534,7 @@ const VO_FIELDS = gql`
     voValue approvedValue currencyCode clientRef
     impactAnalysis technicalNotes status
     submittedAt decidedAt rejectionReason
+    contractId appliedValue
     costItems { id voId category description quantity unit unitRate amount notes createdAt }
     correspondence { id voId correspondenceDate direction referenceNumber subject description createdAt }
     drawings { id voId drawingNumber revision title notes createdAt }
@@ -1511,11 +1556,11 @@ export const PROJECT_VARIATION_ORDER_QUERY = gql`
   }
 `
 
-export const CREATE_VARIATION_ORDER = gql`${VO_FIELDS} mutation CreateVariationOrder($projectId: ID!, $voNumber: String!, $title: String!, $description: String, $changeType: String, $initiatedBy: String, $instructionDate: String, $receivedDate: String, $scheduleImpactDays: Int, $voValue: Float!, $currencyCode: String, $clientRef: String, $impactAnalysis: String, $technicalNotes: String) { createVariationOrder(projectId: $projectId, voNumber: $voNumber, title: $title, description: $description, changeType: $changeType, initiatedBy: $initiatedBy, instructionDate: $instructionDate, receivedDate: $receivedDate, scheduleImpactDays: $scheduleImpactDays, voValue: $voValue, currencyCode: $currencyCode, clientRef: $clientRef, impactAnalysis: $impactAnalysis, technicalNotes: $technicalNotes) { ...VOFields } }`
-export const UPDATE_VARIATION_ORDER = gql`${VO_FIELDS} mutation UpdateVariationOrder($id: ID!, $title: String, $description: String, $changeType: String, $initiatedBy: String, $instructionDate: String, $receivedDate: String, $scheduleImpactDays: Int, $voValue: Float, $currencyCode: String, $clientRef: String, $impactAnalysis: String, $technicalNotes: String) { updateVariationOrder(id: $id, title: $title, description: $description, changeType: $changeType, initiatedBy: $initiatedBy, instructionDate: $instructionDate, receivedDate: $receivedDate, scheduleImpactDays: $scheduleImpactDays, voValue: $voValue, currencyCode: $currencyCode, clientRef: $clientRef, impactAnalysis: $impactAnalysis, technicalNotes: $technicalNotes) { ...VOFields } }`
+export const CREATE_VARIATION_ORDER = gql`${VO_FIELDS} mutation CreateVariationOrder($projectId: ID!, $voNumber: String!, $title: String!, $description: String, $changeType: String, $initiatedBy: String, $instructionDate: String, $receivedDate: String, $scheduleImpactDays: Int, $voValue: Float!, $currencyCode: String, $clientRef: String, $impactAnalysis: String, $technicalNotes: String, $contractId: ID) { createVariationOrder(projectId: $projectId, voNumber: $voNumber, title: $title, description: $description, changeType: $changeType, initiatedBy: $initiatedBy, instructionDate: $instructionDate, receivedDate: $receivedDate, scheduleImpactDays: $scheduleImpactDays, voValue: $voValue, currencyCode: $currencyCode, clientRef: $clientRef, impactAnalysis: $impactAnalysis, technicalNotes: $technicalNotes, contractId: $contractId) { ...VOFields } }`
+export const UPDATE_VARIATION_ORDER = gql`${VO_FIELDS} mutation UpdateVariationOrder($id: ID!, $title: String, $description: String, $changeType: String, $initiatedBy: String, $instructionDate: String, $receivedDate: String, $scheduleImpactDays: Int, $voValue: Float, $currencyCode: String, $clientRef: String, $impactAnalysis: String, $technicalNotes: String, $contractId: ID) { updateVariationOrder(id: $id, title: $title, description: $description, changeType: $changeType, initiatedBy: $initiatedBy, instructionDate: $instructionDate, receivedDate: $receivedDate, scheduleImpactDays: $scheduleImpactDays, voValue: $voValue, currencyCode: $currencyCode, clientRef: $clientRef, impactAnalysis: $impactAnalysis, technicalNotes: $technicalNotes, contractId: $contractId) { ...VOFields } }`
 export const DELETE_VARIATION_ORDER = gql`mutation DeleteVariationOrder($id: ID!) { deleteVariationOrder(id: $id) }`
 export const SUBMIT_VARIATION_ORDER = gql`${VO_FIELDS} mutation SubmitVariationOrder($id: ID!) { submitVariationOrder(id: $id) { ...VOFields } }`
-export const APPROVE_VARIATION_ORDER = gql`${VO_FIELDS} mutation ApproveVariationOrder($id: ID!, $approvedValue: Float!) { approveVariationOrder(id: $id, approvedValue: $approvedValue) { ...VOFields } }`
+export const APPROVE_VARIATION_ORDER = gql`${VO_FIELDS} mutation ApproveVariationOrder($id: ID!, $approvedValue: Float!, $contractId: ID) { approveVariationOrder(id: $id, approvedValue: $approvedValue, contractId: $contractId) { ...VOFields } }`
 export const REJECT_VARIATION_ORDER = gql`${VO_FIELDS} mutation RejectVariationOrder($id: ID!, $reason: String!) { rejectVariationOrder(id: $id, reason: $reason) { ...VOFields } }`
 export const SET_VO_STATUS = gql`${VO_FIELDS} mutation SetVOStatus($id: ID!, $status: String!) { setVOStatus(id: $id, status: $status) { ...VOFields } }`
 

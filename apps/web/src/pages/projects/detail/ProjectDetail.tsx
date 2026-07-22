@@ -18,6 +18,7 @@ import {
   UPDATE_PROJECT_DRAWING_STATUS, DELETE_PROJECT_DRAWING,
   BID_DELIVERABLES_QUERY, CREATE_BID_DELIVERABLE, UPDATE_BID_DELIVERABLE, DELETE_BID_DELIVERABLE,
   UPLOAD_BID_DELIVERABLE_FILE, DELETE_BID_DELIVERABLE_FILE,
+  BID_PACKAGE_FILES_QUERY, UPLOAD_BID_PACKAGE_FILE, DELETE_BID_PACKAGE_FILE,
   BID_COST_ITEMS_QUERY, UPSERT_BID_COST_ITEMS,
   BID_SUPPLIER_QUOTATIONS_QUERY, CREATE_BID_SUPPLIER_QUOTATION, UPDATE_BID_SUPPLIER_QUOTATION, DELETE_BID_SUPPLIER_QUOTATION,
   BID_COMMERCIAL_SUMMARY_QUERY, UPDATE_BID_COMMERCIAL_SUMMARY, SUBMIT_BID_FOR_APPROVAL, APPROVE_BID, REJECT_BID, REVISE_BID,
@@ -89,6 +90,7 @@ import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
+import JSZip from 'jszip'
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger' | 'info'> = {
   pending: 'neutral', ongoing: 'info', submitted: 'warning',
@@ -323,6 +325,17 @@ export default function ProjectDetail() {
   })
   const [deleteBidDeliverableFile] = useMutation(DELETE_BID_DELIVERABLE_FILE, {
     onCompleted: () => { void refetchBidDeliverables() },
+    onError: (e) => addToast({ type: 'error', message: e.message }),
+  })
+  const { data: bidPackageFilesData, refetch: refetchBidPackageFiles } = useQuery(BID_PACKAGE_FILES_QUERY, {
+    variables: { projectId: id }, skip: !id || tab !== 'bidding', fetchPolicy: 'cache-and-network',
+  })
+  const [uploadBidPackageFile] = useMutation(UPLOAD_BID_PACKAGE_FILE, {
+    onCompleted: () => { void refetchBidPackageFiles() },
+    onError: (e) => addToast({ type: 'error', message: e.message }),
+  })
+  const [deleteBidPackageFile] = useMutation(DELETE_BID_PACKAGE_FILE, {
+    onCompleted: () => { void refetchBidPackageFiles() },
     onError: (e) => addToast({ type: 'error', message: e.message }),
   })
   const [upsertBidCostItems, { loading: savingCosts }] = useMutation(UPSERT_BID_COST_ITEMS, {
@@ -630,6 +643,8 @@ export default function ProjectDetail() {
     bidding:     cap.can('bidding', 'approve'),
   }
   const phase = p.lifecyclePhase ?? 'enquiry'
+  const simpleBidMode: boolean = lifecycleData?.lifecycleConfig?.bidSimpleModeEnabled ?? false
+  const hideRiskRegister: boolean = lifecycleData?.lifecycleConfig?.hideRiskRegister ?? true
 
   // Lifecycle from company config, with hardcoded fallback until it loads.
   const lifecycleStages: Array<{ key: string; label: string }> =
@@ -668,6 +683,7 @@ export default function ProjectDetail() {
     .filter(t => t.key !== 'meetings'         || moduleGate('meetings'))
     .filter(t => t.key !== 'cost_control'     || moduleGate('cost_control'))
     .filter(t => t.key !== 'variation_orders' || moduleGate('variation_orders'))
+    .filter(t => t.key !== 'risk_register'    || !hideRiskRegister)
     .map(t => ({ ...t, label: moduleLabels[t.key] ?? t.label, group: TAB_GROUP[t.key] }))
 
   // If the active tab isn't available to this user (capability/phase), fall back
@@ -2135,6 +2151,7 @@ export default function ProjectDetail() {
             canApprove={canApprove.bidding}
             theme={theme}
             teamMembers={liveTeam.map(m => ({ id: m.employee_id, name: m.employee_name }))}
+            simpleBidMode={simpleBidMode}
             deliverables={bidDeliverableData?.bidDeliverables ?? []}
             creatingDeliverable={creatingDeliverable}
             onCreateDeliverable={(v) => void createBidDeliverable({ variables: v })}
@@ -2142,6 +2159,9 @@ export default function ProjectDetail() {
             onDeleteDeliverable={(id2) => void deleteBidDeliverable({ variables: { id: id2 } })}
             onUploadDeliverableFile={(deliverableId, fileId, title) => void uploadBidDeliverableFile({ variables: { deliverableId, fileId, title } })}
             onDeleteDeliverableFile={(attachmentId, deliverableId) => void deleteBidDeliverableFile({ variables: { attachmentId, deliverableId } })}
+            packageFiles={bidPackageFilesData?.bidPackageFiles ?? []}
+            onUploadPackageFile={(bidType, fileId, title) => void uploadBidPackageFile({ variables: { projectId: id, bidType, fileId, title } })}
+            onDeletePackageFile={(attachmentId) => void deleteBidPackageFile({ variables: { attachmentId, projectId: id } })}
             costItems={bidCostData?.bidCostItems ?? []}
             savingCosts={savingCosts}
             onSaveCosts={(items) => void upsertBidCostItems({ variables: { projectId: id, items } })}
@@ -2222,11 +2242,12 @@ export default function ProjectDetail() {
             th={theme as unknown as Record<string, string>}
             isAdmin={canEdit.variation}
             variationOrders={voData?.projectVariationOrders ?? []}
+            contracts={contractsData?.projectContracts ?? []}
             onCreateVO={(v) => void createVariationOrder({ variables: v })}
             onUpdateVO={(v) => void updateVariationOrder({ variables: v })}
             onDeleteVO={(voId) => void deleteVariationOrder({ variables: { id: voId } })}
             onSubmitVO={(voId) => void submitVariationOrder({ variables: { id: voId } })}
-            onApproveVO={(voId, approvedValue) => void approveVariationOrder({ variables: { id: voId, approvedValue } })}
+            onApproveVO={(voId, approvedValue, contractId) => void approveVariationOrder({ variables: { id: voId, approvedValue, contractId } })}
             onRejectVO={(voId, reason) => void rejectVariationOrder({ variables: { id: voId, reason } })}
             onSetVOStatus={(voId, status) => void setVOStatus({ variables: { id: voId, status } })}
             onCreateCostItem={(v) => void createVOCostItem({ variables: v })}
@@ -3188,14 +3209,15 @@ function formatBytes(b: number) {
 }
 
 function FileTypeIcon({ mime }: { mime: string }) {
-  const isExcel = mime.includes('spreadsheet') || mime.includes('excel')
-  const isPdf   = mime === 'application/pdf'
-  const isWord  = mime.includes('word')
-  const isImage = mime.startsWith('image/')
-  const color   = isExcel ? '#16a34a' : isPdf ? '#ef4444' : isWord ? '#2563eb' : isImage ? '#8b5cf6' : '#6b7280'
+  const isExcel   = mime.includes('spreadsheet') || mime.includes('excel')
+  const isPdf     = mime === 'application/pdf'
+  const isWord    = mime.includes('word')
+  const isImage   = mime.startsWith('image/')
+  const isArchive = mime.includes('zip') || mime.includes('rar') || mime.includes('7z')
+  const color     = isExcel ? '#16a34a' : isPdf ? '#ef4444' : isWord ? '#2563eb' : isImage ? '#8b5cf6' : isArchive ? '#d97706' : '#6b7280'
   return (
     <span style={{ fontSize: '18px', lineHeight: 1, color }}>
-      {isExcel ? '📊' : isPdf ? '📄' : isWord ? '📝' : isImage ? '🖼' : '📎'}
+      {isExcel ? '📊' : isPdf ? '📄' : isWord ? '📝' : isImage ? '🖼' : isArchive ? '🗜' : '📎'}
     </span>
   )
 }
@@ -3857,6 +3879,55 @@ interface BidCostItem { id: string; costType: string; description: string; quant
 interface BidQuotation { id: string; supplierName: string; itemDescription: string; amount: number | null; currencyCode: string; validityDate: string | null; downloadUrl: string | null; filename: string | null; notes: string | null; status: string; createdAt: string }
 interface BidRevision { id: string; revision: number; directCostTotal: number; overheadPct: number; overheadAmount: number; contingencyPct: number; contingencyAmount: number; marginPct: number; marginAmount: number; discountPct: number; discountAmount: number; bidPrice: number; currencyCode: string; changeSummary: string; createdByName: string | null; createdAt: string }
 interface BidSummary { id: string | null; projectId: string; overheadPct: number; marginPct: number; discountPct: number; contingencyPct: number; currencyCode: string; directCostTotal: number; overheadAmount: number; contingencyAmount: number; marginAmount: number; discountAmount: number; bidPrice: number; approvalStatus: string; submittedByName: string | null; submittedAt: string | null; approvedByName: string | null; approvedAt: string | null; rejectionReason: string | null; notes: string | null; updatedAt: string | null; revision: number; revisions: BidRevision[] }
+interface BidPackageFile { id: string; fileId: string; bidType: 'technical' | 'commercial'; filename: string; mimeType: string; sizeBytes: number | null; title: string | null; description: string | null; createdAt: string; downloadUrl: string | null }
+
+// ── ZIP package preview (client-side, via jszip) ────────────────────────────
+interface ZipTreeNode { name: string; path: string; isDir: boolean; children: ZipTreeNode[] }
+type ZipEntryKind = 'pdf' | 'image' | 'text' | 'other'
+interface ZipPreviewItem { name: string; kind: ZipEntryKind; url?: string; text?: string }
+
+const PKG_IMAGE_EXT: Record<string, string> = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
+const PKG_TEXT_EXT = ['.txt', '.csv', '.json', '.md', '.log', '.xml', '.yml', '.yaml', '.ini']
+
+function pkgEntryExt(name: string): string {
+  const i = name.lastIndexOf('.')
+  return i === -1 ? '' : name.slice(i).toLowerCase()
+}
+function pkgEntryKind(name: string): ZipEntryKind {
+  const ext = pkgEntryExt(name)
+  if (ext === '.pdf') return 'pdf'
+  if (PKG_IMAGE_EXT[ext]) return 'image'
+  if (PKG_TEXT_EXT.includes(ext)) return 'text'
+  return 'other'
+}
+function pkgMimeForExt(name: string): string {
+  const ext = pkgEntryExt(name)
+  return ext === '.pdf' ? 'application/pdf' : PKG_IMAGE_EXT[ext] ?? 'application/octet-stream'
+}
+
+function buildZipTree(zip: JSZip): ZipTreeNode[] {
+  const root: ZipTreeNode = { name: '', path: '', isDir: true, children: [] }
+  zip.forEach((relPath, entry) => {
+    if (entry.dir) return // folders are inferred from file paths below, not from explicit dir entries
+    const parts = relPath.split('/').filter(Boolean)
+    let node = root
+    parts.forEach((part, i) => {
+      const isLast = i === parts.length - 1
+      let child = node.children.find(c => c.name === part && c.isDir === !isLast)
+      if (!child) {
+        child = { name: part, path: parts.slice(0, i + 1).join('/'), isDir: !isLast, children: [] }
+        node.children.push(child)
+      }
+      node = child
+    })
+  })
+  const sortTree = (n: ZipTreeNode) => {
+    n.children.sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1))
+    n.children.forEach(sortTree)
+  }
+  sortTree(root)
+  return root.children
+}
 
 const DELIVERABLE_TYPES: Record<string, { label: string; color: string }> = {
   mto:                { label: 'MTO',                color: '#3b82f6' },
@@ -3896,8 +3967,9 @@ const APPROVAL_STATUS: Record<string, { label: string; color: string; bg: string
 }
 
 function BiddingTab({
-  projectId, isEditable, isAdmin, canApprove, theme, teamMembers,
+  projectId, isEditable, isAdmin, canApprove, theme, teamMembers, simpleBidMode,
   deliverables, creatingDeliverable, onCreateDeliverable, onUpdateDeliverable, onDeleteDeliverable, onUploadDeliverableFile, onDeleteDeliverableFile,
+  packageFiles, onUploadPackageFile, onDeletePackageFile,
   costItems, savingCosts, onSaveCosts,
   quotations, onCreateQuotation, onUpdateQuotation, onDeleteQuotation,
   summary, savingSummary, onUpdateSummary,
@@ -3910,6 +3982,7 @@ function BiddingTab({
   canApprove?: boolean
   theme: ReturnType<typeof useTheme>['theme']
   teamMembers: { id: string; name: string }[]
+  simpleBidMode: boolean
   deliverables: BidDeliverable[]
   creatingDeliverable: boolean
   onCreateDeliverable: (v: { projectId: string; name: string; deliverableType: string; discipline?: string; dueDate?: string; notes?: string }) => void
@@ -3917,6 +3990,9 @@ function BiddingTab({
   onDeleteDeliverable: (id: string) => void
   onUploadDeliverableFile: (deliverableId: string, fileId: string, title?: string) => void
   onDeleteDeliverableFile: (attachmentId: string, deliverableId: string) => void
+  packageFiles: BidPackageFile[]
+  onUploadPackageFile: (bidType: 'technical' | 'commercial', fileId: string, title?: string) => void
+  onDeletePackageFile: (attachmentId: string) => void
   costItems: BidCostItem[]
   savingCosts: boolean
   onSaveCosts: (items: Array<{ costType: string; description: string; quantity?: number; unit?: string; unitCost?: number; totalCost?: number; currencyCode?: string; supplierRef?: string; notes?: string; sequence?: number }>) => void
@@ -3961,6 +4037,165 @@ function BiddingTab({
       setDelUploadProgress(100)
     } catch { addToast({ type: 'error', message: 'Upload failed' }) }
     finally { setUploadingDelId(null); setDelUploadProgress(0) }
+  }
+
+  // ── Bid package (ZIP bundle) state ─────────────────────────────────────
+  const [uploadingPkgType, setUploadingPkgType] = React.useState<'technical' | 'commercial' | null>(null)
+  const [pkgUploadProgress, setPkgUploadProgress] = React.useState(0)
+  const pkgFileRef = React.useRef<HTMLInputElement>(null)
+
+  async function handlePkgFileUpload(bidType: 'technical' | 'commercial', file: File) {
+    try {
+      setUploadingPkgType(bidType)
+      setPkgUploadProgress(10)
+      const { data: urlRes } = await api.post('/files/upload-url', { filename: file.name, mimeType: file.type, sizeBytes: file.size, category: 'attachment' })
+      const { fileId } = urlRes as { fileId: string }
+      setPkgUploadProgress(40)
+      const buf = await file.arrayBuffer()
+      await api.post(`/files/${fileId}/content`, buf, { headers: { 'Content-Type': file.type }, timeout: 120_000 })
+      setPkgUploadProgress(90)
+      onUploadPackageFile(bidType, fileId, file.name.replace(/\.[^.]+$/, ''))
+      setPkgUploadProgress(100)
+    } catch { addToast({ type: 'error', message: 'Upload failed' }) }
+    finally { setUploadingPkgType(null); setPkgUploadProgress(0) }
+  }
+
+  // ── Bid package contents preview (list + open individual files) ─────────
+  const [expandedPkgFileId, setExpandedPkgFileId] = React.useState<string | null>(null)
+  const [pkgZipCache, setPkgZipCache] = React.useState<Record<string, ZipTreeNode[] | 'loading' | 'error'>>({})
+  const pkgZipInstances = React.useRef<Record<string, JSZip>>({})
+  const [previewItem, setPreviewItem] = React.useState<ZipPreviewItem | null>(null)
+
+  async function toggleZipExpand(pkgFile: BidPackageFile) {
+    if (expandedPkgFileId === pkgFile.id) { setExpandedPkgFileId(null); return }
+    setExpandedPkgFileId(pkgFile.id)
+    if (pkgZipCache[pkgFile.id]) return
+    setPkgZipCache(prev => ({ ...prev, [pkgFile.id]: 'loading' }))
+    try {
+      const res = await api.get(`/files/${pkgFile.fileId}/content`, { responseType: 'arraybuffer' })
+      const zip = await JSZip.loadAsync(res.data as ArrayBuffer)
+      pkgZipInstances.current[pkgFile.id] = zip
+      setPkgZipCache(prev => ({ ...prev, [pkgFile.id]: buildZipTree(zip) }))
+    } catch {
+      setPkgZipCache(prev => ({ ...prev, [pkgFile.id]: 'error' }))
+    }
+  }
+
+  async function openZipEntry(pkgFileId: string, entryPath: string, entryName: string) {
+    const zip = pkgZipInstances.current[pkgFileId]
+    const entry = zip?.file(entryPath)
+    if (!entry) return
+    const kind = pkgEntryKind(entryName)
+    try {
+      if (kind === 'text') {
+        const text = await entry.async('string')
+        setPreviewItem({ name: entryName, kind, text })
+        return
+      }
+      const bytes = await entry.async('uint8array')
+      const blob = new Blob([bytes as BlobPart], { type: pkgMimeForExt(entryName) })
+      setPreviewItem({ name: entryName, kind, url: URL.createObjectURL(blob) })
+    } catch { addToast({ type: 'error', message: 'Could not open this file' }) }
+  }
+
+  function closePreview() {
+    if (previewItem?.url) URL.revokeObjectURL(previewItem.url)
+    setPreviewItem(null)
+  }
+
+  function renderZipNode(pkgFileId: string, node: ZipTreeNode, depth: number): React.ReactNode {
+    if (node.isDir) {
+      return (
+        <div key={node.path}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', paddingLeft: depth * 16, fontSize: '12px', color: theme.textSecondary, fontWeight: 600 }}>
+            <span>📁</span>{node.name}
+          </div>
+          {node.children.map(c => renderZipNode(pkgFileId, c, depth + 1))}
+        </div>
+      )
+    }
+    const previewable = pkgEntryKind(node.name) !== 'other'
+    return (
+      <div key={node.path} onClick={() => void openZipEntry(pkgFileId, node.path, node.name)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', paddingLeft: depth * 16 + 18, fontSize: '12px', color: previewable ? theme.accent : theme.textSecondary, cursor: 'pointer' }}>
+        <span style={{ color: theme.textMuted }}>{previewable ? '👁' : '📄'}</span>{node.name}
+      </div>
+    )
+  }
+
+  const technicalPackageFiles = packageFiles.filter(f => f.bidType === 'technical')
+  const commercialPackageFiles = packageFiles.filter(f => f.bidType === 'commercial')
+
+  function renderPackageUploadZone(bidType: 'technical' | 'commercial') {
+    const files = bidType === 'technical' ? technicalPackageFiles : commercialPackageFiles
+    const label = bidType === 'technical' ? 'Technical Bid Package' : 'Commercial Bid Package'
+    return (
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, background: theme.bgSurface }}>
+        <div style={{ fontSize: '12px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label} (ZIP)</div>
+        {files.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {files.map(f => {
+              const isArchive = f.mimeType.includes('zip') || f.mimeType.includes('rar') || f.mimeType.includes('7z')
+              const isExpanded = expandedPkgFileId === f.id
+              const zipState = pkgZipCache[f.id]
+              return (
+                <div key={f.id}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: isExpanded ? '8px 8px 0 0' : 8, border: `1px solid ${theme.border}`, borderBottom: isExpanded ? 'none' : `1px solid ${theme.border}`, background: theme.bgCanvas }}>
+                    {isArchive && (
+                      <button onClick={() => void toggleZipExpand(f)} title="View contents" style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '10px', padding: '2px', flexShrink: 0 }}>
+                        {isExpanded ? '▼' : '▶'}
+                      </button>
+                    )}
+                    <FileTypeIcon mime={f.mimeType} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.title ?? f.filename}</div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {f.sizeBytes != null ? `${formatBytes(f.sizeBytes)} · ` : ''}
+                        {new Date(f.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    </div>
+                    {f.downloadUrl && (
+                      <a href={f.downloadUrl} download={f.filename} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: `1px solid ${theme.border}`, background: theme.bgSurface, color: theme.textSecondary, fontSize: '11px', fontWeight: 600, textDecoration: 'none', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                        Download
+                      </a>
+                    )}
+                    {isEditable && (
+                      <button onClick={() => onDeletePackageFile(f.id)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: '16px', lineHeight: 1, padding: '2px 4px', flexShrink: 0 }}>×</button>
+                    )}
+                  </div>
+                  {isExpanded && (
+                    <div style={{ border: `1px solid ${theme.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '10px 12px 10px 16px', background: theme.bgSurface, maxHeight: '260px', overflowY: 'auto' }}>
+                      {zipState === 'loading' && <div style={{ fontSize: '12px', color: theme.textMuted }}>Reading archive…</div>}
+                      {zipState === 'error' && <div style={{ fontSize: '12px', color: '#ef4444' }}>Couldn't read this archive's contents.</div>}
+                      {zipState && zipState !== 'loading' && zipState !== 'error' && (
+                        zipState.length > 0
+                          ? zipState.map(node => renderZipNode(f.id, node, 0))
+                          : <div style={{ fontSize: '12px', color: theme.textMuted }}>Archive appears to be empty.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ fontSize: '12px', color: theme.textMuted }}>No {bidType} bid package uploaded yet.</div>
+        )}
+        {isEditable && (
+          <div
+            onClick={() => { pkgFileRef.current?.setAttribute('data-pkg-bidtype', bidType); pkgFileRef.current?.click() }}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); const file = e.dataTransfer.files[0]; if (file) void handlePkgFileUpload(bidType, file) }}
+            style={{ border: `2px dashed ${theme.border}`, borderRadius: 8, padding: '10px', textAlign: 'center', cursor: 'pointer', fontSize: '12px', color: theme.textMuted }}>
+            {uploadingPkgType === bidType ? (
+              <div style={{ width: '100%', height: 4, background: theme.border, borderRadius: 999, overflow: 'hidden', margin: '4px 0' }}>
+                <div style={{ height: '100%', background: theme.accent, width: `${pkgUploadProgress}%`, transition: 'width 0.3s' }} />
+              </div>
+            ) : <>Drop ZIP here or <span style={{ color: theme.accent }}>browse</span></>}
+          </div>
+        )}
+      </div>
+    )
   }
 
   const approvedCount = deliverables.filter(d => d.status === 'approved').length
@@ -4054,9 +4289,17 @@ function BiddingTab({
         ))}
       </div>
 
+      {/* Shared hidden input for bid package (ZIP) uploads — used by both Technical and Commercial zones */}
+      <input ref={pkgFileRef} type="file" accept=".zip,.rar,.7z" style={{ display: 'none' }} onChange={e => {
+        const file = e.target.files?.[0]; const bidType = pkgFileRef.current?.getAttribute('data-pkg-bidtype') as 'technical' | 'commercial' | null
+        if (file && bidType) void handlePkgFileUpload(bidType, file)
+        if (e.target) e.target.value = ''
+      }} />
+
       {/* ═══ TECHNICAL BID ═══════════════════════════════════════════ */}
       {bidSub === 'technical' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {simpleBidMode ? renderPackageUploadZone('technical') : (<>
           {/* Progress */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1, height: 6, borderRadius: 999, background: theme.border, overflow: 'hidden' }}>
@@ -4204,12 +4447,14 @@ function BiddingTab({
               </div>
             </div>
           </Modal>
+          </>)}
         </div>
       )}
 
       {/* ═══ COMMERCIAL BID ══════════════════════════════════════════ */}
       {bidSub === 'commercial' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {simpleBidMode ? renderPackageUploadZone('commercial') : (<>
 
           {/* ── Revision badge + Revise button ─────────────────────── */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -4517,6 +4762,7 @@ function BiddingTab({
               </div>
             </div>
           </Modal>
+          </>)}
         </div>
       )}
 
@@ -4524,6 +4770,29 @@ function BiddingTab({
       {bidSub === 'clarifications' && (
         <TQTab projectId={projectId} theme={theme} isAdmin={isAdmin} />
       )}
+
+      {/* Bid package ZIP entry preview */}
+      <Modal open={!!previewItem} onClose={closePreview} title={previewItem?.name} size="xl" noPadding={previewItem?.kind === 'pdf'}>
+        {previewItem?.kind === 'pdf' && previewItem.url && (
+          <iframe src={previewItem.url} style={{ width: '100%', height: '75vh', border: 'none', display: 'block' }} title={previewItem.name} />
+        )}
+        {previewItem?.kind === 'image' && previewItem.url && (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <img src={previewItem.url} alt={previewItem.name} style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+          </div>
+        )}
+        {previewItem?.kind === 'text' && (
+          <pre style={{ maxHeight: '70vh', overflow: 'auto', fontSize: '12px', background: theme.bgCanvas, padding: '12px', borderRadius: 8, whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>{previewItem.text}</pre>
+        )}
+        {previewItem?.kind === 'other' && previewItem.url && (
+          <div style={{ textAlign: 'center', padding: '24px 0', color: theme.textMuted, fontSize: '13px' }}>
+            Preview isn't available for this file type.
+            <div style={{ marginTop: '12px' }}>
+              <a href={previewItem.url} download={previewItem.name} style={{ color: theme.accent, fontWeight: 600, textDecoration: 'none' }}>Download {previewItem.name}</a>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -11290,20 +11559,23 @@ function CostControlTab(props: CostControlProps) {
 type VOCostItemType   = { id: string; voId: string; category: string; description: string; quantity: number; unit: string | null; unitRate: number; amount: number; notes: string | null; createdAt: string }
 type VOCorrType       = { id: string; voId: string; correspondenceDate: string; direction: string; referenceNumber: string | null; subject: string; description: string | null; createdAt: string }
 type VODrawingType    = { id: string; voId: string; drawingNumber: string; revision: string | null; title: string | null; notes: string | null; createdAt: string }
-type VariationOrderType = { id: string; projectId: string; voNumber: string; title: string; description: string | null; changeType: string; initiatedBy: string; instructionDate: string | null; receivedDate: string | null; scheduleImpactDays: number; voValue: number; approvedValue: number | null; currencyCode: string; clientRef: string | null; impactAnalysis: string | null; technicalNotes: string | null; status: string; submittedAt: string | null; decidedAt: string | null; rejectionReason: string | null; costItems: VOCostItemType[]; correspondence: VOCorrType[]; drawings: VODrawingType[]; createdAt: string; updatedAt: string }
+type VariationOrderType = { id: string; projectId: string; voNumber: string; title: string; description: string | null; changeType: string; initiatedBy: string; instructionDate: string | null; receivedDate: string | null; scheduleImpactDays: number; voValue: number; approvedValue: number | null; currencyCode: string; clientRef: string | null; impactAnalysis: string | null; technicalNotes: string | null; status: string; submittedAt: string | null; decidedAt: string | null; rejectionReason: string | null; contractId: string | null; appliedValue: number | null; costItems: VOCostItemType[]; correspondence: VOCorrType[]; drawings: VODrawingType[]; createdAt: string; updatedAt: string }
+
+type VOContractOption = { id: string; contractNumber: string; contractName: string }
 
 type VariationOrdersProps = {
   projectId: string; th: Record<string, string>; isAdmin: boolean
   variationOrders: VariationOrderType[]
+  contracts: VOContractOption[]
   onCreateVO: (v: Record<string, unknown>) => void; onUpdateVO: (v: Record<string, unknown>) => void; onDeleteVO: (id: string) => void
-  onSubmitVO: (id: string) => void; onApproveVO: (id: string, approvedValue: number) => void; onRejectVO: (id: string, reason: string) => void; onSetVOStatus: (id: string, status: string) => void
+  onSubmitVO: (id: string) => void; onApproveVO: (id: string, approvedValue: number, contractId?: string) => void; onRejectVO: (id: string, reason: string) => void; onSetVOStatus: (id: string, status: string) => void
   onCreateCostItem: (v: Record<string, unknown>) => void; onUpdateCostItem: (v: Record<string, unknown>) => void; onDeleteCostItem: (id: string) => void
   onCreateCorrespondence: (v: Record<string, unknown>) => void; onDeleteCorrespondence: (id: string) => void
   onAddDrawing: (v: Record<string, unknown>) => void; onRemoveDrawing: (id: string) => void
 }
 
 function VariationOrdersTab(props: VariationOrdersProps) {
-  const { projectId, th, isAdmin, variationOrders, onCreateVO, onUpdateVO, onDeleteVO, onSubmitVO, onApproveVO, onRejectVO, onSetVOStatus, onCreateCostItem, onUpdateCostItem, onDeleteCostItem, onCreateCorrespondence, onDeleteCorrespondence, onAddDrawing, onRemoveDrawing } = props
+  const { projectId, th, isAdmin, variationOrders, contracts, onCreateVO, onUpdateVO, onDeleteVO, onSubmitVO, onApproveVO, onRejectVO, onSetVOStatus, onCreateCostItem, onUpdateCostItem, onDeleteCostItem, onCreateCorrespondence, onDeleteCorrespondence, onAddDrawing, onRemoveDrawing } = props
 
   type VOSection = 'register' | 'analysis'
   type VOSubTab  = 'cost' | 'correspondence' | 'drawings'
@@ -11313,9 +11585,9 @@ function VariationOrdersTab(props: VariationOrdersProps) {
   const [subTab, setSubTab]         = React.useState<Record<string, VOSubTab>>({})
 
   const [voModal, setVOModal]   = React.useState<{ open: boolean; mode: 'create' | 'edit'; item: Partial<VariationOrderType> }>({ open: false, mode: 'create', item: {} })
-  const [voForm, setVOForm]     = React.useState({ voNumber: '', title: '', description: '', changeType: 'additional_work', initiatedBy: 'client', instructionDate: '', receivedDate: '', scheduleImpactDays: '0', voValue: '0', currencyCode: 'USD', clientRef: '', impactAnalysis: '', technicalNotes: '' })
+  const [voForm, setVOForm]     = React.useState({ voNumber: '', title: '', description: '', changeType: 'additional_work', initiatedBy: 'client', instructionDate: '', receivedDate: '', scheduleImpactDays: '0', voValue: '0', currencyCode: 'USD', clientRef: '', impactAnalysis: '', technicalNotes: '', contractId: '' })
 
-  const [approveModal, setApproveModal] = React.useState<{ open: boolean; voId: string; voNumber: string; voValue: number }>({ open: false, voId: '', voNumber: '', voValue: 0 })
+  const [approveModal, setApproveModal] = React.useState<{ open: boolean; voId: string; voNumber: string; voValue: number; contractId: string }>({ open: false, voId: '', voNumber: '', voValue: 0, contractId: '' })
   const [approvedValue, setApprovedValue] = React.useState('')
 
   const [rejectModal, setRejectModal] = React.useState<{ open: boolean; voId: string; voNumber: string }>({ open: false, voId: '', voNumber: '' })
@@ -11370,12 +11642,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
   const openCreateVO = () => {
     setVOModal({ open: true, mode: 'create', item: {} })
-    setVOForm({ voNumber: nextVONumber, title: '', description: '', changeType: 'additional_work', initiatedBy: 'client', instructionDate: '', receivedDate: new Date().toISOString().slice(0, 10), scheduleImpactDays: '0', voValue: '0', currencyCode: 'USD', clientRef: '', impactAnalysis: '', technicalNotes: '' })
+    setVOForm({ voNumber: nextVONumber, title: '', description: '', changeType: 'additional_work', initiatedBy: 'client', instructionDate: '', receivedDate: new Date().toISOString().slice(0, 10), scheduleImpactDays: '0', voValue: '0', currencyCode: 'USD', clientRef: '', impactAnalysis: '', technicalNotes: '', contractId: contracts.length === 1 ? contracts[0]!.id : '' })
   }
 
   const openEditVO = (vo: VariationOrderType) => {
     setVOModal({ open: true, mode: 'edit', item: vo })
-    setVOForm({ voNumber: vo.voNumber, title: vo.title, description: vo.description ?? '', changeType: vo.changeType, initiatedBy: vo.initiatedBy, instructionDate: vo.instructionDate ?? '', receivedDate: vo.receivedDate ?? '', scheduleImpactDays: String(vo.scheduleImpactDays), voValue: String(vo.voValue), currencyCode: vo.currencyCode, clientRef: vo.clientRef ?? '', impactAnalysis: vo.impactAnalysis ?? '', technicalNotes: vo.technicalNotes ?? '' })
+    setVOForm({ voNumber: vo.voNumber, title: vo.title, description: vo.description ?? '', changeType: vo.changeType, initiatedBy: vo.initiatedBy, instructionDate: vo.instructionDate ?? '', receivedDate: vo.receivedDate ?? '', scheduleImpactDays: String(vo.scheduleImpactDays), voValue: String(vo.voValue), currencyCode: vo.currencyCode, clientRef: vo.clientRef ?? '', impactAnalysis: vo.impactAnalysis ?? '', technicalNotes: vo.technicalNotes ?? '', contractId: vo.contractId ?? (contracts.length === 1 ? contracts[0]!.id : '') })
   }
 
   const toggleVO = (voId: string) => setExpandedVO(s => { const n = new Set(s); n.has(voId) ? n.delete(voId) : n.add(voId); return n })
@@ -11496,7 +11768,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 {isAdmin && vo.status === 'draft' && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#f59e0b' })} onClick={() => onSubmitVO(vo.id)}>Submit</button>}
                 {isAdmin && vo.status === 'submitted' && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#3b82f6' })} onClick={() => onSetVOStatus(vo.id, 'under_review')}>Under Review</button>}
                 {isAdmin && ['submitted','under_review'].includes(vo.status) && (<>
-                  <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#22c55e' })} onClick={() => { setApproveModal({ open: true, voId: vo.id, voNumber: vo.voNumber, voValue: vo.voValue }); setApprovedValue(String(vo.voValue)) }}>Approve</button>
+                  <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#22c55e' })} onClick={() => { setApproveModal({ open: true, voId: vo.id, voNumber: vo.voNumber, voValue: vo.voValue, contractId: vo.contractId ?? (contracts.length === 1 ? contracts[0]!.id : '') }); setApprovedValue(String(vo.voValue)) }}>Approve</button>
                   <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: '#ef4444' })} onClick={() => { setRejectModal({ open: true, voId: vo.id, voNumber: vo.voNumber }); setRejectReason('') }}>Reject</button>
                 </>)}
                 {isAdmin && <button style={vbtn({ padding: '4px 12px', fontSize: '11px', background: 'transparent', color: th.textSecondary, border: `1px solid ${th.border}` })} onClick={() => openEditVO(vo)}>Edit</button>}
@@ -11509,6 +11781,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               {[
                 { label: 'Value', value: fmt(vo.voValue), color: th.textPrimary },
                 ...(vo.approvedValue != null ? [{ label: 'Approved', value: fmt(vo.approvedValue), color: '#22c55e' }] : []),
+                ...(vo.appliedValue != null && vo.contractId ? [{ label: 'Contract', value: contracts.find(c => c.id === vo.contractId)?.contractNumber ?? '—', color: '#22c55e' }] : []),
                 ...(vo.scheduleImpactDays !== 0 ? [{ label: 'Schedule', value: `${vo.scheduleImpactDays > 0 ? '+' : ''}${vo.scheduleImpactDays}d`, color: vo.scheduleImpactDays > 0 ? '#f97316' : '#22c55e' }] : []),
                 { label: 'From', value: INITIATED_BY_LABEL[vo.initiatedBy], color: th.textSecondary },
                 ...(vo.clientRef ? [{ label: 'Ref', value: vo.clientRef, color: th.textSecondary }] : []),
@@ -11684,15 +11957,22 @@ function VariationOrdersTab(props: VariationOrdersProps) {
               <div>{voff('Initiated By', vfs(voForm.initiatedBy, v => setVOForm(f => ({ ...f, initiatedBy: v })), initiatedByOpts))}</div>
               <div>{voff('Instruction Date', vfi(voForm.instructionDate, v => setVOForm(f => ({ ...f, instructionDate: v })), '', 'date'))}</div>
               <div>{voff('Received Date', vfi(voForm.receivedDate, v => setVOForm(f => ({ ...f, receivedDate: v })), '', 'date'))}</div>
-              <div>{voff('Submitted Value ($)', vfi(voForm.voValue, v => setVOForm(f => ({ ...f, voValue: v })), '0', 'number'))}</div>
+              <div>{voff('Submitted Value ($)', voModal.mode === 'edit' && voModal.item.status === 'approved'
+                ? <div style={{ padding: '7px 10px', borderRadius: '6px', border: `1px solid ${th.border}`, background: th.bgCanvas, fontSize: '13px', color: th.textSecondary }}>{fmt(parseFloat(voForm.voValue) || 0)} (locked)</div>
+                : vfi(voForm.voValue, v => setVOForm(f => ({ ...f, voValue: v })), '0', 'number'))}</div>
               <div>{voff('Schedule Impact (days)', vfi(voForm.scheduleImpactDays, v => setVOForm(f => ({ ...f, scheduleImpactDays: v })), '0', 'number'))}</div>
             </div>
             {voff('Client Reference', vfi(voForm.clientRef, v => setVOForm(f => ({ ...f, clientRef: v }))))}
+            {contracts.length > 1 && voff('Contract' + (voModal.mode === 'edit' && voModal.item.status === 'approved' ? '' : ' *'), voModal.mode === 'edit' && voModal.item.status === 'approved'
+              ? <div style={{ padding: '7px 10px', borderRadius: '6px', border: `1px solid ${th.border}`, background: th.bgCanvas, fontSize: '13px', color: th.textSecondary }}>{contracts.find(c => c.id === voForm.contractId)?.contractNumber ?? '—'} (locked — revert status to change)</div>
+              : vfs(voForm.contractId, v => setVOForm(f => ({ ...f, contractId: v })), [{ value: '', label: 'Select contract…' }, ...contracts.map(c => ({ value: c.id, label: `${c.contractNumber} — ${c.contractName}` }))]))}
             {voff('Impact Analysis', <textarea style={{ ...inputSt, minHeight: '60px' }} value={voForm.impactAnalysis} onChange={e => setVOForm(f => ({ ...f, impactAnalysis: e.target.value }))} />)}
             {voff('Technical Notes', <textarea style={{ ...inputSt, minHeight: '50px' }} value={voForm.technicalNotes} onChange={e => setVOForm(f => ({ ...f, technicalNotes: e.target.value }))} />)}
             {mBtnsVO(() => {
-              if (voModal.mode === 'create') onCreateVO({ projectId, voNumber: voForm.voNumber, title: voForm.title, description: voForm.description || null, changeType: voForm.changeType, initiatedBy: voForm.initiatedBy, instructionDate: voForm.instructionDate || null, receivedDate: voForm.receivedDate || null, scheduleImpactDays: parseInt(voForm.scheduleImpactDays) || 0, voValue: parseFloat(voForm.voValue) || 0, currencyCode: voForm.currencyCode, clientRef: voForm.clientRef || null, impactAnalysis: voForm.impactAnalysis || null, technicalNotes: voForm.technicalNotes || null })
-              else onUpdateVO({ id: voModal.item.id, title: voForm.title, description: voForm.description || null, changeType: voForm.changeType, initiatedBy: voForm.initiatedBy, instructionDate: voForm.instructionDate || null, receivedDate: voForm.receivedDate || null, scheduleImpactDays: parseInt(voForm.scheduleImpactDays) || 0, voValue: parseFloat(voForm.voValue) || 0, currencyCode: voForm.currencyCode, clientRef: voForm.clientRef || null, impactAnalysis: voForm.impactAnalysis || null, technicalNotes: voForm.technicalNotes || null })
+              const locked = voModal.mode === 'edit' && voModal.item.status === 'approved'
+              if (!locked && contracts.length > 1 && !voForm.contractId) { alert('Select which contract this VO applies to'); return }
+              if (voModal.mode === 'create') onCreateVO({ projectId, voNumber: voForm.voNumber, title: voForm.title, description: voForm.description || null, changeType: voForm.changeType, initiatedBy: voForm.initiatedBy, instructionDate: voForm.instructionDate || null, receivedDate: voForm.receivedDate || null, scheduleImpactDays: parseInt(voForm.scheduleImpactDays) || 0, voValue: parseFloat(voForm.voValue) || 0, currencyCode: voForm.currencyCode, clientRef: voForm.clientRef || null, impactAnalysis: voForm.impactAnalysis || null, technicalNotes: voForm.technicalNotes || null, contractId: voForm.contractId || null })
+              else onUpdateVO({ id: voModal.item.id, title: voForm.title, description: voForm.description || null, changeType: voForm.changeType, initiatedBy: voForm.initiatedBy, instructionDate: voForm.instructionDate || null, receivedDate: voForm.receivedDate || null, scheduleImpactDays: parseInt(voForm.scheduleImpactDays) || 0, currencyCode: voForm.currencyCode, clientRef: voForm.clientRef || null, impactAnalysis: voForm.impactAnalysis || null, technicalNotes: voForm.technicalNotes || null, ...(locked ? {} : { voValue: parseFloat(voForm.voValue) || 0, contractId: voForm.contractId || null }) })
               setVOModal(m => ({ ...m, open: false }))
             }, () => setVOModal(m => ({ ...m, open: false })))}
           </div>
@@ -11707,7 +11987,14 @@ function VariationOrdersTab(props: VariationOrdersProps) {
             <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '12px' }}>Submitted value: <strong style={{ color: th.textPrimary }}>{fmt(approveModal.voValue)}</strong></div>
             {voff('Approved Value ($)', <input style={inputSt} type="number" value={approvedValue} onChange={e => setApprovedValue(e.target.value)} />)}
             <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>Enter a different amount for partial approval.</div>
-            {mBtnsVO(() => { onApproveVO(approveModal.voId, parseFloat(approvedValue) || approveModal.voValue); setApproveModal(m => ({ ...m, open: false })) }, () => setApproveModal(m => ({ ...m, open: false })))}
+            {contracts.length > 1 && voff('Applies to Contract *', vfs(approveModal.contractId, v => setApproveModal(m => ({ ...m, contractId: v })), [{ value: '', label: 'Select contract…' }, ...contracts.map(c => ({ value: c.id, label: `${c.contractNumber} — ${c.contractName}` }))]))}
+            {contracts.length === 1 && <div style={{ fontSize: '11px', color: th.textSecondary, marginBottom: '8px' }}>Approving will add this value to contract {contracts[0]!.contractNumber}.</div>}
+            {contracts.length === 0 && <div style={{ fontSize: '11px', color: '#f59e0b', marginBottom: '8px' }}>No contract exists on this project yet — approval will still record the VO but won't update any contract value.</div>}
+            {mBtnsVO(() => {
+              if (contracts.length > 1 && !approveModal.contractId) { alert('Select which contract this VO applies to'); return }
+              onApproveVO(approveModal.voId, parseFloat(approvedValue) || approveModal.voValue, contracts.length > 1 ? approveModal.contractId : undefined)
+              setApproveModal(m => ({ ...m, open: false }))
+            }, () => setApproveModal(m => ({ ...m, open: false })))}
           </div>
         </div>
       )}

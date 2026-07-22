@@ -2200,8 +2200,10 @@
   }
 
   type LifecycleConfig {
-    phases:  [LifecyclePhase!]!
-    modules: [LifecycleModuleGate!]!
+    phases:               [LifecyclePhase!]!
+    modules:              [LifecycleModuleGate!]!
+    bidSimpleModeEnabled: Boolean!
+    hideRiskRegister:     Boolean!
   }
 
   extend type Query {
@@ -2211,6 +2213,8 @@
   extend type Mutation {
     updateLifecyclePhase(key: String!, label: String, sequence: Int, optional: Boolean): LifecyclePhase!
     updateLifecycleModule(moduleKey: String!, label: String, minPhaseKey: String): LifecycleModuleGate!
+    updateBidSimpleMode(enabled: Boolean!): LifecycleConfig!
+    updateHideRiskRegister(hidden: Boolean!): LifecycleConfig!
   }
 
   # ── Engineering Documents ─────────────────────────────────────
@@ -3738,11 +3742,25 @@
     createdAt:         String!
   }
 
+  type BidPackageFile {
+    id:          ID!
+    fileId:      String!
+    bidType:     String!
+    filename:    String!
+    mimeType:    String!
+    sizeBytes:   Int!
+    title:       String
+    description: String
+    createdAt:   String!
+    downloadUrl: String
+  }
+
   extend type Query {
     bidDeliverables(projectId: ID!): [BidDeliverable!]!
     bidCostItems(projectId: ID!): [BidCostItem!]!
     bidSupplierQuotations(projectId: ID!): [BidSupplierQuotation!]!
     bidCommercialSummary(projectId: ID!): BidCommercialSummary
+    bidPackageFiles(projectId: ID!): [BidPackageFile!]!
   }
 
   extend type Mutation {
@@ -3760,6 +3778,8 @@
     submitBidForApproval(projectId: ID!): BidCommercialSummary!
     approveBid(projectId: ID!): BidCommercialSummary!
     rejectBid(projectId: ID!, reason: String!): BidCommercialSummary!
+    uploadBidPackageFile(projectId: ID!, bidType: String!, fileId: ID!, title: String, description: String): [BidPackageFile!]!
+    deleteBidPackageFile(attachmentId: ID!, projectId: ID!): Boolean!
   }
 
   # ── Execution module ────────────────────────────────────────────────────────
@@ -4434,11 +4454,11 @@
     deleteClientBilling(id: ID!): Boolean!
 
     # Variation Orders
-    createVariationOrder(projectId: ID!, voNumber: String!, title: String!, description: String, changeType: String, initiatedBy: String, instructionDate: String, receivedDate: String, scheduleImpactDays: Int, voValue: Float!, currencyCode: String, clientRef: String, impactAnalysis: String, technicalNotes: String): VariationOrder!
-    updateVariationOrder(id: ID!, title: String, description: String, changeType: String, initiatedBy: String, instructionDate: String, receivedDate: String, scheduleImpactDays: Int, voValue: Float, currencyCode: String, clientRef: String, impactAnalysis: String, technicalNotes: String): VariationOrder!
+    createVariationOrder(projectId: ID!, voNumber: String!, title: String!, description: String, changeType: String, initiatedBy: String, instructionDate: String, receivedDate: String, scheduleImpactDays: Int, voValue: Float!, currencyCode: String, clientRef: String, impactAnalysis: String, technicalNotes: String, contractId: ID): VariationOrder!
+    updateVariationOrder(id: ID!, title: String, description: String, changeType: String, initiatedBy: String, instructionDate: String, receivedDate: String, scheduleImpactDays: Int, voValue: Float, currencyCode: String, clientRef: String, impactAnalysis: String, technicalNotes: String, contractId: ID): VariationOrder!
     deleteVariationOrder(id: ID!): Boolean!
     submitVariationOrder(id: ID!): VariationOrder!
-    approveVariationOrder(id: ID!, approvedValue: Float!): VariationOrder!
+    approveVariationOrder(id: ID!, approvedValue: Float!, contractId: ID): VariationOrder!
     rejectVariationOrder(id: ID!, reason: String!): VariationOrder!
     setVOStatus(id: ID!, status: String!): VariationOrder!
     createVOCostItem(voId: ID!, category: String!, description: String!, quantity: Float, unit: String, unitRate: Float!, amount: Float!, notes: String): VOCostItem!
@@ -4481,6 +4501,8 @@
     submittedAt: String
     decidedAt: String
     rejectionReason: String
+    contractId: ID
+    appliedValue: Float
     costItems: [VOCostItem!]!
     correspondence: [VOCorrespondence!]!
     drawings: [VODrawing!]!

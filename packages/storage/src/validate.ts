@@ -20,6 +20,12 @@ export const ALLOWED_TYPES: Record<string, string[]> = {
     'image/jpeg',
     'image/png',
     'image/webp',
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/x-zip',
+    'application/vnd.rar',
+    'application/x-rar-compressed',
+    'application/x-7z-compressed',
   ],
   report: [
     'application/pdf',
@@ -57,6 +63,9 @@ const EXTENSION_MIME_MAP: Record<string, string[]> = {
   '.webp': ['image/webp'],
   '.heic': ['image/heic'],
   '.heif': ['image/heif'],
+  '.zip':  ['application/zip', 'application/x-zip-compressed', 'application/x-zip'],
+  '.rar':  ['application/vnd.rar', 'application/x-rar-compressed'],
+  '.7z':   ['application/x-7z-compressed'],
 }
 
 export interface ValidationResult {
