@@ -1,6 +1,10 @@
 -- Migration 156: Subcontractor Submittal Register (PRODOM Phase 6)
 -- Tracks contractor/subcontractor document submissions for Engineer review.
 -- Common types: shop drawings, material submittals, method statements, ITPs.
+-- Supersedes the stub project_submittals table from migration 122 (a
+-- different, unused schema — no application code ever referenced it).
+
+DROP TABLE IF EXISTS project_submittals;
 
 CREATE TABLE project_submittals (
   id             UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
