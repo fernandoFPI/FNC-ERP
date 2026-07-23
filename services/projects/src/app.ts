@@ -10,6 +10,7 @@ import { projectAttachmentsRouter, contractAttachmentsRouter, invoiceAttachments
 
 export function createApp(): express.Express {
   const app = express()
+  app.set('trust proxy', 1)
   app.disable('etag')
   app.use(express.json())
 

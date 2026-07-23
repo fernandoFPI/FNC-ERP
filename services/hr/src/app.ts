@@ -11,6 +11,7 @@ import { employeeAttachmentsRouter } from './routes/employee-attachments.js'
 
 export function createApp(): import('express').Express {
   const app = express()
+  app.set('trust proxy', 1)
   app.disable('etag')
   app.use(express.json())
 

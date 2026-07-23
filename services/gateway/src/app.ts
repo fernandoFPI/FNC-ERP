@@ -48,6 +48,7 @@ function isPublicPath(path: string): boolean {
 
 export async function createApp(): Promise<express.Application> {
   const app = express()
+  app.set('trust proxy', 1)
 
   // ── 1. Security headers ─────────────────────────────────────
   app.use(helmet())

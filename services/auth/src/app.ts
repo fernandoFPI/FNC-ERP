@@ -11,6 +11,7 @@ import { HTTP_STATUS } from '@fnc-erp/config'
 
 export function createApp(): express.Application {
   const app = express()
+  app.set('trust proxy', 1)
   app.disable('etag')
 
   app.use(express.json({ limit: '1mb' }))

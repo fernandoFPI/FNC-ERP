@@ -9,6 +9,7 @@ import { exportsRouter } from './routes/exports.js'
 
 export function createApp(): express.Express {
   const app = express()
+  app.set('trust proxy', 1)
   app.disable('etag')
   app.use(express.json())
 
