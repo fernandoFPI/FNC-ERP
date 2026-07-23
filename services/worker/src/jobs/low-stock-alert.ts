@@ -22,7 +22,7 @@ export async function sendLowStockAlerts(): Promise<void> {
   console.warn('[worker] Running low-stock alert job')
 
   const result = await pool.query<LowStockRow>(`
-    SELECT sb.company_id, c.name AS company_name,
+    SELECT p.company_id, c.name AS company_name,
            p.id AS product_id, p.name AS product_name,
            COALESCE(sb.qty_on_hand, 0) AS qty_on_hand,
            p.reorder_point
