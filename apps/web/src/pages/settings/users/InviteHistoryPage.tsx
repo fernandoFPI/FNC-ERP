@@ -1,40 +1,36 @@
-import { useState, useEffect } from 'react'
+import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { EmptyState } from '../../../components/ui/EmptyState'
-import { api } from '../../../lib/axios'
+import { USER_INVITATIONS_QUERY } from '../../../graphql/admin'
 
 interface InviteRecord {
   id: string
   email: string
-  role: string
-  status: 'pending' | 'accepted' | 'expired'
-  invited_by: string
-  invited_at: string
-  accepted_at: string | null
+  role: string | null
+  status: string
+  invitedByEmail: string | null
+  createdAt: string
+  acceptedAt: string | null
+}
+
+interface UserInvitationsData {
+  userInvitations: InviteRecord[]
 }
 
 const STATUS_BADGE: Record<string, 'warning' | 'success' | 'neutral'> = {
   pending: 'warning',
   accepted: 'success',
   expired: 'neutral',
+  cancelled: 'neutral',
 }
 
 export default function InviteHistoryPage() {
   const { theme } = useTheme()
-  const [invites, setInvites] = useState<InviteRecord[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    setLoading(true)
-    api
-      .get('/admin/users/invitations')
-      .then((r: { data: { invitations?: InviteRecord[] } }) => setInvites(r.data.invitations ?? []))
-      .catch(() => setInvites([]))
-      .finally(() => setLoading(false))
-  }, [])
+  const { data, loading } = useQuery<UserInvitationsData>(USER_INVITATIONS_QUERY)
+  const invites = data?.userInvitations ?? []
 
   return (
     <div style={{ padding: '24px' }}>
@@ -88,18 +84,18 @@ export default function InviteHistoryPage() {
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                   >
                     <td style={{ padding: '12px 14px', color: theme.textPrimary }}>{inv.email}</td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{inv.role}</td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{inv.role ?? '—'}</td>
                     <td style={{ padding: '12px 14px' }}>
                       <Badge variant={STATUS_BADGE[inv.status] ?? 'neutral'} size="sm">
                         {inv.status}
                       </Badge>
                     </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{inv.invited_by}</td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{inv.invitedByEmail ?? '—'}</td>
                     <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {new Date(inv.invited_at).toLocaleDateString()}
+                      {new Date(inv.createdAt).toLocaleDateString()}
                     </td>
                     <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {inv.accepted_at ? new Date(inv.accepted_at).toLocaleDateString() : '—'}
+                      {inv.acceptedAt ? new Date(inv.acceptedAt).toLocaleDateString() : '—'}
                     </td>
                   </tr>
                 ))}

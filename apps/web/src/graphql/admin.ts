@@ -50,6 +50,24 @@ export const USER_SESSIONS_QUERY = gql`
   }
 `
 
+export const USER_INVITATIONS_QUERY = gql`
+  query UserInvitations($companyId: ID, $status: String) {
+    userInvitations(companyId: $companyId, status: $status) {
+      id
+      email
+      invitedByEmail
+      companyId
+      companyName
+      role
+      module
+      status
+      expiresAt
+      acceptedAt
+      createdAt
+    }
+  }
+`
+
 export const OUTBOX_MONITOR_QUERY = gql`
   query OutboxMonitor {
     outboxMonitor {
