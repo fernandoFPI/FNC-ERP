@@ -42,3 +42,9 @@ services/gateway/dev-uploads/
 
 # Odoo source extraction (reference only, not part of the project)
 odoo_deb_extracted/
+
+# OneDrive sync-conflict copies (e.g. "app-DESKTOP-G9TJJ4A.ts") — never source
+*-DESKTOP-*
+
+# Deploy pipeline: marks the last commit SHA that passed post-deploy health checks
+.last-good-deploy
