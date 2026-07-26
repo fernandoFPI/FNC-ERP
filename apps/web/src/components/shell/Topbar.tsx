@@ -153,9 +153,11 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
     return () => clearInterval(interval)
   }, [])
 
-  // Fetch profile picture + name once on mount if not already loaded
+  // Fetch profile picture + name on mount. profilePicture is a time-limited
+  // presigned URL, so it can't be treated as "already loaded" and cached
+  // indefinitely (it's persisted in the auth store) — always refetch it fresh.
   useEffect(() => {
-    if (!user || user.profilePicture !== undefined || !user.profileCompleted) return
+    if (!user || !user.profileCompleted) return
     api.get<{ firstName: string | null; lastName: string | null; profilePicture: string | null }>(
       '/users/me/profile',
     ).then(r => {
