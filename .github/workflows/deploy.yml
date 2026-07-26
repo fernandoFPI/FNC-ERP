@@ -6,10 +6,37 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  deploy:
-    name: Deploy to VPS
+  test:
+    name: Test Gate
     runs-on: ubuntu-latest
-    environment: production
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: fnc_erp_test
+          POSTGRES_USER: fnc_app
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://fnc_app:test_password@localhost:5433/fnc_erp_test
+      DATABASE_TEST_URL: postgresql://fnc_app:test_password@localhost:5433/fnc_erp_test
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_test_secret_that_is_long_enough_32chars
+      JWT_REFRESH_SECRET: ci_test_refresh_secret_32chars_long
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      GATEWAY_PORT: 3000
+      AUTH_SERVICE_PORT: 3001
 
     steps:
       - uses: actions/checkout@v4
@@ -26,9 +53,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Build
         run: pnpm build
 
+      - name: Run migrations (test DB)
+        run: pnpm migrate:test
+
+      - name: Run tests
+        run: pnpm test
+
+  deploy:
+    name: Deploy to VPS
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -36,13 +79,62 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
+          script_stop: true
           script: |
+            set -euo pipefail
             cd /opt/fnc-erp
-            git pull origin production
+
+            git fetch origin production
+            git checkout production
+            git reset --hard origin/production
+            NEW_SHA=$(git rev-parse HEAD)
+
+            chmod +x scripts/rollback.sh || true
+
             pnpm install --frozen-lockfile
             pnpm build
+
             set -a
             source .env
             set +a
             pnpm migrate
-            pm2 reload ecosystem.config.cjs --env production
+
+            pm2 reload ecosystem.config.cjs --env production --update-env
+
+            echo "Waiting for services to report healthy..."
+            declare -A PORTS=(
+              [gateway]=3000 [auth]=3001 [finance]=3002 [procurement]=3003
+              [hr]=3004 [inventory]=3005 [projects]=3006 [manufacturing]=3007
+              [interco]=3008 [notifications]=3009 [rental]=3010 [reporting]=3011
+            )
+            FAILED=0
+            for svc in "${!PORTS[@]}"; do
+              port="${PORTS[$svc]}"
+              ok=0
+              for i in $(seq 1 15); do
+                code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://localhost:${port}/health" || echo "000")
+                if [ "$code" = "200" ]; then ok=1; break; fi
+                sleep 2
+              done
+              if [ "$ok" -eq 0 ]; then
+                echo "::error::HEALTH CHECK FAILED — $svc (port $port) did not return 200 within 30s"
+                FAILED=1
+              else
+                echo "OK: $svc healthy"
+              fi
+            done
+
+            WORKER_STATUS=$(pm2 jlist | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));const w=d.find(p=>p.name==='worker');console.log(w?w.pm2_env.status:'missing')")
+            if [ "$WORKER_STATUS" != "online" ]; then
+              echo "::error::HEALTH CHECK FAILED — worker process status=$WORKER_STATUS"
+              FAILED=1
+            fi
+
+            if [ "$FAILED" -eq 1 ]; then
+              echo "::error::Deploy of $NEW_SHA FAILED health verification. Code is live but NOT marked as last-good."
+              echo "::error::To roll back immediately, SSH in and run: /opt/fnc-erp/scripts/rollback.sh"
+              exit 1
+            fi
+
+            echo "$NEW_SHA" > /opt/fnc-erp/.last-good-deploy
+            echo "Deploy verified healthy. $NEW_SHA marked as last-good-deploy."
