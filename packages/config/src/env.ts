@@ -67,6 +67,10 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_PER_USER: z.coerce.number().default(300),
   // Session management
   MAX_SESSIONS_PER_USER: z.coerce.number().default(5),
+  // Postgres pool size — overridden per-service in ecosystem.config.cjs when
+  // running multiple PM2 cluster instances of the same service, so the
+  // aggregate connection count stays within Postgres's max_connections.
+  DB_POOL_MAX: z.coerce.number().default(20),
   // Frontend URL for password reset links
   FRONTEND_URL: z.string().default('http://localhost:5173'),
   // Backblaze B2 storage

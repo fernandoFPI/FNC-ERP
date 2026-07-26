@@ -11,7 +11,7 @@ const dbUrl = env.NODE_ENV === 'test' ? (env.DATABASE_TEST_URL ?? env.DATABASE_U
 
 export const pool = new Pool({
   connectionString: dbUrl,
-  max: env.NODE_ENV === 'production' ? 20 : 5,
+  max: env.NODE_ENV === 'production' ? env.DB_POOL_MAX : 5,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
 })

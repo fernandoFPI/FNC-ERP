@@ -34,12 +34,28 @@ function loadEnvFile(filePath) {
 
 const sharedEnv = loadEnvFile(path.join(BASE, '.env'))
 
-function makeApp(name, script, port, extraEnv = {}) {
+// exec_mode/instances default to cluster/2 (zero-downtime `pm2 reload`) —
+// pass opts to override per-app. wait_ready/listen_timeout pairs with the
+// process.send('ready') call each service's index.ts makes once its HTTP
+// server is actually listening, so PM2 won't consider a new instance up
+// (and won't kill the old one, in cluster mode) until it truly can serve
+// traffic. kill_timeout gives server.close()+pool.end() time to finish
+// before PM2 force-kills on shutdown/reload.
+function makeApp(name, script, port, extraEnv = {}, opts = {}) {
+  const {
+    execMode = 'cluster',
+    instances = 2,
+    listenTimeout = 10000,
+  } = opts
+
   return {
     name,
     script,
-    exec_mode: 'fork',
-    instances: 1,
+    exec_mode: execMode,
+    instances,
+    wait_ready: true,
+    listen_timeout: listenTimeout,
+    kill_timeout: 5000,
     env_production: {
       ...sharedEnv,
       NODE_ENV: 'production',
@@ -62,21 +78,34 @@ function makeApp(name, script, port, extraEnv = {}) {
 
 module.exports = {
   apps: [
-    makeApp('gateway',       `${BASE}/services/gateway/dist/index.js`,       3000),
-    makeApp('auth',          `${BASE}/services/auth/dist/index.js`,           3001),
-    makeApp('finance',       `${BASE}/services/finance/dist/index.js`,        3002),
-    makeApp('procurement',   `${BASE}/services/procurement/dist/index.js`,    3003),
-    makeApp('hr',            `${BASE}/services/hr/dist/index.js`,             3004),
-    makeApp('inventory',     `${BASE}/services/inventory/dist/index.js`,      3005),
-    makeApp('projects',      `${BASE}/services/projects/dist/index.js`,       3006),
-    makeApp('manufacturing', `${BASE}/services/manufacturing/dist/index.js`,  3007),
-    makeApp('interco',       `${BASE}/services/interco/dist/index.js`,        3008),
-    makeApp('notifications', `${BASE}/services/notifications/dist/index.js`,  3009),
-    makeApp('rental',        `${BASE}/services/rental/dist/index.js`,         3010),
-    makeApp('reporting',     `${BASE}/services/reporting/dist/index.js`,      3011),
+    // Single-instance: its WebSocket broadcast (services/gateway/src/routes/websocket.ts)
+    // holds connected clients in an in-process Set with no Redis backing. Clustering
+    // it would silently drop broadcasts to clients connected to a different worker.
+    makeApp('gateway', `${BASE}/services/gateway/dist/index.js`, 3000, {}, { execMode: 'fork', instances: 1, listenTimeout: 15000 }),
+
+    makeApp('auth',          `${BASE}/services/auth/dist/index.js`,           3001, { DB_POOL_MAX: '8' }),
+    makeApp('finance',       `${BASE}/services/finance/dist/index.js`,        3002, { DB_POOL_MAX: '8' }),
+    makeApp('procurement',   `${BASE}/services/procurement/dist/index.js`,    3003, { DB_POOL_MAX: '8' }),
+    makeApp('hr',            `${BASE}/services/hr/dist/index.js`,             3004, { DB_POOL_MAX: '8' }),
+    makeApp('inventory',     `${BASE}/services/inventory/dist/index.js`,      3005, { DB_POOL_MAX: '8' }),
+    makeApp('projects',      `${BASE}/services/projects/dist/index.js`,       3006, { DB_POOL_MAX: '8' }),
+    makeApp('manufacturing', `${BASE}/services/manufacturing/dist/index.js`,  3007, { DB_POOL_MAX: '8' }),
+    makeApp('interco',       `${BASE}/services/interco/dist/index.js`,        3008, { DB_POOL_MAX: '8' }),
+    makeApp('notifications', `${BASE}/services/notifications/dist/index.js`,  3009, { DB_POOL_MAX: '8' }),
+    makeApp('rental',        `${BASE}/services/rental/dist/index.js`,         3010, { DB_POOL_MAX: '8' }),
+    makeApp('reporting',     `${BASE}/services/reporting/dist/index.js`,      3011, { DB_POOL_MAX: '8' }),
     {
       name: 'worker',
       script: `${BASE}/services/worker/dist/index.js`,
+      // DO NOT set exec_mode:'cluster' or instances>1 on this app.
+      // services/worker/src/index.ts registers 7 node-cron jobs inside start()
+      // (called unconditionally on module load), plus 3 more files imported for
+      // their side effects register 5 more at raw module-import time —
+      // jobs/fx-sync.ts (2), jobs/maintenance-alerts.ts (2), jobs/eng-doc-reminders.ts (1).
+      // None are instance-guarded. Running >1 instance fires every job once per
+      // instance: duplicate payroll/reminder emails, duplicate FX syncs, etc.
+      // If this ever needs horizontal scale, the jobs must first be rewritten
+      // with a distributed lock (e.g. Redis SETNX/redlock) or single-leader election.
       exec_mode: 'fork',
       instances: 1,
       env_production: {
