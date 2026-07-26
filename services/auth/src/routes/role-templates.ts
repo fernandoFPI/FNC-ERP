@@ -142,7 +142,7 @@ roleTemplatesRouter.post(
         permissions?: { key: string; accessLevel: string }[]
       }
 
-      if (!name.trim()) {
+      if (!name?.trim()) {
         return res.status(400).json({
           success: false,
           error: { code: 'VALIDATION_ERROR', message: 'name is required' },

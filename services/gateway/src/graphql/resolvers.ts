@@ -19452,10 +19452,10 @@ const phase5QueryResolvers = {
     )
     const row = r.rows[0] as Record<string, unknown>
     return {
-      themePreference: row.theme_preference,
-      dateFormat: row.date_format,
-      numberFormat: row.number_format,
-      notificationPreferences: row.notification_preferences,
+      themePreference: row?.theme_preference,
+      dateFormat: row?.date_format,
+      numberFormat: row?.number_format,
+      notificationPreferences: row?.notification_preferences,
     }
   },
 
@@ -22931,7 +22931,7 @@ const phase5MutationResolvers = {
       [ctx.auth.userId],
     )
     const user = userRes.rows[0]
-    if (!user.mfa_secret) throw new Error('MFA setup not initiated — call enableMFA first')
+    if (!user?.mfa_secret) throw new Error('MFA setup not initiated — call enableMFA first')
     const decryptedSecret = decrypt(user.mfa_secret)
     if (!verifyMFAToken(decryptedSecret, args.totpCode)) throw new Error('Invalid TOTP code')
     await query(`UPDATE users SET mfa_enabled=true, updated_at=NOW() WHERE id=$1`, [
