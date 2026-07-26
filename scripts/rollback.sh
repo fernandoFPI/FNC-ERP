@@ -34,7 +34,7 @@ git fetch origin production
 git checkout "${TARGET_SHA}"
 
 pnpm install --frozen-lockfile
-pnpm build
+pnpm build --concurrency=4
 
 set -a
 source .env
