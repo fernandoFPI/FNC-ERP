@@ -103,11 +103,7 @@ jobs:
             pm2 reload ecosystem.config.cjs --env production --update-env
 
             echo "Waiting for services to report healthy..."
-            declare -A PORTS=(
-              [gateway]=3000 [auth]=3001 [finance]=3002 [procurement]=3003
-              [hr]=3004 [inventory]=3005 [projects]=3006 [manufacturing]=3007
-              [interco]=3008 [notifications]=3009 [rental]=3010 [reporting]=3011
-            )
+            declare -A PORTS=( [gateway]=3000 [auth]=3001 [finance]=3002 [procurement]=3003 [hr]=3004 [inventory]=3005 [projects]=3006 [manufacturing]=3007 [interco]=3008 [notifications]=3009 [rental]=3010 [reporting]=3011 )
             FAILED=0
             for svc in "${!PORTS[@]}"; do
               port="${PORTS[$svc]}"
