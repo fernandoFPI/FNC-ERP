@@ -18,6 +18,7 @@ async function start() {
 
   const server = app.listen(port, () => {
     log.info({ port }, 'Inventory service started')
+    process.send?.('ready')
   })
 
   server.on('error', (err: NodeJS.ErrnoException) => {
@@ -28,6 +29,7 @@ async function start() {
 
   const shutdown = async () => {
     log.info('Inventory service shutting down')
+    server.closeIdleConnections?.()
     server.close(async () => { await pool.end(); process.exit(0) })
   }
   process.on('SIGTERM', () => { void shutdown() })

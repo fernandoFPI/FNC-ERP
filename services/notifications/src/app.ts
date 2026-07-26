@@ -1,5 +1,6 @@
 import express from 'express'
 import { requireAuth } from '@fnc-erp/auth'
+import { buildHealthStatus } from '@fnc-erp/db'
 import { notificationsRouter } from './routes/notifications.js'
 import { pushRouter } from './routes/push.js'
 
@@ -9,8 +10,9 @@ export function createApp(): import('express').Express {
   app.disable('etag')
   app.use(express.json())
 
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'notifications', timestamp: new Date().toISOString() })
+  app.get('/health', async (_req, res) => {
+    const health = await buildHealthStatus('notifications')
+    res.status(health.status === 'down' ? 503 : 200).json(health)
   })
 
   app.use(requireAuth())

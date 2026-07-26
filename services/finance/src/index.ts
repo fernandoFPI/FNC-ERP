@@ -19,6 +19,7 @@ async function start() {
 
   const server = app.listen(port, () => {
     log.info({ port }, 'Finance service started')
+    process.send?.('ready')
   })
 
   server.on('error', (err: NodeJS.ErrnoException) => {
@@ -29,6 +30,7 @@ async function start() {
 
   const shutdown = async () => {
     log.info('Finance service shutting down')
+    server.closeIdleConnections?.()
     server.close(async () => { await pool.end(); process.exit(0) })
   }
   process.on('SIGTERM', () => { void shutdown() })

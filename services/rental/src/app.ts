@@ -1,5 +1,6 @@
 import express from 'express'
 import { requireAuth } from '@fnc-erp/auth'
+import { buildHealthStatus } from '@fnc-erp/db'
 import { assetsRouter } from './routes/assets.js'
 import { contractsRouter } from './routes/contracts.js'
 import { rentalContractAttachmentsRouter } from './routes/attachments.js'
@@ -14,7 +15,10 @@ export function createApp(): express.Express {
   app.disable('etag')
   app.use(express.json())
 
-  app.get('/health', (_req, res) => { res.json({ status: 'ok', service: 'rental' }) })
+  app.get('/health', async (_req, res) => {
+    const health = await buildHealthStatus('rental')
+    res.status(health.status === 'down' ? 503 : 200).json(health)
+  })
 
   app.use(requireAuth())
 

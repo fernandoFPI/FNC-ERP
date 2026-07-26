@@ -18,6 +18,7 @@ async function start() {
   const port = env.GATEWAY_PORT
   const server = app.listen(port, () => {
     log.info({ port }, 'Gateway service started')
+    process.send?.('ready')
   })
 
   server.on('upgrade', (req, socket, head) => {
@@ -31,6 +32,7 @@ async function start() {
 
   const shutdown = async () => {
     log.info('Gateway shutting down')
+    server.closeIdleConnections?.()
     server.close(async () => {
       await pool.end()
       process.exit(0)
