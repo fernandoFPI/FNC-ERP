@@ -46,7 +46,7 @@ export async function generateUploadUrl(req: UploadUrlRequest): Promise<UploadUr
       'file-id': fileId,
       'company-id': req.companyId,
       'uploaded-by': req.uploadedBy,
-      'category': req.category,
+      category: req.category,
       'original-name': sanitized,
     },
   })

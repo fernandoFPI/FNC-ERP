@@ -32,24 +32,53 @@ movesRouter.get('/', requirePermission('inventory.stock_moves.view', 'view'), as
     const params: unknown[] = [companyId]
     let idx = 2
 
-    if (product_id) { sql += ` AND sm.product_id = $${idx++}`; params.push(product_id) }
-    if (location_id) { sql += ` AND (sm.from_location_id = $${idx} OR sm.to_location_id = $${idx})`; idx++; params.push(location_id) }
-    if (from_date) { sql += ` AND sm.moved_at >= $${idx++}`; params.push(from_date) }
-    if (to_date) { sql += ` AND sm.moved_at <= $${idx++}`; params.push(to_date) }
+    if (product_id) {
+      sql += ` AND sm.product_id = $${idx++}`
+      params.push(product_id)
+    }
+    if (location_id) {
+      sql += ` AND (sm.from_location_id = $${idx} OR sm.to_location_id = $${idx})`
+      idx++
+      params.push(location_id)
+    }
+    if (from_date) {
+      sql += ` AND sm.moved_at >= $${idx++}`
+      params.push(from_date)
+    }
+    if (to_date) {
+      sql += ` AND sm.moved_at <= $${idx++}`
+      params.push(to_date)
+    }
     sql += ` ORDER BY sm.moved_at DESC LIMIT $${idx++} OFFSET $${idx++}`
     params.push(parseInt(limit as string), offset)
 
     const result = await query(sql, params)
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch moves', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch moves', err)
+  }
 })
 
 movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), async (req, res) => {
   const companyId = req.auth!.companyId
   const parsed = CreateMoveSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    return
+  }
 
-  const { product_id, lot_id, from_location_id, to_location_id, qty, unit_cost, currency_code, source_type, source_id, notes } = parsed.data
+  const {
+    product_id,
+    lot_id,
+    from_location_id,
+    to_location_id,
+    qty,
+    unit_cost,
+    currency_code,
+    source_type,
+    source_id,
+    notes,
+  } = parsed.data
 
   // Detect inter-company moves before standard validation
   // Worker sets source_type='interco_transfer' on direct inserts to bypass detection
@@ -89,8 +118,7 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
         return res.status(202).json({
           success: true,
           data: {
-            message:
-              'Cross-entity stock move detected. Routed to inter-company transfer flow.',
+            message: 'Cross-entity stock move detected. Routed to inter-company transfer flow.',
             requires_pricing_input: requiresPricingInput,
           },
         })
@@ -105,19 +133,46 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
     await client.query('BEGIN')
 
     // Verify product belongs to company
-    const prod = await client.query('SELECT id FROM products WHERE id = $1 AND company_id = $2 AND is_active = true', [product_id, companyId])
-    if (!prod.rows[0]) { await client.query('ROLLBACK'); return sendError(res, 400, 'INVALID_PRODUCT', 'Product not found in this company') }
+    const prod = await client.query(
+      'SELECT id FROM products WHERE id = $1 AND company_id = $2 AND is_active = true',
+      [product_id, companyId],
+    )
+    if (!prod.rows[0]) {
+      await client.query('ROLLBACK')
+      sendError(res, 400, 'INVALID_PRODUCT', 'Product not found in this company')
+      return
+    }
 
     // Verify both locations belong to company
-    const fromLoc = await client.query('SELECT id FROM stock_locations WHERE id = $1 AND company_id = $2', [from_location_id, companyId])
-    if (!fromLoc.rows[0]) { await client.query('ROLLBACK'); return sendError(res, 400, 'INVALID_LOCATION', 'Source location not found') }
-    const toLoc = await client.query('SELECT id FROM stock_locations WHERE id = $1 AND company_id = $2', [to_location_id, companyId])
-    if (!toLoc.rows[0]) { await client.query('ROLLBACK'); return sendError(res, 400, 'INVALID_LOCATION', 'Destination location not found') }
+    const fromLoc = await client.query(
+      'SELECT id FROM stock_locations WHERE id = $1 AND company_id = $2',
+      [from_location_id, companyId],
+    )
+    if (!fromLoc.rows[0]) {
+      await client.query('ROLLBACK')
+      sendError(res, 400, 'INVALID_LOCATION', 'Source location not found')
+      return
+    }
+    const toLoc = await client.query(
+      'SELECT id FROM stock_locations WHERE id = $1 AND company_id = $2',
+      [to_location_id, companyId],
+    )
+    if (!toLoc.rows[0]) {
+      await client.query('ROLLBACK')
+      sendError(res, 400, 'INVALID_LOCATION', 'Destination location not found')
+      return
+    }
 
-    if (from_location_id === to_location_id) { await client.query('ROLLBACK'); return sendError(res, 400, 'SAME_LOCATION', 'Source and destination locations cannot be the same') }
+    if (from_location_id === to_location_id) {
+      await client.query('ROLLBACK')
+      sendError(res, 400, 'SAME_LOCATION', 'Source and destination locations cannot be the same')
+      return
+    }
 
     // Check sufficient stock at source (skip for virtual_in locations)
-    const srcLocType = await client.query('SELECT type FROM stock_locations WHERE id = $1', [from_location_id])
+    const srcLocType = await client.query('SELECT type FROM stock_locations WHERE id = $1', [
+      from_location_id,
+    ])
     const srcType = (srcLocType.rows[0] as { type: string } | undefined)?.type
     if (srcType !== 'virtual_in') {
       const lotClause = lot_id ? `AND lot_id = '${lot_id}'` : 'AND lot_id IS NULL'
@@ -125,10 +180,18 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
         `SELECT qty_on_hand FROM stock_balances WHERE product_id = $1 AND location_id = $2 ${lotClause}`,
         [product_id, from_location_id],
       )
-      const onHand = parseFloat((bal.rows[0] as { qty_on_hand: string } | undefined)?.qty_on_hand ?? '0')
+      const onHand = parseFloat(
+        (bal.rows[0] as { qty_on_hand: string } | undefined)?.qty_on_hand ?? '0',
+      )
       if (onHand < qty) {
         await client.query('ROLLBACK')
-        return sendError(res, 422, 'INSUFFICIENT_STOCK', `Insufficient stock. Available: ${onHand}, Requested: ${qty}`)
+        sendError(
+          res,
+          422,
+          'INSUFFICIENT_STOCK',
+          `Insufficient stock. Available: ${onHand}, Requested: ${qty}`,
+        )
+        return
       }
     }
 
@@ -138,12 +201,33 @@ movesRouter.post('/', requirePermission('inventory.stock_moves.edit', 'edit'), a
     const moveResult = await client.query(
       `INSERT INTO stock_moves (company_id, product_id, lot_id, from_location_id, to_location_id, qty, unit_cost, total_cost, currency_code, source_type, source_id, notes, moved_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [companyId, product_id, lot_id ?? null, from_location_id, to_location_id, qty, unit_cost, total_cost, currency_code, source_type ?? null, source_id ?? null, notes ?? null, req.auth!.userId],
+      [
+        companyId,
+        product_id,
+        lot_id ?? null,
+        from_location_id,
+        to_location_id,
+        qty,
+        unit_cost,
+        total_cost,
+        currency_code,
+        source_type ?? null,
+        source_id ?? null,
+        notes ?? null,
+        req.auth!.userId,
+      ],
     )
     const move = moveResult.rows[0]!
 
     await client.query('COMMIT')
-    await logAudit({ companyId, userId: req.auth!.userId, action: 'CREATE', tableName: 'stock_moves', recordId: move['id'] as string, newValues: { product_id, qty, from_location_id, to_location_id } })
+    await logAudit({
+      companyId,
+      userId: req.auth!.userId,
+      action: 'CREATE',
+      tableName: 'stock_moves',
+      recordId: move.id as string,
+      newValues: { product_id, qty, from_location_id, to_location_id },
+    })
     sendOk(res, move, 201)
   } catch (err) {
     await client.query('ROLLBACK')

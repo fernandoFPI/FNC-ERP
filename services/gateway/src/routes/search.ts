@@ -35,7 +35,7 @@ function fmt(n: number | string | null, currency: string | null): string {
 
 // GET /api/v1/search?q=<query>
 searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
-  const q = typeof req.query['q'] === 'string' ? req.query['q'].trim() : ''
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : ''
   if (q.length < 2) {
     res.json({ groups: [] })
     return
@@ -46,12 +46,16 @@ searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
 
   try {
     const [pos, projects, employees, vendors, invoices, rentals] = await Promise.all([
-
       // Purchase Orders
       pool.query<{
-        id: string; po_number: string; vendor_name: string; status: string
-        total_amount: string; currency_code: string
-      }>(`
+        id: string
+        po_number: string
+        vendor_name: string
+        status: string
+        total_amount: string
+        currency_code: string
+      }>(
+        `
         SELECT po.id, po.po_number, v.name AS vendor_name, po.status,
                po.total_amount, po.currency_code
         FROM purchase_orders po
@@ -61,25 +65,39 @@ searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
           AND po.status != 'cancelled'
         ORDER BY po.created_at DESC
         LIMIT $3
-      `, [companyId, pattern, LIMIT]),
+      `,
+        [companyId, pattern, LIMIT],
+      ),
 
       // Projects
       pool.query<{
-        id: string; name: string; code: string; status: string; client_name: string | null
-      }>(`
+        id: string
+        name: string
+        code: string
+        status: string
+        client_name: string | null
+      }>(
+        `
         SELECT id, name, code, status, client_name
         FROM projects
         WHERE company_id = $1
           AND (name ILIKE $2 OR code ILIKE $2 OR client_name ILIKE $2)
         ORDER BY created_at DESC
         LIMIT $3
-      `, [companyId, pattern, LIMIT]),
+      `,
+        [companyId, pattern, LIMIT],
+      ),
 
       // Employees
       pool.query<{
-        id: string; first_name: string; last_name: string
-        employee_number: string | null; job_title: string | null; department_name: string | null
-      }>(`
+        id: string
+        first_name: string
+        last_name: string
+        employee_number: string | null
+        job_title: string | null
+        department_name: string | null
+      }>(
+        `
         SELECT e.id, e.first_name, e.last_name, e.employee_number, e.job_title,
                d.name AS department_name
         FROM employees e
@@ -90,25 +108,38 @@ searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
             OR e.employee_number ILIKE $2)
         ORDER BY e.last_name, e.first_name
         LIMIT $3
-      `, [companyId, pattern, LIMIT]),
+      `,
+        [companyId, pattern, LIMIT],
+      ),
 
       // Vendors
       pool.query<{
-        id: string; name: string; city: string | null; is_active: boolean
-      }>(`
+        id: string
+        name: string
+        city: string | null
+        is_active: boolean
+      }>(
+        `
         SELECT id, name, city, is_active
         FROM vendors
         WHERE company_id = $1
           AND name ILIKE $2
         ORDER BY name
         LIMIT $3
-      `, [companyId, pattern, LIMIT]),
+      `,
+        [companyId, pattern, LIMIT],
+      ),
 
       // Project Invoices
       pool.query<{
-        id: string; invoice_number: string; status: string
-        net_payable: string; currency_code: string; client_name: string | null
-      }>(`
+        id: string
+        invoice_number: string
+        status: string
+        net_payable: string
+        currency_code: string
+        client_name: string | null
+      }>(
+        `
         SELECT pi.id, pi.invoice_number, pi.status,
                pi.net_payable, pi.currency_code, pc.client_name
         FROM project_invoices pi
@@ -117,20 +148,29 @@ searchRouter.get('/', requireAuth(), async (req: Request, res: Response) => {
           AND (pi.invoice_number ILIKE $2 OR pc.client_name ILIKE $2)
         ORDER BY pi.created_at DESC
         LIMIT $3
-      `, [companyId, pattern, LIMIT]),
+      `,
+        [companyId, pattern, LIMIT],
+      ),
 
       // Rental Contracts
       pool.query<{
-        id: string; contract_number: string; client_name: string | null
-        status: string; rate_amount: string; currency_code: string
-      }>(`
+        id: string
+        contract_number: string
+        client_name: string | null
+        status: string
+        rate_amount: string
+        currency_code: string
+      }>(
+        `
         SELECT id, contract_number, client_name, status, rate_amount, currency_code
         FROM rental_contracts
         WHERE company_id = $1
           AND (contract_number ILIKE $2 OR client_name ILIKE $2)
         ORDER BY created_at DESC
         LIMIT $3
-      `, [companyId, pattern, LIMIT]),
+      `,
+        [companyId, pattern, LIMIT],
+      ),
     ])
 
     const groups: SearchGroup[] = []

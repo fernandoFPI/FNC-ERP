@@ -82,12 +82,12 @@ export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
 
 // Iraqi withholding tax rates per transaction type
 export const WITHHOLDING_TAX_RATES = {
-  SERVICES_DOMESTIC:  0.03,
-  SERVICES_FOREIGN:   0.15,
-  CONSTRUCTION:       0.02,
-  EQUIPMENT_RENTAL:   0.05,
-  PROFESSIONAL_FEES:  0.05,
+  SERVICES_DOMESTIC: 0.03,
+  SERVICES_FOREIGN: 0.15,
+  CONSTRUCTION: 0.02,
+  EQUIPMENT_RENTAL: 0.05,
+  PROFESSIONAL_FEES: 0.05,
 } as const
 
-export const FUNCTIONAL_CURRENCY = 'IQD' as const
+export const FUNCTIONAL_CURRENCY = 'IQD'
 export const SUPPORTED_CURRENCIES = ['IQD', 'USD', 'EUR', 'GBP'] as const

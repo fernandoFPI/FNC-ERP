@@ -22,7 +22,7 @@ export interface PayslipData {
   }
   earnings: {
     basePay: number
-    allowances: Array<{ name: string; amount: number }>
+    allowances: { name: string; amount: number }[]
     overtimePay: number
     grossPay: number
     currency: string
@@ -30,7 +30,7 @@ export interface PayslipData {
   deductions: {
     incomeTax: number
     socialSecurity: number
-    others: Array<{ name: string; amount: number }>
+    others: { name: string; amount: number }[]
     totalDeductions: number
   }
   net: {

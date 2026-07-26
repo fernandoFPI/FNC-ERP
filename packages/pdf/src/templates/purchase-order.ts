@@ -11,7 +11,7 @@ export interface POData {
     currency: string
     notes?: string
   }
-  lines: Array<{
+  lines: {
     lineNumber: number
     description: string
     qty: number
@@ -19,7 +19,7 @@ export interface POData {
     unitPrice: number
     totalPrice: number
     currency: string
-  }>
+  }[]
   totals: {
     subtotal: number
     taxAmount: number

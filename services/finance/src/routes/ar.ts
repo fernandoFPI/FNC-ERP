@@ -11,7 +11,8 @@ export const arRouter: IRouter = Router()
 // rental_invoices has no due_date/amount_paid/company_id — proxied via join + billing_period_end
 arRouter.get('/summary', requirePermission('finance.ar.view', 'view'), async (req, res) => {
   try {
-    const result = await query(`
+    const result = await query(
+      `
       WITH all_inv AS (
         -- Project invoices
         SELECT
@@ -68,10 +69,14 @@ arRouter.get('/summary', requirePermission('finance.ar.view', 'view'), async (re
           WHERE due_date < CURRENT_DATE AND status != 'paid'
         )::integer                                                           AS overdue_count
       FROM all_inv
-    `, [req.auth!.companyId])
+    `,
+      [req.auth!.companyId],
+    )
 
     sendOk(res, result.rows[0])
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AR summary', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AR summary', err)
+  }
 })
 
 // ── GET /finance/ar/wht-recoverable ──────────────────────────
@@ -98,24 +103,36 @@ arRouter.get('/wht-recoverable', requirePermission('finance.ar.view', 'view'), a
          , 0) AS wht_recoverable`,
       [companyId, year],
     )
-    sendOk(res, { wht_recoverable: parseFloat((result.rows[0] as { wht_recoverable: string }).wht_recoverable) })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get WHT recoverable', err) }
+    sendOk(res, {
+      wht_recoverable: parseFloat((result.rows[0] as { wht_recoverable: string }).wht_recoverable),
+    })
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get WHT recoverable', err)
+  }
 })
 
 // ── GET /finance/ar/invoices ──────────────────────────────────
 // All outstanding AR invoices unified, oldest overdue first
 arRouter.get('/invoices', requirePermission('finance.ar.view', 'view'), async (req, res) => {
   try {
-    const { source_type, overdue, client_name, page = '1', limit = '20' } = req.query as Record<string, string>
+    const {
+      source_type,
+      overdue,
+      client_name,
+      page = '1',
+      limit = '20',
+    } = req.query as Record<string, string>
     const offset = (parseInt(page) - 1) * parseInt(limit)
 
     const conditions: string[] = []
-    if (source_type === 'project' || source_type === 'rental') conditions.push(`source_type = '${source_type}'`)
+    if (source_type === 'project' || source_type === 'rental')
+      conditions.push(`source_type = '${source_type}'`)
     if (overdue === 'true') conditions.push(`due_date < CURRENT_DATE AND status != 'paid'`)
     if (client_name) conditions.push(`client_name ILIKE '%${client_name.replace(/'/g, "''")}%'`)
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    const result = await query(`
+    const result = await query(
+      `
       WITH all_inv AS (
         SELECT
           pi.id,
@@ -165,17 +182,22 @@ arRouter.get('/invoices', requirePermission('finance.ar.view', 'view'), async (r
         CASE WHEN days_overdue > 0 AND status != 'paid' THEN 0 ELSE 1 END,
         days_overdue DESC, due_date ASC
       LIMIT $2 OFFSET $3
-    `, [req.auth!.companyId, parseInt(limit), offset])
+    `,
+      [req.auth!.companyId, parseInt(limit), offset],
+    )
 
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list AR invoices', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to list AR invoices', err)
+  }
 })
 
 // ── GET /finance/ar/by-client ─────────────────────────────────
 // Outstanding AR grouped by client, highest balance first
 arRouter.get('/by-client', requirePermission('finance.ar.view', 'view'), async (req, res) => {
   try {
-    const result = await query(`
+    const result = await query(
+      `
       WITH all_inv AS (
         SELECT
           p.client_name,
@@ -212,8 +234,12 @@ arRouter.get('/by-client', requirePermission('finance.ar.view', 'view'), async (
       WHERE client_name IS NOT NULL
       GROUP BY client_name
       ORDER BY total_outstanding DESC
-    `, [req.auth!.companyId])
+    `,
+      [req.auth!.companyId],
+    )
 
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AR by client', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get AR by client', err)
+  }
 })

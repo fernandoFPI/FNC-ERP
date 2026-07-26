@@ -17,7 +17,7 @@ const IV_LENGTH = 12
 const AUTH_TAG_LENGTH = 16
 
 function encryptValue(plaintext: string): string {
-  const key = Buffer.from(process.env['ENCRYPTION_KEY'] ?? '', 'hex')
+  const key = Buffer.from(process.env.ENCRYPTION_KEY ?? '', 'hex')
   const iv = randomBytes(IV_LENGTH)
   const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH })
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
@@ -33,23 +33,103 @@ interface ConfigKeyDef {
 }
 
 const KNOWN_KEYS: ConfigKeyDef[] = [
-  { key: 'smtp.host',                    description: 'SMTP server hostname',                              is_sensitive: false, envKey: 'SMTP_HOST' },
-  { key: 'smtp.port',                    description: 'SMTP server port (e.g. 465, 587)',                   is_sensitive: false, envKey: 'SMTP_PORT' },
-  { key: 'smtp.secure',                  description: 'Use TLS — true or false',                            is_sensitive: false, envKey: 'SMTP_SECURE' },
-  { key: 'smtp.user',                    description: 'SMTP login username',                               is_sensitive: false, envKey: 'SMTP_USER' },
-  { key: 'smtp.password',               description: 'SMTP login password',                               is_sensitive: true,  envKey: 'SMTP_PASSWORD' },
-  { key: 'email.from_name',             description: 'Sender display name',                               is_sensitive: false, envKey: 'EMAIL_FROM_NAME' },
-  { key: 'email.from_address',          description: 'Sender email address',                              is_sensitive: false, envKey: 'EMAIL_FROM_ADDRESS' },
-  { key: 'email.reply_to',             description: 'Reply-to address (optional)',                        is_sensitive: false, envKey: 'EMAIL_REPLY_TO' },
-  { key: 'app.base_url',                description: 'Public app base URL (used in QR codes, email links)', is_sensitive: false, envKey: 'APP_BASE_URL' },
-  { key: 'fx.exchange_rate_api_key',    description: 'ExchangeRate-API.com API key',                      is_sensitive: true,  envKey: 'EXCHANGE_RATE_API_KEY' },
-  { key: 'fx.open_exchange_rates_app_id', description: 'Open Exchange Rates App ID (fallback FX source)', is_sensitive: true,  envKey: 'OPEN_EXCHANGE_RATES_APP_ID' },
-  { key: 'storage.b2_endpoint',         description: 'Backblaze B2 S3-compatible endpoint URL',           is_sensitive: false, envKey: 'B2_ENDPOINT' },
-  { key: 'storage.b2_region',           description: 'B2 bucket region',                                  is_sensitive: false, envKey: 'B2_REGION' },
-  { key: 'storage.b2_key_id',           description: 'B2 key ID',                                         is_sensitive: true,  envKey: 'B2_KEY_ID' },
-  { key: 'storage.b2_application_key',  description: 'B2 application key (secret)',                       is_sensitive: true,  envKey: 'B2_APPLICATION_KEY' },
-  { key: 'storage.b2_bucket_name',      description: 'B2 bucket name',                                    is_sensitive: false, envKey: 'B2_BUCKET_NAME' },
-  { key: 'storage.b2_bucket_public_url', description: 'Public CDN URL for B2 bucket (optional)',         is_sensitive: false, envKey: 'B2_BUCKET_PUBLIC_URL' },
+  {
+    key: 'smtp.host',
+    description: 'SMTP server hostname',
+    is_sensitive: false,
+    envKey: 'SMTP_HOST',
+  },
+  {
+    key: 'smtp.port',
+    description: 'SMTP server port (e.g. 465, 587)',
+    is_sensitive: false,
+    envKey: 'SMTP_PORT',
+  },
+  {
+    key: 'smtp.secure',
+    description: 'Use TLS — true or false',
+    is_sensitive: false,
+    envKey: 'SMTP_SECURE',
+  },
+  {
+    key: 'smtp.user',
+    description: 'SMTP login username',
+    is_sensitive: false,
+    envKey: 'SMTP_USER',
+  },
+  {
+    key: 'smtp.password',
+    description: 'SMTP login password',
+    is_sensitive: true,
+    envKey: 'SMTP_PASSWORD',
+  },
+  {
+    key: 'email.from_name',
+    description: 'Sender display name',
+    is_sensitive: false,
+    envKey: 'EMAIL_FROM_NAME',
+  },
+  {
+    key: 'email.from_address',
+    description: 'Sender email address',
+    is_sensitive: false,
+    envKey: 'EMAIL_FROM_ADDRESS',
+  },
+  {
+    key: 'email.reply_to',
+    description: 'Reply-to address (optional)',
+    is_sensitive: false,
+    envKey: 'EMAIL_REPLY_TO',
+  },
+  {
+    key: 'app.base_url',
+    description: 'Public app base URL (used in QR codes, email links)',
+    is_sensitive: false,
+    envKey: 'APP_BASE_URL',
+  },
+  {
+    key: 'fx.exchange_rate_api_key',
+    description: 'ExchangeRate-API.com API key',
+    is_sensitive: true,
+    envKey: 'EXCHANGE_RATE_API_KEY',
+  },
+  {
+    key: 'fx.open_exchange_rates_app_id',
+    description: 'Open Exchange Rates App ID (fallback FX source)',
+    is_sensitive: true,
+    envKey: 'OPEN_EXCHANGE_RATES_APP_ID',
+  },
+  {
+    key: 'storage.b2_endpoint',
+    description: 'Backblaze B2 S3-compatible endpoint URL',
+    is_sensitive: false,
+    envKey: 'B2_ENDPOINT',
+  },
+  {
+    key: 'storage.b2_region',
+    description: 'B2 bucket region',
+    is_sensitive: false,
+    envKey: 'B2_REGION',
+  },
+  { key: 'storage.b2_key_id', description: 'B2 key ID', is_sensitive: true, envKey: 'B2_KEY_ID' },
+  {
+    key: 'storage.b2_application_key',
+    description: 'B2 application key (secret)',
+    is_sensitive: true,
+    envKey: 'B2_APPLICATION_KEY',
+  },
+  {
+    key: 'storage.b2_bucket_name',
+    description: 'B2 bucket name',
+    is_sensitive: false,
+    envKey: 'B2_BUCKET_NAME',
+  },
+  {
+    key: 'storage.b2_bucket_public_url',
+    description: 'Public CDN URL for B2 bucket (optional)',
+    is_sensitive: false,
+    envKey: 'B2_BUCKET_PUBLIC_URL',
+  },
 ]
 
 const SENSITIVE_KEYS = new Set(KNOWN_KEYS.filter((k) => k.is_sensitive).map((k) => k.key))
@@ -58,7 +138,13 @@ const SENSITIVE_KEYS = new Set(KNOWN_KEYS.filter((k) => k.is_sensitive).map((k) 
 systemConfigRouter.get('/', ...requireAdmin, async (_req: Request, res: Response) => {
   // Read from DB — if the table doesn't exist yet (migration not yet run),
   // fall through gracefully and show env-sourced values.
-  type DbRow = { key: string; value: string; is_sensitive: boolean; description: string | null; updated_at: string }
+  interface DbRow {
+    key: string
+    value: string
+    is_sensitive: boolean
+    description: string | null
+    updated_at: string
+  }
   let dbRows: DbRow[] = []
   try {
     const dbResult = await pool.query<DbRow>(
@@ -102,12 +188,15 @@ systemConfigRouter.get('/', ...requireAdmin, async (_req: Request, res: Response
 })
 
 const UpdateSchema = z.object({
-  updates: z.array(
-    z.object({
-      key: z.string().min(1).max(100),
-      value: z.string(),
-    }),
-  ).min(1).max(50),
+  updates: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(100),
+        value: z.string(),
+      }),
+    )
+    .min(1)
+    .max(50),
 })
 
 // ── PUT /api/v1/admin/system-config ──────────────────────────
@@ -149,7 +238,9 @@ systemConfigRouter.put('/', ...requireAdmin, async (req: Request, res: Response)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('system_config') && msg.includes('does not exist')) {
-      res.status(503).json({ error: 'MIGRATION_PENDING', message: 'Run migration 104 first: pnpm migrate' })
+      res
+        .status(503)
+        .json({ error: 'MIGRATION_PENDING', message: 'Run migration 104 first: pnpm migrate' })
       return
     }
     log.error({ err }, 'failed to update system config')
@@ -183,7 +274,10 @@ systemConfigRouter.post('/test-smtp', ...requireAdmin, async (req: Request, res:
     ])
 
     if (!host || !user || !password) {
-      res.status(400).json({ error: 'SMTP_NOT_CONFIGURED', message: 'SMTP host, username and password are required' })
+      res.status(400).json({
+        error: 'SMTP_NOT_CONFIGURED',
+        message: 'SMTP host, username and password are required',
+      })
       return
     }
 

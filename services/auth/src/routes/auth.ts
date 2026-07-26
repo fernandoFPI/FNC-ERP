@@ -55,8 +55,7 @@ const companySwitchSchema = z.object({
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-
-type UserRow = {
+interface UserRow {
   id: string
   email: string
   password_hash: string
@@ -69,13 +68,13 @@ type UserRow = {
   employee_id: string | null
 }
 
-type RoleRow = {
+interface RoleRow {
   company_id: string
   role: string
   module: string
 }
 
-type CompanyRow = {
+interface CompanyRow {
   id: string
   name: string
   currency_code?: string
@@ -111,7 +110,12 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
     // Check account lock (before password check for locked real accounts)
     // pg returns TIMESTAMPTZ as strings due to custom type parsers, so use Date.parse
     if (user && user.locked_until && Date.parse(String(user.locked_until)) > Date.now()) {
-      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.ACCOUNT_LOCKED, 'Account is temporarily locked due to too many failed login attempts')
+      sendError(
+        res,
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.ACCOUNT_LOCKED,
+        'Account is temporarily locked due to too many failed login attempts',
+      )
       return
     }
 
@@ -134,7 +138,12 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
         )
       }
       // Same error message regardless of reason — no user enumeration
-      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.INVALID_CREDENTIALS, 'Email or password is incorrect')
+      sendError(
+        res,
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.INVALID_CREDENTIALS,
+        'Email or password is incorrect',
+      )
       return
     }
 
@@ -266,7 +275,13 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, email: user.email, mfaEnabled: user.mfa_enabled, profileCompleted: user.profile_completed, employeeId: user.employee_id },
+        user: {
+          id: user.id,
+          email: user.email,
+          mfaEnabled: user.mfa_enabled,
+          profileCompleted: user.profile_completed,
+          employeeId: user.employee_id,
+        },
         companies: companiesResult.rows,
       },
     })
@@ -294,7 +309,12 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
     try {
       tempPayload = verifyMfaTempToken(tempToken)
     } catch {
-      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.TOKEN_INVALID, 'Invalid or expired MFA token')
+      sendError(
+        res,
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.TOKEN_INVALID,
+        'Invalid or expired MFA token',
+      )
       return
     }
 
@@ -373,7 +393,13 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, email: user.email, mfaEnabled: user.mfa_enabled, profileCompleted: user.profile_completed, employeeId: user.employee_id },
+        user: {
+          id: user.id,
+          email: user.email,
+          mfaEnabled: user.mfa_enabled,
+          profileCompleted: user.profile_completed,
+          employeeId: user.employee_id,
+        },
         companies: companiesResult.rows,
         deviceToken: trustDevice ? signDeviceTrustToken(user.id) : undefined,
       },
@@ -388,23 +414,28 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
 
 authRouter.post('/mfa/setup', requireAuth(), async (req: Request, res: Response): Promise<void> => {
   const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
+  if (!auth) {
+    sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
+    return
+  }
 
   try {
-    const userResult = await query<{ email: string }>(
-      `SELECT email FROM users WHERE id = $1`,
-      [auth.userId],
-    )
+    const userResult = await query<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [
+      auth.userId,
+    ])
     const user = userResult.rows[0]
-    if (!user) { sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'User not found'); return }
+    if (!user) {
+      sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'User not found')
+      return
+    }
 
     const { secret, otpauthUrl } = generateMFASecret(user.email)
     const encryptedSecret = encrypt(secret)
 
-    await query(
-      `UPDATE users SET mfa_secret = $1, updated_at = NOW() WHERE id = $2`,
-      [encryptedSecret, auth.userId],
-    )
+    await query(`UPDATE users SET mfa_secret = $1, updated_at = NOW() WHERE id = $2`, [
+      encryptedSecret,
+      auth.userId,
+    ])
 
     await logAudit({
       userId: auth.userId,
@@ -426,55 +457,72 @@ authRouter.post('/mfa/setup', requireAuth(), async (req: Request, res: Response)
 
 // ── POST /auth/mfa/confirm ────────────────────────────────────────────────────
 
-authRouter.post('/mfa/confirm', requireAuth(), async (req: Request, res: Response): Promise<void> => {
-  const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
-
-  const parsed = mfaConfirmSchema.safeParse(req.body)
-  if (!parsed.success) { sendValidationError(res, parsed.error.flatten()); return }
-
-  try {
-    const userResult = await query<{ mfa_secret: string | null }>(
-      `SELECT mfa_secret FROM users WHERE id = $1`,
-      [auth.userId],
-    )
-    const user = userResult.rows[0]
-    if (!user?.mfa_secret) {
-      sendError(res, HTTP_STATUS.BAD_REQUEST, ERROR_CODES.VALIDATION_ERROR, 'MFA setup not initiated')
+authRouter.post(
+  '/mfa/confirm',
+  requireAuth(),
+  async (req: Request, res: Response): Promise<void> => {
+    const auth = req.auth
+    if (!auth) {
+      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
       return
     }
 
-    const decryptedSecret = decrypt(user.mfa_secret)
-    if (!verifyMFAToken(decryptedSecret, parsed.data.totpCode)) {
-      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.MFA_INVALID, 'Invalid TOTP code')
+    const parsed = mfaConfirmSchema.safeParse(req.body)
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error.flatten())
       return
     }
 
-    await query(
-      `UPDATE users SET mfa_enabled = true, updated_at = NOW() WHERE id = $1`,
-      [auth.userId],
-    )
+    try {
+      const userResult = await query<{ mfa_secret: string | null }>(
+        `SELECT mfa_secret FROM users WHERE id = $1`,
+        [auth.userId],
+      )
+      const user = userResult.rows[0]
+      if (!user?.mfa_secret) {
+        sendError(
+          res,
+          HTTP_STATUS.BAD_REQUEST,
+          ERROR_CODES.VALIDATION_ERROR,
+          'MFA setup not initiated',
+        )
+        return
+      }
 
-    await logAudit({
-      userId: auth.userId,
-      companyId: auth.companyId,
-      action: 'MFA_ENABLED',
-      ipAddress: auth.ipAddress,
-      userAgent: auth.userAgent,
-    })
+      const decryptedSecret = decrypt(user.mfa_secret)
+      if (!verifyMFAToken(decryptedSecret, parsed.data.totpCode)) {
+        sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.MFA_INVALID, 'Invalid TOTP code')
+        return
+      }
 
-    res.status(HTTP_STATUS.OK).json({ success: true, data: { mfaEnabled: true } })
-  } catch (err) {
-    console.error('[auth] mfa/confirm error:', err)
-    sendInternalError(res)
-  }
-})
+      await query(`UPDATE users SET mfa_enabled = true, updated_at = NOW() WHERE id = $1`, [
+        auth.userId,
+      ])
+
+      await logAudit({
+        userId: auth.userId,
+        companyId: auth.companyId,
+        action: 'MFA_ENABLED',
+        ipAddress: auth.ipAddress,
+        userAgent: auth.userAgent,
+      })
+
+      res.status(HTTP_STATUS.OK).json({ success: true, data: { mfaEnabled: true } })
+    } catch (err) {
+      console.error('[auth] mfa/confirm error:', err)
+      sendInternalError(res)
+    }
+  },
+)
 
 // ── POST /auth/refresh ────────────────────────────────────────────────────────
 
 authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> => {
   const parsed = refreshSchema.safeParse(req.body)
-  if (!parsed.success) { sendValidationError(res, parsed.error.flatten()); return }
+  if (!parsed.success) {
+    sendValidationError(res, parsed.error.flatten())
+    return
+  }
 
   const { refreshToken } = parsed.data
 
@@ -483,7 +531,12 @@ authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> =
     try {
       payload = verifyRefreshToken(refreshToken)
     } catch {
-      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.TOKEN_EXPIRED, 'Refresh token invalid or expired')
+      sendError(
+        res,
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.TOKEN_EXPIRED,
+        'Refresh token invalid or expired',
+      )
       return
     }
 
@@ -502,7 +555,12 @@ authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> =
 
     const session = sessionResult.rows[0]
     if (!session) {
-      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.TOKEN_EXPIRED, 'Session not found or expired')
+      sendError(
+        res,
+        HTTP_STATUS.UNAUTHORIZED,
+        ERROR_CODES.TOKEN_EXPIRED,
+        'Session not found or expired',
+      )
       return
     }
 
@@ -564,7 +622,10 @@ authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> =
 
 authRouter.post('/logout', requireAuth(), async (req: Request, res: Response): Promise<void> => {
   const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
+  if (!auth) {
+    sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
+    return
+  }
 
   try {
     await withSystemTransaction(async (client) => {
@@ -588,44 +649,66 @@ authRouter.post('/logout', requireAuth(), async (req: Request, res: Response): P
 
 // ── POST /auth/logout-all ─────────────────────────────────────────────────────
 
-authRouter.post('/logout-all', requireAuth(), async (req: Request, res: Response): Promise<void> => {
-  const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
+authRouter.post(
+  '/logout-all',
+  requireAuth(),
+  async (req: Request, res: Response): Promise<void> => {
+    const auth = req.auth
+    if (!auth) {
+      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
+      return
+    }
 
-  try {
-    await withSystemTransaction(async (client) => {
-      await client.query(`DELETE FROM sessions WHERE user_id = $1`, [auth.userId])
-      await logAudit({
-        userId: auth.userId,
-        companyId: auth.companyId,
-        action: 'LOGOUT_ALL',
-        ipAddress: auth.ipAddress,
-        userAgent: auth.userAgent,
-        client,
+    try {
+      await withSystemTransaction(async (client) => {
+        await client.query(`DELETE FROM sessions WHERE user_id = $1`, [auth.userId])
+        await logAudit({
+          userId: auth.userId,
+          companyId: auth.companyId,
+          action: 'LOGOUT_ALL',
+          ipAddress: auth.ipAddress,
+          userAgent: auth.userAgent,
+          client,
+        })
       })
-    })
 
-    res.status(HTTP_STATUS.OK).json({ success: true, data: { message: 'All sessions terminated' } })
-  } catch (err) {
-    console.error('[auth] logout-all error:', err)
-    sendInternalError(res)
-  }
-})
+      res
+        .status(HTTP_STATUS.OK)
+        .json({ success: true, data: { message: 'All sessions terminated' } })
+    } catch (err) {
+      console.error('[auth] logout-all error:', err)
+      sendInternalError(res)
+    }
+  },
+)
 
 // ── GET /auth/me ──────────────────────────────────────────────────────────────
 
 authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promise<void> => {
   const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
+  if (!auth) {
+    sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
+    return
+  }
 
   try {
-    const userResult = await query<{ id: string; email: string; mfa_enabled: boolean; last_login: Date | null; created_at: Date; employee_id: string | null }>(
+    const userResult = await query<{
+      id: string
+      email: string
+      mfa_enabled: boolean
+      last_login: Date | null
+      created_at: Date
+      employee_id: string | null
+    }>(
       `SELECT u.id, u.email, u.mfa_enabled, u.last_login, u.created_at, e.id AS employee_id
        FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = $1`,
       [auth.userId],
     )
     const user = userResult.rows[0]
-    if (!user) { sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'User not found'); return }
+    if (!user) {
+      sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'User not found')
+      return
+    }
 
     const rolesResult = await query<RoleRow & { company_name: string }>(
       `SELECT ucr.company_id, ucr.role, ucr.module, c.name AS company_name
@@ -660,80 +743,102 @@ authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promis
 
 // ── GET /auth/me/companies ────────────────────────────────────────────────────
 
-authRouter.get('/me/companies', requireAuth(), async (req: Request, res: Response): Promise<void> => {
-  const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
+authRouter.get(
+  '/me/companies',
+  requireAuth(),
+  async (req: Request, res: Response): Promise<void> => {
+    const auth = req.auth
+    if (!auth) {
+      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
+      return
+    }
 
-  try {
-    const result = await query<CompanyRow>(
-      `SELECT DISTINCT c.id, c.name, c.currency_code
+    try {
+      const result = await query<CompanyRow>(
+        `SELECT DISTINCT c.id, c.name, c.currency_code
        FROM companies c
        JOIN user_company_roles ucr ON ucr.company_id = c.id
        WHERE ucr.user_id = $1
          AND ucr.is_active = true
          AND c.is_active = true
        ORDER BY c.name`,
-      [auth.userId],
-    )
+        [auth.userId],
+      )
 
-    res.status(HTTP_STATUS.OK).json({ success: true, data: result.rows })
-  } catch (err) {
-    console.error('[auth] /me/companies error:', err)
-    sendInternalError(res)
-  }
-})
+      res.status(HTTP_STATUS.OK).json({ success: true, data: result.rows })
+    } catch (err) {
+      console.error('[auth] /me/companies error:', err)
+      sendInternalError(res)
+    }
+  },
+)
 
 // ── POST /auth/company/switch ─────────────────────────────────────────────────
 
-authRouter.post('/company/switch', requireAuth(), async (req: Request, res: Response): Promise<void> => {
-  const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated'); return }
-
-  const parsed = companySwitchSchema.safeParse(req.body)
-  if (!parsed.success) { sendValidationError(res, parsed.error.flatten()); return }
-
-  const { companyId } = parsed.data
-
-  try {
-    const roleResult = await query<RoleRow>(
-      `SELECT company_id, role, module FROM user_company_roles
-       WHERE user_id = $1 AND company_id = $2 AND is_active = true
-       LIMIT 1`,
-      [auth.userId, companyId],
-    )
-
-    if (roleResult.rowCount === 0) {
-      sendError(res, HTTP_STATUS.FORBIDDEN, ERROR_CODES.FORBIDDEN, 'You do not have access to this company')
+authRouter.post(
+  '/company/switch',
+  requireAuth(),
+  async (req: Request, res: Response): Promise<void> => {
+    const auth = req.auth
+    if (!auth) {
+      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
       return
     }
 
-    const role = roleResult.rows[0]!
-    const newAccessToken = signAccessToken({
-      userId: auth.userId,
-      sessionId: auth.sessionId,
-      companyId: role.company_id,
-      role: role.role,
-      module: role.module,
-    })
+    const parsed = companySwitchSchema.safeParse(req.body)
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error.flatten())
+      return
+    }
 
-    // Update the session token hash, active company, and last_active timestamp
-    await query(
-      `UPDATE sessions SET token_hash = $1, company_id = $2, expires_at = NOW() + INTERVAL '15 minutes', last_active = NOW() WHERE id = $3`,
-      [hashToken(newAccessToken), role.company_id, auth.sessionId],
-    )
+    const { companyId } = parsed.data
 
-    await logAudit({
-      userId: auth.userId,
-      companyId,
-      action: 'COMPANY_SWITCH',
-      newValues: { companyId },
-      ipAddress: auth.ipAddress,
-      userAgent: auth.userAgent,
-    })
+    try {
+      const roleResult = await query<RoleRow>(
+        `SELECT company_id, role, module FROM user_company_roles
+       WHERE user_id = $1 AND company_id = $2 AND is_active = true
+       LIMIT 1`,
+        [auth.userId, companyId],
+      )
 
-    res.status(HTTP_STATUS.OK).json({ success: true, data: { accessToken: newAccessToken } })
-  } catch (err) {
-    console.error('[auth] company/switch error:', err)
-    sendInternalError(res)
-  }
-})
+      if (roleResult.rowCount === 0) {
+        sendError(
+          res,
+          HTTP_STATUS.FORBIDDEN,
+          ERROR_CODES.FORBIDDEN,
+          'You do not have access to this company',
+        )
+        return
+      }
+
+      const role = roleResult.rows[0]!
+      const newAccessToken = signAccessToken({
+        userId: auth.userId,
+        sessionId: auth.sessionId,
+        companyId: role.company_id,
+        role: role.role,
+        module: role.module,
+      })
+
+      // Update the session token hash, active company, and last_active timestamp
+      await query(
+        `UPDATE sessions SET token_hash = $1, company_id = $2, expires_at = NOW() + INTERVAL '15 minutes', last_active = NOW() WHERE id = $3`,
+        [hashToken(newAccessToken), role.company_id, auth.sessionId],
+      )
+
+      await logAudit({
+        userId: auth.userId,
+        companyId,
+        action: 'COMPANY_SWITCH',
+        newValues: { companyId },
+        ipAddress: auth.ipAddress,
+        userAgent: auth.userAgent,
+      })
+
+      res.status(HTTP_STATUS.OK).json({ success: true, data: { accessToken: newAccessToken } })
+    } catch (err) {
+      console.error('[auth] company/switch error:', err)
+      sendInternalError(res)
+    }
+  },
+)

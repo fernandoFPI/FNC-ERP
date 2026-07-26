@@ -91,7 +91,9 @@ const envSchema = z.object({
   // Email (SMTP)
   SMTP_HOST: z.string().default(''),
   SMTP_PORT: z.coerce.number().default(587),
-  SMTP_SECURE: z.preprocess((v) => v === 'true' || v === true || v === 1, z.boolean()).default(false),
+  SMTP_SECURE: z
+    .preprocess((v) => v === 'true' || v === true || v === 1, z.boolean())
+    .default(false),
   SMTP_USER: z.string().default(''),
   SMTP_PASSWORD: z.string().default(''),
   EMAIL_FROM_NAME: z.string().default('FNC ERP'),
@@ -102,9 +104,7 @@ const envSchema = z.object({
 function parseEnv() {
   const result = envSchema.safeParse(process.env)
   if (!result.success) {
-    const issues = result.error.issues
-      .map((i) => `  ${i.path.join('.')}: ${i.message}`)
-      .join('\n')
+    const issues = result.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n')
     throw new Error(`Environment validation failed:\n${issues}\n\nCheck your .env file.`)
   }
   return result.data

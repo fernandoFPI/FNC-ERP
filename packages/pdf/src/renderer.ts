@@ -12,10 +12,7 @@ export interface PDFOptions {
   marginRight?: string
 }
 
-export async function renderHTMLToPDF(
-  html: string,
-  options: PDFOptions = {},
-): Promise<Buffer> {
+export async function renderHTMLToPDF(html: string, options: PDFOptions = {}): Promise<Buffer> {
   const browser = await getBrowser()
   const page = await browser.newPage()
 

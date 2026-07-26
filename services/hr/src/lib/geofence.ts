@@ -5,8 +5,10 @@ function toRad(deg: number): number {
 }
 
 export function haversineDistanceMeters(
-  lat1: number, lon1: number,
-  lat2: number, lon2: number,
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
 ): number {
   const dLat = toRad(lat2 - lat1)
   const dLon = toRad(lon2 - lon1)
@@ -17,8 +19,10 @@ export function haversineDistanceMeters(
 }
 
 export function isWithinGeofence(
-  punchLat: number, punchLon: number,
-  locationLat: number, locationLon: number,
+  punchLat: number,
+  punchLon: number,
+  locationLat: number,
+  locationLon: number,
   radiusMeters: number,
 ): { valid: boolean; distanceMeters: number } {
   const distanceMeters = haversineDistanceMeters(punchLat, punchLon, locationLat, locationLon)

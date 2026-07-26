@@ -1,8 +1,4 @@
-export {
-  PERMISSION_REGISTRY,
-  ALL_PERMISSIONS,
-  ACCESS_LEVEL_ORDER,
-} from './registry.js'
+export { PERMISSION_REGISTRY, ALL_PERMISSIONS, ACCESS_LEVEL_ORDER } from './registry.js'
 export type { AccessLevel, PermissionDef, SubmoduleDef, ModuleDef } from './registry.js'
 
 export {

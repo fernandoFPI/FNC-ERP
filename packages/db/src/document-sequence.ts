@@ -1,13 +1,13 @@
 import { pool } from './client.js'
 
 export const DOC_TYPES = [
-  { key: 'rfq',               label: 'RFQ Number',        defaultPrefix: 'RFQ' },
-  { key: 'project',           label: 'Project Number',    defaultPrefix: 'PRJ' },
-  { key: 'purchase_order',    label: 'Purchase Order',    defaultPrefix: 'PO'  },
-  { key: 'project_contract',  label: 'Project Contract',  defaultPrefix: 'CTR' },
-  { key: 'project_invoice',   label: 'Project Invoice',   defaultPrefix: 'INV' },
-  { key: 'rental_contract',   label: 'Rental Contract',   defaultPrefix: 'RC'  },
-  { key: 'rental_invoice',    label: 'Rental Invoice',    defaultPrefix: 'RI'  },
+  { key: 'rfq', label: 'RFQ Number', defaultPrefix: 'RFQ' },
+  { key: 'project', label: 'Project Number', defaultPrefix: 'PRJ' },
+  { key: 'purchase_order', label: 'Purchase Order', defaultPrefix: 'PO' },
+  { key: 'project_contract', label: 'Project Contract', defaultPrefix: 'CTR' },
+  { key: 'project_invoice', label: 'Project Invoice', defaultPrefix: 'INV' },
+  { key: 'rental_contract', label: 'Rental Contract', defaultPrefix: 'RC' },
+  { key: 'rental_invoice', label: 'Rental Invoice', defaultPrefix: 'RI' },
 ] as const
 
 export type DocType = (typeof DOC_TYPES)[number]['key']
@@ -80,7 +80,10 @@ export async function listDocumentSequences(companyId: string): Promise<Document
 export async function upsertDocumentSequence(
   companyId: string,
   docType: string,
-  data: Pick<DocumentSequence, 'prefix' | 'next_number' | 'pad_length' | 'year_in_number' | 'separator'>,
+  data: Pick<
+    DocumentSequence,
+    'prefix' | 'next_number' | 'pad_length' | 'year_in_number' | 'separator'
+  >,
 ): Promise<DocumentSequence> {
   const result = await pool.query<DocumentSequence>(
     `INSERT INTO document_sequences (company_id, doc_type, prefix, next_number, pad_length, year_in_number, separator)
@@ -93,7 +96,15 @@ export async function upsertDocumentSequence(
        separator      = EXCLUDED.separator,
        updated_at     = NOW()
      RETURNING company_id, doc_type, prefix, next_number, pad_length, year_in_number, separator, updated_at`,
-    [companyId, docType, data.prefix, data.next_number, data.pad_length, data.year_in_number, data.separator],
+    [
+      companyId,
+      docType,
+      data.prefix,
+      data.next_number,
+      data.pad_length,
+      data.year_in_number,
+      data.separator,
+    ],
   )
   return result.rows[0]!
 }

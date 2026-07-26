@@ -12,7 +12,7 @@ const MEETING_TYPE_LABEL: Record<string, string> = {
   other: 'Meeting',
 }
 
-type ActionItem = {
+interface ActionItem {
   actionNumber: number
   description: string
   responsiblePerson: string | null
@@ -22,7 +22,10 @@ type ActionItem = {
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
-  low: '#6b7280', medium: '#f59e0b', high: '#f97316', critical: '#ef4444',
+  low: '#6b7280',
+  medium: '#f59e0b',
+  high: '#f97316',
+  critical: '#ef4444',
 }
 
 export function renderMeetingMinutesEmail(data: {
@@ -41,16 +44,23 @@ export function renderMeetingMinutesEmail(data: {
   const typeLabel = MEETING_TYPE_LABEL[data.meetingType] ?? 'Meeting'
 
   const attendeesText = data.attendees
-    ? data.attendees.split(/[\n,]/).map(a => a.trim()).filter(Boolean).join(', ')
+    ? data.attendees
+        .split(/[\n,]/)
+        .map((a) => a.trim())
+        .filter(Boolean)
+        .join(', ')
     : null
 
   const agendaItems = data.agenda
-    ? data.agenda.split('\n').map(l => l.trim()).filter(Boolean)
+    ? data.agenda
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
     : []
 
   const agendaHtml = agendaItems.length
     ? `<h2>Agenda</h2>
-       <ol style="font-size:14px;color:#374151;line-height:1.8;padding-left:20px;margin:0 0 24px;">${agendaItems.map(l => `<li>${l}</li>`).join('')}</ol>`
+       <ol style="font-size:14px;color:#374151;line-height:1.8;padding-left:20px;margin:0 0 24px;">${agendaItems.map((l) => `<li>${l}</li>`).join('')}</ol>`
     : ''
 
   const minutesHtml = data.minutes
@@ -58,7 +68,7 @@ export function renderMeetingMinutesEmail(data: {
        <div style="font-size:14px;color:#374151;line-height:1.7;white-space:pre-line;margin:0 0 24px;padding:16px;background:#f8fafc;border-radius:6px;border-left:3px solid #1a3c5e;">${data.minutes}</div>`
     : ''
 
-  const openActions = data.actions.filter(a => a.status !== 'closed')
+  const openActions = data.actions.filter((a) => a.status !== 'closed')
   const actionsHtml = openActions.length
     ? `<h2>Open Action Items</h2>
        <table class="info-table" style="margin:0 0 24px;">
@@ -69,7 +79,9 @@ export function renderMeetingMinutesEmail(data: {
            <td style="font-weight:700;color:#1a3c5e;">Due</td>
            <td style="font-weight:700;color:#1a3c5e;">Priority</td>
          </tr>
-         ${openActions.map(a => `
+         ${openActions
+           .map(
+             (a) => `
            <tr>
              <td style="color:#6b7280;font-size:12px;">${a.actionNumber}</td>
              <td>${a.description}</td>
@@ -77,7 +89,9 @@ export function renderMeetingMinutesEmail(data: {
              <td>${a.dueDate ?? '—'}</td>
              <td style="color:${PRIORITY_COLOR[a.priority] ?? '#6b7280'};font-weight:600;text-transform:capitalize;">${a.priority}</td>
            </tr>
-         `).join('')}
+         `,
+           )
+           .join('')}
        </table>`
     : ''
 

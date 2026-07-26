@@ -1,26 +1,35 @@
 import { emailWrapper } from './base.js'
 
-export type EngDocEventType = 'assigned' | 'returned' | 'approved' | 'issued' | 'client_response' | 'update' | 'overdue' | 'urgent' | 'critical'
+export type EngDocEventType =
+  | 'assigned'
+  | 'returned'
+  | 'approved'
+  | 'issued'
+  | 'client_response'
+  | 'update'
+  | 'overdue'
+  | 'urgent'
+  | 'critical'
 
 export function renderEngDocNotificationEmail(data: {
-  recipientName:  string
-  eventType:      EngDocEventType
-  role:           string
-  docRef:         string
-  docTitle:       string
-  projectName:    string
-  fromName:       string
-  actionLabel:    string
-  dueDate?:       string | undefined
-  daysOverdue?:   number | undefined
-  notes?:         string | undefined
-  appUrl:         string
+  recipientName: string
+  eventType: EngDocEventType
+  role: string
+  docRef: string
+  docTitle: string
+  projectName: string
+  fromName: string
+  actionLabel: string
+  dueDate?: string | undefined
+  daysOverdue?: number | undefined
+  notes?: string | undefined
+  appUrl: string
 }): string {
   const ROLE_LABELS: Record<string, string> = {
-    checker:     'Checker',
-    approver:    'Approver',
-    originator:  'Originator',
-    pm:          'Project Manager',
+    checker: 'Checker',
+    approver: 'Approver',
+    originator: 'Originator',
+    pm: 'Project Manager',
   }
 
   const urgencyBanner = (): string => {
@@ -70,18 +79,23 @@ export function renderEngDocNotificationEmail(data: {
     ? `<tr><td>Response Due</td><td><strong style="color:${data.eventType === 'overdue' || data.eventType === 'urgent' || data.eventType === 'critical' ? '#dc2626' : '#1a1a1a'}">${data.dueDate}</strong></td></tr>`
     : ''
 
-  const daysOverdueRow = data.daysOverdue !== undefined
-    ? `<tr><td>Days Overdue</td><td><strong style="color:#dc2626">${data.daysOverdue} day${data.daysOverdue !== 1 ? 's' : ''}</strong></td></tr>`
-    : ''
+  const daysOverdueRow =
+    data.daysOverdue !== undefined
+      ? `<tr><td>Days Overdue</td><td><strong style="color:#dc2626">${data.daysOverdue} day${data.daysOverdue !== 1 ? 's' : ''}</strong></td></tr>`
+      : ''
 
   const notesRow = data.notes
     ? `<tr><td>Notes</td><td style="font-style:italic;color:#555">${data.notes}</td></tr>`
     : ''
 
-  const subjectPrefix = data.eventType === 'critical' ? '🔴 CRITICAL' :
-                        data.eventType === 'urgent'   ? '🚨 URGENT' :
-                        data.eventType === 'overdue'  ? '⚠ Overdue' :
-                        'Action Required'
+  const subjectPrefix =
+    data.eventType === 'critical'
+      ? '🔴 CRITICAL'
+      : data.eventType === 'urgent'
+        ? '🚨 URGENT'
+        : data.eventType === 'overdue'
+          ? '⚠ Overdue'
+          : 'Action Required'
 
   return emailWrapper(
     `${subjectPrefix}: ${data.docRef} — ${data.projectName}`,
@@ -108,11 +122,15 @@ export function renderEngDocNotificationEmail(data: {
         </a>
       </div>
 
-      ${data.eventType === 'assigned' && data.dueDate ? `
+      ${
+        data.eventType === 'assigned' && data.dueDate
+          ? `
       <div class="alert alert-info">
         Please complete your review by <strong>${data.dueDate}</strong>.
         You will receive reminder notifications if this deadline is not met.
-      </div>` : ''}
+      </div>`
+          : ''
+      }
     `,
   )
 }

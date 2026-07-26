@@ -44,10 +44,10 @@ export interface LoginResponse {
     email: string
     mfaEnabled: boolean
   }
-  companies: Array<{
+  companies: {
     id: string
     name: string
-  }>
+  }[]
 }
 
 export interface MfaRequiredResponse {

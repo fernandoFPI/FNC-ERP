@@ -17,7 +17,10 @@ const SubscribeSchema = z.object({
 pushRouter.post('/subscribe', async (req, res) => {
   const userId = req.auth!.userId
   const parsed = SubscribeSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    return
+  }
 
   const { endpoint, p256dh, auth, user_agent } = parsed.data
   try {
@@ -29,16 +32,26 @@ pushRouter.post('/subscribe', async (req, res) => {
       [userId, endpoint, p256dh, auth, user_agent ?? null],
     )
     sendOk(res, result.rows[0]!, 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to save subscription', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to save subscription', err)
+  }
 })
 
 // DELETE /push/subscribe
 pushRouter.delete('/subscribe', async (req, res) => {
   const userId = req.auth!.userId
   const { endpoint } = req.body as { endpoint?: string }
-  if (!endpoint) return sendError(res, 400, 'MISSING_ENDPOINT', 'endpoint is required')
+  if (!endpoint) {
+    sendError(res, 400, 'MISSING_ENDPOINT', 'endpoint is required')
+    return
+  }
   try {
-    await query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [userId, endpoint])
+    await query('DELETE FROM push_subscriptions WHERE user_id = $1 AND endpoint = $2', [
+      userId,
+      endpoint,
+    ])
     sendOk(res, { deleted: true })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove subscription', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to remove subscription', err)
+  }
 })

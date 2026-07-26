@@ -29,7 +29,8 @@ export const NOTIFICATION_ROUTES = [
   {
     key: 'email.dlq_alert',
     label: 'Dead letter queue alert',
-    description: 'Email system admins when a critical or high-priority outbox event exhausts all retries',
+    description:
+      'Email system admins when a critical or high-priority outbox event exhausts all retries',
   },
 ] as const
 

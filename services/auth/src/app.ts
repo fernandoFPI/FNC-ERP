@@ -31,12 +31,7 @@ export function createApp(): express.Application {
   app.use('/auth/role-templates', roleTemplatesRouter)
 
   app.use(
-    (
-      err: unknown,
-      _req: express.Request,
-      res: express.Response,
-      _next: express.NextFunction,
-    ) => {
+    (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       console.error('[auth-service] Unhandled error:', err)
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
         success: false,

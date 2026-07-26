@@ -7,7 +7,9 @@ export interface POAuthContext {
 }
 
 // Returns the PO's project_id and the organizer's department_id.
-async function getPOScope(poId: string): Promise<{ project_id: string | null; department_id: string | null } | null> {
+async function getPOScope(
+  poId: string,
+): Promise<{ project_id: string | null; department_id: string | null } | null> {
   const result = await query(
     `SELECT po.project_id,
             e.department_id
@@ -31,7 +33,7 @@ async function getEmployeeId(userId: string, companyId: string): Promise<string 
     `SELECT id FROM employees WHERE user_id = $1 AND company_id = $2 LIMIT 1`,
     [userId, companyId],
   )
-  return result.rows[0]?.['id'] as string | null ?? null
+  return (result.rows[0]?.['id'] as string | null) ?? null
 }
 
 // True if the user holds the given position on the PO's project or organizer's department.

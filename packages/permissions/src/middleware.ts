@@ -29,7 +29,9 @@ async function getRedis(): Promise<ReturnType<typeof createClient>> {
         reconnectStrategy: (retries) => Math.min(retries * 50, 2000),
       },
     })
-    _redis.on('error', (err) => console.error('[permissions] Redis error', err))
+    _redis.on('error', (err) => {
+      console.error('[permissions] Redis error', err)
+    })
     await _redis.connect()
   }
   return _redis
@@ -37,9 +39,7 @@ async function getRedis(): Promise<ReturnType<typeof createClient>> {
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
 
-export interface UserPermissions {
-  [key: string]: AccessLevel
-}
+export type UserPermissions = Record<string, AccessLevel>
 
 // ── CACHE HELPERS ─────────────────────────────────────────────────────────────
 
@@ -47,10 +47,7 @@ function cacheKey(userId: string, companyId: string): string {
   return `perms:${companyId}:${userId}`
 }
 
-export async function loadPermissions(
-  userId: string,
-  companyId: string,
-): Promise<UserPermissions> {
+export async function loadPermissions(userId: string, companyId: string): Promise<UserPermissions> {
   const redis = await getRedis()
   const cached = await redis.get(cacheKey(userId, companyId)).catch(() => null)
 
@@ -77,10 +74,7 @@ export async function loadPermissions(
   return perms
 }
 
-export async function invalidatePermissionCache(
-  userId: string,
-  companyId: string,
-): Promise<void> {
+export async function invalidatePermissionCache(userId: string, companyId: string): Promise<void> {
   const redis = await getRedis()
   await redis.del(cacheKey(userId, companyId)).catch(() => undefined)
 }
@@ -121,7 +115,9 @@ export function requirePermission(
       return
     }
 
-    const perms = await loadPermissions(req.auth.userId, req.auth.companyId).catch(() => ({} as UserPermissions))
+    const perms = await loadPermissions(req.auth.userId, req.auth.companyId).catch(
+      () => ({}) as UserPermissions,
+    )
     const actual = perms[permissionKey]
 
     if (!meetsLevel(actual, requiredLevel)) {

@@ -11,7 +11,7 @@ export interface RateStalenessStatus {
 
 export async function checkRateStaleness(
   companyId: string,
-  currencyPairs: Array<{ from: string; to: string }>,
+  currencyPairs: { from: string; to: string }[],
 ): Promise<RateStalenessStatus[]> {
   const configResult = await query<{ warn_after_hours: number; critical_after_hours: number }>(
     `SELECT warn_after_hours, critical_after_hours

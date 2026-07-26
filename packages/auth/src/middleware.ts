@@ -99,7 +99,11 @@ export function requireModule(module: string): RequestHandler {
       sendUnauthorized(res, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
       return
     }
-    if (req.auth.module !== module && req.auth.module !== 'all' && req.auth.role !== 'system_admin') {
+    if (
+      req.auth.module !== module &&
+      req.auth.module !== 'all' &&
+      req.auth.role !== 'system_admin'
+    ) {
       sendForbidden(res, `Access to module '${module}' not permitted`)
       return
     }

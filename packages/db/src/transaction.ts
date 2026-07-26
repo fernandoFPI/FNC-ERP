@@ -40,10 +40,7 @@ export async function withTransaction<T>(
  */
 export async function withIntercoTransaction<T>(
   userId: string,
-  fn: (
-    client: PoolClient,
-    switchContext: (companyId: string) => Promise<void>,
-  ) => Promise<T>,
+  fn: (client: PoolClient, switchContext: (companyId: string) => Promise<void>) => Promise<T>,
 ): Promise<T> {
   const client = await pool.connect()
   try {
@@ -70,9 +67,7 @@ export async function withIntercoTransaction<T>(
  * Acquires a client and begins a transaction WITHOUT RLS context.
  * Use only for system-level operations (migrations, seeding) where RLS is bypassed.
  */
-export async function withSystemTransaction<T>(
-  fn: (client: PoolClient) => Promise<T>,
-): Promise<T> {
+export async function withSystemTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect()
   try {
     await client.query('BEGIN')

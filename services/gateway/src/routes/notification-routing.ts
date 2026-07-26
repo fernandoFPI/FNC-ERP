@@ -30,12 +30,12 @@ notificationRoutingRouter.get('/', ...requireAdmin, async (req: Request, res: Re
     const routes = NOTIFICATION_ROUTES.map((nr) => {
       const row = rowMap.get(nr.key)
       return {
-        key:           nr.key,
-        label:         nr.label,
-        description:   nr.description,
+        key: nr.key,
+        label: nr.label,
+        description: nr.description,
         email_enabled: row?.email_enabled ?? true,
-        configured:    !!row,
-        updated_at:    row?.updated_at ?? null,
+        configured: !!row,
+        updated_at: row?.updated_at ?? null,
       }
     })
 

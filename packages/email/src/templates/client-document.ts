@@ -1,25 +1,25 @@
 import { emailWrapper } from './base.js'
 
 const CATEGORY_LABELS: Record<string, string> = {
-  rfq_tender:     'RFQ / Tender',
-  drawings:       'Technical Drawings',
-  boq_specs:      'BOQ / Specifications',
+  rfq_tender: 'RFQ / Tender',
+  drawings: 'Technical Drawings',
+  boq_specs: 'BOQ / Specifications',
   correspondence: 'Correspondence',
-  contracts:      'Contracts',
-  other:          'General',
+  contracts: 'Contracts',
+  other: 'General',
 }
 
 export function renderClientDocumentEmail(data: {
   recipientName: string
-  projectName:   string
-  projectCode:   string
+  projectName: string
+  projectCode: string
   documentTitle: string
-  category:      string
+  category: string
   documentNumber?: string
-  revision?:     string
+  revision?: string
   receivedFrom?: string
-  uploadedBy:    string
-  projectUrl:    string
+  uploadedBy: string
+  projectUrl: string
 }): string {
   const categoryLabel = CATEGORY_LABELS[data.category] ?? data.category
   return emailWrapper(
@@ -36,8 +36,8 @@ export function renderClientDocumentEmail(data: {
         <tr><td>Title</td><td>${data.documentTitle}</td></tr>
         <tr><td>Category</td><td>${categoryLabel}</td></tr>
         ${data.documentNumber ? `<tr><td>Document No.</td><td>${data.documentNumber}</td></tr>` : ''}
-        ${data.revision       ? `<tr><td>Revision</td><td>${data.revision}</td></tr>`            : ''}
-        ${data.receivedFrom   ? `<tr><td>Received From</td><td>${data.receivedFrom}</td></tr>`   : ''}
+        ${data.revision ? `<tr><td>Revision</td><td>${data.revision}</td></tr>` : ''}
+        ${data.receivedFrom ? `<tr><td>Received From</td><td>${data.receivedFrom}</td></tr>` : ''}
         <tr><td>Uploaded By</td><td>${data.uploadedBy}</td></tr>
       </table>
 

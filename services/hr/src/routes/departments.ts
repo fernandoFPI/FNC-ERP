@@ -23,26 +23,40 @@ departmentsRouter.get('/', requirePermission('hr.departments.view', 'view'), asy
       [req.auth!.companyId],
     )
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch departments', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch departments', err)
+  }
 })
 
-departmentsRouter.get('/:id', requirePermission('hr.departments.view', 'view'), async (req, res) => {
-  try {
-    const result = await query(
-      `SELECT d.*, e.first_name || ' ' || e.last_name AS manager_name
+departmentsRouter.get(
+  '/:id',
+  requirePermission('hr.departments.view', 'view'),
+  async (req, res) => {
+    try {
+      const result = await query(
+        `SELECT d.*, e.first_name || ' ' || e.last_name AS manager_name
        FROM departments d LEFT JOIN employees e ON e.id = d.manager_id
        WHERE d.id = $1 AND d.company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
-    )
-    const row = result.rows[0]
-    if (!row) return sendError(res, 404, 'NOT_FOUND', 'Department not found')
-    sendOk(res, row)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch department', err) }
-})
+        [req.params['id'], req.auth!.companyId],
+      )
+      const row = result.rows[0]
+      if (!row) {
+        sendError(res, 404, 'NOT_FOUND', 'Department not found')
+        return
+      }
+      sendOk(res, row)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch department', err)
+    }
+  },
+)
 
 departmentsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
   const parsed = DeptSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    return
+  }
   try {
     const { name, parent_id, manager_id } = parsed.data
     const result = await query(
@@ -51,37 +65,65 @@ departmentsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), as
       [req.auth!.companyId, name, parent_id ?? null, manager_id ?? null],
     )
     sendOk(res, result.rows[0]!, 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create department', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create department', err)
+  }
 })
 
-departmentsRouter.put('/:id', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
-  const parsed = DeptSchema.partial().safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
-  try {
-    const existing = await query(
-      `SELECT id FROM departments WHERE id = $1 AND company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
-    )
-    if (!existing.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Department not found')
-    const result = await query(
-      `UPDATE departments SET name = COALESCE($1, name), parent_id = COALESCE($2, parent_id),
+departmentsRouter.put(
+  '/:id',
+  requirePermission('hr.departments.edit', 'edit'),
+  async (req, res) => {
+    const parsed = DeptSchema.partial().safeParse(req.body)
+    if (!parsed.success) {
+      sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+      return
+    }
+    try {
+      const existing = await query(`SELECT id FROM departments WHERE id = $1 AND company_id = $2`, [
+        req.params['id'],
+        req.auth!.companyId,
+      ])
+      if (!existing.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Department not found')
+        return
+      }
+      const result = await query(
+        `UPDATE departments SET name = COALESCE($1, name), parent_id = COALESCE($2, parent_id),
        manager_id = COALESCE($3, manager_id), updated_at = NOW()
        WHERE id = $4 AND company_id = $5 RETURNING *`,
-      [parsed.data.name ?? null, parsed.data.parent_id ?? null, parsed.data.manager_id ?? null,
-       req.params['id'], req.auth!.companyId],
-    )
-    sendOk(res, result.rows[0]!)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update department', err) }
-})
+        [
+          parsed.data.name ?? null,
+          parsed.data.parent_id ?? null,
+          parsed.data.manager_id ?? null,
+          req.params['id'],
+          req.auth!.companyId,
+        ],
+      )
+      sendOk(res, result.rows[0]!)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update department', err)
+    }
+  },
+)
 
-departmentsRouter.delete('/:id', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
-  try {
-    const result = await query(
-      `UPDATE departments SET is_active = FALSE, updated_at = NOW()
+departmentsRouter.delete(
+  '/:id',
+  requirePermission('hr.departments.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const result = await query(
+        `UPDATE departments SET is_active = FALSE, updated_at = NOW()
        WHERE id = $1 AND company_id = $2 RETURNING id`,
-      [req.params['id'], req.auth!.companyId],
-    )
-    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Department not found')
-    sendOk(res, { deleted: true })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete department', err) }
-})
+        [req.params['id'], req.auth!.companyId],
+      )
+      if (!result.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Department not found')
+        return
+      }
+      sendOk(res, { deleted: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete department', err)
+    }
+  },
+)

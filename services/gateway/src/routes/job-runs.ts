@@ -23,15 +23,15 @@ jobRunsRouter.get('/summary', ...requireAdmin, async (_req: Request, res: Respon
 
 // GET /api/v1/admin/job-runs?job_name=&status=&limit=50&offset=0
 jobRunsRouter.get('/', ...requireAdmin, async (req: Request, res: Response) => {
-  const jobName = typeof req.query['job_name'] === 'string' ? req.query['job_name'] : undefined
-  const status  = typeof req.query['status']   === 'string' ? req.query['status']   : undefined
-  const limit   = Math.min(parseInt(String(req.query['limit']  ?? '50'),  10) || 50,  200)
-  const offset  = Math.max(parseInt(String(req.query['offset'] ?? '0'),   10) || 0,   0)
+  const jobName = typeof req.query.job_name === 'string' ? req.query.job_name : undefined
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined
+  const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200)
+  const offset = Math.max(parseInt(String(req.query.offset ?? '0'), 10) || 0, 0)
 
   try {
     const result = await listJobRuns({
       ...(jobName ? { jobName } : {}),
-      ...(status  ? { status  } : {}),
+      ...(status ? { status } : {}),
       limit,
       offset,
     })

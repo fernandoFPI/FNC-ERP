@@ -62,9 +62,7 @@ export async function fetchFromExchangeRateAPI(apiKey: string): Promise<FetchedR
   const response = await fetch(url, { signal: AbortSignal.timeout(10_000) })
 
   if (!response.ok) {
-    throw new Error(
-      `ExchangeRate-API returned ${response.status}: ${await response.text()}`,
-    )
+    throw new Error(`ExchangeRate-API returned ${response.status}: ${await response.text()}`)
   }
 
   const data = (await response.json()) as {
@@ -88,8 +86,20 @@ export async function fetchFromExchangeRateAPI(apiKey: string): Promise<FetchedR
     // Invert to get foreign→IQD (how many IQD per 1 foreign unit).
     const rate = 1 / iqdPerForeign
 
-    rates.push({ fromCurrency: currency, toCurrency: 'IQD', rate, rateDate, source: 'exchangerate_api' })
-    rates.push({ fromCurrency: 'IQD', toCurrency: currency, rate: iqdPerForeign, rateDate, source: 'exchangerate_api' })
+    rates.push({
+      fromCurrency: currency,
+      toCurrency: 'IQD',
+      rate,
+      rateDate,
+      source: 'exchangerate_api',
+    })
+    rates.push({
+      fromCurrency: 'IQD',
+      toCurrency: currency,
+      rate: iqdPerForeign,
+      rateDate,
+      source: 'exchangerate_api',
+    })
   }
 
   log.info({ count: rates.length }, 'rates fetched from ExchangeRate-API')
@@ -121,21 +131,57 @@ export async function fetchFromOpenExchangeRates(appId: string): Promise<Fetched
 
   const rates: FetchedRate[] = []
 
-  rates.push({ fromCurrency: 'USD', toCurrency: 'IQD', rate: usdToIqd, rateDate, source: 'open_exchange_rates' })
-  rates.push({ fromCurrency: 'IQD', toCurrency: 'USD', rate: 1 / usdToIqd, rateDate, source: 'open_exchange_rates' })
+  rates.push({
+    fromCurrency: 'USD',
+    toCurrency: 'IQD',
+    rate: usdToIqd,
+    rateDate,
+    source: 'open_exchange_rates',
+  })
+  rates.push({
+    fromCurrency: 'IQD',
+    toCurrency: 'USD',
+    rate: 1 / usdToIqd,
+    rateDate,
+    source: 'open_exchange_rates',
+  })
 
   if (data.rates['EUR']) {
     const eurToUsd = 1 / data.rates['EUR']
     const eurToIqd = eurToUsd * usdToIqd
-    rates.push({ fromCurrency: 'EUR', toCurrency: 'IQD', rate: eurToIqd, rateDate, source: 'open_exchange_rates' })
-    rates.push({ fromCurrency: 'IQD', toCurrency: 'EUR', rate: 1 / eurToIqd, rateDate, source: 'open_exchange_rates' })
+    rates.push({
+      fromCurrency: 'EUR',
+      toCurrency: 'IQD',
+      rate: eurToIqd,
+      rateDate,
+      source: 'open_exchange_rates',
+    })
+    rates.push({
+      fromCurrency: 'IQD',
+      toCurrency: 'EUR',
+      rate: 1 / eurToIqd,
+      rateDate,
+      source: 'open_exchange_rates',
+    })
   }
 
   if (data.rates['GBP']) {
     const gbpToUsd = 1 / data.rates['GBP']
     const gbpToIqd = gbpToUsd * usdToIqd
-    rates.push({ fromCurrency: 'GBP', toCurrency: 'IQD', rate: gbpToIqd, rateDate, source: 'open_exchange_rates' })
-    rates.push({ fromCurrency: 'IQD', toCurrency: 'GBP', rate: 1 / gbpToIqd, rateDate, source: 'open_exchange_rates' })
+    rates.push({
+      fromCurrency: 'GBP',
+      toCurrency: 'IQD',
+      rate: gbpToIqd,
+      rateDate,
+      source: 'open_exchange_rates',
+    })
+    rates.push({
+      fromCurrency: 'IQD',
+      toCurrency: 'GBP',
+      rate: 1 / gbpToIqd,
+      rateDate,
+      source: 'open_exchange_rates',
+    })
   }
 
   log.info({ count: rates.length }, 'rates fetched from Open Exchange Rates')

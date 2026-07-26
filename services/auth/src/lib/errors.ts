@@ -15,9 +15,20 @@ export function sendError(
 }
 
 export function sendValidationError(res: Response, details: unknown): void {
-  sendError(res, HTTP_STATUS.BAD_REQUEST, ERROR_CODES.VALIDATION_ERROR, 'Validation failed', details)
+  sendError(
+    res,
+    HTTP_STATUS.BAD_REQUEST,
+    ERROR_CODES.VALIDATION_ERROR,
+    'Validation failed',
+    details,
+  )
 }
 
 export function sendInternalError(res: Response): void {
-  sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, ERROR_CODES.INTERNAL_ERROR, 'An unexpected error occurred')
+  sendError(
+    res,
+    HTTP_STATUS.INTERNAL_SERVER_ERROR,
+    ERROR_CODES.INTERNAL_ERROR,
+    'An unexpected error occurred',
+  )
 }

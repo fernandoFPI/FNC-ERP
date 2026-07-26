@@ -37,8 +37,7 @@ export function requestLogger() {
     res.on('finish', () => {
       const duration = Date.now() - startTime
       const statusCode = res.statusCode
-      const level: pino.Level =
-        statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info'
+      const level: pino.Level = statusCode >= 500 ? 'error' : statusCode >= 400 ? 'warn' : 'info'
 
       // Access auth lazily — it's set by middleware after this function runs
       const auth = (req as Request & { auth?: { userId?: string; companyId?: string } }).auth

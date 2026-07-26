@@ -11,27 +11,27 @@ export const returnsRouter: IRouter = Router({ mergeParams: true })
 // ── Validation ──────────────────────────────────────────────────────────────
 
 const ReturnItemSchema = z.object({
-  po_line_id:          z.string().uuid().optional(),
-  description:         z.string().min(1).max(500),
-  quantity_returned:   z.coerce.number().positive(),
+  po_line_id: z.string().uuid().optional(),
+  description: z.string().min(1).max(500),
+  quantity_returned: z.coerce.number().positive(),
   original_unit_price: z.coerce.number().min(0),
   assessed_unit_price: z.coerce.number().min(0),
-  damage_notes:        z.string().optional(),
+  damage_notes: z.string().optional(),
 })
 
 const CreateReturnSchema = z.object({
-  return_type:        z.enum(['full_refund', 'damage']),
-  notes:              z.string().optional(),
+  return_type: z.enum(['full_refund', 'damage']),
+  notes: z.string().optional(),
   damage_description: z.string().optional(),
-  currency_code:      z.string().length(3).default('IQD'),
-  items:              z.array(ReturnItemSchema).min(1, 'At least one item is required'),
+  currency_code: z.string().length(3).default('IQD'),
+  items: z.array(ReturnItemSchema).min(1, 'At least one item is required'),
 })
 
 const UpdateReturnSchema = z.object({
-  return_type:        z.enum(['full_refund', 'damage']).optional(),
-  notes:              z.string().optional(),
+  return_type: z.enum(['full_refund', 'damage']).optional(),
+  notes: z.string().optional(),
   damage_description: z.string().optional(),
-  items:              z.array(ReturnItemSchema).min(1).optional(),
+  items: z.array(ReturnItemSchema).min(1).optional(),
 })
 
 // ── Number generator ────────────────────────────────────────────────────────
@@ -59,9 +59,15 @@ returnsRouter.get('/', requirePermission('procurement.po.view', 'view'), async (
   const companyId = req.auth!.companyId
   try {
     const rows = await query<{
-      id: string; return_number: string; return_type: string; status: string
-      total_returned_value: string; currency_code: string; created_at: string
-      damage_description: string | null; notes: string | null
+      id: string
+      return_number: string
+      return_type: string
+      status: string
+      total_returned_value: string
+      currency_code: string
+      created_at: string
+      damage_description: string | null
+      notes: string | null
     }>(
       `SELECT id, return_number, return_type, status, total_returned_value,
               currency_code, damage_description, notes, created_at
@@ -103,7 +109,10 @@ returnsRouter.get('/:id', requirePermission('procurement.po.view', 'view'), asyn
        WHERE r.id = $1 AND r.po_id = $2 AND r.company_id = $3`,
       [id, poId, companyId],
     )
-    if (!ret.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Return not found')
+    if (!ret.rows[0]) {
+      sendError(res, 404, 'NOT_FOUND', 'Return not found')
+      return
+    }
 
     const items = await query(
       `SELECT ri.*, poi.description AS original_description
@@ -124,18 +133,28 @@ returnsRouter.get('/:id', requirePermission('procurement.po.view', 'view'), asyn
 returnsRouter.post('/', requirePermission('procurement.po.edit', 'edit'), async (req, res) => {
   const { poId } = req.params as { poId: string }
   const companyId = req.auth!.companyId
-  const userId    = req.auth!.userId
+  const userId = req.auth!.userId
 
   const parsed = CreateReturnSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', parsed.error.message)
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', parsed.error.message)
+    return
+  }
   const body = parsed.data
 
   // Validate assessed_unit_price <= original for damage returns
   if (body.return_type === 'damage') {
     for (const item of body.items) {
-      if (Math.round(item.assessed_unit_price * 10000) > Math.round(item.original_unit_price * 10000)) {
-        return sendError(res, 400, 'INVALID_PRICE',
-          `Assessed price cannot exceed original price for "${item.description}"`)
+      if (
+        Math.round(item.assessed_unit_price * 10000) > Math.round(item.original_unit_price * 10000)
+      ) {
+        sendError(
+          res,
+          400,
+          'INVALID_PRICE',
+          `Assessed price cannot exceed original price for "${item.description}"`,
+        )
+        return
       }
     }
   }
@@ -152,13 +171,24 @@ returnsRouter.post('/', requirePermission('procurement.po.edit', 'edit'), async 
     )
     if (!po.rows[0]) {
       await client.query('ROLLBACK')
-      return sendError(res, 404, 'NOT_FOUND', 'Purchase order not found')
+      sendError(res, 404, 'NOT_FOUND', 'Purchase order not found')
+      return
     }
-    const poRow = po.rows[0] as { id: string; po_number: string; status: string; currency_code: string }
-    if (!['received','invoiced','completed'].includes(poRow.status)) {
+    const poRow = po.rows[0] as {
+      id: string
+      po_number: string
+      status: string
+      currency_code: string
+    }
+    if (!['received', 'invoiced', 'completed'].includes(poRow.status)) {
       await client.query('ROLLBACK')
-      return sendError(res, 400, 'INVALID_STATUS',
-        'Returns can only be created for received, invoiced, or completed POs')
+      sendError(
+        res,
+        400,
+        'INVALID_STATUS',
+        'Returns can only be created for received, invoiced, or completed POs',
+      )
+      return
     }
 
     // Validate quantities — can only return what was received, accounting for prior returns
@@ -176,12 +206,17 @@ returnsRouter.post('/', requirePermission('procurement.po.edit', 'edit'), async 
          WHERE ri.po_line_id=$1 AND r.status != 'draft'`,
         [item.po_line_id],
       )
-      const maxQty  = parseFloat((lineRow.rows[0] as { returnable_qty: string }).returnable_qty)
+      const maxQty = parseFloat((lineRow.rows[0] as { returnable_qty: string }).returnable_qty)
       const alreadyRet = parseFloat((alreadyReturned.rows[0] as { returned: string }).returned)
       if (item.quantity_returned + alreadyRet > maxQty) {
         await client.query('ROLLBACK')
-        return sendError(res, 400, 'QTY_EXCEEDS_RECEIVED',
-          `Return quantity for "${item.description}" exceeds quantity received (${maxQty - alreadyRet} available)`)
+        sendError(
+          res,
+          400,
+          'QTY_EXCEEDS_RECEIVED',
+          `Return quantity for "${item.description}" exceeds quantity received (${maxQty - alreadyRet} available)`,
+        )
+        return
       }
     }
 
@@ -194,29 +229,48 @@ returnsRouter.post('/', requirePermission('procurement.po.edit', 'edit'), async 
           damage_description, currency_code, created_by)
        VALUES ($1,$2,$3,$4,'draft',$5,$6,$7,$8)
        RETURNING id`,
-      [companyId, poId, returnNumber, body.return_type,
-       body.notes ?? null, body.damage_description ?? null, currency, userId],
+      [
+        companyId,
+        poId,
+        returnNumber,
+        body.return_type,
+        body.notes ?? null,
+        body.damage_description ?? null,
+        currency,
+        userId,
+      ],
     )
     const returnId = (ret.rows[0] as { id: string }).id
 
     for (const item of body.items) {
-      const assessed = body.return_type === 'full_refund'
-        ? item.original_unit_price
-        : item.assessed_unit_price
+      const assessed =
+        body.return_type === 'full_refund' ? item.original_unit_price : item.assessed_unit_price
       await client.query(
         `INSERT INTO po_return_items
            (return_id, po_line_id, description, quantity_returned,
             original_unit_price, assessed_unit_price, damage_notes)
          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [returnId, item.po_line_id ?? null, item.description,
-         item.quantity_returned, item.original_unit_price, assessed,
-         item.damage_notes ?? null],
+        [
+          returnId,
+          item.po_line_id ?? null,
+          item.description,
+          item.quantity_returned,
+          item.original_unit_price,
+          assessed,
+          item.damage_notes ?? null,
+        ],
       )
     }
 
     await client.query('COMMIT')
-    await logAudit({ action: 'po_return.created', tableName: 'po_returns', recordId: returnId,
-      userId, companyId, newValues: { return_number: returnNumber, return_type: body.return_type } })
+    await logAudit({
+      action: 'po_return.created',
+      tableName: 'po_returns',
+      recordId: returnId,
+      userId,
+      companyId,
+      newValues: { return_number: returnNumber, return_type: body.return_type },
+    })
 
     sendOk(res, { id: returnId, return_number: returnNumber }, 201)
   } catch (err) {
@@ -234,7 +288,10 @@ returnsRouter.patch('/:id', requirePermission('procurement.po.edit', 'edit'), as
   const companyId = req.auth!.companyId
 
   const parsed = UpdateReturnSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', parsed.error.message)
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', parsed.error.message)
+    return
+  }
   const body = parsed.data
 
   const client = await pool.connect()
@@ -247,12 +304,14 @@ returnsRouter.patch('/:id', requirePermission('procurement.po.edit', 'edit'), as
     )
     if (!existing.rows[0]) {
       await client.query('ROLLBACK')
-      return sendError(res, 404, 'NOT_FOUND', 'Return not found')
+      sendError(res, 404, 'NOT_FOUND', 'Return not found')
+      return
     }
     const cur = existing.rows[0] as { status: string; return_type: string }
     if (cur.status !== 'draft') {
       await client.query('ROLLBACK')
-      return sendError(res, 400, 'INVALID_STATUS', 'Only draft returns can be edited')
+      sendError(res, 400, 'INVALID_STATUS', 'Only draft returns can be edited')
+      return
     }
 
     const effectiveType = body.return_type ?? cur.return_type
@@ -260,8 +319,13 @@ returnsRouter.patch('/:id', requirePermission('procurement.po.edit', 'edit'), as
       for (const item of body.items) {
         if (item.assessed_unit_price > item.original_unit_price) {
           await client.query('ROLLBACK')
-          return sendError(res, 400, 'INVALID_PRICE',
-            `Assessed price cannot exceed original for "${item.description}"`)
+          sendError(
+            res,
+            400,
+            'INVALID_PRICE',
+            `Assessed price cannot exceed original for "${item.description}"`,
+          )
+          return
         }
       }
     }
@@ -279,15 +343,22 @@ returnsRouter.patch('/:id', requirePermission('procurement.po.edit', 'edit'), as
     if (body.items) {
       await client.query(`DELETE FROM po_return_items WHERE return_id=$1`, [id])
       for (const item of body.items) {
-        const assessed = effectiveType === 'full_refund'
-          ? item.original_unit_price : item.assessed_unit_price
+        const assessed =
+          effectiveType === 'full_refund' ? item.original_unit_price : item.assessed_unit_price
         await client.query(
           `INSERT INTO po_return_items
              (return_id, po_line_id, description, quantity_returned,
               original_unit_price, assessed_unit_price, damage_notes)
            VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [id, item.po_line_id ?? null, item.description, item.quantity_returned,
-           item.original_unit_price, assessed, item.damage_notes ?? null],
+          [
+            id,
+            item.po_line_id ?? null,
+            item.description,
+            item.quantity_returned,
+            item.original_unit_price,
+            assessed,
+            item.damage_notes ?? null,
+          ],
         )
       }
     }
@@ -304,126 +375,174 @@ returnsRouter.patch('/:id', requirePermission('procurement.po.edit', 'edit'), as
 
 // ── POST /procurement/purchase-orders/:poId/returns/:id/submit ───────────────
 
-returnsRouter.post('/:id/submit', requirePermission('procurement.po.edit', 'edit'), async (req, res) => {
-  const { poId, id } = req.params as { poId: string; id: string }
-  const companyId = req.auth!.companyId
-  const userId    = req.auth!.userId
-  try {
-    const r = await query(
-      `UPDATE po_returns SET status='submitted', submitted_by=$1, submitted_at=now(), updated_at=now()
+returnsRouter.post(
+  '/:id/submit',
+  requirePermission('procurement.po.edit', 'edit'),
+  async (req, res) => {
+    const { poId, id } = req.params as { poId: string; id: string }
+    const companyId = req.auth!.companyId
+    const userId = req.auth!.userId
+    try {
+      const r = await query(
+        `UPDATE po_returns SET status='submitted', submitted_by=$1, submitted_at=now(), updated_at=now()
        WHERE id=$2 AND po_id=$3 AND company_id=$4 AND status='draft'
        RETURNING id`,
-      [userId, id, poId, companyId],
-    )
-    if (!r.rows[0]) return sendError(res, 400, 'INVALID_STATUS', 'Return is not in draft status')
-    await logAudit({ action: 'po_return.submitted', tableName: 'po_returns', recordId: id,
-      userId, companyId })
-    sendOk(res, { id })
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit return', err)
-  }
-})
+        [userId, id, poId, companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 400, 'INVALID_STATUS', 'Return is not in draft status')
+        return
+      }
+      await logAudit({
+        action: 'po_return.submitted',
+        tableName: 'po_returns',
+        recordId: id,
+        userId,
+        companyId,
+      })
+      sendOk(res, { id })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit return', err)
+    }
+  },
+)
 
 // ── POST /procurement/purchase-orders/:poId/returns/:id/approve ──────────────
 
-returnsRouter.post('/:id/approve', requirePermission('procurement.po.approve', 'approve'), async (req, res) => {
-  const { poId, id } = req.params as { poId: string; id: string }
-  const companyId = req.auth!.companyId
-  const userId    = req.auth!.userId
+returnsRouter.post(
+  '/:id/approve',
+  requirePermission('procurement.po.approve', 'approve'),
+  async (req, res) => {
+    const { poId, id } = req.params as { poId: string; id: string }
+    const companyId = req.auth!.companyId
+    const userId = req.auth!.userId
 
-  // Approver can assign responsible employee at approval time
-  const body = req.body as {
-    responsible_employee_id?: string
-    deduct_from_salary?: boolean
-    deduction_amount?: number
-  }
+    // Approver can assign responsible employee at approval time
+    const body = req.body as {
+      responsible_employee_id?: string
+      deduct_from_salary?: boolean
+      deduction_amount?: number
+    }
 
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
 
-    // Save employee assignment (if provided) before transitioning status
-    if (body.responsible_employee_id) {
-      await client.query(
-        `UPDATE po_returns SET
+      // Save employee assignment (if provided) before transitioning status
+      if (body.responsible_employee_id) {
+        await client.query(
+          `UPDATE po_returns SET
            responsible_employee_id = $1,
            deduct_from_salary      = $2,
            deduction_amount        = $3,
            updated_at              = now()
          WHERE id=$4 AND po_id=$5 AND company_id=$6 AND status='submitted'`,
-        [body.responsible_employee_id,
-         body.deduct_from_salary ?? false,
-         body.deduction_amount ?? null,
-         id, poId, companyId],
-      )
-    }
+          [
+            body.responsible_employee_id,
+            body.deduct_from_salary ?? false,
+            body.deduction_amount ?? null,
+            id,
+            poId,
+            companyId,
+          ],
+        )
+      }
 
-    const r = await client.query(
-      `UPDATE po_returns SET status='approved', approved_by=$1, approved_at=now(), updated_at=now()
+      const r = await client.query(
+        `UPDATE po_returns SET status='approved', approved_by=$1, approved_at=now(), updated_at=now()
        WHERE id=$2 AND po_id=$3 AND company_id=$4 AND status='submitted'
        RETURNING id, responsible_employee_id, deduct_from_salary, deduction_amount, currency_code,
                  return_number, damage_description`,
-      [userId, id, poId, companyId],
-    )
-    if (!r.rows[0]) {
-      await client.query('ROLLBACK')
-      return sendError(res, 400, 'INVALID_STATUS', 'Return is not in submitted status')
-    }
-    const ret = r.rows[0] as {
-      id: string; responsible_employee_id: string | null
-      deduct_from_salary: boolean; deduction_amount: string | null
-      currency_code: string; return_number: string; damage_description: string | null
-    }
+        [userId, id, poId, companyId],
+      )
+      if (!r.rows[0]) {
+        await client.query('ROLLBACK')
+        sendError(res, 400, 'INVALID_STATUS', 'Return is not in submitted status')
+        return
+      }
+      const ret = r.rows[0] as {
+        id: string
+        responsible_employee_id: string | null
+        deduct_from_salary: boolean
+        deduction_amount: string | null
+        currency_code: string
+        return_number: string
+        damage_description: string | null
+      }
 
-    // Create salary deduction request if employee was assigned and deduction opted
-    if (ret.deduct_from_salary && ret.responsible_employee_id && ret.deduction_amount) {
-      await client.query(
-        `INSERT INTO salary_deduction_requests
+      // Create salary deduction request if employee was assigned and deduction opted
+      if (ret.deduct_from_salary && ret.responsible_employee_id && ret.deduction_amount) {
+        await client.query(
+          `INSERT INTO salary_deduction_requests
            (company_id, employee_id, source_type, source_id, amount, currency_code, reason, created_by)
          VALUES ($1,$2,'po_return',$3,$4,$5,$6,$7)`,
-        [companyId, ret.responsible_employee_id, id,
-         ret.deduction_amount, ret.currency_code,
-         `Damage return ${ret.return_number}${ret.damage_description ? `: ${ret.damage_description.substring(0, 100)}` : ''}`,
-         userId],
-      )
-    }
+          [
+            companyId,
+            ret.responsible_employee_id,
+            id,
+            ret.deduction_amount,
+            ret.currency_code,
+            `Damage return ${ret.return_number}${ret.damage_description ? `: ${ret.damage_description.substring(0, 100)}` : ''}`,
+            userId,
+          ],
+        )
+      }
 
-    await client.query('COMMIT')
-    await logAudit({ action: 'po_return.approved', tableName: 'po_returns', recordId: id,
-      userId, companyId })
-    sendOk(res, { id })
-  } catch (err) {
-    await client.query('ROLLBACK')
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve return', err)
-  } finally {
-    client.release()
-  }
-})
+      await client.query('COMMIT')
+      await logAudit({
+        action: 'po_return.approved',
+        tableName: 'po_returns',
+        recordId: id,
+        userId,
+        companyId,
+      })
+      sendOk(res, { id })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve return', err)
+    } finally {
+      client.release()
+    }
+  },
+)
 
 // ── POST /procurement/purchase-orders/:poId/returns/:id/credit ───────────────
 
-returnsRouter.post('/:id/credit', requirePermission('finance.ap.edit', 'edit'), async (req, res) => {
-  const { poId, id } = req.params as { poId: string; id: string }
-  const companyId = req.auth!.companyId
-  const userId    = req.auth!.userId
-  const { credit_note_reference } = req.body as { credit_note_reference?: string }
-  try {
-    const r = await query(
-      `UPDATE po_returns
+returnsRouter.post(
+  '/:id/credit',
+  requirePermission('finance.ap.edit', 'edit'),
+  async (req, res) => {
+    const { poId, id } = req.params as { poId: string; id: string }
+    const companyId = req.auth!.companyId
+    const userId = req.auth!.userId
+    const { credit_note_reference } = req.body as { credit_note_reference?: string }
+    try {
+      const r = await query(
+        `UPDATE po_returns
        SET status='credited', credited_by=$1, credited_at=now(),
            credit_note_reference=$2, updated_at=now()
        WHERE id=$3 AND po_id=$4 AND company_id=$5 AND status='approved'
        RETURNING id`,
-      [userId, credit_note_reference ?? null, id, poId, companyId],
-    )
-    if (!r.rows[0]) return sendError(res, 400, 'INVALID_STATUS', 'Return is not in approved status')
-    await logAudit({ action: 'po_return.credited', tableName: 'po_returns', recordId: id,
-      userId, companyId, newValues: { credit_note_reference } })
-    sendOk(res, { id })
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark return as credited', err)
-  }
-})
+        [userId, credit_note_reference ?? null, id, poId, companyId],
+      )
+      if (!r.rows[0]) {
+        sendError(res, 400, 'INVALID_STATUS', 'Return is not in approved status')
+        return
+      }
+      await logAudit({
+        action: 'po_return.credited',
+        tableName: 'po_returns',
+        recordId: id,
+        userId,
+        companyId,
+        newValues: { credit_note_reference },
+      })
+      sendOk(res, { id })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark return as credited', err)
+    }
+  },
+)
 
 // ── DELETE /procurement/purchase-orders/:poId/returns/:id ───────────────────
 
@@ -436,7 +555,10 @@ returnsRouter.delete('/:id', requirePermission('procurement.po.edit', 'edit'), a
        RETURNING id`,
       [id, poId, companyId],
     )
-    if (!r.rows[0]) return sendError(res, 400, 'INVALID_STATUS', 'Only draft returns can be deleted')
+    if (!r.rows[0]) {
+      sendError(res, 400, 'INVALID_STATUS', 'Only draft returns can be deleted')
+      return
+    }
     sendOk(res, { id })
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete return', err)

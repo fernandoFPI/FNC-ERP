@@ -141,7 +141,12 @@ passwordResetRouter.post('/reset-password', async (req: Request, res: Response) 
 
   const strength = validatePasswordStrength(newPassword)
   if (!strength.valid) {
-    sendError(res, HTTP_STATUS.BAD_REQUEST, 'WEAK_PASSWORD', strength.reason ?? 'Password is too weak')
+    sendError(
+      res,
+      HTTP_STATUS.BAD_REQUEST,
+      'WEAK_PASSWORD',
+      strength.reason ?? 'Password is too weak',
+    )
     return
   }
 
@@ -226,12 +231,19 @@ passwordResetRouter.post('/reset-password', async (req: Request, res: Response) 
 // ── GET /auth/sessions ─────────────────────────────────────────
 passwordResetRouter.get('/sessions', requireAuth(), async (req: Request, res: Response) => {
   const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, 'UNAUTHORIZED', 'Not authenticated'); return }
+  if (!auth) {
+    sendError(res, HTTP_STATUS.UNAUTHORIZED, 'UNAUTHORIZED', 'Not authenticated')
+    return
+  }
 
   try {
     const result = await query<{
-      id: string; device_name: string | null; platform: string; ip_address: string | null
-      created_at: Date; expires_at: Date
+      id: string
+      device_name: string | null
+      platform: string
+      ip_address: string | null
+      created_at: Date
+      expires_at: Date
     }>(
       `SELECT id, device_name, platform, ip_address, created_at, expires_at
        FROM sessions
@@ -254,39 +266,56 @@ passwordResetRouter.get('/sessions', requireAuth(), async (req: Request, res: Re
 })
 
 // ── DELETE /auth/sessions/:sessionId ──────────────────────────
-passwordResetRouter.delete('/sessions/:sessionId', requireAuth(), async (req: Request, res: Response) => {
-  const auth = req.auth
-  if (!auth) { sendError(res, HTTP_STATUS.UNAUTHORIZED, 'UNAUTHORIZED', 'Not authenticated'); return }
-
-  const sessionId = req.params['sessionId']!
-
-  if (sessionId === auth.sessionId) {
-    sendError(res, HTTP_STATUS.BAD_REQUEST, 'CANNOT_REVOKE_CURRENT', 'Use /auth/logout to end your current session')
-    return
-  }
-
-  try {
-    const result = await query(
-      `DELETE FROM sessions WHERE id=$1 AND user_id=$2 RETURNING id`,
-      [sessionId, auth.userId],
-    )
-    if (!result.rows[0]) {
-      sendError(res, HTTP_STATUS.NOT_FOUND, 'NOT_FOUND', 'Session not found')
+passwordResetRouter.delete(
+  '/sessions/:sessionId',
+  requireAuth(),
+  async (req: Request, res: Response) => {
+    const auth = req.auth
+    if (!auth) {
+      sendError(res, HTTP_STATUS.UNAUTHORIZED, 'UNAUTHORIZED', 'Not authenticated')
       return
     }
 
-    await logAudit({
-      userId: auth.userId,
-      companyId: auth.companyId,
-      action: 'DELETE',
-      tableName: 'sessions',
-      recordId: sessionId,
-      newValues: { action: 'SESSION_REVOKED' },
-    })
+    const sessionId = req.params['sessionId']!
 
-    res.json({ success: true, data: { sessionId, revoked: true } })
-  } catch (err) {
-    logger.error({ err }, 'DELETE /sessions error')
-    sendError(res, HTTP_STATUS.INTERNAL_SERVER_ERROR, 'INTERNAL_ERROR', 'Failed to revoke session')
-  }
-})
+    if (sessionId === auth.sessionId) {
+      sendError(
+        res,
+        HTTP_STATUS.BAD_REQUEST,
+        'CANNOT_REVOKE_CURRENT',
+        'Use /auth/logout to end your current session',
+      )
+      return
+    }
+
+    try {
+      const result = await query(`DELETE FROM sessions WHERE id=$1 AND user_id=$2 RETURNING id`, [
+        sessionId,
+        auth.userId,
+      ])
+      if (!result.rows[0]) {
+        sendError(res, HTTP_STATUS.NOT_FOUND, 'NOT_FOUND', 'Session not found')
+        return
+      }
+
+      await logAudit({
+        userId: auth.userId,
+        companyId: auth.companyId,
+        action: 'DELETE',
+        tableName: 'sessions',
+        recordId: sessionId,
+        newValues: { action: 'SESSION_REVOKED' },
+      })
+
+      res.json({ success: true, data: { sessionId, revoked: true } })
+    } catch (err) {
+      logger.error({ err }, 'DELETE /sessions error')
+      sendError(
+        res,
+        HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        'INTERNAL_ERROR',
+        'Failed to revoke session',
+      )
+    }
+  },
+)

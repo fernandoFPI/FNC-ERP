@@ -24,7 +24,11 @@ export async function getBrowser(): Promise<Browser> {
   ]
 
   browser = env.PUPPETEER_EXECUTABLE_PATH
-    ? await puppeteer.launch({ headless: true, executablePath: env.PUPPETEER_EXECUTABLE_PATH, args: launchArgs })
+    ? await puppeteer.launch({
+        headless: true,
+        executablePath: env.PUPPETEER_EXECUTABLE_PATH,
+        args: launchArgs,
+      })
     : await puppeteer.launch({ headless: true, args: launchArgs })
 
   browser.on('disconnected', () => {
@@ -44,5 +48,9 @@ export async function closeBrowser(): Promise<void> {
   }
 }
 
-process.on('SIGTERM', () => { void closeBrowser() })
-process.on('SIGINT', () => { void closeBrowser() })
+process.on('SIGTERM', () => {
+  void closeBrowser()
+})
+process.on('SIGINT', () => {
+  void closeBrowser()
+})

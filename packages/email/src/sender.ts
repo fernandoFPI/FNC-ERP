@@ -9,15 +9,18 @@ export interface EmailMessage {
   subject: string
   html: string
   text?: string
-  attachments?: Array<{
+  attachments?: {
     filename: string
     content: Buffer
     contentType: string
-  }>
+  }[]
   replyTo?: string
 }
 
-export async function sendEmail(message: EmailMessage, smtpConfig?: SmtpConfig | null): Promise<void> {
+export async function sendEmail(
+  message: EmailMessage,
+  smtpConfig?: SmtpConfig | null,
+): Promise<void> {
   const host = smtpConfig?.host ?? env.SMTP_HOST
   if (!host) {
     log.info(
@@ -27,9 +30,7 @@ export async function sendEmail(message: EmailMessage, smtpConfig?: SmtpConfig |
     return
   }
 
-  const transporter = smtpConfig
-    ? createTransporterFromConfig(smtpConfig)
-    : getTransporter()
+  const transporter = smtpConfig ? createTransporterFromConfig(smtpConfig) : getTransporter()
 
   const fromName = smtpConfig?.fromName ?? env.EMAIL_FROM_NAME
   const fromAddress = smtpConfig?.fromAddress ?? env.EMAIL_FROM_ADDRESS

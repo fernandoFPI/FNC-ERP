@@ -1,9 +1,6 @@
 import { emailWrapper } from './base.js'
 
-export function renderPasswordChangedEmail(data: {
-  changedAt: string
-  ipAddress: string
-}): string {
+export function renderPasswordChangedEmail(data: { changedAt: string; ipAddress: string }): string {
   return emailWrapper(
     'Password Changed',
     'Your password has been updated',

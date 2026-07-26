@@ -26,20 +26,27 @@ notificationsRouter.get('/', async (req, res) => {
     let sql = `SELECT * FROM notifications WHERE user_id = $1 AND company_id = $2`
     const params: unknown[] = [userId, companyId]
     let idx = 3
-    if (unread_only === 'true') { sql += ` AND is_read = FALSE` }
+    if (unread_only === 'true') {
+      sql += ` AND is_read = FALSE`
+    }
     sql += ` ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`
     params.push(parseInt(limit as string), offset)
 
     const result = await query(sql, params)
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch notifications', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch notifications', err)
+  }
 })
 
 // POST /notifications — create and push in real time (internal/service use)
 notificationsRouter.post('/', async (req, res) => {
   const companyId = req.auth!.companyId
   const parsed = CreateNotificationSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    return
+  }
 
   const { user_id, type, title, body, data } = parsed.data
   try {
@@ -51,7 +58,9 @@ notificationsRouter.post('/', async (req, res) => {
     const row = result.rows[0]!
     pushToUser(user_id, { event: 'notification', data: row })
     sendOk(res, row, 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create notification', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create notification', err)
+  }
 })
 
 // PATCH /notifications/:id/read — mark single notification as read
@@ -61,12 +70,17 @@ notificationsRouter.patch('/:id/read', async (req, res) => {
     const result = await query(
       `UPDATE notifications SET is_read = TRUE, read_at = NOW()
        WHERE id = $1 AND user_id = $2 RETURNING *`,
-      [req.params['id'], userId],
+      [req.params.id, userId],
     )
     const row = result.rows[0]
-    if (!row) return sendError(res, 404, 'NOT_FOUND', 'Notification not found')
+    if (!row) {
+      sendError(res, 404, 'NOT_FOUND', 'Notification not found')
+      return
+    }
     sendOk(res, row)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark as read', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark as read', err)
+  }
 })
 
 // POST /notifications/read-all — mark all unread for user as read
@@ -80,7 +94,9 @@ notificationsRouter.post('/read-all', async (req, res) => {
       [userId, companyId],
     )
     sendOk(res, { updated: result.rowCount ?? 0 })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark all as read', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to mark all as read', err)
+  }
 })
 
 // GET /notifications/unread-count
@@ -92,6 +108,8 @@ notificationsRouter.get('/unread-count', async (req, res) => {
       `SELECT COUNT(*)::int AS count FROM notifications WHERE user_id = $1 AND company_id = $2 AND is_read = FALSE`,
       [userId, companyId],
     )
-    sendOk(res, { count: (result.rows[0] as { count: number })['count'] })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get unread count', err) }
+    sendOk(res, { count: (result.rows[0] as { count: number }).count })
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to get unread count', err)
+  }
 })

@@ -20,7 +20,7 @@ export function generateMeetingICS(data: {
   uid: string
   meetingNumber: string
   title: string
-  meetingDate: string   // YYYY-MM-DD
+  meetingDate: string // YYYY-MM-DD
   location: string | null
   agenda: string | null
   chairperson: string | null
@@ -32,7 +32,12 @@ export function generateMeetingICS(data: {
   const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
 
   const description = data.agenda
-    ? 'Agenda:\\n' + data.agenda.split('\n').filter(Boolean).map((l, i) => `${i + 1}. ${l.trim()}`).join('\\n')
+    ? 'Agenda:\\n' +
+      data.agenda
+        .split('\n')
+        .filter(Boolean)
+        .map((l, i) => `${i + 1}. ${l.trim()}`)
+        .join('\\n')
     : ''
 
   const lines = [
@@ -48,7 +53,9 @@ export function generateMeetingICS(data: {
     `SUMMARY:[MOM] ${icsEscape(data.meetingNumber)}: ${icsEscape(data.title)}`,
     data.location ? `LOCATION:${icsEscape(data.location)}` : null,
     description ? `DESCRIPTION:${description}` : null,
-    data.chairperson ? `ORGANIZER;CN=${icsEscape(data.chairperson)}:mailto:noreply@fnc-erp.local` : null,
+    data.chairperson
+      ? `ORGANIZER;CN=${icsEscape(data.chairperson)}:mailto:noreply@fnc-erp.local`
+      : null,
     'END:VEVENT',
     'END:VCALENDAR',
   ].filter((l): l is string => l !== null)
@@ -71,15 +78,22 @@ export function renderMeetingInvitationEmail(data: {
   const isOnlineLink = data.location ? /^https?:\/\//i.test(data.location) : false
 
   const agendaItems = data.agenda
-    ? data.agenda.split('\n').map(l => l.trim()).filter(Boolean)
+    ? data.agenda
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
     : []
 
   const agendaHtml = agendaItems.length
-    ? `<h2>Agenda</h2><ol style="font-size:14px;color:#374151;line-height:1.8;padding-left:20px;margin:0 0 16px;">${agendaItems.map(l => `<li>${l}</li>`).join('')}</ol>`
+    ? `<h2>Agenda</h2><ol style="font-size:14px;color:#374151;line-height:1.8;padding-left:20px;margin:0 0 16px;">${agendaItems.map((l) => `<li>${l}</li>`).join('')}</ol>`
     : ''
 
   const attendeesText = data.attendees
-    ? data.attendees.split(/[\n,]/).map(a => a.trim()).filter(Boolean).join(', ')
+    ? data.attendees
+        .split(/[\n,]/)
+        .map((a) => a.trim())
+        .filter(Boolean)
+        .join(', ')
     : null
 
   const locationDisplay = isOnlineLink
@@ -106,11 +120,12 @@ export function renderMeetingInvitationEmail(data: {
 
       ${agendaHtml}
 
-      ${isOnlineLink
-        ? `<p style="text-align:center;margin:24px 0 8px;">
+      ${
+        isOnlineLink
+          ? `<p style="text-align:center;margin:24px 0 8px;">
              <a class="btn" href="${data.location}">Join Meeting</a>
            </p>`
-        : ''
+          : ''
       }
 
       <div class="alert alert-info">

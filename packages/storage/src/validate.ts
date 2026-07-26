@@ -6,11 +6,7 @@ export const ALLOWED_TYPES: Record<string, string[]> = {
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ],
-  identity: [
-    'application/pdf',
-    'image/jpeg',
-    'image/png',
-  ],
+  identity: ['application/pdf', 'image/jpeg', 'image/png'],
   attachment: [
     'application/pdf',
     'application/msword',
@@ -27,45 +23,43 @@ export const ALLOWED_TYPES: Record<string, string[]> = {
     'application/x-rar-compressed',
     'application/x-7z-compressed',
   ],
-  report: [
-    'application/pdf',
-  ],
-  po_receipt_photo: [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'image/heic',
-    'image/heif',
-  ],
-  po_return_damage_photo: [
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-    'image/heic',
-    'image/heif',
-  ],
+  report: ['application/pdf'],
+  po_receipt_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+  po_return_damage_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
 }
 
 const BLOCKED_EXTENSIONS = [
-  '.exe', '.bat', '.cmd', '.sh', '.ps1', '.js', '.php',
-  '.py', '.rb', '.pl', '.vbs', '.jar', '.com', '.scr',
+  '.exe',
+  '.bat',
+  '.cmd',
+  '.sh',
+  '.ps1',
+  '.js',
+  '.php',
+  '.py',
+  '.rb',
+  '.pl',
+  '.vbs',
+  '.jar',
+  '.com',
+  '.scr',
 ]
 
 const EXTENSION_MIME_MAP: Record<string, string[]> = {
-  '.pdf':  ['application/pdf'],
-  '.doc':  ['application/msword'],
+  '.pdf': ['application/pdf'],
+  '.doc': ['application/msword'],
   '.docx': ['application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-  '.xls':  ['application/vnd.ms-excel'],
+  '.xls': ['application/vnd.ms-excel'],
   '.xlsx': ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-  '.jpg':  ['image/jpeg'],
+  '.jpg': ['image/jpeg'],
   '.jpeg': ['image/jpeg'],
-  '.png':  ['image/png'],
+  '.png': ['image/png'],
   '.webp': ['image/webp'],
   '.heic': ['image/heic'],
   '.heif': ['image/heif'],
-  '.zip':  ['application/zip', 'application/x-zip-compressed', 'application/x-zip'],
-  '.rar':  ['application/vnd.rar', 'application/x-rar-compressed'],
-  '.7z':   ['application/x-7z-compressed'],
+  '.zip': ['application/zip', 'application/x-zip-compressed', 'application/x-zip'],
+  '.rar': ['application/vnd.rar', 'application/x-rar-compressed'],
+  '.7z': ['application/x-7z-compressed'],
 }
 
 export interface ValidationResult {
@@ -101,7 +95,7 @@ export function validateFile(
   }
 
   const mimeAllowedForExt = EXTENSION_MIME_MAP[ext]
-  if (!mimeAllowedForExt || !mimeAllowedForExt.includes(mimeType)) {
+  if (!mimeAllowedForExt?.includes(mimeType)) {
     return {
       valid: false,
       reason: `File extension ${ext} does not match content type ${mimeType}`,

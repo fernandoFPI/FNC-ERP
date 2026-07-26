@@ -3,11 +3,12 @@ import { env } from '@fnc-erp/config'
 
 // Return DATE and TIMESTAMP columns as plain strings to avoid timezone conversion
 // by the pg driver (pg converts DATE → JS Date using local timezone which corrupts values)
-pg.types.setTypeParser(1082, (val: string) => val)   // DATE
-pg.types.setTypeParser(1114, (val: string) => val)   // TIMESTAMP WITHOUT TIME ZONE
-pg.types.setTypeParser(1184, (val: string) => val)   // TIMESTAMP WITH TIME ZONE
+pg.types.setTypeParser(1082, (val: string) => val) // DATE
+pg.types.setTypeParser(1114, (val: string) => val) // TIMESTAMP WITHOUT TIME ZONE
+pg.types.setTypeParser(1184, (val: string) => val) // TIMESTAMP WITH TIME ZONE
 
-const dbUrl = env.NODE_ENV === 'test' ? (env.DATABASE_TEST_URL ?? env.DATABASE_URL) : env.DATABASE_URL
+const dbUrl =
+  env.NODE_ENV === 'test' ? (env.DATABASE_TEST_URL ?? env.DATABASE_URL) : env.DATABASE_URL
 
 export const pool = new Pool({
   connectionString: dbUrl,

@@ -4,7 +4,11 @@ import { buildHealthStatus } from '@fnc-erp/db'
 import { vendorsRouter } from './routes/vendors.js'
 import { ordersRouter } from './routes/orders.js'
 import { receiptsRouter } from './routes/receipts.js'
-import { poAttachmentsRouter, poReceiptAttachmentsRouter, vendorAttachmentsRouter } from './routes/attachments.js'
+import {
+  poAttachmentsRouter,
+  poReceiptAttachmentsRouter,
+  vendorAttachmentsRouter,
+} from './routes/attachments.js'
 import { returnsRouter } from './routes/returns.js'
 
 export function createApp(): import('express').Express {

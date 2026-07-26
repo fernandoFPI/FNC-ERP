@@ -34,10 +34,7 @@ export async function startJobRun(
   return res.rows[0]!.id
 }
 
-export async function finishJobRun(
-  id: string,
-  meta?: Record<string, unknown>,
-): Promise<void> {
+export async function finishJobRun(id: string, meta?: Record<string, unknown>): Promise<void> {
   await pool.query(
     `UPDATE job_runs
      SET status      = 'success',
@@ -98,13 +95,7 @@ export async function recordCompletedJobRun(
        $4,
        $5
      )`,
-    [
-      jobName,
-      status,
-      durationMs,
-      meta ? JSON.stringify(meta) : null,
-      errorMsg ?? null,
-    ],
+    [jobName, status, durationMs, meta ? JSON.stringify(meta) : null, errorMsg ?? null],
   )
 }
 
@@ -128,7 +119,7 @@ export async function listJobRuns(opts: {
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const limit  = Math.min(opts.limit ?? 50, 200)
+  const limit = Math.min(opts.limit ?? 50, 200)
   const offset = opts.offset ?? 0
 
   const [dataRes, countRes] = await Promise.all([
@@ -140,10 +131,7 @@ export async function listJobRuns(opts: {
        LIMIT $${pi} OFFSET $${pi + 1}`,
       [...filterParams, limit, offset],
     ),
-    pool.query<{ count: string }>(
-      `SELECT COUNT(*) AS count FROM job_runs ${where}`,
-      filterParams,
-    ),
+    pool.query<{ count: string }>(`SELECT COUNT(*) AS count FROM job_runs ${where}`, filterParams),
   ])
 
   return {

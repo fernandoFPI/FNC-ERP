@@ -112,8 +112,14 @@ export function registerAttachmentRoutes(
   router: Router,
   opts: AttachmentRouteOptions,
   logAuditFn: (params: {
-    userId: string; companyId: string; action: string; tableName: string; recordId: string;
-    newValues?: Record<string, unknown>; oldValues?: Record<string, unknown>; client?: PoolClient
+    userId: string
+    companyId: string
+    action: string
+    tableName: string
+    recordId: string
+    newValues?: Record<string, unknown>
+    oldValues?: Record<string, unknown>
+    client?: PoolClient
   }) => Promise<void>,
 ): void {
   const { entityType, verifyEntitySql } = opts
@@ -124,7 +130,10 @@ export function registerAttachmentRoutes(
       const result = await getAttachments(entityType, req.params['id']!)
       res.json({ success: true, data: result.rows })
     } catch (err) {
-      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch attachments' } })
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch attachments' },
+      })
     }
   })
 
@@ -134,7 +143,10 @@ export function registerAttachmentRoutes(
     const { fileId, label, isPrimary } = body
 
     if (!fileId) {
-      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'fileId is required' } })
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'fileId is required' },
+      })
       return
     }
 
@@ -145,7 +157,9 @@ export function registerAttachmentRoutes(
     // Verify entity belongs to company
     const entity = await query(verifyEntitySql, [entityId, companyId])
     if (!entity.rows[0]) {
-      res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: `${entityType} not found` } })
+      res
+        .status(404)
+        .json({ success: false, error: { code: 'NOT_FOUND', message: `${entityType} not found` } })
       return
     }
 
@@ -155,26 +169,42 @@ export function registerAttachmentRoutes(
       [fileId, companyId],
     )
     if (!file.rows[0]) {
-      res.status(404).json({ success: false, error: { code: 'FILE_NOT_FOUND', message: 'File not found or not yet confirmed as uploaded' } })
+      res.status(404).json({
+        success: false,
+        error: {
+          code: 'FILE_NOT_FOUND',
+          message: 'File not found or not yet confirmed as uploaded',
+        },
+      })
       return
     }
 
     try {
       await withTransaction({ companyId, userId, role: req.auth!.role }, async (client) => {
         await createAttachment(client, {
-          entityType, entityId, fileId,
+          entityType,
+          entityId,
+          fileId,
           label: label ?? null,
           isPrimary: isPrimary ?? false,
           uploadedBy: userId,
         })
         await logAuditFn({
-          userId, companyId, action: 'CREATE', tableName: 'document_attachments',
-          recordId: entityId, newValues: { fileId, entityType, label }, client,
+          userId,
+          companyId,
+          action: 'CREATE',
+          tableName: 'document_attachments',
+          recordId: entityId,
+          newValues: { fileId, entityType, label },
+          client,
         })
       })
       res.status(201).json({ success: true, data: { message: 'File attached' } })
     } catch (err) {
-      const msg = err instanceof Error && err.message.includes('unique') ? 'File already attached to this record' : 'Failed to attach file'
+      const msg =
+        err instanceof Error && err.message.includes('unique')
+          ? 'File already attached to this record'
+          : 'Failed to attach file'
       res.status(409).json({ success: false, error: { code: 'ATTACHMENT_ERROR', message: msg } })
     }
   })
@@ -195,19 +225,30 @@ export function registerAttachmentRoutes(
           return // will 404 below
         }
         await logAuditFn({
-          userId, companyId, action: 'DELETE', tableName: 'document_attachments',
-          recordId: entityId, oldValues: { fileId: removed.fileId, filename: removed.filename }, client,
+          userId,
+          companyId,
+          action: 'DELETE',
+          tableName: 'document_attachments',
+          recordId: entityId,
+          oldValues: { fileId: removed.fileId, filename: removed.filename },
+          client,
         })
       })
 
       if (!removed) {
-        res.status(404).json({ success: false, error: { code: 'ATTACHMENT_NOT_FOUND', message: 'Attachment not found' } })
+        res.status(404).json({
+          success: false,
+          error: { code: 'ATTACHMENT_NOT_FOUND', message: 'Attachment not found' },
+        })
         return
       }
 
       res.json({ success: true, data: { message: 'Attachment removed' } })
     } catch (err) {
-      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to remove attachment' } })
+      res.status(500).json({
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to remove attachment' },
+      })
     }
   })
 }

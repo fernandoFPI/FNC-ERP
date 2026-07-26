@@ -13,7 +13,7 @@ export interface InvoiceData {
     projectName: string
     contractNumber: string
   }
-  lines: Array<{
+  lines: {
     lineNumber: number
     description: string
     qty: number
@@ -23,13 +23,13 @@ export interface InvoiceData {
     marginAmount: number
     lineTotal: number
     currency: string
-    components?: Array<{
+    components?: {
       productName: string
       qty: number
       unitCost: number
       totalCost: number
-    }>
-  }>
+    }[]
+  }[]
   totals: {
     subtotal: number
     marginTotal: number
@@ -53,26 +53,36 @@ function renderRow(line: InvoiceData['lines'][0], showMargin: boolean): string {
       <td>${line.lineNumber}</td>
       <td>
         ${line.description}
-        ${line.components ? `
+        ${
+          line.components
+            ? `
           <div style="margin-top:6px;padding-left:12px;border-left:2px solid #e2e8f0;font-size:11px;color:#666">
-            ${line.components.map(c => `
+            ${line.components
+              .map(
+                (c) => `
               <div style="display:flex;justify-content:space-between;padding:2px 0">
                 <span>${c.productName} × ${c.qty}</span>
                 <span>${formatCurrency(c.totalCost, line.currency)}</span>
               </div>
-            `).join('')}
+            `,
+              )
+              .join('')}
           </div>
-        ` : ''}
+        `
+            : ''
+        }
       </td>
       <td class="text-right">${line.qty}</td>
       <td class="text-right amount">${formatCurrency(line.unitCost, line.currency)}</td>
       <td class="text-right amount">${formatCurrency(line.subtotal, line.currency)}</td>
-      ${showMargin
-        ? (line.marginPct > 0
+      ${
+        showMargin
+          ? line.marginPct > 0
             ? `<td class="text-right">${(line.marginPct * 100).toFixed(1)}%</td>
                <td class="text-right amount">${formatCurrency(line.marginAmount, line.currency)}</td>`
-            : `<td>—</td><td>—</td>`)
-        : ''}
+            : `<td>—</td><td>—</td>`
+          : ''
+      }
       <td class="text-right amount" style="font-weight:600">${formatCurrency(line.lineTotal, line.currency)}</td>
     </tr>
   `
@@ -88,10 +98,12 @@ function tableHead(showMargin: boolean): string {
           <th class="text-right" style="width:55px">Qty</th>
           <th class="text-right" style="width:130px">Unit Cost</th>
           <th class="text-right" style="width:130px">Subtotal</th>
-          ${showMargin
-            ? `<th class="text-right" style="width:65px">Margin%</th>
+          ${
+            showMargin
+              ? `<th class="text-right" style="width:65px">Margin%</th>
                <th class="text-right" style="width:110px">Margin</th>`
-            : ''}
+              : ''
+          }
           <th class="text-right" style="width:130px">Total</th>
         </tr>
       </thead>
@@ -106,22 +118,30 @@ function totalsBlock(data: InvoiceData): string {
           <span>Subtotal</span>
           <span class="amount">${formatCurrency(data.totals.subtotal, data.totals.currency)}</span>
         </div>
-        ${data.totals.marginTotal > 0 ? `
+        ${
+          data.totals.marginTotal > 0
+            ? `
           <div class="totals-row">
             <span>Margin</span>
             <span class="amount">${formatCurrency(data.totals.marginTotal, data.totals.currency)}</span>
           </div>
-        ` : ''}
+        `
+            : ''
+        }
         <div class="totals-row">
           <span>Gross Total</span>
           <span class="amount">${formatCurrency(data.totals.grossTotal, data.totals.currency)}</span>
         </div>
-        ${data.totals.retentionAmount > 0 ? `
+        ${
+          data.totals.retentionAmount > 0
+            ? `
           <div class="totals-row" style="color:#e53e3e">
             <span>Retention (${(data.totals.retentionPct * 100).toFixed(0)}%)</span>
             <span class="amount">(${formatCurrency(data.totals.retentionAmount, data.totals.currency)})</span>
           </div>
-        ` : ''}
+        `
+            : ''
+        }
         <div class="totals-row total">
           <span>NET PAYABLE</span>
           <span class="amount">${formatCurrency(data.totals.netPayable, data.totals.currency)}</span>
@@ -149,13 +169,17 @@ function signatureBlock(data: InvoiceData): string {
           Signature &amp; stamp
         </div>
       </div>
-      ${data.qrCodeDataUrl ? `
+      ${
+        data.qrCodeDataUrl
+          ? `
         <div style="text-align:center;flex-shrink:0">
           <img src="${data.qrCodeDataUrl}" alt="Scan to verify"
                style="width:90px;height:90px;display:block;margin:0 auto 4px" />
           <div style="font-size:9px;color:#999;text-transform:uppercase;letter-spacing:0.5px">Scan to verify</div>
         </div>
-      ` : ''}
+      `
+          : ''
+      }
     </div>
   `
 }
@@ -175,7 +199,7 @@ export function renderInvoice(data: InvoiceData): string {
   const showMargin = data.lines.some((l) => l.marginPct > 0)
 
   // Split lines into pages
-  const pages: Array<typeof data.lines> = []
+  const pages: (typeof data.lines)[] = []
   if (data.lines.length <= FIRST_PAGE_ITEMS) {
     pages.push(data.lines)
   } else {
@@ -189,15 +213,16 @@ export function renderInvoice(data: InvoiceData): string {
 
   const totalPages = pages.length
 
-  const pageHtmls = pages.map((pageLines, pageIdx) => {
-    const isFirstPage = pageIdx === 0
-    const isLastPage  = pageIdx === totalPages - 1
-    const pageNum     = pageIdx + 1
+  const pageHtmls = pages
+    .map((pageLines, pageIdx) => {
+      const isFirstPage = pageIdx === 0
+      const isLastPage = pageIdx === totalPages - 1
+      const pageNum = pageIdx + 1
 
-    const rows = pageLines.map((l) => renderRow(l, showMargin)).join('')
+      const rows = pageLines.map((l) => renderRow(l, showMargin)).join('')
 
-    const header = isFirstPage
-      ? `
+      const header = isFirstPage
+        ? `
         <div class="doc-header">
           ${companyHeader(data.company)}
           <div class="doc-title">
@@ -233,7 +258,7 @@ export function renderInvoice(data: InvoiceData): string {
           </div>
         </div>
       `
-      : `
+        : `
         <div style="display:flex;justify-content:space-between;align-items:center;
                     padding-bottom:12px;border-bottom:2px solid #1a3c5e;margin-bottom:20px">
           <div style="font-size:13px;color:#666;font-style:italic">
@@ -246,8 +271,8 @@ export function renderInvoice(data: InvoiceData): string {
         </div>
       `
 
-    const tableFooterRow = !isLastPage
-      ? `
+      const tableFooterRow = !isLastPage
+        ? `
         <tfoot>
           <tr>
             <td colspan="${showMargin ? 8 : 6}"
@@ -258,9 +283,9 @@ export function renderInvoice(data: InvoiceData): string {
           </tr>
         </tfoot>
       `
-      : ''
+        : ''
 
-    return `
+      return `
       <div class="page" ${pageIdx > 0 ? 'style="page-break-before:always"' : ''}>
         ${header}
         ${tableHead(showMargin)}
@@ -268,22 +293,31 @@ export function renderInvoice(data: InvoiceData): string {
           ${tableFooterRow}
         </table>
 
-        ${isLastPage ? `
+        ${
+          isLastPage
+            ? `
           ${totalsBlock(data)}
-          ${data.notes ? `
+          ${
+            data.notes
+              ? `
             <div style="background:#fffbeb;border:1px solid #fcd34d;
                         border-radius:8px;padding:16px;margin-bottom:24px">
               <p style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">Notes</p>
               <p style="font-size:12px;color:#78350f">${data.notes}</p>
             </div>
-          ` : ''}
+          `
+              : ''
+          }
           ${signatureBlock(data)}
-        ` : ''}
+        `
+            : ''
+        }
 
         ${docFooter(data, pageNum, totalPages)}
       </div>
     `
-  }).join('')
+    })
+    .join('')
 
   return `
     <!DOCTYPE html>

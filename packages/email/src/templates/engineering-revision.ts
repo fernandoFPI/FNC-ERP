@@ -2,13 +2,13 @@ import { emailWrapper } from './base.js'
 
 export function renderEngineeringRevisionEmail(data: {
   recipientName: string
-  projectName:   string
-  projectCode:   string
-  revisionCode:  string
-  notes?:        string
-  itemCount:     number
-  issuedBy:      string
-  projectUrl:    string
+  projectName: string
+  projectCode: string
+  revisionCode: string
+  notes?: string
+  itemCount: number
+  issuedBy: string
+  projectUrl: string
 }): string {
   return emailWrapper(
     `Scope Revision ${data.revisionCode} Issued — ${data.projectCode}`,

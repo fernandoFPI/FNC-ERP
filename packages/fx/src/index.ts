@@ -14,11 +14,7 @@ export {
   type RateValidationResult,
 } from './cbi-client.js'
 
-export {
-  checkRateStaleness,
-  getLastKnownRate,
-  type RateStalenessStatus,
-} from './staleness.js'
+export { checkRateStaleness, getLastKnownRate, type RateStalenessStatus } from './staleness.js'
 
 import { query } from '@fnc-erp/db'
 

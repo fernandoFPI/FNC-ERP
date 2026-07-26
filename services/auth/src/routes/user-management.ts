@@ -26,7 +26,13 @@ userManagementRouter.get(
   requirePermission('admin.users.edit', 'edit'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const { search, is_active, company_id, page = '1', limit = '50' } = req.query as Record<string, string>
+      const {
+        search,
+        is_active,
+        company_id,
+        page = '1',
+        limit = '50',
+      } = req.query as Record<string, string>
       const offset = (parseInt(page) - 1) * parseInt(limit)
       const conditions: string[] = []
       const countValues: unknown[] = []
@@ -44,7 +50,9 @@ userManagementRouter.get(
         listValues.push(is_active === 'true')
       }
       if (company_id) {
-        conditions.push(`EXISTS (SELECT 1 FROM user_company_roles ucr2 WHERE ucr2.user_id = u.id AND ucr2.company_id = $${++p})`)
+        conditions.push(
+          `EXISTS (SELECT 1 FROM user_company_roles ucr2 WHERE ucr2.user_id = u.id AND ucr2.company_id = $${++p})`,
+        )
         countValues.push(company_id)
         listValues.push(company_id)
       }
@@ -174,7 +182,7 @@ userManagementRouter.post(
       send_invitation?: boolean
     }
 
-    if (!email || !email.includes('@')) {
+    if (!email?.includes('@')) {
       sendError(res, 400, 'INVALID_EMAIL', 'Valid email address required')
       return
     }
@@ -211,7 +219,7 @@ userManagementRouter.post(
            RETURNING id, email, is_active, created_at`,
           [email.toLowerCase(), passwordHash],
         )
-        const uid: string = user.rows[0]?.['id']
+        const uid: string = user.rows[0]?.id
 
         if (company_id && role) {
           await client.query(
@@ -237,7 +245,9 @@ userManagementRouter.post(
         return uid
       })
 
-      const user = await query(`SELECT id, email, is_active, created_at FROM users WHERE id = $1`, [userId])
+      const user = await query(`SELECT id, email, is_active, created_at FROM users WHERE id = $1`, [
+        userId,
+      ])
       res.status(201).json({ success: true, data: user.rows[0] })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create user', err)
@@ -248,46 +258,49 @@ userManagementRouter.post(
 // ── GET /auth/users/accept-invitation/validate ────────────────────────────────
 // Public — validates an invitation token and returns invite metadata.
 
-userManagementRouter.get('/accept-invitation/validate', async (req: Request, res: Response): Promise<void> => {
-  const { token } = req.query as { token?: string }
+userManagementRouter.get(
+  '/accept-invitation/validate',
+  async (req: Request, res: Response): Promise<void> => {
+    const { token } = req.query as { token?: string }
 
-  if (!token) {
-    sendError(res, 400, 'MISSING_TOKEN', 'Token is required')
-    return
-  }
+    if (!token) {
+      sendError(res, 400, 'MISSING_TOKEN', 'Token is required')
+      return
+    }
 
-  try {
-    const result = await query(
-      `SELECT ui.email, ui.role, ui.expires_at,
+    try {
+      const result = await query(
+        `SELECT ui.email, ui.role, ui.expires_at,
               c.name AS company_name,
               COALESCE(u.first_name || ' ' || u.last_name, u.email) AS invited_by_email
        FROM user_invitations ui
        LEFT JOIN companies c ON c.id = ui.company_id
        LEFT JOIN users u ON u.id = ui.invited_by
        WHERE ui.token = $1 AND ui.status = 'pending' AND ui.expires_at > NOW()`,
-      [token],
-    )
+        [token],
+      )
 
-    if (!result.rows[0]) {
-      sendError(res, 400, 'INVALID_TOKEN', 'Invitation token is invalid or has expired')
-      return
+      if (!result.rows[0]) {
+        sendError(res, 400, 'INVALID_TOKEN', 'Invitation token is invalid or has expired')
+        return
+      }
+
+      const inv = result.rows[0]
+      res.json({
+        success: true,
+        data: {
+          email: inv['email'] as string,
+          companyName: (inv['company_name'] as string | null) ?? 'FNC ERP',
+          invitedByName: (inv['invited_by_email'] as string | null) ?? 'an administrator',
+          role: inv['role'] as string | null,
+          expiresAt: inv['expires_at'] as string,
+        },
+      })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to validate invitation', err)
     }
-
-    const inv = result.rows[0]
-    res.json({
-      success: true,
-      data: {
-        email: inv['email'] as string,
-        companyName: (inv['company_name'] as string | null) ?? 'FNC ERP',
-        invitedByName: (inv['invited_by_email'] as string | null) ?? 'an administrator',
-        role: inv['role'] as string | null,
-        expiresAt: inv['expires_at'] as string,
-      },
-    })
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to validate invitation', err)
-  }
-})
+  },
+)
 
 // ── POST /auth/users/invite ────────────────────────────────────────────────────
 // Send an invitation email — user sets their own password on acceptance.
@@ -307,93 +320,104 @@ userManagementRouter.post(
 // ── POST /auth/accept-invitation ──────────────────────────────────────────────
 // Public — no JWT required. Token in body.
 
-userManagementRouter.post('/accept-invitation', async (req: Request, res: Response): Promise<void> => {
-  const { token, password, confirmPassword } = req.body as Record<string, string>
+userManagementRouter.post(
+  '/accept-invitation',
+  async (req: Request, res: Response): Promise<void> => {
+    const { token, password, confirmPassword } = req.body as Record<string, string>
 
-  if (!token || !password) {
-    sendError(res, 400, 'MISSING_FIELDS', 'Token and password are required')
-    return
-  }
-
-  if (password !== confirmPassword) {
-    sendError(res, 400, 'PASSWORD_MISMATCH', 'Passwords do not match')
-    return
-  }
-
-  const strength = validatePasswordStrength(password)
-  if (!strength.valid) {
-    sendError(res, 400, 'WEAK_PASSWORD', strength.reason ?? 'Password too weak')
-    return
-  }
-
-  try {
-    const invResult = await query(
-      `SELECT * FROM user_invitations WHERE token = $1 AND status = 'pending' AND expires_at > NOW()`,
-      [token],
-    )
-
-    if (!invResult.rows[0]) {
-      sendError(res, 400, 'INVALID_INVITATION', 'This invitation link is invalid or has expired')
+    if (!token || !password) {
+      sendError(res, 400, 'MISSING_FIELDS', 'Token and password are required')
       return
     }
 
-    const inv = invResult.rows[0]
-    const invEmail = inv['email'] as string
-    const invCompanyId = inv['company_id'] as string | null
-    const invRole = inv['role'] as string | null
-    const invModule = inv['module'] as string | null
-    const invId = inv['id'] as string
-
-    const existing = await query(`SELECT id FROM users WHERE email = $1`, [invEmail])
-    if (existing.rows[0]) {
-      sendError(res, 409, 'EMAIL_TAKEN', 'An account with this email already exists. Please log in instead.')
+    if (password !== confirmPassword) {
+      sendError(res, 400, 'PASSWORD_MISMATCH', 'Passwords do not match')
       return
     }
 
-    const passwordHash = await hashPassword(password)
+    const strength = validatePasswordStrength(password)
+    if (!strength.valid) {
+      sendError(res, 400, 'WEAK_PASSWORD', strength.reason ?? 'Password too weak')
+      return
+    }
 
-    await withSystemTransaction(async (client) => {
-      const user = await client.query(
-        `INSERT INTO users (email, password_hash, is_active, mfa_enabled)
-         VALUES ($1, $2, true, false)
-         RETURNING id`,
-        [invEmail, passwordHash],
+    try {
+      const invResult = await query(
+        `SELECT * FROM user_invitations WHERE token = $1 AND status = 'pending' AND expires_at > NOW()`,
+        [token],
       )
-      const userId: string = user.rows[0]?.['id']
 
-      if (invCompanyId && invRole) {
-        await client.query(
-          `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active)
-           VALUES ($1, $2, $3, $4, true)`,
-          [userId, invCompanyId, invRole, invModule],
-        )
+      if (!invResult.rows[0]) {
+        sendError(res, 400, 'INVALID_INVITATION', 'This invitation link is invalid or has expired')
+        return
       }
 
-      await client.query(
-        `UPDATE user_invitations
+      const inv = invResult.rows[0]
+      const invEmail = inv['email'] as string
+      const invCompanyId = inv['company_id'] as string | null
+      const invRole = inv['role'] as string | null
+      const invModule = inv['module'] as string | null
+      const invId = inv['id'] as string
+
+      const existing = await query(`SELECT id FROM users WHERE email = $1`, [invEmail])
+      if (existing.rows[0]) {
+        sendError(
+          res,
+          409,
+          'EMAIL_TAKEN',
+          'An account with this email already exists. Please log in instead.',
+        )
+        return
+      }
+
+      const passwordHash = await hashPassword(password)
+
+      await withSystemTransaction(async (client) => {
+        const user = await client.query(
+          `INSERT INTO users (email, password_hash, is_active, mfa_enabled)
+         VALUES ($1, $2, true, false)
+         RETURNING id`,
+          [invEmail, passwordHash],
+        )
+        const userId: string = user.rows[0]?.id
+
+        if (invCompanyId && invRole) {
+          await client.query(
+            `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active)
+           VALUES ($1, $2, $3, $4, true)`,
+            [userId, invCompanyId, invRole, invModule],
+          )
+        }
+
+        await client.query(
+          `UPDATE user_invitations
          SET status = 'accepted', accepted_at = NOW(), created_user_id = $1
          WHERE id = $2`,
-        [userId, invId],
-      )
+          [userId, invId],
+        )
 
-      await logAudit({
-        userId,
-        companyId: undefined,
-        action: 'INVITATION_ACCEPTED',
-        tableName: 'users',
-        recordId: userId,
-        newValues: { email: invEmail },
-        client,
+        await logAudit({
+          userId,
+          companyId: undefined,
+          action: 'INVITATION_ACCEPTED',
+          tableName: 'users',
+          recordId: userId,
+          newValues: { email: invEmail },
+          client,
+        })
+
+        log.info({ userId, email: invEmail }, 'invitation accepted — user created')
       })
 
-      log.info({ userId, email: invEmail }, 'invitation accepted — user created')
-    })
-
-    res.json({ success: true, data: { message: 'Account created successfully. You can now log in.' } })
-  } catch (err) {
-    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to accept invitation', err)
-  }
-})
+      res.json({
+        success: true,
+        data: { message: 'Account created successfully. You can now log in.' },
+      })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to accept invitation', err)
+    }
+  },
+)
 
 // ── PATCH /auth/users/:id ──────────────────────────────────────────────────────
 
@@ -416,8 +440,14 @@ userManagementRouter.patch(
         const values: unknown[] = []
         let p = 0
 
-        if (email !== undefined) { setClauses.push(`email = $${++p}`); values.push(email.toLowerCase()) }
-        if (is_active !== undefined) { setClauses.push(`is_active = $${++p}`); values.push(is_active) }
+        if (email !== undefined) {
+          setClauses.push(`email = $${++p}`)
+          values.push(email.toLowerCase())
+        }
+        if (is_active !== undefined) {
+          setClauses.push(`is_active = $${++p}`)
+          values.push(is_active)
+        }
 
         if (setClauses.length === 0) {
           sendError(res, 400, 'NO_CHANGES', 'No fields to update')
@@ -427,10 +457,7 @@ userManagementRouter.patch(
         setClauses.push('updated_at = NOW()')
         values.push(req.params['id'])
 
-        await client.query(
-          `UPDATE users SET ${setClauses.join(', ')} WHERE id = $${p + 1}`,
-          values,
-        )
+        await client.query(`UPDATE users SET ${setClauses.join(', ')} WHERE id = $${p + 1}`, values)
 
         if (is_active === false) {
           await client.query(`DELETE FROM sessions WHERE user_id = $1`, [req.params['id']])
@@ -535,8 +562,14 @@ userManagementRouter.post(
         })
       })
 
-      log.info({ targetUserId: req.params['id'], changedBy: req.auth!.userId }, 'admin set user password')
-      res.json({ success: true, data: { message: 'Password updated. All sessions have been revoked.' } })
+      log.info(
+        { targetUserId: req.params['id'], changedBy: req.auth!.userId },
+        'admin set user password',
+      )
+      res.json({
+        success: true,
+        data: { message: 'Password updated. All sessions have been revoked.' },
+      })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to set password', err)
     }
@@ -608,10 +641,10 @@ userManagementRouter.delete(
   requirePermission('admin.users.edit', 'edit'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      await query(
-        `DELETE FROM sessions WHERE id = $1 AND user_id = $2`,
-        [req.params['sessionId'], req.params['id']],
-      )
+      await query(`DELETE FROM sessions WHERE id = $1 AND user_id = $2`, [
+        req.params['sessionId'],
+        req.params['id'],
+      ])
       await logAudit({
         userId: req.auth!.userId,
         companyId: undefined,
@@ -659,11 +692,16 @@ userManagementRouter.delete(
 async function dispatchInvitation(
   req: Request,
   res: Response,
-  data: { email: string | undefined; company_id: string | undefined; role: string | undefined; module: string | undefined },
+  data: {
+    email: string | undefined
+    company_id: string | undefined
+    role: string | undefined
+    module: string | undefined
+  },
 ): Promise<void> {
   const { email, company_id, role, module: roleModule } = data
 
-  if (!email || !email.includes('@')) {
+  if (!email?.includes('@')) {
     sendError(res, 400, 'INVALID_EMAIL', 'Valid email address required')
     return
   }
@@ -695,20 +733,30 @@ async function dispatchInvitation(
         `INSERT INTO user_invitations
            (email, invited_by, company_id, role, module, token, expires_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [email.toLowerCase(), req.auth!.userId, company_id ?? null, role ?? null, roleModule ?? null, token, expiresAt],
+        [
+          email.toLowerCase(),
+          req.auth!.userId,
+          company_id ?? null,
+          role ?? null,
+          roleModule ?? null,
+          token,
+          expiresAt,
+        ],
       )
 
       await client.query(
         `INSERT INTO service_outbox (service, event_type, payload)
          VALUES ('notifications', 'USER_INVITATION_EMAIL', $1)`,
-        [JSON.stringify({
-          email: email.toLowerCase(),
-          invitedBy: req.auth!.userId,
-          invitationUrl: `${env.FRONTEND_URL}/accept-invitation?token=${token}`,
-          expiresAt: expiresAt.toISOString(),
-          companyName,
-          role: role ?? null,
-        })],
+        [
+          JSON.stringify({
+            email: email.toLowerCase(),
+            invitedBy: req.auth!.userId,
+            invitationUrl: `${env.FRONTEND_URL}/accept-invitation?token=${token}`,
+            expiresAt: expiresAt.toISOString(),
+            companyName,
+            role: role ?? null,
+          }),
+        ],
       )
 
       await logAudit({
@@ -727,7 +775,10 @@ async function dispatchInvitation(
     log.info({ email, invitedBy: req.auth!.userId }, 'user invitation sent')
     res.status(201).json({
       success: true,
-      data: { message: `Invitation sent to ${email}. Link expires in 7 days.`, expiresAt: expiresAt.toISOString() },
+      data: {
+        message: `Invitation sent to ${email}. Link expires in 7 days.`,
+        expiresAt: expiresAt.toISOString(),
+      },
     })
   } catch (err) {
     sendError(res, 500, 'INTERNAL_ERROR', 'Failed to send invitation', err)

@@ -39,27 +39,28 @@ export async function transitionPOInClient(
     `SELECT status FROM purchase_orders WHERE id = $1 FOR UPDATE`,
     [poId],
   )
-  if (!current.rows[0]) throw Object.assign(new Error('PO not found'), { statusCode: 404, code: 'NOT_FOUND' })
+  if (!current.rows[0])
+    throw Object.assign(new Error('PO not found'), { statusCode: 404, code: 'NOT_FOUND' })
 
   const currentStatus = current.rows[0].status as POStatus
   if (currentStatus !== fromStatus) {
-    throw Object.assign(
-      new Error(`Expected status '${fromStatus}', got '${currentStatus}'`),
-      { statusCode: 422, code: 'INVALID_STATUS' },
-    )
+    throw Object.assign(new Error(`Expected status '${fromStatus}', got '${currentStatus}'`), {
+      statusCode: 422,
+      code: 'INVALID_STATUS',
+    })
   }
 
   if (!poStateMachine.canTransition(currentStatus, action)) {
-    throw Object.assign(
-      new Error(`Action '${action}' not allowed from '${currentStatus}'`),
-      { statusCode: 422, code: 'INVALID_TRANSITION' },
-    )
+    throw Object.assign(new Error(`Action '${action}' not allowed from '${currentStatus}'`), {
+      statusCode: 422,
+      code: 'INVALID_TRANSITION',
+    })
   }
 
-  await client.query(
-    `UPDATE purchase_orders SET status = $1, updated_at = NOW() WHERE id = $2`,
-    [toStatus, poId],
-  )
+  await client.query(`UPDATE purchase_orders SET status = $1, updated_at = NOW() WHERE id = $2`, [
+    toStatus,
+    poId,
+  ])
 
   await client.query(
     `INSERT INTO po_approval_log (po_id, from_status, to_status, action, actor_id, notes)
@@ -92,7 +93,16 @@ export async function transitionPO(
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    await transitionPOInClient(client, poId, fromStatus, toStatus, action, auth, notes, auditNewValues)
+    await transitionPOInClient(
+      client,
+      poId,
+      fromStatus,
+      toStatus,
+      action,
+      auth,
+      notes,
+      auditNewValues,
+    )
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK')
@@ -212,10 +222,9 @@ export async function notifyDeptHeadsAndAdmins(
   poId: string,
   notification: NotificationPayload,
 ): Promise<void> {
-  const poResult = await query(
-    `SELECT po.organizer_id FROM purchase_orders po WHERE po.id = $1`,
-    [poId],
-  )
+  const poResult = await query(`SELECT po.organizer_id FROM purchase_orders po WHERE po.id = $1`, [
+    poId,
+  ])
   const organizerId = poResult.rows[0]?.['organizer_id'] as string | undefined
   if (!organizerId) return
 

@@ -6,7 +6,7 @@ import { logger } from '@fnc-erp/logger'
 
 const redisClient = createClient({
   url: env.REDIS_URL,
-  RESP: 2,  // RESP2 — compatible with Redis 5.x (no HELLO 3 handshake)
+  RESP: 2, // RESP2 — compatible with Redis 5.x (no HELLO 3 handshake)
 })
 redisClient.on('error', (err: unknown) => {
   logger.error({ err }, 'Redis client error in rate limiter')
@@ -81,7 +81,7 @@ export function globalRateLimit() {
 export function authRateLimit() {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const body = req.body as Record<string, unknown>
-    const email = typeof body['email'] === 'string' ? body['email'] : 'unknown'
+    const email = typeof body.email === 'string' ? body.email : 'unknown'
     const key = `${req.ip ?? 'unknown'}:${email}`
     try {
       await authLimiter.consume(key)

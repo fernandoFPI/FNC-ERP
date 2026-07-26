@@ -11,10 +11,16 @@ export const mobileSyncRouter: IRouter = Router()
 const log = logger.child({ module: 'mobile-sync' })
 
 const SUPPORTED_ENTITIES = [
-  'profile', 'attendance', 'locations', 'projects',
-  'approvals', 'products', 'leave', 'equipment',
+  'profile',
+  'attendance',
+  'locations',
+  'projects',
+  'approvals',
+  'products',
+  'leave',
+  'equipment',
 ] as const
-type EntityType = typeof SUPPORTED_ENTITIES[number]
+type EntityType = (typeof SUPPORTED_ENTITIES)[number]
 
 // ── GET /api/v1/mobile/sync ──────────────────────────────────
 // Delta sync — returns only records changed since sinceDate.
@@ -23,12 +29,18 @@ mobileSyncRouter.get('/sync', requireAuth(), async (req: Request, res: Response)
   const { since, entities, device_id } = req.query as Record<string, string>
 
   if (!device_id) {
-    res.status(400).json({ success: false, error: { code: 'MISSING_DEVICE_ID', message: 'device_id is required' } })
+    res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_DEVICE_ID', message: 'device_id is required' },
+    })
     return
   }
 
   const requestedEntities: EntityType[] = entities
-    ? (entities.split(',').map((e) => e.trim()).filter((e) => SUPPORTED_ENTITIES.includes(e as EntityType)) as EntityType[])
+    ? (entities
+        .split(',')
+        .map((e) => e.trim())
+        .filter((e) => SUPPORTED_ENTITIES.includes(e as EntityType)) as EntityType[])
     : [...SUPPORTED_ENTITIES]
 
   const sinceDate = since ? new Date(since) : new Date(0)
@@ -37,14 +49,19 @@ mobileSyncRouter.get('/sync', requireAuth(), async (req: Request, res: Response)
   const platform = (req.headers['x-platform'] as string) ?? 'unknown'
   const syncedAt = new Date()
 
-  log.info({ userId, deviceId: device_id, entities: requestedEntities, sinceDate }, 'mobile sync requested')
+  log.info(
+    { userId, deviceId: device_id, entities: requestedEntities, sinceDate },
+    'mobile sync requested',
+  )
 
   const changes: Record<string, { updated: Record<string, unknown>[]; deleted: string[] }> = {}
 
   try {
-    await Promise.all(requestedEntities.map(async (entityType) => {
-      changes[entityType] = await fetchEntityDelta(entityType, userId, companyId, sinceDate)
-    }))
+    await Promise.all(
+      requestedEntities.map(async (entityType) => {
+        changes[entityType] = await fetchEntityDelta(entityType, userId, companyId, sinceDate)
+      }),
+    )
 
     // Update sync cursors per entity
     await Promise.all(
@@ -54,7 +71,7 @@ mobileSyncRouter.get('/sync', requireAuth(), async (req: Request, res: Response)
            VALUES ($1,$2,$3,$4,$5)
            ON CONFLICT (device_id, user_id, entity_type) DO UPDATE
            SET last_synced_at=$4, records_synced=mobile_sync_cursors.records_synced+$5, updated_at=NOW()`,
-          [device_id, userId, entityType, syncedAt, changes[entityType]!.updated.length],
+          [device_id, userId, entityType, syncedAt, changes[entityType].updated.length],
         ),
       ),
     )
@@ -88,7 +105,6 @@ async function fetchEntityDelta(
   const since = sinceDate.getTime() === 0 ? null : sinceDate
 
   switch (entityType) {
-
     case 'profile': {
       const result = await query(
         `SELECT e.id, e.employee_number, e.first_name, e.last_name,
@@ -111,7 +127,7 @@ async function fetchEntityDelta(
         `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
         [userId, companyId],
       )
-      const employeeId = (empResult.rows[0] as Record<string, unknown> | undefined)?.['id']
+      const employeeId = (empResult.rows[0] as Record<string, unknown> | undefined)?.id
       if (!employeeId) return { updated: [], deleted: [] }
 
       const result = await query(
@@ -177,7 +193,7 @@ async function fetchEntityDelta(
         `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
         [userId, companyId],
       )
-      const employeeId = (empResult.rows[0] as Record<string, unknown> | undefined)?.['id']
+      const employeeId = (empResult.rows[0] as Record<string, unknown> | undefined)?.id
 
       const [poRows, otRows, leaveRows] = await Promise.all([
         query(
@@ -253,7 +269,7 @@ async function fetchEntityDelta(
         `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
         [userId, companyId],
       )
-      const employeeId = (empResult.rows[0] as Record<string, unknown> | undefined)?.['id']
+      const employeeId = (empResult.rows[0] as Record<string, unknown> | undefined)?.id
       if (!employeeId) return { updated: [], deleted: [] }
 
       const result = await query(
@@ -316,7 +332,9 @@ mobileSyncRouter.post('/actions', requireAuth(), async (req: Request, res: Respo
   }
 
   if (!Array.isArray(actions) || actions.length === 0) {
-    res.status(400).json({ success: false, error: { code: 'NO_ACTIONS', message: 'No actions provided' } })
+    res
+      .status(400)
+      .json({ success: false, error: { code: 'NO_ACTIONS', message: 'No actions provided' } })
     return
   }
 
@@ -360,7 +378,10 @@ mobileSyncRouter.post('/actions', requireAuth(), async (req: Request, res: Respo
   const succeeded = results.filter((r) => r.status === 'processed').length
   const failed = results.length - succeeded
 
-  log.info({ userId: req.auth!.userId, deviceId: device_id, succeeded, failed }, 'offline actions processed')
+  log.info(
+    { userId: req.auth!.userId, deviceId: device_id, succeeded, failed },
+    'offline actions processed',
+  )
   res.json({ success: true, data: { results, succeeded, failed } })
 })
 
@@ -373,7 +394,7 @@ interface OfflineAction {
   offline_duration_seconds?: number
 }
 
-type ActionResult = {
+interface ActionResult {
   client_id: string
   status: 'processed' | 'rejected' | 'conflict' | 'duplicate'
   record_id?: string | undefined
@@ -418,7 +439,7 @@ async function processOfflineAction(
 }
 
 async function processPunchAction(action: OfflineAction, auth: AuthContext): Promise<ActionResult> {
-  const p = action.payload as Record<string, unknown>
+  const p = action.payload
   try {
     const response = await fetch(`${env.HR_SERVICE_URL}/hr/attendance/punch`, {
       method: 'POST',
@@ -432,16 +453,19 @@ async function processPunchAction(action: OfflineAction, auth: AuthContext): Pro
         'x-session-id': 'mobile-sync',
       },
       body: JSON.stringify({
-        punch_type: p['punch_type'],
-        gps_lat: p['gps_lat'] ?? null,
-        gps_lng: p['gps_lng'] ?? null,
-        gps_accuracy_meters: p['gps_accuracy_meters'] ?? null,
+        punch_type: p.punch_type,
+        gps_lat: p.gps_lat ?? null,
+        gps_lng: p.gps_lng ?? null,
+        gps_accuracy_meters: p.gps_accuracy_meters ?? null,
         punched_at: action.action_taken_at,
         offline_submission: true,
       }),
     })
 
-    const result = (await response.json()) as { data?: { id?: string }; error?: { code: string; message: string } }
+    const result = (await response.json()) as {
+      data?: { id?: string }
+      error?: { code: string; message: string }
+    }
 
     if (!response.ok) {
       return {
@@ -453,13 +477,17 @@ async function processPunchAction(action: OfflineAction, auth: AuthContext): Pro
 
     return { client_id: action.client_id, status: 'processed', record_id: result.data?.id }
   } catch (err: unknown) {
-    return { client_id: action.client_id, status: 'rejected', rejection_reason: `Internal error: ${err instanceof Error ? err.message : String(err)}` }
+    return {
+      client_id: action.client_id,
+      status: 'rejected',
+      rejection_reason: `Internal error: ${err instanceof Error ? err.message : String(err)}`,
+    }
   }
 }
 
 async function processOTAction(action: OfflineAction, auth: AuthContext): Promise<ActionResult> {
-  const p = action.payload as Record<string, unknown>
-  const requestId = String(p['overtime_request_id'])
+  const p = action.payload
+  const requestId = String(p.overtime_request_id)
 
   const otResult = await pool.query<{ id: string; status: string }>(
     `SELECT id, status FROM overtime_requests WHERE id=$1`,
@@ -467,7 +495,11 @@ async function processOTAction(action: OfflineAction, auth: AuthContext): Promis
   )
 
   if (!otResult.rows[0]) {
-    return { client_id: action.client_id, status: 'rejected', rejection_reason: 'Overtime request not found' }
+    return {
+      client_id: action.client_id,
+      status: 'rejected',
+      rejection_reason: 'Overtime request not found',
+    }
   }
 
   if (otResult.rows[0].status !== 'pending') {
@@ -483,15 +515,15 @@ async function processOTAction(action: OfflineAction, auth: AuthContext): Promis
     `UPDATE overtime_requests
      SET status=$1, reviewed_by=$2, reviewed_at=$3, review_notes=$4
      WHERE id=$5`,
-    [newStatus, auth.userId, new Date(action.action_taken_at), p['review_notes'] ?? null, requestId],
+    [newStatus, auth.userId, new Date(action.action_taken_at), p.review_notes ?? null, requestId],
   )
 
   return { client_id: action.client_id, status: 'processed', record_id: requestId }
 }
 
 async function processLeaveAction(action: OfflineAction, auth: AuthContext): Promise<ActionResult> {
-  const p = action.payload as Record<string, unknown>
-  const requestId = String(p['leave_request_id'])
+  const p = action.payload
+  const requestId = String(p.leave_request_id)
 
   const leaveResult = await pool.query<{ id: string; status: string }>(
     `SELECT id, status FROM leave_requests WHERE id=$1`,
@@ -499,7 +531,11 @@ async function processLeaveAction(action: OfflineAction, auth: AuthContext): Pro
   )
 
   if (!leaveResult.rows[0]) {
-    return { client_id: action.client_id, status: 'rejected', rejection_reason: 'Leave request not found' }
+    return {
+      client_id: action.client_id,
+      status: 'rejected',
+      rejection_reason: 'Leave request not found',
+    }
   }
 
   if (leaveResult.rows[0].status !== 'pending') {
@@ -515,15 +551,18 @@ async function processLeaveAction(action: OfflineAction, auth: AuthContext): Pro
     `UPDATE leave_requests
      SET status=$1, reviewed_by=$2, reviewed_at=$3, review_notes=$4, updated_at=NOW()
      WHERE id=$5`,
-    [newStatus, auth.userId, new Date(action.action_taken_at), p['review_notes'] ?? null, requestId],
+    [newStatus, auth.userId, new Date(action.action_taken_at), p.review_notes ?? null, requestId],
   )
 
   return { client_id: action.client_id, status: 'processed', record_id: requestId }
 }
 
-async function processMaterialIssueAction(action: OfflineAction, auth: AuthContext): Promise<ActionResult> {
-  const p = action.payload as Record<string, unknown>
-  const lines = p['lines'] as Array<{ product_id: string; from_location_id: string; qty_issued: number }>
+async function processMaterialIssueAction(
+  action: OfflineAction,
+  auth: AuthContext,
+): Promise<ActionResult> {
+  const p = action.payload
+  const lines = p.lines as { product_id: string; from_location_id: string; qty_issued: number }[]
 
   // Validate stock availability
   for (const line of lines ?? []) {
@@ -543,7 +582,7 @@ async function processMaterialIssueAction(action: OfflineAction, auth: AuthConte
 
   try {
     const response = await fetch(
-      `${env.PROJECTS_SERVICE_URL}/projects/${String(p['project_id'])}/material-issues`,
+      `${env.PROJECTS_SERVICE_URL}/projects/${String(p.project_id)}/material-issues`,
       {
         method: 'POST',
         headers: {
@@ -555,13 +594,20 @@ async function processMaterialIssueAction(action: OfflineAction, auth: AuthConte
           'x-module': auth.module,
           'x-session-id': 'mobile-sync',
         },
-        body: JSON.stringify({ issue_date: p['issue_date'], notes: p['notes'], lines }),
+        body: JSON.stringify({ issue_date: p.issue_date, notes: p.notes, lines }),
       },
     )
 
-    const result = (await response.json()) as { data?: { id?: string }; error?: { message: string } }
+    const result = (await response.json()) as {
+      data?: { id?: string }
+      error?: { message: string }
+    }
     if (!response.ok) {
-      return { client_id: action.client_id, status: 'rejected', rejection_reason: result.error?.message }
+      return {
+        client_id: action.client_id,
+        status: 'rejected',
+        rejection_reason: result.error?.message,
+      }
     }
 
     const issueId = result.data?.id ?? ''
@@ -580,7 +626,11 @@ async function processMaterialIssueAction(action: OfflineAction, auth: AuthConte
 
     return { client_id: action.client_id, status: 'processed', record_id: issueId }
   } catch (err: unknown) {
-    return { client_id: action.client_id, status: 'rejected', rejection_reason: `Internal error: ${err instanceof Error ? err.message : String(err)}` }
+    return {
+      client_id: action.client_id,
+      status: 'rejected',
+      rejection_reason: `Internal error: ${err instanceof Error ? err.message : String(err)}`,
+    }
   }
 }
 
@@ -588,7 +638,10 @@ async function processMaterialIssueAction(action: OfflineAction, auth: AuthConte
 mobileSyncRouter.get('/device-info', requireAuth(), async (req: Request, res: Response) => {
   const { device_id } = req.query as Record<string, string>
   if (!device_id) {
-    res.status(400).json({ success: false, error: { code: 'MISSING_DEVICE_ID', message: 'device_id is required' } })
+    res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_DEVICE_ID', message: 'device_id is required' },
+    })
     return
   }
 
@@ -612,6 +665,9 @@ mobileSyncRouter.get('/device-info', requireAuth(), async (req: Request, res: Re
     })
   } catch (err) {
     log.error({ err }, 'failed to fetch device info')
-    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch device info' } })
+    res.status(500).json({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch device info' },
+    })
   }
 })

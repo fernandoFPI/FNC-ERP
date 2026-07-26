@@ -9,8 +9,18 @@ export const rolesRouter: IRouter = Router()
 
 const VALID_ROLES = ['system_admin', 'company_admin', 'module_admin', 'user'] as const
 const VALID_MODULES = [
-  'finance', 'procurement', 'inventory', 'hr', 'payroll',
-  'projects', 'manufacturing', 'rental', 'reporting', 'interco', 'admin', 'all',
+  'finance',
+  'procurement',
+  'inventory',
+  'hr',
+  'payroll',
+  'projects',
+  'manufacturing',
+  'rental',
+  'reporting',
+  'interco',
+  'admin',
+  'all',
 ] as const
 
 // ── GET /auth/roles ────────────────────────────────────────────────────────────
@@ -28,8 +38,14 @@ rolesRouter.get(
       const values: unknown[] = []
       let p = 0
 
-      if (user_id)    { conditions.push(`ucr.user_id    = $${++p}`); values.push(user_id) }
-      if (company_id) { conditions.push(`ucr.company_id = $${++p}`); values.push(company_id) }
+      if (user_id) {
+        conditions.push(`ucr.user_id    = $${++p}`)
+        values.push(user_id)
+      }
+      if (company_id) {
+        conditions.push(`ucr.company_id = $${++p}`)
+        values.push(company_id)
+      }
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
@@ -85,8 +101,14 @@ rolesRouter.post(
         query(`SELECT id FROM companies WHERE id = $1 AND is_active = true`, [company_id]),
       ])
 
-      if (!userExists.rows[0]) { sendError(res, 404, 'USER_NOT_FOUND', 'User not found or inactive'); return }
-      if (!companyExists.rows[0]) { sendError(res, 404, 'COMPANY_NOT_FOUND', 'Company not found or inactive'); return }
+      if (!userExists.rows[0]) {
+        sendError(res, 404, 'USER_NOT_FOUND', 'User not found or inactive')
+        return
+      }
+      if (!companyExists.rows[0]) {
+        sendError(res, 404, 'COMPANY_NOT_FOUND', 'Company not found or inactive')
+        return
+      }
 
       const assignment = await withSystemTransaction(async (client) => {
         const result = await client.query(
@@ -103,7 +125,7 @@ rolesRouter.post(
           companyId: undefined,
           action: 'ROLE_ASSIGNED',
           tableName: 'user_company_roles',
-          recordId: result.rows[0]?.['id'],
+          recordId: result.rows[0]?.id,
           newValues: { user_id, company_id, role, module: roleModule },
           ipAddress: req.ip ?? undefined,
           userAgent: String(req.headers['user-agent'] ?? ''),
@@ -129,11 +151,19 @@ rolesRouter.patch(
   requirePermission('admin.roles.admin', 'admin'),
   async (req: Request, res: Response): Promise<void> => {
     const { is_active } = req.body as { is_active?: boolean }
-    if (is_active === undefined) { sendError(res, 400, 'MISSING_FIELDS', 'is_active is required'); return }
+    if (is_active === undefined) {
+      sendError(res, 400, 'MISSING_FIELDS', 'is_active is required')
+      return
+    }
 
     try {
-      const existing = await query(`SELECT * FROM user_company_roles WHERE id = $1`, [req.params['id']])
-      if (!existing.rows[0]) { sendError(res, 404, 'NOT_FOUND', 'Role assignment not found'); return }
+      const existing = await query(`SELECT * FROM user_company_roles WHERE id = $1`, [
+        req.params['id'],
+      ])
+      if (!existing.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Role assignment not found')
+        return
+      }
 
       await withSystemTransaction(async (client) => {
         await client.query(
@@ -141,11 +171,10 @@ rolesRouter.patch(
           [is_active, req.params['id']],
         )
 
-        if (is_active === false) {
-          await client.query(
-            `DELETE FROM sessions WHERE user_id = $1`,
-            [existing.rows[0]?.['user_id']],
-          )
+        if (!is_active) {
+          await client.query(`DELETE FROM sessions WHERE user_id = $1`, [
+            existing.rows[0]?.['user_id'],
+          ])
         }
 
         await logAudit({
@@ -159,7 +188,10 @@ rolesRouter.patch(
         })
       })
 
-      res.json({ success: true, data: { message: `Role ${is_active ? 'activated' : 'deactivated'}` } })
+      res.json({
+        success: true,
+        data: { message: `Role ${is_active ? 'activated' : 'deactivated'}` },
+      })
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update role assignment', err)
     }
@@ -175,8 +207,13 @@ rolesRouter.delete(
   requirePermission('admin.roles.admin', 'admin'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const existing = await query(`SELECT * FROM user_company_roles WHERE id = $1`, [req.params['id']])
-      if (!existing.rows[0]) { sendError(res, 404, 'NOT_FOUND', 'Role assignment not found'); return }
+      const existing = await query(`SELECT * FROM user_company_roles WHERE id = $1`, [
+        req.params['id'],
+      ])
+      if (!existing.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Role assignment not found')
+        return
+      }
 
       await withSystemTransaction(async (client) => {
         await client.query(`DELETE FROM user_company_roles WHERE id = $1`, [req.params['id']])

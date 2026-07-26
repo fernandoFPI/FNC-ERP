@@ -22,65 +22,107 @@ locationsRouter.get('/', requirePermission('hr.departments.view', 'view'), async
       [req.auth!.companyId],
     )
     sendOk(res, result.rows)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch locations', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch locations', err)
+  }
 })
 
 locationsRouter.get('/:id', requirePermission('hr.departments.view', 'view'), async (req, res) => {
   try {
-    const result = await query(
-      `SELECT * FROM work_locations WHERE id = $1 AND company_id = $2`,
-      [req.params['id'], req.auth!.companyId],
-    )
+    const result = await query(`SELECT * FROM work_locations WHERE id = $1 AND company_id = $2`, [
+      req.params['id'],
+      req.auth!.companyId,
+    ])
     const row = result.rows[0]
-    if (!row) return sendError(res, 404, 'NOT_FOUND', 'Location not found')
+    if (!row) {
+      sendError(res, 404, 'NOT_FOUND', 'Location not found')
+      return
+    }
     sendOk(res, row)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch location', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch location', err)
+  }
 })
 
 locationsRouter.post('/', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
   const parsed = LocationSchema.safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    return
+  }
   try {
     const { name, address, latitude, longitude, geofence_radius_m } = parsed.data
     const result = await query(
       `INSERT INTO work_locations (company_id, name, address, latitude, longitude, geofence_radius_m)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.auth!.companyId, name, address ?? null, latitude ?? null, longitude ?? null, geofence_radius_m],
+      [
+        req.auth!.companyId,
+        name,
+        address ?? null,
+        latitude ?? null,
+        longitude ?? null,
+        geofence_radius_m,
+      ],
     )
     sendOk(res, result.rows[0]!, 201)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create location', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create location', err)
+  }
 })
 
 locationsRouter.put('/:id', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
   const parsed = LocationSchema.partial().safeParse(req.body)
-  if (!parsed.success) return sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+  if (!parsed.success) {
+    sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
+    return
+  }
   try {
     const existing = await query(
       `SELECT id FROM work_locations WHERE id = $1 AND company_id = $2`,
       [req.params['id'], req.auth!.companyId],
     )
-    if (!existing.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Location not found')
+    if (!existing.rows[0]) {
+      sendError(res, 404, 'NOT_FOUND', 'Location not found')
+      return
+    }
     const result = await query(
       `UPDATE work_locations SET name = COALESCE($1, name), address = COALESCE($2, address),
        latitude = COALESCE($3, latitude), longitude = COALESCE($4, longitude),
        geofence_radius_m = COALESCE($5, geofence_radius_m), updated_at = NOW()
        WHERE id = $6 AND company_id = $7 RETURNING *`,
-      [parsed.data.name ?? null, parsed.data.address ?? null, parsed.data.latitude ?? null,
-       parsed.data.longitude ?? null, parsed.data.geofence_radius_m ?? null,
-       req.params['id'], req.auth!.companyId],
+      [
+        parsed.data.name ?? null,
+        parsed.data.address ?? null,
+        parsed.data.latitude ?? null,
+        parsed.data.longitude ?? null,
+        parsed.data.geofence_radius_m ?? null,
+        req.params['id'],
+        req.auth!.companyId,
+      ],
     )
     sendOk(res, result.rows[0]!)
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update location', err) }
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update location', err)
+  }
 })
 
-locationsRouter.delete('/:id', requirePermission('hr.departments.edit', 'edit'), async (req, res) => {
-  try {
-    const result = await query(
-      `UPDATE work_locations SET is_active = FALSE, updated_at = NOW()
+locationsRouter.delete(
+  '/:id',
+  requirePermission('hr.departments.edit', 'edit'),
+  async (req, res) => {
+    try {
+      const result = await query(
+        `UPDATE work_locations SET is_active = FALSE, updated_at = NOW()
        WHERE id = $1 AND company_id = $2 RETURNING id`,
-      [req.params['id'], req.auth!.companyId],
-    )
-    if (!result.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Location not found')
-    sendOk(res, { deleted: true })
-  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete location', err) }
-})
+        [req.params['id'], req.auth!.companyId],
+      )
+      if (!result.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Location not found')
+        return
+      }
+      sendOk(res, { deleted: true })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to delete location', err)
+    }
+  },
+)

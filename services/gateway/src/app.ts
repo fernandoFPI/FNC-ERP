@@ -75,12 +75,16 @@ export async function createApp(): Promise<express.Application> {
   app.use(requestLogger())
 
   // ── 6a. Dev-mode local file serving (must be before auth middleware) ─────────
-  if (process.env['B2_KEY_ID'] === 'dev-placeholder' || !process.env['B2_KEY_ID']) {
+  if (process.env.B2_KEY_ID === 'dev-placeholder' || !process.env.B2_KEY_ID) {
     const uploadsDir = devUploadsDir()
-    app.use('/api/v1/files/dev-uploads', (_req, res, next) => {
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
-      next()
-    }, express.static(uploadsDir))
+    app.use(
+      '/api/v1/files/dev-uploads',
+      (_req, res, next) => {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+        next()
+      },
+      express.static(uploadsDir),
+    )
   }
 
   // ── 6. Health check (no auth, no rate limit) ────────────────
@@ -198,8 +202,17 @@ export async function createApp(): Promise<express.Application> {
 
   // ── 14. Backward-compat redirects (unversioned → v1) ────────
   const services = [
-    'auth', 'finance', 'procurement', 'inventory', 'interco',
-    'hr', 'notifications', 'projects', 'manufacturing', 'rental', 'reporting',
+    'auth',
+    'finance',
+    'procurement',
+    'inventory',
+    'interco',
+    'hr',
+    'notifications',
+    'projects',
+    'manufacturing',
+    'rental',
+    'reporting',
   ]
   for (const svc of services) {
     app.use(`/api/${svc}`, (req, res) => {
