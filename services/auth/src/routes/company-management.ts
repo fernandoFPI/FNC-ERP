@@ -138,6 +138,46 @@ companyManagementRouter.post(
           )
         }
 
+        // Default project lifecycle phases + tab gating (mirrors migration 166's backfill)
+        await client.query(
+          `INSERT INTO lifecycle_phases (company_id, key, label, sequence, optional)
+           SELECT $1, p.key, p.label, p.sequence, p.optional
+           FROM (VALUES
+             ('enquiry',         'Client Enquiry',  1, false),
+             ('scope_review',    'Scope Review',    2, false),
+             ('bidding',         'Bidding',         3, false),
+             ('client_approval', 'Client Approval', 4, false),
+             ('execution',       'Execution',       5, false),
+             ('closeout',        'Closeout',        6, false)
+           ) AS p(key, label, sequence, optional)
+           ON CONFLICT (company_id, key) DO NOTHING`,
+          [cid],
+        )
+        await client.query(
+          `INSERT INTO lifecycle_phase_modules (company_id, module_key, min_phase_key, sequence)
+           SELECT $1, m.module_key, m.min_phase_key, m.sequence
+           FROM (VALUES
+             ('overview',         'enquiry',      1),
+             ('client_documents', 'enquiry',      2),
+             ('rfq_lines',        'scope_review', 3),
+             ('bidding',          'enquiry',      4),
+             ('contracts',        'bidding',      5),
+             ('engineering',      'scope_review', 6),
+             ('execution',        'execution',    7),
+             ('handover',         'execution',    8),
+             ('procurement',      'scope_review', 9),
+             ('cost_control',     'scope_review', 10),
+             ('variation_orders', 'execution',    11),
+             ('risk_register',    'scope_review', 12),
+             ('meetings',         'scope_review', 13),
+             ('attachments',      'enquiry',      14),
+             ('team',             'enquiry',      15),
+             ('history',          'enquiry',      16)
+           ) AS m(module_key, min_phase_key, sequence)
+           ON CONFLICT (company_id, module_key) DO NOTHING`,
+          [cid],
+        )
+
         // Accounting periods for current year
         const currentYear = new Date().getFullYear()
         for (let month = 1; month <= 12; month++) {
