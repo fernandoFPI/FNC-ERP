@@ -30,7 +30,14 @@ function TestApp({ authenticated }: { authenticated: boolean }) {
   if (authenticated) {
     useAuthStore.setState({
       isAuthenticated: true,
-      user: { id: '1', email: 'test@test.com', mfaEnabled: false, role: 'user', permissions: {}, profileCompleted: true },
+      user: {
+        id: '1',
+        email: 'test@test.com',
+        mfaEnabled: false,
+        role: 'user',
+        permissions: {},
+        profileCompleted: true,
+      },
       accessToken: VALID_TOKEN,
       refreshToken: 'rtok',
     })
@@ -40,7 +47,14 @@ function TestApp({ authenticated }: { authenticated: boolean }) {
       <MemoryRouter initialEntries={['/protected']}>
         <Routes>
           <Route path="/login" element={<div>Login page</div>} />
-          <Route path="/protected" element={<PrivateRoute><div>Protected content</div></PrivateRoute>} />
+          <Route
+            path="/protected"
+            element={
+              <PrivateRoute>
+                <div>Protected content</div>
+              </PrivateRoute>
+            }
+          />
         </Routes>
       </MemoryRouter>
     </ThemeProvider>

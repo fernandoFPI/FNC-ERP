@@ -31,7 +31,7 @@ interface SubmoduleSectionProps {
   moduleKey: string
   subKey: string
   subLabel: string
-  permissions: Array<{ key: string; label: string }>
+  permissions: { key: string; label: string }[]
   value: Record<string, AccessLevel>
   onChange: (key: string, level: AccessLevel) => void
   disabled?: boolean
@@ -50,16 +50,18 @@ function SubmoduleSection({
 }: SubmoduleSectionProps) {
   return (
     <div style={{ marginBottom: '8px' }}>
-      <div style={{
-        fontSize: '11px',
-        fontWeight: 600,
-        color: theme.textMuted,
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-        padding: '4px 0',
-        borderBottom: `1px solid ${theme.border}`,
-        marginBottom: '6px',
-      }}>
+      <div
+        style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          color: theme.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          padding: '4px 0',
+          borderBottom: `1px solid ${theme.border}`,
+          marginBottom: '6px',
+        }}
+      >
         {subLabel}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -67,20 +69,27 @@ function SubmoduleSection({
           const current = value[perm.key] ?? 'none'
           const isEnabled = current !== 'none'
           return (
-            <div key={perm.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0' }}>
+            <div
+              key={perm.key}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '4px 0' }}
+            >
               <input
                 type="checkbox"
                 checked={isEnabled}
                 disabled={disabled}
-                onChange={(e) => onChange(perm.key, e.target.checked ? 'view' : 'none')}
+                onChange={(e) => {
+                  onChange(perm.key, e.target.checked ? 'view' : 'none')
+                }}
                 style={{ cursor: disabled ? 'default' : 'pointer', flexShrink: 0 }}
               />
-              <span style={{
-                fontSize: '12px',
-                color: isEnabled ? theme.textPrimary : theme.textMuted,
-                minWidth: '180px',
-                flexShrink: 0,
-              }}>
+              <span
+                style={{
+                  fontSize: '12px',
+                  color: isEnabled ? theme.textPrimary : theme.textMuted,
+                  minWidth: '180px',
+                  flexShrink: 0,
+                }}
+              >
                 {perm.label}
               </span>
               {isEnabled && (
@@ -89,7 +98,9 @@ function SubmoduleSection({
                     <button
                       key={level}
                       disabled={disabled}
-                      onClick={() => onChange(perm.key, level)}
+                      onClick={() => {
+                        onChange(perm.key, level)
+                      }}
                       style={{
                         padding: '2px 8px',
                         fontSize: '11px',
@@ -117,7 +128,7 @@ function SubmoduleSection({
 
 interface ModuleRowProps {
   moduleLabel: string
-  submodules: Array<{ key: string; label: string; permissions: Array<{ key: string; label: string }> }>
+  submodules: { key: string; label: string; permissions: { key: string; label: string }[] }[]
   value: Record<string, AccessLevel>
   onChange: (key: string, level: AccessLevel) => void
   disabled?: boolean
@@ -125,21 +136,33 @@ interface ModuleRowProps {
   moduleKey: string
 }
 
-function ModuleRow({ moduleLabel, submodules, value, onChange, disabled, theme, moduleKey }: ModuleRowProps) {
+function ModuleRow({
+  moduleLabel,
+  submodules,
+  value,
+  onChange,
+  disabled,
+  theme,
+  moduleKey,
+}: ModuleRowProps) {
   const [expanded, setExpanded] = useState(true)
 
   const allPermKeys = submodules.flatMap((s) => s.permissions.map((p) => p.key))
   const enabledCount = allPermKeys.filter((k) => (value[k] ?? 'none') !== 'none').length
 
   return (
-    <div style={{
-      border: `1px solid ${theme.border}`,
-      borderRadius: '8px',
-      marginBottom: '10px',
-      overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        border: `1px solid ${theme.border}`,
+        borderRadius: '8px',
+        marginBottom: '10px',
+        overflow: 'hidden',
+      }}
+    >
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => {
+          setExpanded((v) => !v)
+        }}
         style={{
           width: '100%',
           display: 'flex',
@@ -153,16 +176,20 @@ function ModuleRow({ moduleLabel, submodules, value, onChange, disabled, theme, 
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{moduleLabel}</span>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+            {moduleLabel}
+          </span>
           {enabledCount > 0 && (
-            <span style={{
-              fontSize: '10px',
-              padding: '1px 6px',
-              borderRadius: '10px',
-              background: theme.accentBg,
-              color: theme.accent,
-              fontWeight: 600,
-            }}>
+            <span
+              style={{
+                fontSize: '10px',
+                padding: '1px 6px',
+                borderRadius: '10px',
+                background: theme.accentBg,
+                color: theme.accent,
+                fontWeight: 600,
+              }}
+            >
               {enabledCount} active
             </span>
           )}

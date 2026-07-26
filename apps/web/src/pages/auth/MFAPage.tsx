@@ -28,7 +28,9 @@ export default function MFAPage() {
     }
     update()
     const id = setInterval(update, 1000)
-    return () => clearInterval(id)
+    return () => {
+      clearInterval(id)
+    }
   }, [])
 
   useEffect(() => {
@@ -36,7 +38,10 @@ export default function MFAPage() {
   }, [])
 
   async function submit(totpCode: string) {
-    if (!state?.tempToken) { navigate('/login'); return }
+    if (!state?.tempToken) {
+      navigate('/login')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -62,15 +67,17 @@ export default function MFAPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: theme.bgCanvas,
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: theme.bgCanvas,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
       {theme.hasOrbs && (
         <>
           <div className="orb orb-1" style={{ background: theme.orb1 }} />
@@ -78,21 +85,50 @@ export default function MFAPage() {
         </>
       )}
 
-      <div style={{ width: '100%', maxWidth: '380px', padding: '24px', position: 'relative', zIndex: 1 }}>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '380px',
+          padding: '24px',
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
         <Card padding="lg" rimHighlight>
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <div style={{
-              width: '48px', height: '48px', borderRadius: '14px',
-              background: theme.accentBg, border: `1px solid ${theme.accentBorder}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 12px',
-            }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.8">
+            <div
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '14px',
+                background: theme.accentBg,
+                border: `1px solid ${theme.accentBorder}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 12px',
+              }}
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={theme.accent}
+                strokeWidth="1.8"
+              >
                 <rect x="5" y="11" width="14" height="10" rx="2" />
                 <path d="M8 11V7a4 4 0 0 1 8 0v4" />
               </svg>
             </div>
-            <h1 style={{ fontSize: '18px', fontWeight: 700, color: theme.textPrimary, margin: '0 0 4px' }}>
+            <h1
+              style={{
+                fontSize: '18px',
+                fontWeight: 700,
+                color: theme.textPrimary,
+                margin: '0 0 4px',
+              }}
+            >
               Two-factor authentication
             </h1>
             {state?.email && (
@@ -100,22 +136,53 @@ export default function MFAPage() {
             )}
           </div>
 
-          <p style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '20px', textAlign: 'center' }}>
+          <p
+            style={{
+              fontSize: '13px',
+              color: theme.textSecondary,
+              marginBottom: '20px',
+              textAlign: 'center',
+            }}
+          >
             Enter the 6-digit code from your authenticator app.
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* Trust device — above input so it's visible before keyboard opens */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${trustDevice ? theme.accentBorder : theme.border}`, background: trustDevice ? theme.accentBg : 'transparent', transition: 'all 0.15s' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: `1px solid ${trustDevice ? theme.accentBorder : theme.border}`,
+                background: trustDevice ? theme.accentBg : 'transparent',
+                transition: 'all 0.15s',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={trustDevice}
-                onChange={(e) => setTrustDevice(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: theme.accent, cursor: 'pointer', flexShrink: 0 }}
+                onChange={(e) => {
+                  setTrustDevice(e.target.checked)
+                }}
+                style={{
+                  width: '16px',
+                  height: '16px',
+                  accentColor: theme.accent,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
               />
               <div>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>Trust this device for 30 days</div>
-                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>Skip 2FA on this browser for 30 days</div>
+                <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
+                  Trust this device for 30 days
+                </div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                  Skip 2FA on this browser for 30 days
+                </div>
               </div>
             </label>
 
@@ -141,32 +208,55 @@ export default function MFAPage() {
                 outline: 'none',
                 width: '100%',
               }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = theme.accent }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = error ? theme.dangerBorder : theme.borderInput }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = theme.accent
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = error ? theme.dangerBorder : theme.borderInput
+              }}
             />
 
             {/* Countdown */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-              <div style={{
-                width: '28px', height: '28px', borderRadius: '50%',
-                border: `2px solid ${theme.border}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                position: 'relative',
-              }}>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted }}>{secondsLeft}</span>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              <div
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '50%',
+                  border: `2px solid ${theme.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                }}
+              >
+                <span style={{ fontSize: '10px', fontWeight: 700, color: theme.textMuted }}>
+                  {secondsLeft}
+                </span>
               </div>
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>seconds until code expires</span>
+              <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                seconds until code expires
+              </span>
             </div>
 
             {error && (
-              <div style={{
-                padding: '10px 12px',
-                background: theme.dangerBg,
-                border: `1px solid ${theme.dangerBorder}`,
-                borderRadius: '8px',
-                fontSize: '13px',
-                color: theme.danger,
-              }}>
+              <div
+                style={{
+                  padding: '10px 12px',
+                  background: theme.dangerBg,
+                  border: `1px solid ${theme.dangerBorder}`,
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: theme.danger,
+                }}
+              >
                 {error}
               </div>
             )}
@@ -185,7 +275,12 @@ export default function MFAPage() {
 
             <Link
               to="/login"
-              style={{ textAlign: 'center', fontSize: '13px', color: theme.textMuted, textDecoration: 'none' }}
+              style={{
+                textAlign: 'center',
+                fontSize: '13px',
+                color: theme.textMuted,
+                textDecoration: 'none',
+              }}
             >
               ← Back to sign in
             </Link>

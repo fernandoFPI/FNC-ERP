@@ -3,7 +3,11 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { MockedProvider } from '@apollo/client/testing'
 import { ThemeProvider } from '../../../theme/ThemeContext'
-import { MY_PROFILE_QUERY, MY_PREFERENCES_QUERY, MY_SESSIONS_QUERY } from '../../../graphql/settings'
+import {
+  MY_PROFILE_QUERY,
+  MY_PREFERENCES_QUERY,
+  MY_SESSIONS_QUERY,
+} from '../../../graphql/settings'
 import ProfilePage from '../profile/ProfilePage'
 import AppearancePage from '../appearance/AppearancePage'
 import NotificationPreferencesPage from '../notifications/NotificationPreferencesPage'
@@ -43,7 +47,15 @@ const sessionsMock = {
   result: {
     data: {
       mySessions: [
-        { id: 's1', deviceName: 'Chrome on Windows', platform: 'web', ipAddress: '192.168.1.1', createdAt: '2026-06-07T08:00:00Z', lastActive: '2026-06-07T10:00:00Z', isCurrent: true },
+        {
+          id: 's1',
+          deviceName: 'Chrome on Windows',
+          platform: 'web',
+          ipAddress: '192.168.1.1',
+          createdAt: '2026-06-07T08:00:00Z',
+          lastActive: '2026-06-07T10:00:00Z',
+          isCurrent: true,
+        },
       ],
     },
   },
@@ -53,11 +65,9 @@ function wrap(component: React.ReactNode, mocks: unknown[] = []) {
   return render(
     <MockedProvider mocks={mocks as never} addTypename={false}>
       <MemoryRouter>
-        <ThemeProvider>
-          {component}
-        </ThemeProvider>
+        <ThemeProvider>{component}</ThemeProvider>
       </MemoryRouter>
-    </MockedProvider>
+    </MockedProvider>,
   )
 }
 
@@ -72,7 +82,7 @@ describe('SettingsLayout', () => {
             </Routes>
           </ThemeProvider>
         </MemoryRouter>
-      </MockedProvider>
+      </MockedProvider>,
     )
     expect(screen.getByText('Profile')).toBeInTheDocument()
     expect(screen.getByText('Appearance')).toBeInTheDocument()
@@ -89,7 +99,7 @@ describe('SettingsLayout', () => {
             </Routes>
           </ThemeProvider>
         </MemoryRouter>
-      </MockedProvider>
+      </MockedProvider>,
     )
     expect(screen.queryByText('Company')).not.toBeInTheDocument()
   })

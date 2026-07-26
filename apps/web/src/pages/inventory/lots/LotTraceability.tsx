@@ -5,7 +5,8 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { DetailHeader } from '../../../components/ui/DetailHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { Timeline, TimelineEvent } from '../../../components/ui/Timeline'
+import type { TimelineEvent } from '../../../components/ui/Timeline'
+import { Timeline } from '../../../components/ui/Timeline'
 
 interface LotMove {
   id: string
@@ -86,13 +87,17 @@ export default function LotTraceability() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
       <DetailHeader
         title={lot.lot_number}
-        subtitle={lot.product_name ? `${lot.product_name}${lot.sku ? ` · ${lot.sku}` : ''}` : lot.product_id}
+        subtitle={
+          lot.product_name ? `${lot.product_name}${lot.sku ? ` · ${lot.sku}` : ''}` : lot.product_id
+        }
         backPath="/inventory/lots"
         backLabel="Lots"
         actions={
           lot.product_id ? (
             <button
-              onClick={() => navigate(`/inventory/products/${lot.product_id}`)}
+              onClick={() => {
+                navigate(`/inventory/products/${lot.product_id}`)
+              }}
               style={{
                 background: 'transparent',
                 border: `1px solid ${theme.border}`,
@@ -111,11 +116,23 @@ export default function LotTraceability() {
       />
 
       {/* Summary cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginTop: '20px', marginBottom: '20px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '12px',
+          marginTop: '20px',
+          marginBottom: '20px',
+        }}
+      >
         {[
           { label: 'Current qty', value: currentQty.toLocaleString(), highlight: currentQty === 0 },
           { label: 'Current location', value: lot.current_location_name ?? '—', highlight: false },
-          { label: 'Created', value: new Date(lot.created_at).toLocaleDateString(), highlight: false },
+          {
+            label: 'Created',
+            value: new Date(lot.created_at).toLocaleDateString(),
+            highlight: false,
+          },
         ].map(({ label, value, highlight }) => (
           <div
             key={label}
@@ -126,8 +143,25 @@ export default function LotTraceability() {
               padding: '16px',
             }}
           >
-            <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-            <div style={{ fontSize: '18px', fontWeight: 700, color: highlight ? theme.warning : theme.textPrimary, marginTop: '6px', fontFamily: 'monospace' }}>
+            <div
+              style={{
+                fontSize: '11px',
+                color: theme.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}
+            >
+              {label}
+            </div>
+            <div
+              style={{
+                fontSize: '18px',
+                fontWeight: 700,
+                color: highlight ? theme.warning : theme.textPrimary,
+                marginTop: '6px',
+                fontFamily: 'monospace',
+              }}
+            >
               {value}
             </div>
           </div>
@@ -136,27 +170,41 @@ export default function LotTraceability() {
 
       {/* Expiry */}
       {lot.expiry_date && (
-        <div style={{
-          background: theme.bgSurface,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '10px',
-          padding: '12px 16px',
-          marginBottom: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-        }}>
+        <div
+          style={{
+            background: theme.bgSurface,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '10px',
+            padding: '12px 16px',
+            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+          }}
+        >
           <span style={{ fontSize: '13px', color: theme.textMuted }}>Expiry date</span>
-          <span style={{ fontSize: '14px', color: theme.textSecondary, fontFamily: 'monospace' }}>{lot.expiry_date}</span>
+          <span style={{ fontSize: '14px', color: theme.textSecondary, fontFamily: 'monospace' }}>
+            {lot.expiry_date}
+          </span>
           {expiryBadge(lot.expiry_date)}
         </div>
       )}
 
       {/* Move timeline */}
       <Card>
-        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
+        <div
+          style={{
+            padding: '14px 16px',
+            borderBottom: `1px solid ${theme.border}`,
+            fontWeight: 600,
+            color: theme.textPrimary,
+            fontSize: '14px',
+          }}
+        >
           Movement history
-          <span style={{ fontSize: '12px', fontWeight: 400, color: theme.textMuted, marginLeft: '8px' }}>
+          <span
+            style={{ fontSize: '12px', fontWeight: 400, color: theme.textMuted, marginLeft: '8px' }}
+          >
             {events.length} move{events.length !== 1 ? 's' : ''}
           </span>
         </div>

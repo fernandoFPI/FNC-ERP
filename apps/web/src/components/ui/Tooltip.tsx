@@ -25,8 +25,12 @@ export function Tooltip({ content, children, position = 'top', className = '' }:
       ref={ref}
       className={className}
       style={{ position: 'relative', display: 'inline-flex' }}
-      onMouseEnter={() => setVisible(true)}
-      onMouseLeave={() => setVisible(false)}
+      onMouseEnter={() => {
+        setVisible(true)
+      }}
+      onMouseLeave={() => {
+        setVisible(false)
+      }}
     >
       {children}
       {visible && (

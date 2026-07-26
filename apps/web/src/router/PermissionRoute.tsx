@@ -10,16 +10,25 @@ interface PermissionRouteProps {
   children: React.ReactNode
 }
 
-export function PermissionRoute({
-  permKey,
-  minLevel = 'view',
-  children,
-}: PermissionRouteProps) {
+export function PermissionRoute({ permKey, minLevel = 'view', children }: PermissionRouteProps) {
   const { can } = usePermission()
 
   if (!can(permKey, minLevel)) {
     return (
-      <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}><Spinner size="lg" /></div>}>
+      <Suspense
+        fallback={
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+            }}
+          >
+            <Spinner size="lg" />
+          </div>
+        }
+      >
         <ForbiddenPage />
       </Suspense>
     )

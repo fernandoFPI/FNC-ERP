@@ -10,15 +10,28 @@ interface SearchInputProps {
   style?: React.CSSProperties
 }
 
-export function SearchInput({ value, onChange, placeholder = 'Search...', className = '', style }: SearchInputProps) {
+export function SearchInput({
+  value,
+  onChange,
+  placeholder = 'Search...',
+  className = '',
+  style,
+}: SearchInputProps) {
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
 
   return (
-    <div className={className} style={{ position: 'relative', display: 'flex', alignItems: 'center', ...style }}>
+    <div
+      className={className}
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', ...style }}
+    >
       <svg
-        width="14" height="14" viewBox="0 0 24 24"
-        fill="none" stroke={theme.textMuted} strokeWidth="2"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={theme.textMuted}
+        strokeWidth="2"
         style={{ position: 'absolute', left: '10px', pointerEvents: 'none', flexShrink: 0 }}
       >
         <circle cx="11" cy="11" r="8" />
@@ -44,8 +57,12 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', classN
           width: '100%',
           backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
         }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = theme.accent }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = theme.borderInput }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = theme.accent
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = theme.borderInput
+        }}
       />
     </div>
   )

@@ -11,14 +11,16 @@ function getBreakpoint(w: number): Breakpoint {
 
 export function useBreakpoint() {
   const [bp, setBp] = useState<Breakpoint>(() =>
-    getBreakpoint(typeof window !== 'undefined' ? window.innerWidth : 1440)
+    getBreakpoint(typeof window !== 'undefined' ? window.innerWidth : 1440),
   )
 
   useEffect(() => {
     let frame: number
     const handler = () => {
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => setBp(getBreakpoint(window.innerWidth)))
+      frame = requestAnimationFrame(() => {
+        setBp(getBreakpoint(window.innerWidth))
+      })
     }
     window.addEventListener('resize', handler, { passive: true })
     return () => {
@@ -29,10 +31,10 @@ export function useBreakpoint() {
 
   return {
     bp,
-    isPhone:   bp === 'phone',
-    isTablet:  bp === 'tablet',
+    isPhone: bp === 'phone',
+    isTablet: bp === 'tablet',
     isDesktop: bp === 'desktop',
-    isTouch:   bp !== 'desktop',
-    isMobile:  bp === 'phone',  // backward compat — same meaning as before
+    isTouch: bp !== 'desktop',
+    isMobile: bp === 'phone', // backward compat — same meaning as before
   }
 }

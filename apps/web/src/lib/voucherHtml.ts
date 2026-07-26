@@ -69,12 +69,22 @@ export interface VoucherPrintData {
 }
 
 function fmtDate(d: string): string {
-  try { return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) }
-  catch { return d }
+  try {
+    return new Date(d).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    })
+  } catch {
+    return d
+  }
 }
 
 function fmtNum(n: number): string {
-  return new Intl.NumberFormat('en-IQ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)
+  return new Intl.NumberFormat('en-IQ', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n)
 }
 
 // ─── Shared base styles ──────────────────────────────────────────────────────
@@ -129,20 +139,21 @@ const TEMPLATE_CSS = `
 // ─── PAYMENT VOUCHER ─────────────────────────────────────────────────────────
 
 function buildPVTemplateHTML(data: VoucherPrintData, template: string): string {
-  const journalList = data.journals.length > 0
-    ? data.journals.map((j) => `${j.reference} (${fmtDate(j.entry_date)})`).join('، ')
-    : '—'
+  const journalList =
+    data.journals.length > 0
+      ? data.journals.map((j) => `${j.reference} (${fmtDate(j.entry_date)})`).join('، ')
+      : '—'
 
   const refText = data.reference_to ?? journalList
 
   // ── Column x-positions (A4 landscape 297mm wide)
   // 5 acct cols × 14mm = 70mm | Statement 100mm | دينار 35mm | دولار 35mm
-  const C5  = { l: 39,   w: 14 }  // column "5"
-  const C4  = { l: 55,  w: 14 }  // column "4"
-  const C3  = { l: 73,  w: 14 }  // column "3"
-  const C2  = { l: 89,  w: 14 }  // column "2"
-  const C1  = { l: 106,  w: 14 }  // column "1"
-  const CS  = { l: 125,  w: 115 } // Statement / البيان
+  const C5 = { l: 39, w: 14 } // column "5"
+  const C4 = { l: 55, w: 14 } // column "4"
+  const C3 = { l: 73, w: 14 } // column "3"
+  const C2 = { l: 89, w: 14 } // column "2"
+  const C1 = { l: 106, w: 14 } // column "1"
+  const CS = { l: 125, w: 115 } // Statement / البيان
   const CIQD = { l: 195, w: 45 } // دينار (IQD)
   const CUSD = { l: 232, w: 38 } // دولار (USD)
 
@@ -151,9 +162,11 @@ function buildPVTemplateHTML(data: VoucherPrintData, template: string): string {
   const ROW_H = 10
   const MAX_ROWS = 7
 
-  const lineOverlays = data.lines.slice(0, MAX_ROWS).map((l, i) => {
-    const y = ROW_START + i * ROW_H
-    return `
+  const lineOverlays = data.lines
+    .slice(0, MAX_ROWS)
+    .map((l, i) => {
+      const y = ROW_START + i * ROW_H
+      return `
       <span class="val val-c" style="top:${y}mm;left:${C5.l}mm;width:${C5.w}mm">${l.acct_1 ?? ''}</span>
       <span class="val val-c" style="top:${y}mm;left:${C4.l}mm;width:${C4.w}mm">${l.acct_2 ?? ''}</span>
       <span class="val val-c" style="top:${y}mm;left:${C3.l}mm;width:${C3.w}mm">${l.acct_3 ?? ''}</span>
@@ -163,10 +176,11 @@ function buildPVTemplateHTML(data: VoucherPrintData, template: string): string {
       <span class="val val-r" style="top:${y}mm;left:${CIQD.l}mm;width:${CIQD.w}mm">${l.amount_iqd > 0 ? fmtNum(l.amount_iqd) : ''}</span>
       <span class="val val-r" style="top:${y}mm;left:${CUSD.l}mm;width:${CUSD.w}mm">${l.amount_usd > 0 ? fmtNum(l.amount_usd) : ''}</span>
     `
-  }).join('')
+    })
+    .join('')
 
-  const totalY = ROW_START + MAX_ROWS * ROW_H  -13      // e.g. 100 + 70 = 170mm
-  const sigY   = totalY + 13                        // ~192mm — just above bottom of landscape page                        
+  const totalY = ROW_START + MAX_ROWS * ROW_H - 13 // e.g. 100 + 70 = 170mm
+  const sigY = totalY + 13 // ~192mm — just above bottom of landscape page
 
   return `<!DOCTYPE html><html dir="ltr">
 <head style="font-weight:600">
@@ -211,7 +225,9 @@ export function buildPaymentVoucherHTML(data: VoucherPrintData): string {
   if (data.pvTemplateImage) return buildPVTemplateHTML(data, data.pvTemplateImage)
 
   // ─── Standalone fallback (no template) ──────────────────────────────────────
-  const lineRows = data.lines.map((l) => `<tr>
+  const lineRows = data.lines
+    .map(
+      (l) => `<tr>
     <td style="text-align:center;font-size:10px">${l.acct_5 ?? ''}</td>
     <td style="text-align:center;font-size:10px">${l.acct_4 ?? ''}</td>
     <td style="text-align:center;font-size:10px">${l.acct_3 ?? ''}</td>
@@ -220,14 +236,19 @@ export function buildPaymentVoucherHTML(data: VoucherPrintData): string {
     <td>${l.statement}</td>
     <td style="text-align:right;font-family:monospace">${l.amount_usd > 0 ? fmtNum(l.amount_usd) : ''}</td>
     <td style="text-align:right;font-family:monospace">${l.amount_iqd > 0 ? fmtNum(l.amount_iqd) : ''}</td>
-  </tr>`).join('')
+  </tr>`,
+    )
+    .join('')
 
   const blankCount = Math.max(0, 6 - data.lines.length)
-  const blankRows  = Array(blankCount).fill('<tr><td colspan="8" style="height:22px"></td></tr>').join('')
+  const blankRows = Array(blankCount)
+    .fill('<tr><td colspan="8" style="height:22px"></td></tr>')
+    .join('')
 
-  const journalList = data.journals.length > 0
-    ? data.journals.map((j) => `${j.reference} (${fmtDate(j.entry_date)})`).join('، ')
-    : '—'
+  const journalList =
+    data.journals.length > 0
+      ? data.journals.map((j) => `${j.reference} (${fmtDate(j.entry_date)})`).join('، ')
+      : '—'
 
   return `<!DOCTYPE html><html dir="ltr">
 <head><meta charset="UTF-8"><title>Payment Voucher – ${data.voucher_number}</title>
@@ -292,10 +313,14 @@ export function buildPaymentVoucherHTML(data: VoucherPrintData): string {
     </tbody>
   </table>
 
-  ${data.journals.length > 0 ? `
+  ${
+    data.journals.length > 0
+      ? `
   <div style="margin-top:8px;font-size:10px;color:#555;padding:4px 6px;border:1px solid #ddd;border-radius:3px">
     Journals: ${journalList}
-  </div>` : ''}
+  </div>`
+      : ''
+  }
 
   <table style="margin-top:14px;border:none">
     <tr>
@@ -317,9 +342,12 @@ export function buildPaymentVoucherHTML(data: VoucherPrintData): string {
 // ─── GENERAL JOURNAL ─────────────────────────────────────────────────────────
 
 function buildJournalTemplateHTML(data: JournalPrintData, template: string): string {
-  const linkedPOList = data.linked_pos.length > 0
-    ? data.linked_pos.map((p) => `${p.po_number}${p.vendor_name ? ' – ' + p.vendor_name : ''}`).join(', ')
-    : ''
+  const linkedPOList =
+    data.linked_pos.length > 0
+      ? data.linked_pos
+          .map((p) => `${p.po_number}${p.vendor_name ? ' – ' + p.vendor_name : ''}`)
+          .join(', ')
+      : ''
 
   // Row y-positions: table header 40-53mm, data rows from 54mm, pitch 7mm
   // MAX_ROWS=8 so totalY lands at 112mm (main table totals), above cost center section (~120mm)
@@ -327,22 +355,25 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
   const ROW_H = 7
   const MAX_ROWS = 8
 
-  const lineOverlays = data.lines.slice(0, MAX_ROWS).map((l, i) => {
-    const y = ROW_START + i * ROW_H
-    const debitIqd  = l.currency_code === 'IQD' ? l.debit  : 0
-    const creditIqd = l.currency_code === 'IQD' ? l.credit : 0
-    const debitUsd  = l.currency_code !== 'IQD' ? l.debit  : (l.debit_usd ?? 0)
-    const creditUsd = l.currency_code !== 'IQD' ? l.credit : (l.credit_usd ?? 0)
-    return `
+  const lineOverlays = data.lines
+    .slice(0, MAX_ROWS)
+    .map((l, i) => {
+      const y = ROW_START + i * ROW_H
+      const debitIqd = l.currency_code === 'IQD' ? l.debit : 0
+      const creditIqd = l.currency_code === 'IQD' ? l.credit : 0
+      const debitUsd = l.currency_code !== 'IQD' ? l.debit : (l.debit_usd ?? 0)
+      const creditUsd = l.currency_code !== 'IQD' ? l.credit : (l.credit_usd ?? 0)
+      return `
       <span class="val val-c" style="top:${y}mm;left:8mm;width:12mm;font-size:9px">${i + 1}</span>
-      <span class="val" style="top:${y}mm;left:46mm;width:58mm;font-size:9px">${l.description ?? (l.account_name ?? '')}</span>
+      <span class="val" style="top:${y}mm;left:46mm;width:58mm;font-size:9px">${l.description ?? l.account_name ?? ''}</span>
       <span class="val val-r" style="top:${y}mm;left:104mm;width:16mm;font-size:9px">${creditUsd > 0 ? fmtNum(creditUsd) : ''}</span>
       <span class="val val-r" style="top:${y}mm;left:120mm;width:16mm;font-size:9px">${debitUsd > 0 ? fmtNum(debitUsd) : ''}</span>
       <span class="val val-r" style="top:${y}mm;left:136mm;width:16mm;font-size:9px">${creditIqd > 0 ? fmtNum(creditIqd) : ''}</span>
       <span class="val val-r" style="top:${y}mm;left:152mm;width:16mm;font-size:9px">${debitIqd > 0 ? fmtNum(debitIqd) : ''}</span>
       <span class="val val-r" style="top:${y}mm;left:182mm;width:20mm;font-size:9px">${l.account_code ?? ''}</span>
     `
-  }).join('')
+    })
+    .join('')
 
   const totalY = ROW_START + MAX_ROWS * ROW_H + 6
   const sigY = totalY + 80
@@ -380,29 +411,36 @@ export function buildGeneralJournalHTML(data: JournalPrintData): string {
   if (data.journalTemplateImage) return buildJournalTemplateHTML(data, data.journalTemplateImage)
 
   // ─── Standalone fallback (no template) ──────────────────────────────────────
-  const linkedPOList = data.linked_pos.length > 0
-    ? data.linked_pos.map((p) => `${p.po_number}${p.vendor_name ? ' – ' + p.vendor_name : ''}`).join(', ')
-    : '—'
+  const linkedPOList =
+    data.linked_pos.length > 0
+      ? data.linked_pos
+          .map((p) => `${p.po_number}${p.vendor_name ? ' – ' + p.vendor_name : ''}`)
+          .join(', ')
+      : '—'
 
-  const lineRows = data.lines.map((l, i) => {
-    const debitIqd  = l.currency_code === 'IQD' ? l.debit  : 0
-    const creditIqd = l.currency_code === 'IQD' ? l.credit : 0
-    const debitUsd  = l.currency_code !== 'IQD' ? l.debit  : (l.debit_usd ?? 0)
-    const creditUsd = l.currency_code !== 'IQD' ? l.credit : (l.credit_usd ?? 0)
-    return `<tr>
+  const lineRows = data.lines
+    .map((l, i) => {
+      const debitIqd = l.currency_code === 'IQD' ? l.debit : 0
+      const creditIqd = l.currency_code === 'IQD' ? l.credit : 0
+      const debitUsd = l.currency_code !== 'IQD' ? l.debit : (l.debit_usd ?? 0)
+      const creditUsd = l.currency_code !== 'IQD' ? l.credit : (l.credit_usd ?? 0)
+      return `<tr>
       <td style="text-align:center;color:#666">${i + 1}</td>
       <td colspan="3" style="text-align:center"></td>
-      <td style="text-align:left">${l.description ?? (l.account_name ?? '')}</td>
-      <td style="text-align:right;font-family:monospace">${debitUsd  > 0 ? fmtNum(debitUsd)  : ''}</td>
+      <td style="text-align:left">${l.description ?? l.account_name ?? ''}</td>
+      <td style="text-align:right;font-family:monospace">${debitUsd > 0 ? fmtNum(debitUsd) : ''}</td>
       <td style="text-align:right;font-family:monospace">${creditUsd > 0 ? fmtNum(creditUsd) : ''}</td>
-      <td style="text-align:right;font-family:monospace">${debitIqd  > 0 ? fmtNum(debitIqd)  : ''}</td>
+      <td style="text-align:right;font-family:monospace">${debitIqd > 0 ? fmtNum(debitIqd) : ''}</td>
       <td style="text-align:right;font-family:monospace">${creditIqd > 0 ? fmtNum(creditIqd) : ''}</td>
       <td style="text-align:center;font-size:10px;color:#555">${l.account_code ?? ''}</td>
     </tr>`
-  }).join('')
+    })
+    .join('')
 
   const blankCount = Math.max(0, 8 - data.lines.length)
-  const blankRows  = Array(blankCount).fill('<tr><td colspan="10" style="height:22px"></td></tr>').join('')
+  const blankRows = Array(blankCount)
+    .fill('<tr><td colspan="10" style="height:22px"></td></tr>')
+    .join('')
 
   return `<!DOCTYPE html><html dir="ltr">
 <head><meta charset="UTF-8"><title>General Journal – ${data.reference}</title>

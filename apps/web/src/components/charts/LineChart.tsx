@@ -47,7 +47,9 @@ export function LineChart({ data, xKey, lines, height = 260, className = '' }: L
               fontSize: '12px',
             }}
           />
-          {lines.length > 1 && <Legend wrapperStyle={{ fontSize: '12px', color: theme.textSecondary }} />}
+          {lines.length > 1 && (
+            <Legend wrapperStyle={{ fontSize: '12px', color: theme.textSecondary }} />
+          )}
           {lines.map((line) => (
             <Line
               key={line.key}

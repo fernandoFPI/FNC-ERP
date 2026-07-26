@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery } from '@apollo/client'
-import { CREATE_MANUFACTURING_REQUEST, MANUFACTURING_REQUESTS_QUERY } from '../../../graphql/manufacturing-requests'
+import {
+  CREATE_MANUFACTURING_REQUEST,
+  MANUFACTURING_REQUESTS_QUERY,
+} from '../../../graphql/manufacturing-requests'
 import { BOMS_QUERY } from '../../../graphql/manufacturing'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -8,7 +11,12 @@ import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 
-interface BOM { id: string; finished_product_id: string; product_name: string; version: string }
+interface BOM {
+  id: string
+  finished_product_id: string
+  product_name: string
+  version: string
+}
 
 interface Props {
   projectId: string
@@ -29,7 +37,9 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
     notes: '',
   })
 
-  const { data: bomsData } = useQuery<{ boms: BOM[] }>(BOMS_QUERY, { variables: { isActive: true, allCompanies: true } })
+  const { data: bomsData } = useQuery<{ boms: BOM[] }>(BOMS_QUERY, {
+    variables: { isActive: true, allCompanies: true },
+  })
   const boms = bomsData?.boms ?? []
 
   const [createMR, { loading }] = useMutation(CREATE_MANUFACTURING_REQUEST, {
@@ -59,36 +69,54 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
   }
 
   const inputStyle = {
-    width: '100%', padding: '7px 10px', borderRadius: '6px',
-    border: `1px solid ${theme.border}`, background: theme.bgCanvas,
-    color: theme.textPrimary, fontSize: '13px', boxSizing: 'border-box' as const,
+    width: '100%',
+    padding: '7px 10px',
+    borderRadius: '6px',
+    border: `1px solid ${theme.border}`,
+    background: theme.bgCanvas,
+    color: theme.textPrimary,
+    fontSize: '13px',
+    boxSizing: 'border-box' as const,
   }
-  const labelStyle = { fontSize: '11px', color: theme.textMuted, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.05em', display: 'block', marginBottom: '4px' }
+  const labelStyle = {
+    fontSize: '11px',
+    color: theme.textMuted,
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+    display: 'block',
+    marginBottom: '4px',
+  }
 
   return (
     <Modal open={true} title="New Manufacturing Request" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '420px' }}>
-
         <div>
           <SearchableSelect
             label="Product (BOM)"
             value={form.bomId}
             onChange={(v) => {
-              const bom = boms.find(b => b.id === v)
-              setForm(f => ({ ...f, bomId: v, productId: bom?.finished_product_id ?? '' }))
+              const bom = boms.find((b) => b.id === v)
+              setForm((f) => ({ ...f, bomId: v, productId: bom?.finished_product_id ?? '' }))
             }}
             placeholder="— Select a product —"
-            options={boms.map(b => ({ value: b.id, label: `${b.product_name} (v${b.version})` }))}
+            options={boms.map((b) => ({ value: b.id, label: `${b.product_name} (v${b.version})` }))}
           />
         </div>
 
         <div>
-          <label style={labelStyle}>Quantity Requested <span style={{ color: theme.danger }}>*</span></label>
+          <label style={labelStyle}>
+            Quantity Requested <span style={{ color: theme.danger }}>*</span>
+          </label>
           <input
-            type="number" min="0.0001" step="0.0001"
+            type="number"
+            min="0.0001"
+            step="0.0001"
             style={inputStyle}
             value={form.qtyRequested}
-            onChange={e => setForm(f => ({ ...f, qtyRequested: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, qtyRequested: e.target.value }))
+            }}
           />
         </div>
 
@@ -98,7 +126,9 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
             type="date"
             style={inputStyle}
             value={form.requiredDate}
-            onChange={e => setForm(f => ({ ...f, requiredDate: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, requiredDate: e.target.value }))
+            }}
           />
         </div>
 
@@ -108,7 +138,9 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
             rows={3}
             style={{ ...inputStyle, resize: 'vertical' }}
             value={form.description}
-            onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, description: e.target.value }))
+            }}
             placeholder="Describe what needs to be manufactured…"
           />
         </div>
@@ -119,13 +151,19 @@ export function ManufacturingRequestForm({ projectId, onClose, onCreated }: Prop
             rows={2}
             style={{ ...inputStyle, resize: 'vertical' }}
             value={form.notes}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, notes: e.target.value }))
+            }}
           />
         </div>
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" size="sm" loading={loading} onClick={handleSubmit}>Create Request</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" size="sm" loading={loading} onClick={handleSubmit}>
+            Create Request
+          </Button>
         </div>
       </div>
     </Modal>

@@ -91,7 +91,7 @@ export const themes: Record<ThemeKey, ThemeTokens> = {
     blurAmount: 'none',
   },
 
-  'black': {
+  black: {
     key: 'black',
     label: 'Black',
     description: 'Pure black, maximum contrast',

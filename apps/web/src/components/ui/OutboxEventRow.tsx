@@ -23,11 +23,16 @@ type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'acc
 
 function statusVariant(s: string): BadgeVariant {
   switch (s) {
-    case 'pending': return 'info'
-    case 'processing': return 'warning'
-    case 'delivered': return 'success'
-    case 'failed': return 'danger'
-    default: return 'neutral'
+    case 'pending':
+      return 'info'
+    case 'processing':
+      return 'warning'
+    case 'delivered':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    default:
+      return 'neutral'
   }
 }
 
@@ -36,7 +41,14 @@ export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRow
 
   return (
     <tr style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
-      <td style={{ padding: '10px 12px', color: theme.textMuted, fontSize: 12, fontFamily: 'monospace' }}>
+      <td
+        style={{
+          padding: '10px 12px',
+          color: theme.textMuted,
+          fontSize: 12,
+          fontFamily: 'monospace',
+        }}
+      >
         {event.id.slice(0, 8)}…
       </td>
       <td style={{ padding: '10px 12px', color: theme.textSecondary, fontSize: 13 }}>
@@ -48,8 +60,19 @@ export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRow
       <td style={{ padding: '10px 12px' }}>
         <Badge variant={statusVariant(event.status)}>{event.status}</Badge>
       </td>
-      <td style={{ padding: '10px 12px', color: theme.textSecondary, fontSize: 13, textAlign: 'center' as const }}>
-        <span style={{ color: event.attempts >= event.maxAttempts ? theme.danger : theme.textSecondary }}>
+      <td
+        style={{
+          padding: '10px 12px',
+          color: theme.textSecondary,
+          fontSize: 13,
+          textAlign: 'center' as const,
+        }}
+      >
+        <span
+          style={{
+            color: event.attempts >= event.maxAttempts ? theme.danger : theme.textSecondary,
+          }}
+        >
           {event.attempts}
         </span>
         <span style={{ color: theme.textMuted }}> / {event.maxAttempts}</span>
@@ -57,7 +80,8 @@ export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRow
       <td style={{ padding: '10px 12px', color: theme.textMuted, fontSize: 12 }}>
         {event.lastError ? (
           <span title={event.lastError} style={{ color: theme.danger }}>
-            {event.lastError.slice(0, 60)}{event.lastError.length > 60 ? '…' : ''}
+            {event.lastError.slice(0, 60)}
+            {event.lastError.length > 60 ? '…' : ''}
           </span>
         ) : (
           <span>—</span>
@@ -72,10 +96,14 @@ export function OutboxEventRow({ event, onRetry, onViewPayload }: OutboxEventRow
       <td style={{ padding: '10px 12px' }}>
         <div style={{ display: 'flex', gap: 6 }}>
           {event.status === 'failed' && onRetry && (
-            <Button size="sm" onClick={onRetry}>Retry</Button>
+            <Button size="sm" onClick={onRetry}>
+              Retry
+            </Button>
           )}
           {onViewPayload && (
-            <Button size="sm" onClick={onViewPayload}>Payload</Button>
+            <Button size="sm" onClick={onViewPayload}>
+              Payload
+            </Button>
           )}
         </div>
       </td>

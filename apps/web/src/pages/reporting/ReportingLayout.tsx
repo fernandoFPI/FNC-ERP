@@ -29,29 +29,41 @@ export default function ReportingLayout() {
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* Sub-nav */}
-      <div style={{
-        width: '200px',
-        minWidth: '200px',
-        borderRight: `0.5px solid ${theme.border}`,
-        overflowY: 'auto',
-        padding: '12px 0',
-        flexShrink: 0,
-      }}>
+      <div
+        style={{
+          width: '200px',
+          minWidth: '200px',
+          borderRight: `0.5px solid ${theme.border}`,
+          overflowY: 'auto',
+          padding: '12px 0',
+          flexShrink: 0,
+        }}
+      >
         {REPORTING_NAV.map((item, i) => {
-          if (item === null) return <div key={i} style={{ height: '1px', background: theme.border, margin: '8px 0' }} />
-          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/')
+          if (item === null)
+            return (
+              <div key={i} style={{ height: '1px', background: theme.border, margin: '8px 0' }} />
+            )
+          const isActive =
+            location.pathname === item.path || location.pathname.startsWith(item.path + '/')
           return (
-            <NavLink key={item.path} to={item.path} style={{ textDecoration: 'none', display: 'block' }}>
-              <div style={{
-                padding: '7px 16px',
-                fontSize: '12px',
-                color: isActive ? theme.accent : theme.textSecondary,
-                fontWeight: isActive ? 500 : 400,
-                background: isActive ? theme.accentBg : 'transparent',
-                borderLeft: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}>
+            <NavLink
+              key={item.path}
+              to={item.path}
+              style={{ textDecoration: 'none', display: 'block' }}
+            >
+              <div
+                style={{
+                  padding: '7px 16px',
+                  fontSize: '12px',
+                  color: isActive ? theme.accent : theme.textSecondary,
+                  fontWeight: isActive ? 500 : 400,
+                  background: isActive ? theme.accentBg : 'transparent',
+                  borderLeft: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {item.label}
               </div>
             </NavLink>

@@ -21,7 +21,7 @@ interface ImportResult {
   created: number
   updated: number
   total: number
-  errors: Array<{ sku: string; name: string; message: string }>
+  errors: { sku: string; name: string; message: string }[]
 }
 
 export default function InventoryImportPage() {
@@ -41,9 +41,21 @@ export default function InventoryImportPage() {
   const locations = locData?.stockLocations ?? []
 
   async function handleImport() {
-    if (!file) { setErrorMsg('Please select an Excel file first.'); setStatus('error'); return }
-    if (!locationId) { setErrorMsg('Please select a stock location.'); setStatus('error'); return }
-    if (!user?.companyId) { setErrorMsg('No company context — please log in again.'); setStatus('error'); return }
+    if (!file) {
+      setErrorMsg('Please select an Excel file first.')
+      setStatus('error')
+      return
+    }
+    if (!locationId) {
+      setErrorMsg('Please select a stock location.')
+      setStatus('error')
+      return
+    }
+    if (!user?.companyId) {
+      setErrorMsg('No company context — please log in again.')
+      setStatus('error')
+      return
+    }
 
     const fd = new FormData()
     fd.append('file', file)
@@ -89,7 +101,15 @@ export default function InventoryImportPage() {
       <Card style={{ marginTop: '20px', padding: '24px' }}>
         {/* File picker */}
         <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: theme.textSecondary, marginBottom: '6px' }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: theme.textSecondary,
+              marginBottom: '6px',
+            }}
+          >
             Excel File (.xlsx)
           </label>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -126,7 +146,8 @@ export default function InventoryImportPage() {
             </span>
           </div>
           <p style={{ marginTop: '6px', fontSize: '11px', color: theme.textMuted }}>
-            Expected format: multi-sheet workbook named "Store Inventory 2025.xlsx" with one sheet per store
+            Expected format: multi-sheet workbook named "Store Inventory 2025.xlsx" with one sheet
+            per store
           </p>
         </div>
 
@@ -135,7 +156,9 @@ export default function InventoryImportPage() {
           <Select
             label="Target Stock Location"
             value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
+            onChange={(e) => {
+              setLocationId(e.target.value)
+            }}
           >
             <option value="">— Select location —</option>
             {locations.map((loc) => (
@@ -150,30 +173,36 @@ export default function InventoryImportPage() {
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <Button
             variant="primary"
-            onClick={() => { void handleImport() }}
+            onClick={() => {
+              void handleImport()
+            }}
             loading={status === 'loading'}
             disabled={!file || !locationId || status === 'loading'}
           >
             {status === 'loading' ? 'Importing…' : 'Run Import'}
           </Button>
           {(status === 'done' || status === 'error') && (
-            <Button variant="ghost" onClick={reset}>Reset</Button>
+            <Button variant="ghost" onClick={reset}>
+              Reset
+            </Button>
           )}
         </div>
       </Card>
 
       {/* Error state */}
       {status === 'error' && errorMsg && (
-        <div style={{
-          marginTop: '16px',
-          padding: '14px 18px',
-          borderRadius: '8px',
-          background: '#fef2f2',
-          border: '1px solid #fca5a5',
-          fontSize: '13px',
-          color: '#991b1b',
-          fontWeight: 500,
-        }}>
+        <div
+          style={{
+            marginTop: '16px',
+            padding: '14px 18px',
+            borderRadius: '8px',
+            background: '#fef2f2',
+            border: '1px solid #fca5a5',
+            fontSize: '13px',
+            color: '#991b1b',
+            fontWeight: 500,
+          }}
+        >
           {errorMsg}
         </div>
       )}
@@ -181,21 +210,68 @@ export default function InventoryImportPage() {
       {/* Success results */}
       {status === 'done' && result && (
         <Card style={{ marginTop: '16px', padding: '20px' }}>
-          <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: '15px',
+              color: theme.textPrimary,
+              marginBottom: '16px',
+            }}
+          >
             Import Complete
           </div>
 
           {/* Summary KPIs */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginBottom: '20px' }}>
-            {([
-              ['Total Rows', result.total, theme.textPrimary],
-              ['Created', result.created, theme.success],
-              ['Updated', result.updated, theme.accent],
-              ['Errors', result.errors.length, result.errors.length > 0 ? '#dc2626' : theme.textMuted],
-            ] as [string, number, string][]).map(([label, value, color]) => (
-              <div key={label} style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '12px' }}>
-                <div style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
-                <div style={{ fontSize: '22px', fontWeight: 700, color, fontFamily: 'monospace', marginTop: '4px' }}>{value}</div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+              gap: '10px',
+              marginBottom: '20px',
+            }}
+          >
+            {(
+              [
+                ['Total Rows', result.total, theme.textPrimary],
+                ['Created', result.created, theme.success],
+                ['Updated', result.updated, theme.accent],
+                [
+                  'Errors',
+                  result.errors.length,
+                  result.errors.length > 0 ? '#dc2626' : theme.textMuted,
+                ],
+              ] as [string, number, string][]
+            ).map(([label, value, color]) => (
+              <div
+                key={label}
+                style={{
+                  background: theme.bgSurface,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '8px',
+                  padding: '12px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  {label}
+                </div>
+                <div
+                  style={{
+                    fontSize: '22px',
+                    fontWeight: 700,
+                    color,
+                    fontFamily: 'monospace',
+                    marginTop: '4px',
+                  }}
+                >
+                  {value}
+                </div>
               </div>
             ))}
           </div>
@@ -203,22 +279,49 @@ export default function InventoryImportPage() {
           {/* Error table */}
           {result.errors.length > 0 && (
             <>
-              <div style={{ fontWeight: 600, fontSize: '13px', color: '#991b1b', marginBottom: '8px' }}>
+              <div
+                style={{ fontWeight: 600, fontSize: '13px', color: '#991b1b', marginBottom: '8px' }}
+              >
                 Failed rows ({result.errors.length})
               </div>
-              <div style={{ overflowX: 'auto', borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+              <div
+                style={{
+                  overflowX: 'auto',
+                  borderRadius: '6px',
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ background: theme.bgSurface }}>
                       {['SKU', 'Name', 'Error'].map((h) => (
-                        <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: theme.textSecondary, borderBottom: `1px solid ${theme.border}` }}>{h}</th>
+                        <th
+                          key={h}
+                          style={{
+                            padding: '8px 12px',
+                            textAlign: 'left',
+                            fontWeight: 600,
+                            color: theme.textSecondary,
+                            borderBottom: `1px solid ${theme.border}`,
+                          }}
+                        >
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {result.errors.map((e, i) => (
                       <tr key={i} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td style={{ padding: '7px 12px', fontFamily: 'monospace', color: theme.accent }}>{e.sku}</td>
+                        <td
+                          style={{
+                            padding: '7px 12px',
+                            fontFamily: 'monospace',
+                            color: theme.accent,
+                          }}
+                        >
+                          {e.sku}
+                        </td>
                         <td style={{ padding: '7px 12px', color: theme.textPrimary }}>{e.name}</td>
                         <td style={{ padding: '7px 12px', color: '#dc2626' }}>{e.message}</td>
                       </tr>

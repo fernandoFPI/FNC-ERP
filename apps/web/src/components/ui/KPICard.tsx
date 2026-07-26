@@ -17,7 +17,17 @@ interface KPICardProps {
   className?: string
 }
 
-export function KPICard({ label, title, subtitle, value, delta, icon, iconColor = 'accent', loading = false, className = '' }: KPICardProps) {
+export function KPICard({
+  label,
+  title,
+  subtitle,
+  value,
+  delta,
+  icon,
+  iconColor = 'accent',
+  loading = false,
+  className = '',
+}: KPICardProps) {
   const resolvedLabel = label ?? title ?? ''
   const { theme } = useTheme()
 
@@ -44,47 +54,71 @@ export function KPICard({ label, title, subtitle, value, delta, icon, iconColor 
   }
 
   const deltaColor = delta
-    ? delta.direction === 'up' ? theme.success
-    : delta.direction === 'down' ? theme.danger
-    : theme.textMuted
+    ? delta.direction === 'up'
+      ? theme.success
+      : delta.direction === 'down'
+        ? theme.danger
+        : theme.textMuted
     : theme.textMuted
 
   return (
     <Card className={className} padding="md" rimHighlight>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
         {icon && (
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '10px',
-            background: iconBg[iconColor],
-            border: `1px solid ${iconBorder[iconColor]}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: iconColor2[iconColor],
-            flexShrink: 0,
-          }}>
+          <div
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: iconBg[iconColor],
+              border: `1px solid ${iconBorder[iconColor]}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: iconColor2[iconColor],
+              flexShrink: 0,
+            }}
+          >
             {icon}
           </div>
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>
+          <p
+            style={{
+              fontSize: '11px',
+              fontWeight: 500,
+              color: theme.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              marginBottom: '6px',
+            }}
+          >
             {resolvedLabel}
           </p>
           {loading ? (
-            <div className="skeleton" style={{ height: '22px', width: '70%', borderRadius: '4px', marginBottom: '6px' }} />
+            <div
+              className="skeleton"
+              style={{ height: '22px', width: '70%', borderRadius: '4px', marginBottom: '6px' }}
+            />
           ) : (
-            <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary, lineHeight: 1 }}>{value}</p>
+            <p
+              style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary, lineHeight: 1 }}
+            >
+              {value}
+            </p>
           )}
           {subtitle && !loading && (
             <p style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>{subtitle}</p>
           )}
           {loading ? (
-            <div className="skeleton" style={{ height: '12px', width: '40%', borderRadius: '4px', marginTop: '6px' }} />
+            <div
+              className="skeleton"
+              style={{ height: '12px', width: '40%', borderRadius: '4px', marginTop: '6px' }}
+            />
           ) : delta ? (
             <p style={{ fontSize: '11px', color: deltaColor, marginTop: '4px' }}>
-              {delta.direction === 'up' ? '↑' : delta.direction === 'down' ? '↓' : '→'} {delta.value}
+              {delta.direction === 'up' ? '↑' : delta.direction === 'down' ? '↓' : '→'}{' '}
+              {delta.value}
             </p>
           ) : null}
         </div>

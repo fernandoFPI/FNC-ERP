@@ -30,50 +30,108 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-interface TypeMeta { bg: string; color: string; icon: React.ReactNode }
+interface TypeMeta {
+  bg: string
+  color: string
+  icon: React.ReactNode
+}
 
 const DocIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-    <polyline points="14 2 14 8 20 8"/>
-    <line x1="16" y1="13" x2="8" y2="13"/>
-    <line x1="16" y1="17" x2="8" y2="17"/>
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
   </svg>
 )
 
 const ApprovalIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
-    <rect x="8" y="2" width="8" height="4" rx="1"/>
-    <polyline points="9 12 11 14 15 10"/>
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" />
+    <polyline points="9 12 11 14 15 10" />
   </svg>
 )
 
 const PayrollIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="1" x2="12" y2="23"/>
-    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <line x1="12" y1="1" x2="12" y2="23" />
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
   </svg>
 )
 
 const MfgIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
   </svg>
 )
 
 const AlertIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <line x1="12" y1="8" x2="12" y2="12"/>
-    <line x1="12" y1="16" x2="12.01" y2="16"/>
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="8" x2="12" y2="12" />
+    <line x1="12" y1="16" x2="12.01" y2="16" />
   </svg>
 )
 
 const BellIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </svg>
 )
 
@@ -129,85 +187,103 @@ export function NotificationItem({ notification, onRead, onNavigate }: Notificat
         transition: 'background 0.12s',
         position: 'relative',
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = notification.isRead ? 'transparent' : `${theme.accent}07` }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = theme.bgSurfaceHover
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = notification.isRead ? 'transparent' : `${theme.accent}07`
+      }}
     >
       {/* Unread left rail */}
       {!notification.isRead && (
-        <div style={{
-          position: 'absolute',
-          left: 0, top: 0, bottom: 0,
-          width: '3px',
-          background: theme.accent,
-          borderRadius: '0 2px 2px 0',
-        }} />
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: '3px',
+            background: theme.accent,
+            borderRadius: '0 2px 2px 0',
+          }}
+        />
       )}
 
       {/* Category icon */}
-      <div style={{
-        width: '36px',
-        height: '36px',
-        borderRadius: '10px',
-        background: meta.bg,
-        color: meta.color,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        marginTop: '1px',
-      }}>
+      <div
+        style={{
+          width: '36px',
+          height: '36px',
+          borderRadius: '10px',
+          background: meta.bg,
+          color: meta.color,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          marginTop: '1px',
+        }}
+      >
         {meta.icon}
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: '13px',
-          fontWeight: notification.isRead ? 400 : 600,
-          color: theme.textPrimary,
-          lineHeight: '1.35',
-          marginBottom: '3px',
-        }}>
+        <div
+          style={{
+            fontSize: '13px',
+            fontWeight: notification.isRead ? 400 : 600,
+            color: theme.textPrimary,
+            lineHeight: '1.35',
+            marginBottom: '3px',
+          }}
+        >
           {notification.title}
         </div>
         {notification.body && (
-          <div style={{
-            fontSize: '12px',
-            color: theme.textSecondary,
-            lineHeight: '1.5',
-            marginBottom: '5px',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical' as React.CSSProperties['WebkitBoxOrient'],
-            overflow: 'hidden',
-          }}>
+          <div
+            style={{
+              fontSize: '12px',
+              color: theme.textSecondary,
+              lineHeight: '1.5',
+              marginBottom: '5px',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical' as React.CSSProperties['WebkitBoxOrient'],
+              overflow: 'hidden',
+            }}
+          >
             {notification.body}
           </div>
         )}
-        <span style={{
-          display: 'inline-block',
-          fontSize: '11px',
-          color: theme.textMuted,
-          background: theme.bgCanvas,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '4px',
-          padding: '1px 6px',
-          letterSpacing: '0.01em',
-        }}>
+        <span
+          style={{
+            display: 'inline-block',
+            fontSize: '11px',
+            color: theme.textMuted,
+            background: theme.bgCanvas,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '4px',
+            padding: '1px 6px',
+            letterSpacing: '0.01em',
+          }}
+        >
           {relativeTime(notification.createdAt)}
         </span>
       </div>
 
       {/* Unread dot */}
       {!notification.isRead && (
-        <div style={{
-          width: '7px',
-          height: '7px',
-          borderRadius: '50%',
-          background: theme.accent,
-          flexShrink: 0,
-          marginTop: '5px',
-        }} />
+        <div
+          style={{
+            width: '7px',
+            height: '7px',
+            borderRadius: '50%',
+            background: theme.accent,
+            flexShrink: 0,
+            marginTop: '5px',
+          }}
+        />
       )}
     </div>
   )

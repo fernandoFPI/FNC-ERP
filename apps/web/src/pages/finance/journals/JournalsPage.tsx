@@ -51,7 +51,10 @@ export default function JournalsPage() {
   const [toDate, setToDate] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const currentFilters = { search, status: statusFilter, source: sourceFilter, fromDate, toDate }
-  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('journals', FILTER_DEFAULTS)
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
+    'journals',
+    FILTER_DEFAULTS,
+  )
   const [showCombineDialog, setShowCombineDialog] = useState(false)
   const [combineDesc, setCombineDesc] = useState('')
 
@@ -125,14 +128,29 @@ export default function JournalsPage() {
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {selectedCount >= 2 && (
-              <Button variant="secondary" size="sm" onClick={() => setShowCombineDialog(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setShowCombineDialog(true)
+                }}
+              >
                 Combine {selectedCount} Entries
               </Button>
             )}
             {selectedCount === 1 && (
-              <span style={{ fontSize: '12px', color: theme.textMuted }}>Select 1 more draft to combine</span>
+              <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                Select 1 more draft to combine
+              </span>
             )}
-            <Button data-tour="new-journal-btn" variant="primary" size="sm" onClick={() => navigate('/finance/journals/new')}>
+            <Button
+              data-tour="new-journal-btn"
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                navigate('/finance/journals/new')
+              }}
+            >
               New Entry
             </Button>
           </div>
@@ -149,14 +167,18 @@ export default function JournalsPage() {
               label: 'Status',
               value: statusFilter,
               options: STATUS_OPTIONS,
-              onChange: (v) => setStatusFilter(v),
+              onChange: (v) => {
+                setStatusFilter(v)
+              },
             },
             {
               key: 'source',
               label: 'Source',
               value: sourceFilter,
               options: SOURCE_OPTIONS,
-              onChange: (v) => setSourceFilter(v),
+              onChange: (v) => {
+                setSourceFilter(v)
+              },
             },
           ]}
           fromDate={fromDate}
@@ -176,7 +198,9 @@ export default function JournalsPage() {
               setFromDate(r.fromDate)
               setToDate(r.toDate)
             }}
-            onSave={(name) => savePreset(name, currentFilters)}
+            onSave={(name) => {
+              savePreset(name, currentFilters)
+            }}
             onDelete={deletePreset}
           />
         </FilterBar>
@@ -185,7 +209,13 @@ export default function JournalsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{ background: theme.bgSurface }}>
-                <th style={{ padding: '8px 12px', width: '40px', borderBottom: `1px solid ${theme.border}` }}>
+                <th
+                  style={{
+                    padding: '8px 12px',
+                    width: '40px',
+                    borderBottom: `1px solid ${theme.border}`,
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={allDraftsSelected}
@@ -198,9 +228,14 @@ export default function JournalsPage() {
                   <th
                     key={h}
                     style={{
-                      padding: '8px 16px', textAlign: 'left', fontWeight: 600,
-                      fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase',
-                      letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}`,
+                      padding: '8px 16px',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
                     }}
                   >
                     {h}
@@ -211,13 +246,19 @@ export default function JournalsPage() {
             <tbody>
               {loading && filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>
+                  <td
+                    colSpan={7}
+                    style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}
+                  >
                     Loading…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>
+                  <td
+                    colSpan={7}
+                    style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}
+                  >
                     No journal entries found
                   </td>
                 </tr>
@@ -237,40 +278,102 @@ export default function JournalsPage() {
                         if (!isSelected) ev.currentTarget.style.background = theme.bgSurface
                       }}
                       onMouseLeave={(ev) => {
-                        ev.currentTarget.style.background = isSelected ? `${theme.accent}22` : 'transparent'
+                        ev.currentTarget.style.background = isSelected
+                          ? `${theme.accent}22`
+                          : 'transparent'
                       }}
                     >
                       <td
                         style={{ padding: '10px 12px' }}
-                        onClick={(ev) => { ev.stopPropagation(); toggleSelect(e.id, isDraft) }}
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          toggleSelect(e.id, isDraft)
+                        }}
                       >
                         <input
                           type="checkbox"
                           checked={isSelected}
                           disabled={!isDraft}
-                          onChange={() => toggleSelect(e.id, isDraft)}
-                          style={{ cursor: isDraft ? 'pointer' : 'not-allowed', opacity: isDraft ? 1 : 0.35 }}
+                          onChange={() => {
+                            toggleSelect(e.id, isDraft)
+                          }}
+                          style={{
+                            cursor: isDraft ? 'pointer' : 'not-allowed',
+                            opacity: isDraft ? 1 : 0.35,
+                          }}
                         />
                       </td>
-                      <td style={{ padding: '10px 16px' }} onClick={() => navigate(`/finance/journals/${e.id}`)}>
-                        <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>{e.reference}</span>
+                      <td
+                        style={{ padding: '10px 16px' }}
+                        onClick={() => {
+                          navigate(`/finance/journals/${e.id}`)
+                        }}
+                      >
+                        <span
+                          style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}
+                        >
+                          {e.reference}
+                        </span>
                       </td>
-                      <td style={{ padding: '10px 16px', color: theme.textSecondary, fontSize: '13px' }} onClick={() => navigate(`/finance/journals/${e.id}`)}>
+                      <td
+                        style={{
+                          padding: '10px 16px',
+                          color: theme.textSecondary,
+                          fontSize: '13px',
+                        }}
+                        onClick={() => {
+                          navigate(`/finance/journals/${e.id}`)
+                        }}
+                      >
                         {e.entry_date}
                       </td>
-                      <td style={{ padding: '10px 16px', color: theme.textSecondary, fontSize: '13px' }} onClick={() => navigate(`/finance/journals/${e.id}`)}>
+                      <td
+                        style={{
+                          padding: '10px 16px',
+                          color: theme.textSecondary,
+                          fontSize: '13px',
+                        }}
+                        onClick={() => {
+                          navigate(`/finance/journals/${e.id}`)
+                        }}
+                      >
                         {e.description ?? '—'}
                       </td>
-                      <td style={{ padding: '10px 16px' }} onClick={() => navigate(`/finance/journals/${e.id}`)}>
+                      <td
+                        style={{ padding: '10px 16px' }}
+                        onClick={() => {
+                          navigate(`/finance/journals/${e.id}`)
+                        }}
+                      >
                         <Badge variant="neutral">{e.source_type ?? 'manual'}</Badge>
                       </td>
-                      <td style={{ padding: '10px 16px' }} onClick={() => navigate(`/finance/journals/${e.id}`)}>
-                        {e.total_debit
-                          ? <AmountDisplay amount={parseFloat(e.total_debit)} currency="IQD" />
-                          : <span style={{ color: theme.textMuted }}>—</span>}
+                      <td
+                        style={{ padding: '10px 16px' }}
+                        onClick={() => {
+                          navigate(`/finance/journals/${e.id}`)
+                        }}
+                      >
+                        {e.total_debit ? (
+                          <AmountDisplay amount={parseFloat(e.total_debit)} currency="IQD" />
+                        ) : (
+                          <span style={{ color: theme.textMuted }}>—</span>
+                        )}
                       </td>
-                      <td style={{ padding: '10px 16px' }} onClick={() => navigate(`/finance/journals/${e.id}`)}>
-                        <Badge variant={e.status === 'posted' ? 'success' : e.status === 'draft' ? 'warning' : 'neutral'}>
+                      <td
+                        style={{ padding: '10px 16px' }}
+                        onClick={() => {
+                          navigate(`/finance/journals/${e.id}`)
+                        }}
+                      >
+                        <Badge
+                          variant={
+                            e.status === 'posted'
+                              ? 'success'
+                              : e.status === 'draft'
+                                ? 'warning'
+                                : 'neutral'
+                          }
+                        >
                           {e.status}
                         </Badge>
                       </td>
@@ -286,44 +389,94 @@ export default function JournalsPage() {
       {showCombineDialog && (
         <div
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
           }}
-          onClick={() => setShowCombineDialog(false)}
+          onClick={() => {
+            setShowCombineDialog(false)
+          }}
         >
           <div
             style={{
-              background: theme.bgCanvas, borderRadius: '12px', padding: '28px',
-              width: '460px', maxWidth: '95vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              background: theme.bgCanvas,
+              borderRadius: '12px',
+              padding: '28px',
+              width: '460px',
+              maxWidth: '95vw',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
               border: `1px solid ${theme.border}`,
             }}
-            onClick={(ev) => ev.stopPropagation()}
+            onClick={(ev) => {
+              ev.stopPropagation()
+            }}
           >
-            <h3 style={{ margin: '0 0 8px', fontSize: '16px', color: theme.textPrimary, fontWeight: 600 }}>
+            <h3
+              style={{
+                margin: '0 0 8px',
+                fontSize: '16px',
+                color: theme.textPrimary,
+                fontWeight: 600,
+              }}
+            >
               Combine {selectedCount} Journal Entries
             </h3>
-            <p style={{ margin: '0 0 20px', fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5' }}>
-              All journal lines and PO links from the selected draft entries will be merged into one new draft. The original entries will be deleted.
+            <p
+              style={{
+                margin: '0 0 20px',
+                fontSize: '13px',
+                color: theme.textSecondary,
+                lineHeight: '1.5',
+              }}
+            >
+              All journal lines and PO links from the selected draft entries will be merged into one
+              new draft. The original entries will be deleted.
             </p>
             <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '11px', color: theme.textMuted, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '11px',
+                  color: theme.textMuted,
+                  marginBottom: '6px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
                 Description (optional)
               </label>
               <input
                 type="text"
                 value={combineDesc}
-                onChange={(e) => setCombineDesc(e.target.value)}
+                onChange={(e) => {
+                  setCombineDesc(e.target.value)
+                }}
                 placeholder="Leave blank to auto-generate"
                 style={{
-                  width: '100%', boxSizing: 'border-box', padding: '8px 12px',
-                  borderRadius: '6px', border: `1px solid ${theme.border}`,
-                  background: theme.bgSurface, color: theme.textPrimary, fontSize: '13px',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: `1px solid ${theme.border}`,
+                  background: theme.bgSurface,
+                  color: theme.textPrimary,
+                  fontSize: '13px',
                   outline: 'none',
                 }}
               />
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="ghost" size="sm" onClick={() => setShowCombineDialog(false)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowCombineDialog(false)
+                }}
+              >
                 Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleCombine} loading={combining}>

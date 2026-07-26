@@ -13,7 +13,7 @@ interface DLQEntryRowProps {
     status: string
     totalAttempts: number
     lastError: string
-    errorHistory: Array<{ attempt: number; error: string; at: string }>
+    errorHistory: { attempt: number; error: string; at: string }[]
     createdAt: string
     reviewedBy?: string
     reviewNotes?: string
@@ -27,10 +27,14 @@ type BadgeVariant = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'acc
 
 function priorityVariant(p: 'critical' | 'high' | 'normal' | 'low'): BadgeVariant {
   switch (p) {
-    case 'critical': return 'danger'
-    case 'high': return 'danger'
-    case 'normal': return 'warning'
-    case 'low': return 'neutral'
+    case 'critical':
+      return 'danger'
+    case 'high':
+      return 'danger'
+    case 'normal':
+      return 'warning'
+    case 'low':
+      return 'neutral'
   }
 }
 
@@ -55,7 +59,14 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
 
   return (
     <tr style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
-      <td style={{ padding: '10px 12px', color: theme.textMuted, fontSize: 12, fontFamily: 'monospace' }}>
+      <td
+        style={{
+          padding: '10px 12px',
+          color: theme.textMuted,
+          fontSize: 12,
+          fontFamily: 'monospace',
+        }}
+      >
         {entry.id.slice(0, 8)}…
       </td>
       <td style={{ padding: '10px 12px', color: theme.textPrimary, fontSize: 13 }}>
@@ -66,7 +77,9 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
       </td>
       <td style={{ padding: '10px 12px' }}>
         {entry.priority === 'critical' ? (
-          <span style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}>
+          <span
+            style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}
+          >
             <Badge variant="danger">{entry.priority}</Badge>
           </span>
         ) : (
@@ -76,7 +89,14 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
       <td style={{ padding: '10px 12px', color: theme.textSecondary, fontSize: 13 }}>
         {entry.status}
       </td>
-      <td style={{ padding: '10px 12px', color: theme.textSecondary, fontSize: 13, textAlign: 'center' as const }}>
+      <td
+        style={{
+          padding: '10px 12px',
+          color: theme.textSecondary,
+          fontSize: 13,
+          textAlign: 'center' as const,
+        }}
+      >
         {entry.totalAttempts}
       </td>
       <td style={{ padding: '10px 12px', fontSize: 12, maxWidth: 280 }}>
@@ -86,7 +106,9 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
         </span>
         {hasMore && (
           <button
-            onClick={() => setErrorExpanded(e => !e)}
+            onClick={() => {
+              setErrorExpanded((e) => !e)
+            }}
             style={{
               background: 'none',
               border: 'none',
@@ -106,9 +128,15 @@ export function DLQEntryRow({ entry, onRetry, onDismiss, onViewDetail }: DLQEntr
       </td>
       <td style={{ padding: '10px 12px' }}>
         <div style={{ display: 'flex', gap: 6 }}>
-          <Button size="sm" onClick={onRetry}>Retry</Button>
-          <Button size="sm" onClick={onDismiss}>Dismiss</Button>
-          <Button size="sm" onClick={onViewDetail}>Detail</Button>
+          <Button size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+          <Button size="sm" onClick={onDismiss}>
+            Dismiss
+          </Button>
+          <Button size="sm" onClick={onViewDetail}>
+            Detail
+          </Button>
         </div>
       </td>
     </tr>

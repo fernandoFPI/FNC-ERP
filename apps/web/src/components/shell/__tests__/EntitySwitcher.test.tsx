@@ -21,7 +21,7 @@ function wrap() {
       <ThemeProvider>
         <EntitySwitcher />
       </ThemeProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 

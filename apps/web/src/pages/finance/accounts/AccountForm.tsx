@@ -1,7 +1,12 @@
 ﻿import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
-import { ACCOUNT_QUERY, ACCOUNTS_QUERY, CREATE_ACCOUNT, UPDATE_ACCOUNT } from '../../../graphql/finance'
+import {
+  ACCOUNT_QUERY,
+  ACCOUNTS_QUERY,
+  CREATE_ACCOUNT,
+  UPDATE_ACCOUNT,
+} from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -67,7 +72,10 @@ export default function AccountForm() {
         await updateAccount({ variables: { id, input } })
         addToast({ type: 'success', message: 'Account updated' })
       } else {
-        await createAccount({ variables: { input }, refetchQueries: [{ query: ACCOUNTS_QUERY, variables: {} }] })
+        await createAccount({
+          variables: { input },
+          refetchQueries: [{ query: ACCOUNTS_QUERY, variables: {} }],
+        })
         addToast({ type: 'success', message: 'Account created' })
       }
       navigate('/finance/accounts')
@@ -96,19 +104,32 @@ export default function AccountForm() {
       />
 
       <Card style={{ marginTop: '20px' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+            }}
+          >
             <Input
               label="Account Code"
               value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, code: e.target.value }))
+              }}
               required
               placeholder="e.g. 1001"
             />
             <Select
               label="Type"
               value={form.account_type}
-              onChange={(e) => setForm((f) => ({ ...f, account_type: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, account_type: e.target.value }))
+              }}
             >
               <option value="asset">Asset</option>
               <option value="liability">Liability</option>
@@ -121,16 +142,26 @@ export default function AccountForm() {
           <Input
             label="Account Name"
             value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, name: e.target.value }))
+            }}
             required
             placeholder="e.g. Cash and Cash Equivalents"
           />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+            }}
+          >
             <Select
               label="Currency"
               value={form.currency_code}
-              onChange={(e) => setForm((f) => ({ ...f, currency_code: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, currency_code: e.target.value }))
+              }}
             >
               <option value="IQD">IQD</option>
               <option value="USD">USD</option>
@@ -140,9 +171,15 @@ export default function AccountForm() {
             <Select
               label="Parent Account"
               value={form.parent_id}
-              onChange={(e) => setForm((f) => ({ ...f, parent_id: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, parent_id: e.target.value }))
+              }}
             >
-              {parentOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {parentOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </Select>
           </div>
 
@@ -150,17 +187,35 @@ export default function AccountForm() {
             <Checkbox
               label="Reconcilable"
               checked={form.is_reconcilable}
-              onChange={(checked) => setForm((f) => ({ ...f, is_reconcilable: checked }))}
+              onChange={(checked) => {
+                setForm((f) => ({ ...f, is_reconcilable: checked }))
+              }}
             />
             <Checkbox
               label="Active"
               checked={form.is_active}
-              onChange={(checked) => setForm((f) => ({ ...f, is_active: checked }))}
+              onChange={(checked) => {
+                setForm((f) => ({ ...f, is_active: checked }))
+              }}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: `1px solid ${theme.border}`, paddingTop: '16px' }}>
-            <Button variant="ghost" type="button" onClick={() => navigate('/finance/accounts')}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              borderTop: `1px solid ${theme.border}`,
+              paddingTop: '16px',
+            }}
+          >
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                navigate('/finance/accounts')
+              }}
+            >
               Cancel
             </Button>
             <Button variant="primary" type="submit" loading={loading}>

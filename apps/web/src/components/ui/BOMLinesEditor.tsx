@@ -20,7 +20,13 @@ interface Props {
   currency?: string
 }
 
-export function BOMLinesEditor({ lines, onChange, products, costPreview, currency = 'IQD' }: Props) {
+export function BOMLinesEditor({
+  lines,
+  onChange,
+  products,
+  costPreview,
+  currency = 'IQD',
+}: Props) {
   const { theme } = useTheme()
 
   function addLine() {
@@ -36,15 +42,15 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
   }
 
   function removeLine(id: string) {
-    onChange(lines.filter(l => l.id !== id))
+    onChange(lines.filter((l) => l.id !== id))
   }
 
   function updateLine(id: string, patch: Partial<BOMLine>) {
-    onChange(lines.map(l => l.id === id ? { ...l, ...patch } : l))
+    onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)))
   }
 
   function selectProduct(lineId: string, productId: string) {
-    const p = products.find(p => p.id === productId)
+    const p = products.find((p) => p.id === productId)
     if (!p) return
     updateLine(lineId, {
       component_product_id: productId,
@@ -80,8 +86,17 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>BOM Components</span>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '8px',
+        }}
+      >
+        <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+          BOM Components
+        </span>
         {costPreview != null && (
           <span style={{ fontSize: '13px', color: theme.accent, fontFamily: 'monospace' }}>
             Planned Cost: {costPreview.toLocaleString()} {currency}
@@ -107,13 +122,20 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
             {lines.map((line, idx) => {
               const lineTotal = line.qty * line.unit_cost
               return (
-                <tr key={line.id} style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
-                  <td style={{ padding: '6px 12px', color: theme.textMuted, fontSize: '12px' }}>{idx + 1}</td>
+                <tr
+                  key={line.id}
+                  style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}
+                >
+                  <td style={{ padding: '6px 12px', color: theme.textMuted, fontSize: '12px' }}>
+                    {idx + 1}
+                  </td>
                   <td style={{ padding: '4px 8px' }}>
                     <SearchableSelect
                       value={line.component_product_id}
-                      onChange={(pid) => selectProduct(line.id, pid)}
-                      options={products.map(p => ({ value: p.id, label: p.name }))}
+                      onChange={(pid) => {
+                        selectProduct(line.id, pid)
+                      }}
+                      options={products.map((p) => ({ value: p.id, label: p.name }))}
                       placeholder="Select product…"
                     />
                   </td>
@@ -123,7 +145,9 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
                       min="0.001"
                       step="0.001"
                       value={line.qty}
-                      onChange={(e) => updateLine(line.id, { qty: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        updateLine(line.id, { qty: parseFloat(e.target.value) || 0 })
+                      }}
                       style={{
                         width: '100%',
                         background: theme.bgSurface,
@@ -139,7 +163,9 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
                   <td style={{ padding: '4px 8px' }}>
                     <input
                       value={line.uom}
-                      onChange={(e) => updateLine(line.id, { uom: e.target.value })}
+                      onChange={(e) => {
+                        updateLine(line.id, { uom: e.target.value })
+                      }}
                       style={{
                         width: '100%',
                         background: theme.bgSurface,
@@ -157,7 +183,9 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
                       min="0"
                       step="0.01"
                       value={line.unit_cost}
-                      onChange={(e) => updateLine(line.id, { unit_cost: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        updateLine(line.id, { unit_cost: parseFloat(e.target.value) || 0 })
+                      }}
                       style={{
                         width: '100%',
                         background: theme.bgSurface,
@@ -170,22 +198,79 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
                       }}
                     />
                   </td>
-                  <td style={{ padding: '6px 12px', fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary }}>
+                  <td
+                    style={{
+                      padding: '6px 12px',
+                      fontFamily: 'monospace',
+                      fontSize: '13px',
+                      color: theme.textPrimary,
+                    }}
+                  >
                     {lineTotal.toLocaleString()}
                   </td>
                   <td style={{ padding: '4px', whiteSpace: 'nowrap' }}>
-                    <button onClick={() => moveUp(idx)} disabled={idx === 0} style={{ background: 'none', border: 'none', cursor: idx === 0 ? 'not-allowed' : 'pointer', color: theme.textMuted, padding: '2px 4px' }}>↑</button>
-                    <button onClick={() => moveDown(idx)} disabled={idx === lines.length - 1} style={{ background: 'none', border: 'none', cursor: idx === lines.length - 1 ? 'not-allowed' : 'pointer', color: theme.textMuted, padding: '2px 4px' }}>↓</button>
+                    <button
+                      onClick={() => {
+                        moveUp(idx)
+                      }}
+                      disabled={idx === 0}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: idx === 0 ? 'not-allowed' : 'pointer',
+                        color: theme.textMuted,
+                        padding: '2px 4px',
+                      }}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => {
+                        moveDown(idx)
+                      }}
+                      disabled={idx === lines.length - 1}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: idx === lines.length - 1 ? 'not-allowed' : 'pointer',
+                        color: theme.textMuted,
+                        padding: '2px 4px',
+                      }}
+                    >
+                      ↓
+                    </button>
                   </td>
                   <td style={{ padding: '4px' }}>
-                    <button onClick={() => removeLine(line.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.danger, padding: '4px', fontSize: '16px' }}>×</button>
+                    <button
+                      onClick={() => {
+                        removeLine(line.id)
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: theme.danger,
+                        padding: '4px',
+                        fontSize: '16px',
+                      }}
+                    >
+                      ×
+                    </button>
                   </td>
                 </tr>
               )
             })}
             {lines.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+                <td
+                  colSpan={8}
+                  style={{
+                    padding: '20px',
+                    textAlign: 'center',
+                    color: theme.textMuted,
+                    fontSize: '13px',
+                  }}
+                >
                   No components added yet
                 </td>
               </tr>
@@ -194,8 +279,27 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
           {lines.length > 0 && (
             <tfoot>
               <tr style={{ background: theme.bgSurfaceHover }}>
-                <td colSpan={5} style={{ padding: '8px 12px', textAlign: 'right', fontSize: '13px', color: theme.textSecondary, fontWeight: 600 }}>Total Planned Cost</td>
-                <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontSize: '13px', color: theme.accent, fontWeight: 700 }}>
+                <td
+                  colSpan={5}
+                  style={{
+                    padding: '8px 12px',
+                    textAlign: 'right',
+                    fontSize: '13px',
+                    color: theme.textSecondary,
+                    fontWeight: 600,
+                  }}
+                >
+                  Total Planned Cost
+                </td>
+                <td
+                  style={{
+                    padding: '8px 12px',
+                    fontFamily: 'monospace',
+                    fontSize: '13px',
+                    color: theme.accent,
+                    fontWeight: 700,
+                  }}
+                >
                   {lines.reduce((s, l) => s + l.qty * l.unit_cost, 0).toLocaleString()}
                 </td>
                 <td colSpan={2} />
@@ -205,7 +309,9 @@ export function BOMLinesEditor({ lines, onChange, products, costPreview, currenc
         </table>
       </div>
 
-      <Button variant="ghost" size="sm" onClick={addLine} style={{ marginTop: '8px' }}>+ Add Component</Button>
+      <Button variant="ghost" size="sm" onClick={addLine} style={{ marginTop: '8px' }}>
+        + Add Component
+      </Button>
     </div>
   )
 }

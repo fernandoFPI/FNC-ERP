@@ -6,8 +6,14 @@ import { Button } from './Button'
 import { Checkbox } from './Checkbox'
 import { formatRelativeTime } from '../../lib/format'
 
-interface Company { id: string; name: string }
-interface CostCenter { id: string; name: string }
+interface Company {
+  id: string
+  name: string
+}
+interface CostCenter {
+  id: string
+  name: string
+}
 
 interface ReportFilterPanelProps {
   type: 'date_range' | 'single_date' | 'period_select'
@@ -66,12 +72,12 @@ export function ReportFilterPanel({
 
   const companyOptions = [
     { value: '', label: 'All Companies' },
-    ...(companies ?? []).map(c => ({ value: c.id, label: c.name })),
+    ...(companies ?? []).map((c) => ({ value: c.id, label: c.name })),
   ]
 
   const costCenterOptions = [
     { value: '', label: 'All Cost Centers' },
-    ...(costCenters ?? []).map(cc => ({ value: cc.id, label: cc.name })),
+    ...(costCenters ?? []).map((cc) => ({ value: cc.id, label: cc.name })),
   ]
 
   const handleExport = (fmt: 'csv' | 'xlsx' | 'pdf') => {
@@ -80,26 +86,28 @@ export function ReportFilterPanel({
   }
 
   return (
-    <div style={{
-      position: 'sticky',
-      top: 0,
-      zIndex: 10,
-      background: theme.bgSurface,
-      border: `1px solid ${theme.border}`,
-      borderRadius: 10,
-      padding: '12px 16px',
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: 12,
-      alignItems: 'flex-end',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-    }}>
+    <div
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        background: theme.bgSurface,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 10,
+        padding: '12px 16px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 12,
+        alignItems: 'flex-end',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+      }}
+    >
       {/* Company selector */}
       {companies && companies.length > 0 && (
         <Select
           label="Company"
           value={selectedCompanyId ?? ''}
-          onChange={e => onCompanyChange?.(e.target.value)}
+          onChange={(e) => onCompanyChange?.(e.target.value)}
           options={companyOptions}
           style={{ minWidth: 160 }}
         />
@@ -110,7 +118,7 @@ export function ReportFilterPanel({
         <Select
           label="Cost Center"
           value={selectedCostCenterId ?? ''}
-          onChange={e => onCostCenterChange?.(e.target.value)}
+          onChange={(e) => onCostCenterChange?.(e.target.value)}
           options={costCenterOptions}
           style={{ minWidth: 160 }}
         />
@@ -123,7 +131,7 @@ export function ReportFilterPanel({
             label="From"
             type="date"
             value={localFrom}
-            onChange={e => {
+            onChange={(e) => {
               setLocalFrom(e.target.value)
               onDateChange?.(e.target.value, localTo)
             }}
@@ -133,7 +141,7 @@ export function ReportFilterPanel({
             label="To"
             type="date"
             value={localTo}
-            onChange={e => {
+            onChange={(e) => {
               setLocalTo(e.target.value)
               onDateChange?.(localFrom, e.target.value)
             }}
@@ -147,7 +155,7 @@ export function ReportFilterPanel({
           label="As of Date"
           type="date"
           value={asOfDate ?? ''}
-          onChange={e => onAsOfDateChange?.(e.target.value)}
+          onChange={(e) => onAsOfDateChange?.(e.target.value)}
           style={{ width: 140 }}
         />
       )}
@@ -156,7 +164,9 @@ export function ReportFilterPanel({
         <Select
           label="Period"
           value={localPeriod}
-          onChange={e => setLocalPeriod(e.target.value)}
+          onChange={(e) => {
+            setLocalPeriod(e.target.value)
+          }}
           options={PERIODS}
           style={{ width: 160 }}
         />
@@ -168,11 +178,7 @@ export function ReportFilterPanel({
       {/* Auto-refresh toggle */}
       {onAutoRefreshToggle !== undefined && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 4 }}>
-          <Checkbox
-            checked={autoRefresh}
-            onChange={onAutoRefreshToggle}
-            label="Auto-refresh"
-          />
+          <Checkbox checked={autoRefresh} onChange={onAutoRefreshToggle} label="Auto-refresh" />
         </div>
       )}
 
@@ -185,33 +191,44 @@ export function ReportFilterPanel({
 
       {/* Print */}
       {onPrint && (
-        <Button onClick={onPrint} size="sm">Print</Button>
+        <Button onClick={onPrint} size="sm">
+          Print
+        </Button>
       )}
 
       {/* Export dropdown */}
       {onExport && (
         <div style={{ position: 'relative' }} ref={dropdownRef}>
-          <Button onClick={() => setExportOpen(o => !o)} size="sm">
+          <Button
+            onClick={() => {
+              setExportOpen((o) => !o)
+            }}
+            size="sm"
+          >
             Export ▾
           </Button>
           {exportOpen && (
-            <div style={{
-              position: 'absolute',
-              right: 0,
-              top: '100%',
-              marginTop: 4,
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: 8,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-              zIndex: 100,
-              minWidth: 120,
-              overflow: 'hidden',
-            }}>
-              {(['csv', 'xlsx', 'pdf'] as const).map(fmt => (
+            <div
+              style={{
+                position: 'absolute',
+                right: 0,
+                top: '100%',
+                marginTop: 4,
+                background: theme.bgSurface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: 8,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+                zIndex: 100,
+                minWidth: 120,
+                overflow: 'hidden',
+              }}
+            >
+              {(['csv', 'xlsx', 'pdf'] as const).map((fmt) => (
                 <button
                   key={fmt}
-                  onClick={() => handleExport(fmt)}
+                  onClick={() => {
+                    handleExport(fmt)
+                  }}
                   style={{
                     display: 'block',
                     width: '100%',
@@ -223,8 +240,8 @@ export function ReportFilterPanel({
                     color: theme.textPrimary,
                     fontSize: 13,
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = theme.bgSurfaceHover)}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = theme.bgSurfaceHover)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
                 >
                   {fmt.toUpperCase()}
                 </button>

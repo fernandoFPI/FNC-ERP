@@ -56,26 +56,32 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
     reference: '',
   })
 
-  const set = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
+  const set =
+    (k: keyof FormState) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+      setForm((f) => ({ ...f, [k]: e.target.value }))
+    }
 
   const fromCompanyOptions = [
     { value: '', label: 'Select company…' },
-    ...COMPANIES.filter(c => c.id !== form.toCompanyId).map(c => ({ value: c.id, label: c.name })),
+    ...COMPANIES.filter((c) => c.id !== form.toCompanyId).map((c) => ({
+      value: c.id,
+      label: c.name,
+    })),
   ]
 
   const toCompanyOptions = [
     { value: '', label: 'Select company…' },
-    ...COMPANIES.filter(c => c.id !== form.fromCompanyId).map(c => ({ value: c.id, label: c.name })),
+    ...COMPANIES.filter((c) => c.id !== form.fromCompanyId).map((c) => ({
+      value: c.id,
+      label: c.name,
+    })),
   ]
 
-  const txTypeOptions = [
-    { value: '', label: 'Select type…' },
-    ...TRANSACTION_TYPES,
-  ]
+  const txTypeOptions = [{ value: '', label: 'Select type…' }, ...TRANSACTION_TYPES]
 
-  const fromCompany = COMPANIES.find(c => c.id === form.fromCompanyId)
-  const toCompany = COMPANIES.find(c => c.id === form.toCompanyId)
+  const fromCompany = COMPANIES.find((c) => c.id === form.fromCompanyId)
+  const toCompany = COMPANIES.find((c) => c.id === form.toCompanyId)
   const amountNum = parseFloat(form.amount) || 0
 
   const handleSubmit = async () => {
@@ -117,14 +123,16 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
     <Modal open onClose={onCancel} title="New Intercompany Transaction" size="lg" footer={footer}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {error && (
-          <div style={{
-            background: theme.dangerBg,
-            border: `1px solid ${theme.dangerBorder}`,
-            borderRadius: 6,
-            padding: '8px 12px',
-            color: theme.danger,
-            fontSize: 13,
-          }}>
+          <div
+            style={{
+              background: theme.dangerBg,
+              border: `1px solid ${theme.dangerBorder}`,
+              borderRadius: 6,
+              padding: '8px 12px',
+              color: theme.danger,
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         )}
@@ -133,14 +141,18 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
           <Select
             label="From Company *"
             value={form.fromCompanyId}
-            onChange={e => setForm(f => ({ ...f, fromCompanyId: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, fromCompanyId: e.target.value }))
+            }}
             options={fromCompanyOptions}
             required
           />
           <Select
             label="To Company *"
             value={form.toCompanyId}
-            onChange={e => setForm(f => ({ ...f, toCompanyId: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, toCompanyId: e.target.value }))
+            }}
             options={toCompanyOptions}
             required
           />
@@ -149,7 +161,9 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
         <Select
           label="Transaction Type *"
           value={form.transactionType}
-          onChange={e => setForm(f => ({ ...f, transactionType: e.target.value }))}
+          onChange={(e) => {
+            setForm((f) => ({ ...f, transactionType: e.target.value }))
+          }}
           options={txTypeOptions}
           required
         />
@@ -166,7 +180,9 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
           <Select
             label="Currency"
             value={form.currencyCode}
-            onChange={e => setForm(f => ({ ...f, currencyCode: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, currencyCode: e.target.value }))
+            }}
             options={CURRENCIES}
           />
         </div>
@@ -188,21 +204,55 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
 
         {/* Journal entry preview */}
         {fromCompany && toCompany && amountNum > 0 && (
-          <div style={{
-            background: theme.bgSurfaceHover,
-            border: `1px solid ${theme.border}`,
-            borderRadius: 8,
-            padding: '12px 14px',
-          }}>
-            <div style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+          <div
+            style={{
+              background: theme.bgSurfaceHover,
+              border: `1px solid ${theme.border}`,
+              borderRadius: 8,
+              padding: '12px 14px',
+            }}
+          >
+            <div
+              style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 600, marginBottom: 8 }}
+            >
               Journal Entry Preview
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left' as const, color: theme.textMuted, fontSize: 11, padding: '2px 8px', fontWeight: 500 }}>Account</th>
-                  <th style={{ textAlign: 'right' as const, color: theme.textMuted, fontSize: 11, padding: '2px 8px', fontWeight: 500 }}>Dr</th>
-                  <th style={{ textAlign: 'right' as const, color: theme.textMuted, fontSize: 11, padding: '2px 8px', fontWeight: 500 }}>Cr</th>
+                  <th
+                    style={{
+                      textAlign: 'left' as const,
+                      color: theme.textMuted,
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Account
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right' as const,
+                      color: theme.textMuted,
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Dr
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right' as const,
+                      color: theme.textMuted,
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    Cr
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -210,8 +260,15 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
                   <td style={{ padding: '3px 8px', color: theme.textPrimary }}>
                     {fromCompany.name} — Interco Receivable
                   </td>
-                  <td style={{ padding: '3px 8px', color: theme.success, textAlign: 'right' as const }}>
-                    {amountNum.toLocaleString('en-US', { maximumFractionDigits: 2 })} {form.currencyCode}
+                  <td
+                    style={{
+                      padding: '3px 8px',
+                      color: theme.success,
+                      textAlign: 'right' as const,
+                    }}
+                  >
+                    {amountNum.toLocaleString('en-US', { maximumFractionDigits: 2 })}{' '}
+                    {form.currencyCode}
                   </td>
                   <td style={{ padding: '3px 8px', textAlign: 'right' as const }}>—</td>
                 </tr>
@@ -220,8 +277,11 @@ export function IntercoTransactionForm({ onSuccess, onCancel }: IntercoTransacti
                     {toCompany.name} — Interco Payable
                   </td>
                   <td style={{ padding: '3px 8px', textAlign: 'right' as const }}>—</td>
-                  <td style={{ padding: '3px 8px', color: theme.danger, textAlign: 'right' as const }}>
-                    {amountNum.toLocaleString('en-US', { maximumFractionDigits: 2 })} {form.currencyCode}
+                  <td
+                    style={{ padding: '3px 8px', color: theme.danger, textAlign: 'right' as const }}
+                  >
+                    {amountNum.toLocaleString('en-US', { maximumFractionDigits: 2 })}{' '}
+                    {form.currencyCode}
                   </td>
                 </tr>
               </tbody>

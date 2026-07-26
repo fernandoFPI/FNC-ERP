@@ -44,8 +44,17 @@ export default function TrialBalance() {
 
       <Card style={{ marginTop: '20px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '12px', padding: '16px', alignItems: 'flex-end' }}>
-          <Input label="As of Date" type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} />
-          <Button variant="primary" onClick={run} loading={loading}>Run Report</Button>
+          <Input
+            label="As of Date"
+            type="date"
+            value={asOfDate}
+            onChange={(e) => {
+              setAsOfDate(e.target.value)
+            }}
+          />
+          <Button variant="primary" onClick={run} loading={loading}>
+            Run Report
+          </Button>
         </div>
       </Card>
 
@@ -56,19 +65,69 @@ export default function TrialBalance() {
               <thead>
                 <tr style={{ background: theme.bgSurface }}>
                   {['Code', 'Account Name', 'Type', 'Debit', 'Credit', 'Balance'].map((h) => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: h === 'Code' || h === 'Account Name' || h === 'Type' ? 'left' : 'right', fontWeight: 600, fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>{h}</th>
+                    <th
+                      key={h}
+                      style={{
+                        padding: '10px 16px',
+                        textAlign:
+                          h === 'Code' || h === 'Account Name' || h === 'Type' ? 'left' : 'right',
+                        fontWeight: 600,
+                        fontSize: '11px',
+                        color: theme.textMuted,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        borderBottom: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: theme.textPrimary }}>{r.code}</td>
+                    <td
+                      style={{
+                        padding: '10px 16px',
+                        fontFamily: 'monospace',
+                        color: theme.textPrimary,
+                      }}
+                    >
+                      {r.code}
+                    </td>
                     <td style={{ padding: '10px 16px', color: theme.textPrimary }}>{r.name}</td>
-                    <td style={{ padding: '10px 16px' }}><Badge variant="neutral">{r.account_type}</Badge></td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', color: theme.textPrimary }}>{parseFloat(r.total_debit).toLocaleString()}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', color: theme.textPrimary }}>{parseFloat(r.total_credit).toLocaleString()}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', color: parseFloat(r.balance) >= 0 ? theme.textPrimary : theme.danger }}>
+                    <td style={{ padding: '10px 16px' }}>
+                      <Badge variant="neutral">{r.account_type}</Badge>
+                    </td>
+                    <td
+                      style={{
+                        padding: '10px 16px',
+                        textAlign: 'right',
+                        fontFamily: 'monospace',
+                        color: theme.textPrimary,
+                      }}
+                    >
+                      {parseFloat(r.total_debit).toLocaleString()}
+                    </td>
+                    <td
+                      style={{
+                        padding: '10px 16px',
+                        textAlign: 'right',
+                        fontFamily: 'monospace',
+                        color: theme.textPrimary,
+                      }}
+                    >
+                      {parseFloat(r.total_credit).toLocaleString()}
+                    </td>
+                    <td
+                      style={{
+                        padding: '10px 16px',
+                        textAlign: 'right',
+                        fontFamily: 'monospace',
+                        color: parseFloat(r.balance) >= 0 ? theme.textPrimary : theme.danger,
+                      }}
+                    >
                       {parseFloat(r.balance).toLocaleString()}
                     </td>
                   </tr>
@@ -76,10 +135,44 @@ export default function TrialBalance() {
               </tbody>
               <tfoot>
                 <tr style={{ background: theme.bgSurface, borderTop: `2px solid ${theme.border}` }}>
-                  <td colSpan={3} style={{ padding: '10px 16px', fontWeight: 600, color: theme.textPrimary }}>Totals</td>
-                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: theme.textPrimary }}>{totalDebit.toLocaleString()}</td>
-                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: theme.textPrimary }}>{totalCredit.toLocaleString()}</td>
-                  <td style={{ padding: '10px 16px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: Math.abs(totalDebit - totalCredit) < 0.01 ? theme.success : theme.danger }}>
+                  <td
+                    colSpan={3}
+                    style={{ padding: '10px 16px', fontWeight: 600, color: theme.textPrimary }}
+                  >
+                    Totals
+                  </td>
+                  <td
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'right',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      color: theme.textPrimary,
+                    }}
+                  >
+                    {totalDebit.toLocaleString()}
+                  </td>
+                  <td
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'right',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      color: theme.textPrimary,
+                    }}
+                  >
+                    {totalCredit.toLocaleString()}
+                  </td>
+                  <td
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'right',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      color:
+                        Math.abs(totalDebit - totalCredit) < 0.01 ? theme.success : theme.danger,
+                    }}
+                  >
                     {(totalDebit - totalCredit).toLocaleString()}
                   </td>
                 </tr>

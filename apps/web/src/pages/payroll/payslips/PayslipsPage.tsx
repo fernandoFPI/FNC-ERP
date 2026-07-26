@@ -4,7 +4,8 @@ import { MY_PAYSLIPS_QUERY } from '../../../graphql/payroll'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { PayslipViewer } from '../../../components/ui/PayslipViewer'
@@ -28,14 +29,50 @@ export default function PayslipsPage() {
   const lines: PayslipLine[] = data?.myPayslips ?? []
 
   const columns: Column<PayslipLine>[] = [
-    { key: 'employee_name', header: 'Name', render: (l) => <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.employee_name ?? '—'}</span> },
-    { key: 'gross_salary', header: 'Gross', render: (l) => l.gross_salary ? <AmountDisplay amount={parseFloat(l.gross_salary)} currency={l.currency_code ?? 'IQD'} /> : <span style={{ color: theme.textMuted }}>—</span> },
-    { key: 'net_salary', header: 'Net', render: (l) => l.net_salary ? <AmountDisplay amount={parseFloat(l.net_salary)} currency={l.currency_code ?? 'IQD'} colored /> : <span style={{ color: theme.textMuted }}>—</span> },
+    {
+      key: 'employee_name',
+      header: 'Name',
+      render: (l) => (
+        <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.employee_name ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'gross_salary',
+      header: 'Gross',
+      render: (l) =>
+        l.gross_salary ? (
+          <AmountDisplay amount={parseFloat(l.gross_salary)} currency={l.currency_code ?? 'IQD'} />
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
+    {
+      key: 'net_salary',
+      header: 'Net',
+      render: (l) =>
+        l.net_salary ? (
+          <AmountDisplay
+            amount={parseFloat(l.net_salary)}
+            currency={l.currency_code ?? 'IQD'}
+            colored
+          />
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
     {
       key: 'id',
       header: '',
       render: (l) => (
-        <Button variant="ghost" size="sm" onClick={() => setSelectedId(l.id)}>View</Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setSelectedId(l.id)
+          }}
+        >
+          View
+        </Button>
       ),
     },
   ]
@@ -48,7 +85,14 @@ export default function PayslipsPage() {
         <Table columns={columns} data={lines} loading={loading} rowKey="id" />
       </Card>
 
-      <Modal open={!!selectedId} onClose={() => setSelectedId(null)} title="Payslip" size="lg">
+      <Modal
+        open={!!selectedId}
+        onClose={() => {
+          setSelectedId(null)
+        }}
+        title="Payslip"
+        size="lg"
+      >
         {selectedId && <PayslipViewer payrollLineId={selectedId} employeeId="" />}
       </Modal>
     </div>

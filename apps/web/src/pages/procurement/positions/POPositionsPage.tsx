@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
-import { PO_POSITIONS_QUERY, ASSIGN_PO_POSITION, REMOVE_PO_POSITION } from '../../../graphql/procurement'
+import {
+  PO_POSITIONS_QUERY,
+  ASSIGN_PO_POSITION,
+  REMOVE_PO_POSITION,
+} from '../../../graphql/procurement'
 import { EMPLOYEES_QUERY, DEPARTMENTS_QUERY } from '../../../graphql/hr'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -35,7 +39,10 @@ const POSITION_VARIANT: Record<string, 'info' | 'warning' | 'accent' | 'neutral'
 }
 
 // ── Searchable employee combobox ─────────────────────────────────────────────
-interface EmployeeOption { id: string; label: string }
+interface EmployeeOption {
+  id: string
+  label: string
+}
 
 function EmployeeCombobox({
   value,
@@ -72,7 +79,9 @@ function EmployeeCombobox({
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   function select(opt: EmployeeOption) {
@@ -85,8 +94,14 @@ function EmployeeCombobox({
     <div ref={wrapRef} style={{ position: 'relative' }}>
       <input
         value={open ? search : (value?.label ?? '')}
-        onFocus={() => { setOpen(true); setSearch('') }}
-        onChange={(e) => { setSearch(e.target.value); onChange(null) }}
+        onFocus={() => {
+          setOpen(true)
+          setSearch('')
+        }}
+        onChange={(e) => {
+          setSearch(e.target.value)
+          onChange(null)
+        }}
         placeholder="Search by name or employee number…"
         style={{
           width: '100%',
@@ -101,19 +116,21 @@ function EmployeeCombobox({
         }}
       />
       {open && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 4px)',
-          left: 0,
-          right: 0,
-          background: theme.bgSurface,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '8px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-          zIndex: 100,
-          maxHeight: '220px',
-          overflowY: 'auto',
-        }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            background: theme.bgSurface,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '8px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+            zIndex: 100,
+            maxHeight: '220px',
+            overflowY: 'auto',
+          }}
+        >
           {options.length === 0 && (
             <div style={{ padding: '12px 14px', fontSize: '12px', color: theme.textMuted }}>
               {search ? 'No employees found' : 'Type to search…'}
@@ -122,7 +139,9 @@ function EmployeeCombobox({
           {options.map((opt) => (
             <div
               key={opt.id}
-              onMouseDown={() => select(opt)}
+              onMouseDown={() => {
+                select(opt)
+              }}
               style={{
                 padding: '9px 14px',
                 fontSize: '13px',
@@ -132,7 +151,10 @@ function EmployeeCombobox({
                 borderBottom: `1px solid ${theme.border}22`,
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = `${theme.accent}12`)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = value?.id === opt.id ? `${theme.accent}18` : 'transparent')}
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background =
+                  value?.id === opt.id ? `${theme.accent}18` : 'transparent')
+              }
             >
               {opt.label}
             </div>
@@ -165,7 +187,9 @@ export default function POPositionsPage() {
     setDepartmentId('')
   }
 
-  const { data, loading, refetch } = useQuery(PO_POSITIONS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading, refetch } = useQuery(PO_POSITIONS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  })
 
   // load projects + departments for scope dropdowns
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
@@ -174,11 +198,23 @@ export default function POPositionsPage() {
   })
   const { data: deptData } = useQuery(DEPARTMENTS_QUERY, { skip: !showAssignModal })
 
-  const projects = (projectsData?.projects?.data ?? []) as Array<{ id: string; code: string; name: string }>
-  const departments = (deptData?.departments ?? []) as Array<{ id: string; name: string; is_active: boolean }>
+  const projects = (projectsData?.projects?.data ?? []) as {
+    id: string
+    code: string
+    name: string
+  }[]
+  const departments = (deptData?.departments ?? []) as {
+    id: string
+    name: string
+    is_active: boolean
+  }[]
 
   const [assignPosition, { loading: assigning }] = useMutation(ASSIGN_PO_POSITION, {
-    onCompleted: () => { setShowAssignModal(false); resetForm(); void refetch() },
+    onCompleted: () => {
+      setShowAssignModal(false)
+      resetForm()
+      void refetch()
+    },
   })
 
   const [removePosition] = useMutation(REMOVE_PO_POSITION, {
@@ -192,8 +228,12 @@ export default function POPositionsPage() {
     return true
   })
 
-  const canSubmit = !!selectedEmployee && !!position &&
-    (scopeType === 'none' || (scopeType === 'project' && !!projectId) || (scopeType === 'department' && !!departmentId))
+  const canSubmit =
+    !!selectedEmployee &&
+    !!position &&
+    (scopeType === 'none' ||
+      (scopeType === 'project' && !!projectId) ||
+      (scopeType === 'department' && !!departmentId))
 
   function handleAssign() {
     if (!selectedEmployee) return
@@ -215,7 +255,13 @@ export default function POPositionsPage() {
         title="PO Positions"
         subtitle="Assign employees to procurement roles per project or department"
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowAssignModal(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setShowAssignModal(true)
+            }}
+          >
             Assign position
           </Button>
         }
@@ -225,9 +271,15 @@ export default function POPositionsPage() {
         {(['all', 'project', 'department'] as const).map((s) => (
           <button
             key={s}
-            onClick={() => setScopeFilter(s)}
+            onClick={() => {
+              setScopeFilter(s)
+            }}
             style={{
-              padding: '6px 14px', borderRadius: '20px', border: `1px solid ${theme.border}`, cursor: 'pointer', fontSize: '12px',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              border: `1px solid ${theme.border}`,
+              cursor: 'pointer',
+              fontSize: '12px',
               background: scopeFilter === s ? theme.accent : 'transparent',
               color: scopeFilter === s ? '#fff' : theme.textMuted,
             }}
@@ -238,16 +290,41 @@ export default function POPositionsPage() {
       </div>
 
       <Card>
-        {loading && <div style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>Loading…</div>}
+        {loading && (
+          <div style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>
+            Loading…
+          </div>
+        )}
         {!loading && filtered.length === 0 && (
-          <div style={{ padding: '32px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No positions assigned.</div>
+          <div
+            style={{
+              padding: '32px',
+              textAlign: 'center',
+              color: theme.textMuted,
+              fontSize: '13px',
+            }}
+          >
+            No positions assigned.
+          </div>
         )}
         {!loading && filtered.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
                 {['Employee', 'Position', 'Scope', 'Active', 'Assigned'].map((h) => (
-                  <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase' }}>{h}</th>
+                  <th
+                    key={h}
+                    style={{
+                      padding: '10px 12px',
+                      textAlign: 'left',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
                 <th style={{ padding: '10px 12px' }} />
               </tr>
@@ -255,24 +332,36 @@ export default function POPositionsPage() {
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}22` }}>
-                  <td style={{ padding: '12px', fontSize: '13px', color: theme.textPrimary }}>{p.employeeName}</td>
+                  <td style={{ padding: '12px', fontSize: '13px', color: theme.textPrimary }}>
+                    {p.employeeName}
+                  </td>
                   <td style={{ padding: '12px' }}>
                     <Badge variant={POSITION_VARIANT[p.position] ?? 'neutral'}>
                       {PO_POSITIONS.find((pos) => pos.key === p.position)?.label ?? p.position}
                     </Badge>
                   </td>
                   <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
-                    {p.projectName ? `Project: ${p.projectName}` : p.departmentName ? `Dept: ${p.departmentName}` : 'Company-wide'}
+                    {p.projectName
+                      ? `Project: ${p.projectName}`
+                      : p.departmentName
+                        ? `Dept: ${p.departmentName}`
+                        : 'Company-wide'}
                   </td>
                   <td style={{ padding: '12px' }}>
-                    <Badge variant={p.isActive ? 'success' : 'neutral'}>{p.isActive ? 'Active' : 'Inactive'}</Badge>
+                    <Badge variant={p.isActive ? 'success' : 'neutral'}>
+                      {p.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
                   </td>
-                  <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>{p.createdAt.slice(0, 10)}</td>
+                  <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
+                    {p.createdAt.slice(0, 10)}
+                  </td>
                   <td style={{ padding: '12px' }}>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => setConfirmRemovePosition(p.id)}
+                      onClick={() => {
+                        setConfirmRemovePosition(p.id)
+                      }}
                     >
                       Remove
                     </Button>
@@ -285,12 +374,26 @@ export default function POPositionsPage() {
       </Card>
 
       {showAssignModal && (
-        <Modal open={showAssignModal} title="Assign PO Position" onClose={() => { setShowAssignModal(false); resetForm() }}>
+        <Modal
+          open={showAssignModal}
+          title="Assign PO Position"
+          onClose={() => {
+            setShowAssignModal(false)
+            resetForm()
+          }}
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '420px' }}>
-
             {/* Employee */}
             <div>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, display: 'block', marginBottom: '6px' }}>
+              <label
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '6px',
+                }}
+              >
                 Employee
               </label>
               <EmployeeCombobox value={selectedEmployee} onChange={setSelectedEmployee} />
@@ -300,25 +403,43 @@ export default function POPositionsPage() {
             <Select
               label="Position"
               value={position}
-              onChange={(e) => setPosition(e.target.value)}
+              onChange={(e) => {
+                setPosition(e.target.value)
+              }}
               options={PO_POSITIONS.map((p) => ({ value: p.key, label: p.label }))}
               placeholder="Select position"
             />
 
             {/* Scope */}
             <div>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted, display: 'block', marginBottom: '8px' }}>
+              <label
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '8px',
+                }}
+              >
                 Scope
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                 {(['none', 'project', 'department'] as const).map((s) => {
-                  const labels = { none: 'Company-wide', project: 'Project', department: 'Department' }
+                  const labels = {
+                    none: 'Company-wide',
+                    project: 'Project',
+                    department: 'Department',
+                  }
                   const active = scopeType === s
                   return (
                     <button
                       key={s}
                       type="button"
-                      onClick={() => { setScopeType(s); setProjectId(''); setDepartmentId('') }}
+                      onClick={() => {
+                        setScopeType(s)
+                        setProjectId('')
+                        setDepartmentId('')
+                      }}
                       style={{
                         flex: 1,
                         padding: '7px 0',
@@ -347,7 +468,9 @@ export default function POPositionsPage() {
                 <Select
                   label=""
                   value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
+                  onChange={(e) => {
+                    setProjectId(e.target.value)
+                  }}
                   placeholder="Select project…"
                   options={projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
                 />
@@ -357,16 +480,35 @@ export default function POPositionsPage() {
                 <Select
                   label=""
                   value={departmentId}
-                  onChange={(e) => setDepartmentId(e.target.value)}
+                  onChange={(e) => {
+                    setDepartmentId(e.target.value)
+                  }}
                   placeholder="Select department…"
-                  options={departments.filter((d) => d.is_active).map((d) => ({ value: d.id, label: d.name }))}
+                  options={departments
+                    .filter((d) => d.is_active)
+                    .map((d) => ({ value: d.id, label: d.name }))}
                 />
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '4px' }}>
-              <Button variant="ghost" onClick={() => { setShowAssignModal(false); resetForm() }}>Cancel</Button>
-              <Button variant="primary" loading={assigning} disabled={!canSubmit} onClick={handleAssign}>
+            <div
+              style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '4px' }}
+            >
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowAssignModal(false)
+                  resetForm()
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                loading={assigning}
+                disabled={!canSubmit}
+                onClick={handleAssign}
+              >
                 Assign
               </Button>
             </div>
@@ -376,9 +518,12 @@ export default function POPositionsPage() {
 
       <ConfirmDialog
         open={!!confirmRemovePosition}
-        onClose={() => setConfirmRemovePosition(null)}
+        onClose={() => {
+          setConfirmRemovePosition(null)
+        }}
         onConfirm={() => {
-          if (confirmRemovePosition) void removePosition({ variables: { id: confirmRemovePosition } })
+          if (confirmRemovePosition)
+            void removePosition({ variables: { id: confirmRemovePosition } })
           setConfirmRemovePosition(null)
         }}
         title="Remove Position"

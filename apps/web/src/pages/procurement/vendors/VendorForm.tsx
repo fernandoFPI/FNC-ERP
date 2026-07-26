@@ -1,7 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
-import { VENDOR_QUERY, VENDORS_QUERY, CREATE_VENDOR, UPDATE_VENDOR } from '../../../graphql/procurement'
+import {
+  VENDOR_QUERY,
+  VENDORS_QUERY,
+  CREATE_VENDOR,
+  UPDATE_VENDOR,
+} from '../../../graphql/procurement'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -14,12 +19,39 @@ import { useToastStore } from '../../../store/toastStore'
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED', 'SAR']
 
 function Row({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>{children}</div>
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '16px',
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
-function SectionTitle({ label, theme }: { label: string; theme: { border: string; textMuted: string } }) {
+function SectionTitle({
+  label,
+  theme,
+}: {
+  label: string
+  theme: { border: string; textMuted: string }
+}) {
   return (
-    <div style={{ borderBottom: `1px solid ${theme.border}`, paddingBottom: '6px', marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+    <div
+      style={{
+        borderBottom: `1px solid ${theme.border}`,
+        paddingBottom: '6px',
+        marginBottom: '4px',
+        fontSize: '12px',
+        fontWeight: 600,
+        color: theme.textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+      }}
+    >
       {label}
     </div>
   )
@@ -33,10 +65,19 @@ export default function VendorForm() {
   const addToast = useToastStore((s) => s.addToast)
 
   const [form, setForm] = useState({
-    name: '', legal_name: '', tax_id: '', currency_code: 'IQD',
-    payment_terms_days: '30', country_code: '', city: '', address: '',
-    contact_name: '', contact_email: '', contact_phone: '',
-    bank_name: '', is_active: true,
+    name: '',
+    legal_name: '',
+    tax_id: '',
+    currency_code: 'IQD',
+    payment_terms_days: '30',
+    country_code: '',
+    city: '',
+    address: '',
+    contact_name: '',
+    contact_email: '',
+    contact_phone: '',
+    bank_name: '',
+    is_active: true,
   })
 
   const { data: vendorData } = useQuery(VENDOR_QUERY, {
@@ -48,32 +89,47 @@ export default function VendorForm() {
     const v = vendorData?.vendor
     if (!v) return
     setForm({
-      name: v.name ?? '', legal_name: v.legal_name ?? '', tax_id: v.tax_id ?? '',
-      currency_code: v.currency_code ?? 'IQD', payment_terms_days: String(v.payment_terms_days ?? 30),
-      country_code: v.country_code ?? '', city: v.city ?? '', address: v.address ?? '',
-      contact_name: v.contact_name ?? '', contact_email: v.contact_email ?? '', contact_phone: v.contact_phone ?? '',
-      bank_name: v.bank_name ?? '', is_active: v.is_active ?? true,
+      name: v.name ?? '',
+      legal_name: v.legal_name ?? '',
+      tax_id: v.tax_id ?? '',
+      currency_code: v.currency_code ?? 'IQD',
+      payment_terms_days: String(v.payment_terms_days ?? 30),
+      country_code: v.country_code ?? '',
+      city: v.city ?? '',
+      address: v.address ?? '',
+      contact_name: v.contact_name ?? '',
+      contact_email: v.contact_email ?? '',
+      contact_phone: v.contact_phone ?? '',
+      bank_name: v.bank_name ?? '',
+      is_active: v.is_active ?? true,
     })
   }, [vendorData])
 
   const [createVendor, { loading: creating }] = useMutation(CREATE_VENDOR)
   const [updateVendor, { loading: updating }] = useMutation(UPDATE_VENDOR)
 
-  const field = (key: keyof typeof form) => (
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const field =
+    (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }))
-  )
+    }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
       const rawCC = form.country_code.trim().toUpperCase().slice(0, 2)
-      const input = { ...form, payment_terms_days: parseInt(form.payment_terms_days), country_code: rawCC || null }
+      const input = {
+        ...form,
+        payment_terms_days: parseInt(form.payment_terms_days),
+        country_code: rawCC || null,
+      }
       if (isEdit) {
         await updateVendor({ variables: { id, input } })
         addToast({ type: 'success', message: 'Vendor updated' })
       } else {
-        await createVendor({ variables: { input }, refetchQueries: [{ query: VENDORS_QUERY, variables: {} }] })
+        await createVendor({
+          variables: { input },
+          refetchQueries: [{ query: VENDORS_QUERY, variables: {} }],
+        })
         addToast({ type: 'success', message: 'Vendor created' })
       }
       navigate('/procurement/vendors')
@@ -93,7 +149,15 @@ export default function VendorForm() {
       />
 
       <form onSubmit={handleSubmit}>
-        <Card style={{ marginTop: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <Card
+          style={{
+            marginTop: '20px',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
           <SectionTitle theme={theme} label="Basic Info" />
           <Row>
             <Input label="Vendor Name" value={form.name} onChange={field('name')} required />
@@ -102,35 +166,90 @@ export default function VendorForm() {
           <Row>
             <Input label="Tax ID" value={form.tax_id} onChange={field('tax_id')} />
             <Select label="Currency" value={form.currency_code} onChange={field('currency_code')}>
-              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
             </Select>
           </Row>
           <Row>
-            <Input label="Payment Terms (days)" type="number" min="0" value={form.payment_terms_days} onChange={field('payment_terms_days')} />
+            <Input
+              label="Payment Terms (days)"
+              type="number"
+              min="0"
+              value={form.payment_terms_days}
+              onChange={field('payment_terms_days')}
+            />
           </Row>
 
           <SectionTitle theme={theme} label="Address" />
           <Row>
-            <Input label="Country Code" value={form.country_code} onChange={(e) => setForm((f) => ({ ...f, country_code: e.target.value.toUpperCase().slice(0, 2) }))} placeholder="IQ" maxLength={2} />
+            <Input
+              label="Country Code"
+              value={form.country_code}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, country_code: e.target.value.toUpperCase().slice(0, 2) }))
+              }}
+              placeholder="IQ"
+              maxLength={2}
+            />
             <Input label="City" value={form.city} onChange={field('city')} />
           </Row>
           <Input label="Address" value={form.address} onChange={field('address')} />
 
           <SectionTitle theme={theme} label="Contact" />
           <Row>
-            <Input label="Contact Name" value={form.contact_name} onChange={field('contact_name')} />
-            <Input label="Contact Email" type="email" value={form.contact_email} onChange={field('contact_email')} />
+            <Input
+              label="Contact Name"
+              value={form.contact_name}
+              onChange={field('contact_name')}
+            />
+            <Input
+              label="Contact Email"
+              type="email"
+              value={form.contact_email}
+              onChange={field('contact_email')}
+            />
           </Row>
           <Row>
-            <Input label="Contact Phone" value={form.contact_phone} onChange={field('contact_phone')} />
+            <Input
+              label="Contact Phone"
+              value={form.contact_phone}
+              onChange={field('contact_phone')}
+            />
             <Input label="Bank Name" value={form.bank_name} onChange={field('bank_name')} />
           </Row>
 
-          <Checkbox label="Active" checked={form.is_active} onChange={(checked) => setForm((f) => ({ ...f, is_active: checked }))} />
+          <Checkbox
+            label="Active"
+            checked={form.is_active}
+            onChange={(checked) => {
+              setForm((f) => ({ ...f, is_active: checked }))
+            }}
+          />
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: `1px solid ${theme.border}`, paddingTop: '16px' }}>
-            <Button variant="ghost" type="button" onClick={() => navigate('/procurement/vendors')}>Cancel</Button>
-            <Button variant="primary" type="submit" loading={loading}>{isEdit ? 'Save Changes' : 'Create Vendor'}</Button>
+          <div
+            style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              borderTop: `1px solid ${theme.border}`,
+              paddingTop: '16px',
+            }}
+          >
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                navigate('/procurement/vendors')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={loading}>
+              {isEdit ? 'Save Changes' : 'Create Vendor'}
+            </Button>
           </div>
         </Card>
       </form>

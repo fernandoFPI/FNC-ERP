@@ -17,7 +17,10 @@ export function useAttendanceSummary(employeeId: string | undefined, month: stri
 
   useEffect(() => {
     if (!employeeId || !month) return
-    if (cache[key]) { setSummary(cache[key]); return }
+    if (cache[key]) {
+      setSummary(cache[key])
+      return
+    }
     setLoading(true)
     fetch(`/api/v1/hr/attendance/summary?employee_id=${employeeId}&month=${month}`)
       .then((r) => r.json())
@@ -33,7 +36,9 @@ export function useAttendanceSummary(employeeId: string | undefined, month: stri
         setSummary(s)
       })
       .catch(() => undefined)
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+      })
   }, [key, employeeId, month])
 
   return { summary, loading }

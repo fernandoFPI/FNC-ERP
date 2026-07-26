@@ -34,10 +34,9 @@ api.interceptors.response.use(
       const store = useAuthStore.getState()
       if (store.refreshToken) {
         try {
-          const res = await axios.post(
-            `${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`,
-            { refreshToken: store.refreshToken },
-          )
+          const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`, {
+            refreshToken: store.refreshToken,
+          })
           const payload = (res.data?.data ?? res.data) as { accessToken: string }
           const { accessToken } = payload
 

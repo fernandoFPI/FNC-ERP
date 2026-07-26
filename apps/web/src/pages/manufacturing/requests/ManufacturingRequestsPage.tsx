@@ -18,11 +18,19 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 
 const FILTER_DEFAULTS = { search: '', status: '' }
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Modal } from '../../../components/ui/Modal'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 
-const MR_STATUSES = ['draft', 'pending_approval', 'approved', 'in_production', 'completed', 'cancelled']
+const MR_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+  'in_production',
+  'completed',
+  'cancelled',
+]
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'info' | 'success' | 'danger'> = {
   draft: 'neutral',
@@ -69,10 +77,18 @@ export default function ManufacturingRequestsPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
   const [showCreate, setShowCreate] = useState(false)
   const currentFilters = { search, status: statusFilter ?? '' }
-  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('manufacturing_requests', FILTER_DEFAULTS)
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
+    'manufacturing_requests',
+    FILTER_DEFAULTS,
+  )
   const [form, setForm] = useState<CreateForm>({
-    projectId: '', productId: '', bomId: '', qtyRequested: '1',
-    requiredDate: '', description: '', notes: '',
+    projectId: '',
+    productId: '',
+    bomId: '',
+    qtyRequested: '1',
+    requiredDate: '',
+    description: '',
+    notes: '',
   })
 
   const { data, loading, refetch } = useQuery(MANUFACTURING_REQUESTS_QUERY, {
@@ -92,24 +108,29 @@ export default function ManufacturingRequestsPage() {
   const [createMR, { loading: creating }] = useMutation(CREATE_MANUFACTURING_REQUEST)
 
   const requests: MR[] = data?.manufacturingRequests ?? []
-  const boms: Array<{ id: string; finished_product_id: string; product_name: string; version: string }> = bomsData?.boms ?? []
-  const projects: Array<{ id: string; code: string; name: string }> = projectsData?.projects?.data ?? []
+  const boms: { id: string; finished_product_id: string; product_name: string; version: string }[] =
+    bomsData?.boms ?? []
+  const projects: { id: string; code: string; name: string }[] = projectsData?.projects?.data ?? []
 
   const statusCounts = MR_STATUSES.reduce<Record<string, number>>((acc, s) => {
-    acc[s] = requests.filter(r => r.status === s).length
+    acc[s] = requests.filter((r) => r.status === s).length
     return acc
   }, {})
 
   const filtered = search
-    ? requests.filter(r =>
-        r.requestNumber.toLowerCase().includes(search.toLowerCase()) ||
-        (r.projectName ?? '').toLowerCase().includes(search.toLowerCase()) ||
-        (r.productName ?? '').toLowerCase().includes(search.toLowerCase())
+    ? requests.filter(
+        (r) =>
+          r.requestNumber.toLowerCase().includes(search.toLowerCase()) ||
+          (r.projectName ?? '').toLowerCase().includes(search.toLowerCase()) ||
+          (r.productName ?? '').toLowerCase().includes(search.toLowerCase()),
       )
     : requests
 
   async function handleCreate() {
-    if (!form.projectId) { addToast({ type: 'error', message: 'Project ID is required' }); return }
+    if (!form.projectId) {
+      addToast({ type: 'error', message: 'Project ID is required' })
+      return
+    }
     try {
       await createMR({
         variables: {
@@ -125,7 +146,15 @@ export default function ManufacturingRequestsPage() {
       })
       addToast({ type: 'success', message: 'Manufacturing request created' })
       setShowCreate(false)
-      setForm({ projectId: '', productId: '', bomId: '', qtyRequested: '1', requiredDate: '', description: '', notes: '' })
+      setForm({
+        projectId: '',
+        productId: '',
+        bomId: '',
+        qtyRequested: '1',
+        requiredDate: '',
+        description: '',
+        notes: '',
+      })
       refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -138,33 +167,128 @@ export default function ManufacturingRequestsPage() {
       header: 'Request #',
       render: (r) => (
         <button
-          onClick={() => navigate(`/manufacturing/requests/${r.id}`)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.accent, fontFamily: 'monospace', fontSize: '13px', fontWeight: 600 }}
+          onClick={() => {
+            navigate(`/manufacturing/requests/${r.id}`)
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.accent,
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            fontWeight: 600,
+          }}
         >
           {r.requestNumber}
         </button>
       ),
     },
-    { key: 'projectName', header: 'Project', render: (r) => <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.projectName ?? '—'}</span> },
-    { key: 'productName', header: 'Product', render: (r) => <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.productName ?? '—'}</span> },
-    { key: 'qtyRequested', header: 'Qty', render: (r) => <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{r.qtyRequested.toLocaleString()}</span> },
-    { key: 'status', header: 'Status', render: (r) => <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{r.status.replace(/_/g, ' ')}</Badge> },
-    { key: 'requestedByName', header: 'Requested By', render: (r) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.requestedByName ?? '—'}</span> },
-    { key: 'moNumber', header: 'MO', render: (r) => r.moNumber
-      ? <button onClick={() => navigate(`/manufacturing/orders/${r.moNumber}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.accent, fontFamily: 'monospace', fontSize: '12px' }}>{r.moNumber}</button>
-      : <span style={{ color: theme.textMuted, fontSize: '12px' }}>—</span>
+    {
+      key: 'projectName',
+      header: 'Project',
+      render: (r) => (
+        <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{r.projectName ?? '—'}</span>
+      ),
     },
-    { key: 'actualCost', header: 'Actual Cost', render: (r) => r.actualCost != null ? <AmountDisplay amount={r.actualCost} currency={r.currencyCode} /> : <span style={{ color: theme.textMuted }}>—</span> },
-    { key: 'requiredDate', header: 'Required By', render: (r) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.requiredDate?.slice(0, 10) ?? '—'}</span> },
-    { key: 'createdAt', header: 'Created', render: (r) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.createdAt.slice(0, 10)}</span> },
+    {
+      key: 'productName',
+      header: 'Product',
+      render: (r) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{r.productName ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'qtyRequested',
+      header: 'Qty',
+      render: (r) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
+          {r.qtyRequested.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (r) => (
+        <Badge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{r.status.replace(/_/g, ' ')}</Badge>
+      ),
+    },
+    {
+      key: 'requestedByName',
+      header: 'Requested By',
+      render: (r) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.requestedByName ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'moNumber',
+      header: 'MO',
+      render: (r) =>
+        r.moNumber ? (
+          <button
+            onClick={() => {
+              navigate(`/manufacturing/orders/${r.moNumber}`)
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: theme.accent,
+              fontFamily: 'monospace',
+              fontSize: '12px',
+            }}
+          >
+            {r.moNumber}
+          </button>
+        ) : (
+          <span style={{ color: theme.textMuted, fontSize: '12px' }}>—</span>
+        ),
+    },
+    {
+      key: 'actualCost',
+      header: 'Actual Cost',
+      render: (r) =>
+        r.actualCost != null ? (
+          <AmountDisplay amount={r.actualCost} currency={r.currencyCode} />
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
+    {
+      key: 'requiredDate',
+      header: 'Required By',
+      render: (r) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {r.requiredDate?.slice(0, 10) ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      render: (r) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{r.createdAt.slice(0, 10)}</span>
+      ),
+    },
   ]
 
   const inputStyle = {
-    width: '100%', padding: '7px 10px', borderRadius: '6px',
-    border: `1px solid ${theme.border}`, background: theme.bgCanvas,
-    color: theme.textPrimary, fontSize: '13px', boxSizing: 'border-box' as const,
+    width: '100%',
+    padding: '7px 10px',
+    borderRadius: '6px',
+    border: `1px solid ${theme.border}`,
+    background: theme.bgCanvas,
+    color: theme.textPrimary,
+    fontSize: '13px',
+    boxSizing: 'border-box' as const,
   }
-  const labelStyle = { fontSize: '11px', color: theme.textMuted, display: 'block', marginBottom: '4px' }
+  const labelStyle = {
+    fontSize: '11px',
+    color: theme.textMuted,
+    display: 'block',
+    marginBottom: '4px',
+  }
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1600px' }}>
@@ -172,23 +296,41 @@ export default function ManufacturingRequestsPage() {
         title="Manufacturing Requests"
         subtitle={`${filtered.length} requests`}
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setShowCreate(true)
+            }}
+          >
             New Request
           </Button>
         }
       />
 
-      <div style={{ display: 'flex', gap: '8px', marginTop: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        {MR_STATUSES.map(s => (
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          marginTop: '16px',
+          marginBottom: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+        {MR_STATUSES.map((s) => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s === statusFilter ? undefined : s)}
+            onClick={() => {
+              setStatusFilter(s === statusFilter ? undefined : s)
+            }}
             style={{
-              padding: '4px 12px', borderRadius: '16px',
+              padding: '4px 12px',
+              borderRadius: '16px',
               border: `1px solid ${s === statusFilter ? theme.accent : theme.border}`,
               background: s === statusFilter ? theme.accentBg : 'transparent',
               color: s === statusFilter ? theme.accent : theme.textSecondary,
-              fontSize: '12px', cursor: 'pointer',
+              fontSize: '12px',
+              cursor: 'pointer',
               fontWeight: s === statusFilter ? 600 : 400,
             }}
           >
@@ -198,7 +340,12 @@ export default function ManufacturingRequestsPage() {
       </div>
 
       <Card>
-        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()}>
+        <FilterBar
+          search={search}
+          onSearchChange={setSearch}
+          resultCount={filtered.length}
+          onRefresh={() => refetch()}
+        >
           <FilterPresets
             presets={presets}
             onApply={(preset) => {
@@ -206,7 +353,9 @@ export default function ManufacturingRequestsPage() {
               setSearch(r.search)
               setStatusFilter(r.status || undefined)
             }}
-            onSave={(name) => savePreset(name, currentFilters)}
+            onSave={(name) => {
+              savePreset(name, currentFilters)
+            }}
             onDelete={deletePreset}
           />
         </FilterBar>
@@ -214,29 +363,43 @@ export default function ManufacturingRequestsPage() {
       </Card>
 
       {showCreate && (
-        <Modal open={showCreate} title="New Manufacturing Request" onClose={() => setShowCreate(false)}>
+        <Modal
+          open={showCreate}
+          title="New Manufacturing Request"
+          onClose={() => {
+            setShowCreate(false)
+          }}
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '420px' }}>
             <div>
-              <label style={labelStyle}>Project <span style={{ color: theme.danger }}>*</span></label>
+              <label style={labelStyle}>
+                Project <span style={{ color: theme.danger }}>*</span>
+              </label>
               <select
                 style={{ ...inputStyle, colorScheme: 'dark' }}
                 value={form.projectId}
-                onChange={e => setForm(f => ({ ...f, projectId: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, projectId: e.target.value }))
+                }}
               >
                 <option value="">— Select a project —</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>[{p.code}] {p.name}</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    [{p.code}] {p.name}
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Product (BOM) <span style={{ color: theme.textMuted }}>(optional)</span></label>
+              <label style={labelStyle}>
+                Product (BOM) <span style={{ color: theme.textMuted }}>(optional)</span>
+              </label>
               <select
                 style={{ ...inputStyle, colorScheme: 'dark' }}
                 value={form.bomId}
-                onChange={e => {
-                  const selected = boms.find(b => b.id === e.target.value)
-                  setForm(f => ({
+                onChange={(e) => {
+                  const selected = boms.find((b) => b.id === e.target.value)
+                  setForm((f) => ({
                     ...f,
                     bomId: e.target.value,
                     productId: selected?.finished_product_id ?? '',
@@ -244,18 +407,26 @@ export default function ManufacturingRequestsPage() {
                 }}
               >
                 <option value="">— Select a product —</option>
-                {boms.map(b => (
-                  <option key={b.id} value={b.id}>{b.product_name} (v{b.version})</option>
+                {boms.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.product_name} (v{b.version})
+                  </option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={labelStyle}>Quantity Requested <span style={{ color: theme.danger }}>*</span></label>
+              <label style={labelStyle}>
+                Quantity Requested <span style={{ color: theme.danger }}>*</span>
+              </label>
               <input
-                type="number" min="0.0001" step="0.0001"
+                type="number"
+                min="0.0001"
+                step="0.0001"
                 style={inputStyle}
                 value={form.qtyRequested}
-                onChange={e => setForm(f => ({ ...f, qtyRequested: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, qtyRequested: e.target.value }))
+                }}
               />
             </div>
             <div>
@@ -264,7 +435,9 @@ export default function ManufacturingRequestsPage() {
                 type="date"
                 style={inputStyle}
                 value={form.requiredDate}
-                onChange={e => setForm(f => ({ ...f, requiredDate: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, requiredDate: e.target.value }))
+                }}
               />
             </div>
             <div>
@@ -273,7 +446,9 @@ export default function ManufacturingRequestsPage() {
                 rows={3}
                 style={{ ...inputStyle, resize: 'vertical' }}
                 value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, description: e.target.value }))
+                }}
               />
             </div>
             <div>
@@ -282,12 +457,24 @@ export default function ManufacturingRequestsPage() {
                 rows={2}
                 style={{ ...inputStyle, resize: 'vertical' }}
                 value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, notes: e.target.value }))
+                }}
               />
             </div>
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>Cancel</Button>
-              <Button variant="primary" size="sm" loading={creating} onClick={handleCreate}>Create</Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowCreate(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" loading={creating} onClick={handleCreate}>
+                Create
+              </Button>
             </div>
           </div>
         </Modal>

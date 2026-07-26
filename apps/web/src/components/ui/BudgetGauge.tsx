@@ -20,14 +20,29 @@ export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: 
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '12px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginBottom: '6px',
+          fontSize: '12px',
+        }}
+      >
         <span style={{ color: theme.textSecondary }}>Budget consumption</span>
         <span style={{ color: overBudget ? theme.danger : theme.textPrimary, fontWeight: 600 }}>
           {spentPct.toFixed(1)}%
         </span>
       </div>
 
-      <div style={{ height: '12px', background: theme.bgSurfaceHover, borderRadius: '6px', overflow: 'hidden', position: 'relative' }}>
+      <div
+        style={{
+          height: '12px',
+          background: theme.bgSurfaceHover,
+          borderRadius: '6px',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
         {/* committed overlay */}
         {committedPct > spentPct && (
           <div
@@ -57,7 +72,15 @@ export function BudgetGauge({ budget, spent, committed = 0, currency = 'IQD' }: 
         />
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '11px', color: theme.textMuted }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: '6px',
+          fontSize: '11px',
+          color: theme.textMuted,
+        }}
+      >
         <span>
           Spent: <AmountDisplay amount={spent} currency={currency} size="sm" />
         </span>

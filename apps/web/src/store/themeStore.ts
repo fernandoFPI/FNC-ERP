@@ -11,10 +11,12 @@ export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
       themeKey: 'dark-glass' as ThemeKey,
-      setTheme: (key) => set({ themeKey: key }),
+      setTheme: (key) => {
+        set({ themeKey: key })
+      },
     }),
     {
       name: 'fnc-theme',
-    }
-  )
+    },
+  ),
 )

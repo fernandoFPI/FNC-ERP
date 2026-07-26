@@ -3,7 +3,11 @@ import { useCompanyStore } from '../store/companyStore'
 import { api } from '../lib/axios'
 import { decodeJWT } from '../lib/jwt'
 
-type CompanyFromResponse = { id: string; name: string; currency_code?: string }
+interface CompanyFromResponse {
+  id: string
+  name: string
+  currency_code?: string
+}
 
 function getBrowserName(): string {
   const ua = navigator.userAgent
@@ -17,7 +21,13 @@ function getBrowserName(): string {
 function applyAuthResponse(
   accessToken: string,
   refreshToken: string,
-  user: { id: string; email: string; mfaEnabled: boolean; profileCompleted?: boolean; employeeId?: string | null },
+  user: {
+    id: string
+    email: string
+    mfaEnabled: boolean
+    profileCompleted?: boolean
+    employeeId?: string | null
+  },
   companies: CompanyFromResponse[],
 ) {
   const payload = decodeJWT(accessToken)
@@ -25,7 +35,15 @@ function applyAuthResponse(
   const companyId = payload?.companyId
 
   useAuthStore.getState().setAuth(
-    { id: user.id, email: user.email, role, mfaEnabled: user.mfaEnabled, companyId, profileCompleted: user.profileCompleted ?? false, employeeId: user.employeeId ?? null },
+    {
+      id: user.id,
+      email: user.email,
+      role,
+      mfaEnabled: user.mfaEnabled,
+      companyId,
+      profileCompleted: user.profileCompleted ?? false,
+      employeeId: user.employeeId ?? null,
+    },
     accessToken,
     refreshToken,
   )
@@ -55,7 +73,13 @@ export function useAuth() {
       tempToken?: string
       accessToken?: string
       refreshToken?: string
-      user?: { id: string; email: string; mfaEnabled: boolean; profileCompleted?: boolean; employeeId?: string | null }
+      user?: {
+        id: string
+        email: string
+        mfaEnabled: boolean
+        profileCompleted?: boolean
+        employeeId?: string | null
+      }
       companies?: CompanyFromResponse[]
     }>('/auth/login', {
       email,
@@ -87,7 +111,13 @@ export function useAuth() {
     const res = await api.post<{
       accessToken: string
       refreshToken: string
-      user: { id: string; email: string; mfaEnabled: boolean; profileCompleted?: boolean; employeeId?: string | null }
+      user: {
+        id: string
+        email: string
+        mfaEnabled: boolean
+        profileCompleted?: boolean
+        employeeId?: string | null
+      }
       companies?: CompanyFromResponse[]
       deviceToken?: string
     }>('/auth/mfa/verify', { tempToken, totpCode, trustDevice })

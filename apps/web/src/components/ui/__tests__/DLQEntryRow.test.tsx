@@ -26,7 +26,7 @@ function wrap(props: React.ComponentProps<typeof DLQEntryRow>) {
           <DLQEntryRow {...props} />
         </tbody>
       </table>
-    </ThemeProvider>
+    </ThemeProvider>,
   )
 }
 
@@ -73,12 +73,22 @@ describe('DLQEntryRow', () => {
   })
 
   it('renders high priority badge', () => {
-    wrap({ entry: { ...mockEntry, priority: 'high' }, onRetry: vi.fn(), onDismiss: vi.fn(), onViewDetail: vi.fn() })
+    wrap({
+      entry: { ...mockEntry, priority: 'high' },
+      onRetry: vi.fn(),
+      onDismiss: vi.fn(),
+      onViewDetail: vi.fn(),
+    })
     expect(screen.getByText('high')).toBeInTheDocument()
   })
 
   it('renders normal priority badge', () => {
-    wrap({ entry: { ...mockEntry, priority: 'normal' }, onRetry: vi.fn(), onDismiss: vi.fn(), onViewDetail: vi.fn() })
+    wrap({
+      entry: { ...mockEntry, priority: 'normal' },
+      onRetry: vi.fn(),
+      onDismiss: vi.fn(),
+      onViewDetail: vi.fn(),
+    })
     expect(screen.getByText('normal')).toBeInTheDocument()
   })
 })

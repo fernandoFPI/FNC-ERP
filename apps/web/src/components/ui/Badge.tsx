@@ -14,13 +14,41 @@ interface BadgeProps {
 export function Badge({ variant, children, dot = false, size = 'md', className = '' }: BadgeProps) {
   const { theme } = useTheme()
 
-  const styles: Record<BadgeVariant, { bg: string; color: string; border: string; dotColor: string }> = {
-    success: { bg: theme.successBg, color: theme.success, border: theme.successBorder, dotColor: theme.success },
-    warning: { bg: theme.warningBg, color: theme.warning, border: theme.warningBorder, dotColor: theme.warning },
-    danger: { bg: theme.dangerBg, color: theme.danger, border: theme.dangerBorder, dotColor: theme.danger },
+  const styles: Record<
+    BadgeVariant,
+    { bg: string; color: string; border: string; dotColor: string }
+  > = {
+    success: {
+      bg: theme.successBg,
+      color: theme.success,
+      border: theme.successBorder,
+      dotColor: theme.success,
+    },
+    warning: {
+      bg: theme.warningBg,
+      color: theme.warning,
+      border: theme.warningBorder,
+      dotColor: theme.warning,
+    },
+    danger: {
+      bg: theme.dangerBg,
+      color: theme.danger,
+      border: theme.dangerBorder,
+      dotColor: theme.danger,
+    },
     info: { bg: theme.infoBg, color: theme.info, border: theme.infoBorder, dotColor: theme.info },
-    neutral: { bg: theme.bgSurface, color: theme.textSecondary, border: theme.border, dotColor: theme.textMuted },
-    accent: { bg: theme.accentBg, color: theme.accent, border: theme.accentBorder, dotColor: theme.accent },
+    neutral: {
+      bg: theme.bgSurface,
+      color: theme.textSecondary,
+      border: theme.border,
+      dotColor: theme.textMuted,
+    },
+    accent: {
+      bg: theme.accentBg,
+      color: theme.accent,
+      border: theme.accentBorder,
+      dotColor: theme.accent,
+    },
   }
 
   const s = styles[variant]

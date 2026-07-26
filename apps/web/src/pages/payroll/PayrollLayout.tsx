@@ -10,22 +10,38 @@ export default function PayrollLayout() {
   const { theme } = useTheme()
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ borderBottom: `1px solid ${theme.border}`, display: 'flex', gap: '0', padding: '0 24px', flexShrink: 0, overflowX: 'auto' }}>
+      <div
+        style={{
+          borderBottom: `1px solid ${theme.border}`,
+          display: 'flex',
+          gap: '0',
+          padding: '0 24px',
+          flexShrink: 0,
+          overflowX: 'auto',
+        }}
+      >
         {TABS.map((tab) => (
-          <NavLink key={tab.path} to={tab.path} end
+          <NavLink
+            key={tab.path}
+            to={tab.path}
+            end
             style={({ isActive }) => ({
-              padding: '12px 16px', fontSize: '13px',
+              padding: '12px 16px',
+              fontSize: '13px',
               fontWeight: isActive ? 600 : 400,
               color: isActive ? theme.accent : theme.textMuted,
               textDecoration: 'none',
               borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
               whiteSpace: 'nowrap',
-            })}>
+            })}
+          >
             {tab.label}
           </NavLink>
         ))}
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}><Outlet /></div>
+      <div style={{ flex: 1, overflow: 'auto' }}>
+        <Outlet />
+      </div>
     </div>
   )
 }

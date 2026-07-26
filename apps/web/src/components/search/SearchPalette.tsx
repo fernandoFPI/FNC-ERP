@@ -38,12 +38,12 @@ interface Props {
 }
 
 const TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  purchase_order:   { label: 'PO',   color: '#3b82f6', bg: 'rgba(59,130,246,0.12)'  },
-  project:          { label: 'PROJ', color: '#10b981', bg: 'rgba(16,185,129,0.12)'  },
-  employee:         { label: 'EMP',  color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)'  },
-  vendor:           { label: 'VEN',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
-  project_invoice:  { label: 'INV',  color: '#06b6d4', bg: 'rgba(6,182,212,0.12)'   },
-  rental_contract:  { label: 'RC',   color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+  purchase_order: { label: 'PO', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  project: { label: 'PROJ', color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  employee: { label: 'EMP', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)' },
+  vendor: { label: 'VEN', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  project_invoice: { label: 'INV', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)' },
+  rental_contract: { label: 'RC', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
 }
 
 const RECENT_KEY = 'fnc_search_recent'
@@ -59,7 +59,13 @@ function loadRecents(): RecentItem[] {
 
 function saveRecent(item: SearchItem) {
   const recents = loadRecents().filter((r) => r.id !== item.id)
-  const next: RecentItem = { id: item.id, type: item.type, title: item.title, subtitle: item.subtitle, url: item.url }
+  const next: RecentItem = {
+    id: item.id,
+    type: item.type,
+    title: item.title,
+    subtitle: item.subtitle,
+    url: item.url,
+  }
   localStorage.setItem(RECENT_KEY, JSON.stringify([next, ...recents].slice(0, MAX_RECENT)))
 }
 
@@ -106,14 +112,21 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
         .then((r) => {
           const data = r.data as unknown as SearchResponse
           // handle both unwrapped and direct response shapes
-          const g = (data as { groups?: SearchGroup[] }).groups ?? (r.data as unknown as SearchGroup[])
+          const g =
+            (data as { groups?: SearchGroup[] }).groups ?? (r.data as unknown as SearchGroup[])
           setGroups(Array.isArray(g) ? g : [])
           setActiveIdx(0)
         })
-        .catch(() => setGroups([]))
-        .finally(() => setLoading(false))
+        .catch(() => {
+          setGroups([])
+        })
+        .finally(() => {
+          setLoading(false)
+        })
     }, 280)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+    }
   }, [query, open])
 
   // Scroll active item into view
@@ -123,11 +136,14 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
 
   const allItems = groups.flatMap((g) => g.items)
 
-  const handleSelect = useCallback((item: SearchItem) => {
-    saveRecent(item)
-    navigate(item.url)
-    onClose()
-  }, [navigate, onClose])
+  const handleSelect = useCallback(
+    (item: SearchItem) => {
+      saveRecent(item)
+      navigate(item.url)
+      onClose()
+    },
+    [navigate, onClose],
+  )
 
   // Keyboard navigation (palette-level)
   useEffect(() => {
@@ -145,7 +161,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
       }
     }
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    return () => {
+      document.removeEventListener('keydown', handler)
+    }
   }, [open, allItems, activeIdx, handleSelect])
 
   if (!open) return null
@@ -156,7 +174,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
       style={{
         position: 'fixed',
         inset: 0,
@@ -187,17 +207,21 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
         }}
       >
         {/* ── Input Row ── */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '12px 14px',
-          borderBottom: `1px solid ${theme.border}`,
-          flexShrink: 0,
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '12px 14px',
+            borderBottom: `1px solid ${theme.border}`,
+            flexShrink: 0,
+          }}
+        >
           <svg
-            width="16" height="16"
-            viewBox="0 0 24 24" fill="none"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
             stroke={loading ? theme.accent : theme.textMuted}
             strokeWidth="2"
             style={{ flexShrink: 0, transition: 'stroke 0.15s' }}
@@ -208,7 +232,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+            }}
             placeholder="Search purchase orders, projects, employees…"
             style={{
               flex: 1,
@@ -220,35 +246,39 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
               fontFamily: 'inherit',
             }}
           />
-          <kbd style={{
-            flexShrink: 0,
-            fontSize: '11px',
-            padding: '2px 6px',
-            borderRadius: '5px',
-            background: theme.bgCanvas,
-            border: `1px solid ${theme.border}`,
-            color: theme.textMuted,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-          }} onClick={onClose}>
+          <kbd
+            style={{
+              flexShrink: 0,
+              fontSize: '11px',
+              padding: '2px 6px',
+              borderRadius: '5px',
+              background: theme.bgCanvas,
+              border: `1px solid ${theme.border}`,
+              color: theme.textMuted,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+            }}
+            onClick={onClose}
+          >
             Esc
           </kbd>
         </div>
 
         {/* ── Results Area ── */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
-
           {/* Recent searches */}
           {showRecents && (
             <div style={{ padding: '8px 0' }}>
-              <div style={{
-                padding: '4px 14px 6px',
-                fontSize: '10px',
-                fontWeight: 700,
-                color: theme.textMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-              }}>
+              <div
+                style={{
+                  padding: '4px 14px 6px',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  color: theme.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                }}
+              >
                 Recent
               </div>
               {recents.map((r) => {
@@ -257,7 +287,10 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
                   <button
                     key={r.id}
                     type="button"
-                    onClick={() => { navigate(r.url); onClose() }}
+                    onClick={() => {
+                      navigate(r.url)
+                      onClose()
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -270,31 +303,54 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
                       textAlign: 'left',
                       fontFamily: 'inherit',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.bgSurfaceHover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none'
+                    }}
                   >
                     {tc && (
-                      <span style={{
-                        flexShrink: 0,
-                        fontSize: '9px',
-                        fontWeight: 800,
-                        padding: '2px 5px',
-                        borderRadius: '4px',
-                        background: tc.bg,
-                        color: tc.color,
-                        letterSpacing: '0.05em',
-                        minWidth: '28px',
-                        textAlign: 'center',
-                      }}>
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          fontSize: '9px',
+                          fontWeight: 800,
+                          padding: '2px 5px',
+                          borderRadius: '4px',
+                          background: tc.bg,
+                          color: tc.color,
+                          letterSpacing: '0.05em',
+                          minWidth: '28px',
+                          textAlign: 'center',
+                        }}
+                      >
                         {tc.label}
                       </span>
                     )}
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          color: theme.textPrimary,
+                          fontWeight: 500,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
                         {r.title}
                       </div>
                       {r.subtitle && (
-                        <div style={{ fontSize: '11px', color: theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            color: theme.textMuted,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
                           {r.subtitle}
                         </div>
                       )}
@@ -309,14 +365,16 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
           {groups.map((group) => {
             const groupEl = (
               <div key={group.type} style={{ padding: '8px 0' }}>
-                <div style={{
-                  padding: '4px 14px 6px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  color: theme.textMuted,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                }}>
+                <div
+                  style={{
+                    padding: '4px 14px 6px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.08em',
+                  }}
+                >
                   {group.label}
                 </div>
                 {group.items.map((item) => {
@@ -328,7 +386,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
                       key={item.id}
                       type="button"
                       data-search-idx={idx}
-                      onClick={() => handleSelect(item)}
+                      onClick={() => {
+                        handleSelect(item)
+                      }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -351,48 +411,76 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
                       }}
                     >
                       {tc && (
-                        <span style={{
-                          flexShrink: 0,
-                          fontSize: '9px',
-                          fontWeight: 800,
-                          padding: '2px 5px',
-                          borderRadius: '4px',
-                          background: tc.bg,
-                          color: tc.color,
-                          letterSpacing: '0.05em',
-                          minWidth: '28px',
-                          textAlign: 'center',
-                        }}>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            fontSize: '9px',
+                            fontWeight: 800,
+                            padding: '2px 5px',
+                            borderRadius: '4px',
+                            background: tc.bg,
+                            color: tc.color,
+                            letterSpacing: '0.05em',
+                            minWidth: '28px',
+                            textAlign: 'center',
+                          }}
+                        >
                           {tc.label}
                         </span>
                       )}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: '13px', color: active ? theme.accent : theme.textPrimary, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: active ? theme.accent : theme.textPrimary,
+                            fontWeight: 500,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
                           {item.title}
                         </div>
                         {item.subtitle && (
-                          <div style={{ fontSize: '11px', color: theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: theme.textMuted,
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
                             {item.subtitle}
                           </div>
                         )}
                       </div>
                       {item.meta && (
-                        <span style={{ flexShrink: 0, fontSize: '11px', color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            fontSize: '11px',
+                            color: theme.textMuted,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
                           {item.meta}
                         </span>
                       )}
                       {item.status && (
-                        <span style={{
-                          flexShrink: 0,
-                          fontSize: '10px',
-                          padding: '2px 7px',
-                          borderRadius: '10px',
-                          background: theme.bgCanvas,
-                          color: theme.textMuted,
-                          border: `1px solid ${theme.border}`,
-                          whiteSpace: 'nowrap',
-                          textTransform: 'capitalize',
-                        }}>
+                        <span
+                          style={{
+                            flexShrink: 0,
+                            fontSize: '10px',
+                            padding: '2px 7px',
+                            borderRadius: '10px',
+                            background: theme.bgCanvas,
+                            color: theme.textMuted,
+                            border: `1px solid ${theme.border}`,
+                            whiteSpace: 'nowrap',
+                            textTransform: 'capitalize',
+                          }}
+                        >
                           {item.status}
                         </span>
                       )}
@@ -410,7 +498,9 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
                 Type at least 2 characters to search
               </div>
-              <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', opacity: 0.6 }}>
+              <div
+                style={{ fontSize: '12px', color: theme.textMuted, marginTop: '6px', opacity: 0.6 }}
+              >
                 Purchase orders · Projects · Employees · Vendors · Invoices · Rentals
               </div>
             </div>
@@ -427,27 +517,40 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
         </div>
 
         {/* ── Footer ── */}
-        <div style={{
-          display: 'flex',
-          gap: '16px',
-          padding: '8px 14px',
-          borderTop: `1px solid ${theme.border}`,
-          flexShrink: 0,
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '16px',
+            padding: '8px 14px',
+            borderTop: `1px solid ${theme.border}`,
+            flexShrink: 0,
+          }}
+        >
           {[
             { key: '↑↓', label: 'navigate' },
             { key: 'Enter', label: 'open' },
             { key: 'Esc', label: 'close' },
           ].map(({ key, label }) => (
-            <span key={key} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: theme.textMuted }}>
-              <kbd style={{
-                padding: '1px 5px',
-                borderRadius: '4px',
-                background: theme.bgCanvas,
-                border: `1px solid ${theme.border}`,
-                fontSize: '10px',
-                fontFamily: 'inherit',
-              }}>
+            <span
+              key={key}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                color: theme.textMuted,
+              }}
+            >
+              <kbd
+                style={{
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  background: theme.bgCanvas,
+                  border: `1px solid ${theme.border}`,
+                  fontSize: '10px',
+                  fontFamily: 'inherit',
+                }}
+              >
                 {key}
               </kbd>
               {label}

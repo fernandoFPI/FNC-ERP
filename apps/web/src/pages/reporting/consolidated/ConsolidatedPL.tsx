@@ -44,7 +44,11 @@ export default function ConsolidatedPL() {
   const [toDate, setToDate] = useState(todayStr)
   const [showEliminations, setShowEliminations] = useState(false)
   const [showPriorPeriod, setShowPriorPeriod] = useState(false)
-  const [applied, setApplied] = useState({ fromDate: firstOfMonth, toDate: todayStr, showEliminations: false })
+  const [applied, setApplied] = useState({
+    fromDate: firstOfMonth,
+    toDate: todayStr,
+    showEliminations: false,
+  })
 
   // Compute prior period dates (same duration, one period earlier)
   const priorFromDate = (() => {
@@ -60,11 +64,19 @@ export default function ConsolidatedPL() {
   })()
 
   const { data, loading, refetch } = useQuery<PLData>(CONSOLIDATED_PL_QUERY, {
-    variables: { fromDate: applied.fromDate, toDate: applied.toDate, showEliminations: applied.showEliminations },
+    variables: {
+      fromDate: applied.fromDate,
+      toDate: applied.toDate,
+      showEliminations: applied.showEliminations,
+    },
   })
 
   const { data: priorDataRaw, loading: priorLoading } = useQuery<PLData>(CONSOLIDATED_PL_QUERY, {
-    variables: { fromDate: priorFromDate, toDate: priorToDate, showEliminations: applied.showEliminations },
+    variables: {
+      fromDate: priorFromDate,
+      toDate: priorToDate,
+      showEliminations: applied.showEliminations,
+    },
     skip: !showPriorPeriod,
   })
 
@@ -77,7 +89,7 @@ export default function ConsolidatedPL() {
 
   const inputStyle = {
     background: theme.bgSurface,
-    border: `1px solid ${(theme as unknown as Record<string, string>)['borderInput'] ?? theme.border}`,
+    border: `1px solid ${(theme as unknown as Record<string, string>).borderInput ?? theme.border}`,
     borderRadius: '8px',
     padding: '6px 10px',
     fontSize: '12px',
@@ -91,7 +103,15 @@ export default function ConsolidatedPL() {
         title="Consolidated P&L"
         subtitle="Group profit & loss statement"
         actions={
-          <Button variant="ghost" size="sm" onClick={() => { refetch() }}>Refresh</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              refetch()
+            }}
+          >
+            Refresh
+          </Button>
         }
       />
 
@@ -100,23 +120,71 @@ export default function ConsolidatedPL() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '12px', color: theme.textMuted }}>From</span>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={inputStyle} />
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setFromDate(e.target.value)
+              }}
+              style={inputStyle}
+            />
             <span style={{ fontSize: '12px', color: theme.textMuted }}>To</span>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={inputStyle} />
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setToDate(e.target.value)
+              }}
+              style={inputStyle}
+            />
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: theme.textSecondary, cursor: 'pointer' }}>
-            <input type="checkbox" checked={showEliminations} onChange={(e) => setShowEliminations(e.target.checked)} />
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              color: theme.textSecondary,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showEliminations}
+              onChange={(e) => {
+                setShowEliminations(e.target.checked)
+              }}
+            />
             Show Eliminations
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: theme.textSecondary, cursor: 'pointer' }}>
-            <input type="checkbox" checked={showPriorPeriod} onChange={(e) => setShowPriorPeriod(e.target.checked)} />
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              color: theme.textSecondary,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showPriorPeriod}
+              onChange={(e) => {
+                setShowPriorPeriod(e.target.checked)
+              }}
+            />
             Compare Prior Period
           </label>
-          <Button variant="primary" size="sm" onClick={handleApply}>Apply</Button>
+          <Button variant="primary" size="sm" onClick={handleApply}>
+            Apply
+          </Button>
           {d && (
             <div style={{ marginLeft: 'auto', display: 'flex', gap: '16px' }}>
               <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>Net Profit</p>
+                <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
+                  Net Profit
+                </p>
                 <Badge variant={d.netProfit >= 0 ? 'success' : 'danger'}>
                   <AmountDisplay amount={d.netProfit} currency={d.currency} size="sm" />
                 </Badge>
@@ -133,17 +201,30 @@ export default function ConsolidatedPL() {
 
       {/* Summary KPIs */}
       {d && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px',
+          }}
+        >
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Total Revenue</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Total Revenue
+            </p>
             <AmountDisplay amount={d.totalRevenue} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Total Expenses</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Total Expenses
+            </p>
             <AmountDisplay amount={d.totalExpenses} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Net Profit</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Net Profit
+            </p>
             <AmountDisplay amount={d.netProfit} currency={d.currency} size="md" colored />
           </Card>
         </div>

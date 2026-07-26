@@ -3,7 +3,13 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { MockedProvider } from '@apollo/client/testing'
 import { ThemeProvider } from '../../../theme/ThemeContext'
-import { EXECUTIVE_DASHBOARD_QUERY, CONSOLIDATED_PL_QUERY, PROJECT_PROFITABILITY_QUERY, INVENTORY_VALUATION_QUERY, WHT_REPORT_QUERY } from '../../../graphql/reporting'
+import {
+  EXECUTIVE_DASHBOARD_QUERY,
+  CONSOLIDATED_PL_QUERY,
+  PROJECT_PROFITABILITY_QUERY,
+  INVENTORY_VALUATION_QUERY,
+  WHT_REPORT_QUERY,
+} from '../../../graphql/reporting'
 import ExecutiveDashboard from '../executive/ExecutiveDashboard'
 import ConsolidatedPL from '../consolidated/ConsolidatedPL'
 import ProjectProfitabilityReport from '../projects/ProjectProfitabilityReport'
@@ -12,9 +18,13 @@ import WHTReport from '../compliance/WHTReport'
 import ReportingLayout from '../ReportingLayout'
 
 vi.mock('recharts', () => ({
-  LineChart: ({ children }: { children: React.ReactNode }) => <div data-testid="line-chart">{children}</div>,
+  LineChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="line-chart">{children}</div>
+  ),
   Line: () => null,
-  BarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="bar-chart">{children}</div>,
+  BarChart: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="bar-chart">{children}</div>
+  ),
   Bar: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -49,7 +59,10 @@ const executiveMock = {
 }
 
 const plMock = {
-  request: { query: CONSOLIDATED_PL_QUERY, variables: { fromDate: '', toDate: '', showEliminations: false } },
+  request: {
+    query: CONSOLIDATED_PL_QUERY,
+    variables: { fromDate: '', toDate: '', showEliminations: false },
+  },
   result: {
     data: {
       consolidatedPL: {
@@ -65,12 +78,24 @@ const plMock = {
 }
 
 const projectsMock = {
-  request: { query: PROJECT_PROFITABILITY_QUERY, variables: { companyId: undefined, status: undefined, projectType: undefined, fromDate: undefined, toDate: undefined } },
+  request: {
+    query: PROJECT_PROFITABILITY_QUERY,
+    variables: {
+      companyId: undefined,
+      status: undefined,
+      projectType: undefined,
+      fromDate: undefined,
+      toDate: undefined,
+    },
+  },
   result: { data: { projectProfitabilityReport: [] } },
 }
 
 const inventoryMock = {
-  request: { query: INVENTORY_VALUATION_QUERY, variables: { asOfDate: '', companyId: undefined, locationId: undefined } },
+  request: {
+    query: INVENTORY_VALUATION_QUERY,
+    variables: { asOfDate: '', companyId: undefined, locationId: undefined },
+  },
   result: {
     data: {
       inventoryValuationReport: {
@@ -87,18 +112,18 @@ const inventoryMock = {
 
 const whtMock = {
   request: { query: WHT_REPORT_QUERY, variables: { fromDate: '', toDate: '', companyId: '' } },
-  result: { data: { whtReport: { rows: [], totalWHT: 0, vendorCount: 0, totalPaymentsSubjectToWHT: 0 } } },
+  result: {
+    data: { whtReport: { rows: [], totalWHT: 0, vendorCount: 0, totalPaymentsSubjectToWHT: 0 } },
+  },
 }
 
 function wrap(component: React.ReactNode, mocks: unknown[] = []) {
   return render(
     <MockedProvider mocks={mocks as never} addTypename={false}>
       <MemoryRouter>
-        <ThemeProvider>
-          {component}
-        </ThemeProvider>
+        <ThemeProvider>{component}</ThemeProvider>
       </MemoryRouter>
-    </MockedProvider>
+    </MockedProvider>,
   )
 }
 
@@ -113,7 +138,7 @@ describe('ReportingLayout', () => {
             </Routes>
           </ThemeProvider>
         </MemoryRouter>
-      </MockedProvider>
+      </MockedProvider>,
     )
     expect(screen.getByText('Executive')).toBeInTheDocument()
     expect(screen.getByText('Consolidated P&L')).toBeInTheDocument()
@@ -129,7 +154,9 @@ describe('ExecutiveDashboard', () => {
 
   it('shows skeleton loading state initially', () => {
     const { container } = wrap(<ExecutiveDashboard />, [executiveMock])
-    expect(container.querySelector('[loading]') ?? screen.getByText('Executive Dashboard')).toBeInTheDocument()
+    expect(
+      container.querySelector('[loading]') ?? screen.getByText('Executive Dashboard'),
+    ).toBeInTheDocument()
   })
 })
 

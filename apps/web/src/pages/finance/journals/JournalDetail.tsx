@@ -1,8 +1,11 @@
 ﻿import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
-  JOURNAL_ENTRY_QUERY, POST_JOURNAL_ENTRY, CANCEL_JOURNAL_ENTRY,
-  AUDIT_JOURNAL_ENTRY, LINK_JOURNAL_POS,
+  JOURNAL_ENTRY_QUERY,
+  POST_JOURNAL_ENTRY,
+  CANCEL_JOURNAL_ENTRY,
+  AUDIT_JOURNAL_ENTRY,
+  LINK_JOURNAL_POS,
 } from '../../../graphql/finance'
 
 import { useTheme } from '../../../theme/ThemeContext'
@@ -15,7 +18,8 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { FileAttachments } from '../../../components/ui/FileAttachments'
 import { useState, useRef, useMemo } from 'react'
 import { useToastStore } from '../../../store/toastStore'
-import { buildGeneralJournalHTML, JournalPrintLine } from '../../../lib/voucherHtml'
+import type { JournalPrintLine } from '../../../lib/voucherHtml'
+import { buildGeneralJournalHTML } from '../../../lib/voucherHtml'
 
 interface JournalLine {
   id: string
@@ -64,7 +68,10 @@ export default function JournalDetail() {
 
   async function handlePost() {
     try {
-      await postEntry({ variables: { id }, refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }] })
+      await postEntry({
+        variables: { id },
+        refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
+      })
       addToast({ type: 'success', message: 'Entry posted' })
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -73,7 +80,10 @@ export default function JournalDetail() {
 
   async function handleCancel() {
     try {
-      await cancelEntry({ variables: { id }, refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }] })
+      await cancelEntry({
+        variables: { id },
+        refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
+      })
       addToast({ type: 'warning', message: 'Entry cancelled' })
       setShowCancelDialog(false)
     } catch (err) {
@@ -83,7 +93,10 @@ export default function JournalDetail() {
 
   async function handleAudit() {
     try {
-      await auditEntry({ variables: { id }, refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }] })
+      await auditEntry({
+        variables: { id },
+        refetchQueries: [{ query: JOURNAL_ENTRY_QUERY, variables: { id } }],
+      })
       addToast({ type: 'success', message: 'Entry signed off by auditor' })
       setShowAuditDialog(false)
       refetch()
@@ -122,7 +135,8 @@ export default function JournalDetail() {
     }
   }
 
-  if (loading && !entry) return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
+  if (loading && !entry)
+    return <div style={{ padding: '24px', color: theme.textMuted }}>Loading…</div>
   if (!entry) return <div style={{ padding: '24px', color: theme.textMuted }}>Entry not found</div>
 
   return (
@@ -131,48 +145,137 @@ export default function JournalDetail() {
         title={entry.reference}
         subtitle={entry.entry_date}
         backPath="/finance/journals"
-        status={<Badge variant={entry.status === 'posted' ? 'success' : entry.status === 'draft' ? 'warning' : 'neutral'}>{entry.status}</Badge>}
+        status={
+          <Badge
+            variant={
+              entry.status === 'posted'
+                ? 'success'
+                : entry.status === 'draft'
+                  ? 'warning'
+                  : 'neutral'
+            }
+          >
+            {entry.status}
+          </Badge>
+        }
         actions={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {entry.status === 'draft' && (
               <>
-                <Button variant="primary" size="sm" onClick={handlePost} loading={posting}>Post</Button>
-                <Button variant="danger" size="sm" onClick={() => setShowCancelDialog(true)}>Cancel Entry</Button>
+                <Button variant="primary" size="sm" onClick={handlePost} loading={posting}>
+                  Post
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    setShowCancelDialog(true)
+                  }}
+                >
+                  Cancel Entry
+                </Button>
               </>
             )}
             {entry.status === 'posted' && !entry.audited_at && (
-              <Button variant="secondary" size="sm" onClick={() => setShowAuditDialog(true)}>Auditor Sign-off</Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setShowAuditDialog(true)
+                }}
+              >
+                Auditor Sign-off
+              </Button>
             )}
             {entry.status === 'posted' && (
               <>
-                <Button variant="ghost" size="sm" onClick={handlePrint}>Print</Button>
-                <Button variant="danger" size="sm" onClick={() => setShowCancelDialog(true)}>Reverse</Button>
+                <Button variant="ghost" size="sm" onClick={handlePrint}>
+                  Print
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    setShowCancelDialog(true)
+                  }}
+                >
+                  Reverse
+                </Button>
               </>
             )}
           </div>
         }
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', marginTop: '20px', marginBottom: '16px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '8px',
+          marginTop: '20px',
+          marginBottom: '16px',
+        }}
+      >
         {[
           ['Source', entry.source_type ?? 'manual'],
           ['Created by', entry.created_by_email ?? '—'],
           ['Total Debit', entry.total_debit ? parseFloat(entry.total_debit).toLocaleString() : '—'],
-          ['Total Credit', entry.total_credit ? parseFloat(entry.total_credit).toLocaleString() : '—'],
+          [
+            'Total Credit',
+            entry.total_credit ? parseFloat(entry.total_credit).toLocaleString() : '—',
+          ],
           ...(entry.accountant_email ? [['Accountant', entry.accountant_email]] : []),
           ...(entry.auditor_email ? [['Auditor', entry.auditor_email]] : []),
-          ...(entry.audited_at ? [['Audited at', new Date(entry.audited_at).toLocaleString()]] : []),
+          ...(entry.audited_at
+            ? [['Audited at', new Date(entry.audited_at).toLocaleString()]]
+            : []),
         ].map(([label, value]) => (
-          <div key={label} style={{ background: theme.bgSurface, borderRadius: '8px', padding: '12px 16px', border: `1px solid ${theme.border}` }}>
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+          <div
+            key={label}
+            style={{
+              background: theme.bgSurface,
+              borderRadius: '8px',
+              padding: '12px 16px',
+              border: `1px solid ${theme.border}`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: '11px',
+                color: theme.textMuted,
+                marginBottom: '4px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}
+            >
+              {label}
+            </div>
             <div style={{ fontSize: '14px', color: theme.textPrimary }}>{value}</div>
           </div>
         ))}
       </div>
 
       {entry.description && (
-        <div style={{ background: theme.bgSurface, borderRadius: '8px', padding: '12px 16px', border: `1px solid ${theme.border}`, marginBottom: '16px' }}>
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Description</div>
+        <div
+          style={{
+            background: theme.bgSurface,
+            borderRadius: '8px',
+            padding: '12px 16px',
+            border: `1px solid ${theme.border}`,
+            marginBottom: '16px',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '11px',
+              color: theme.textMuted,
+              marginBottom: '4px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Description
+          </div>
           <div style={{ fontSize: '13px', color: theme.textSecondary }}>{entry.description}</div>
         </div>
       )}
@@ -180,14 +283,30 @@ export default function JournalDetail() {
       {/* Lines */}
       <Card style={{ marginBottom: '16px' }}>
         <div style={{ padding: '16px', borderBottom: `1px solid ${theme.border}` }}>
-          <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>Journal Lines</span>
+          <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
+            Journal Lines
+          </span>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{ background: theme.bgSurface }}>
                 {['Account', 'Description', 'Currency', 'Debit', 'Credit'].map((h) => (
-                  <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>{h}</th>
+                  <th
+                    key={h}
+                    style={{
+                      padding: '8px 16px',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -195,16 +314,38 @@ export default function JournalDetail() {
               {lines.map((line) => (
                 <tr key={line.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
                   <td style={{ padding: '10px 16px' }}>
-                    <span style={{ fontFamily: 'monospace', color: theme.accent }}>{line.account_code}</span>
-                    <span style={{ color: theme.textSecondary, marginLeft: '8px' }}>{line.account_name}</span>
+                    <span style={{ fontFamily: 'monospace', color: theme.accent }}>
+                      {line.account_code}
+                    </span>
+                    <span style={{ color: theme.textSecondary, marginLeft: '8px' }}>
+                      {line.account_name}
+                    </span>
                   </td>
-                  <td style={{ padding: '10px 16px', color: theme.textMuted }}>{line.description ?? '—'}</td>
-                  <td style={{ padding: '10px 16px', color: theme.textMuted }}>{line.currency_code ?? 'IQD'}</td>
-                  <td style={{ padding: '10px 16px' }}>
-                    {parseFloat(line.debit) > 0 ? <AmountDisplay amount={parseFloat(line.debit)} currency={line.currency_code ?? 'IQD'} /> : <span style={{ color: theme.textMuted }}>—</span>}
+                  <td style={{ padding: '10px 16px', color: theme.textMuted }}>
+                    {line.description ?? '—'}
+                  </td>
+                  <td style={{ padding: '10px 16px', color: theme.textMuted }}>
+                    {line.currency_code ?? 'IQD'}
                   </td>
                   <td style={{ padding: '10px 16px' }}>
-                    {parseFloat(line.credit) > 0 ? <AmountDisplay amount={parseFloat(line.credit)} currency={line.currency_code ?? 'IQD'} /> : <span style={{ color: theme.textMuted }}>—</span>}
+                    {parseFloat(line.debit) > 0 ? (
+                      <AmountDisplay
+                        amount={parseFloat(line.debit)}
+                        currency={line.currency_code ?? 'IQD'}
+                      />
+                    ) : (
+                      <span style={{ color: theme.textMuted }}>—</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '10px 16px' }}>
+                    {parseFloat(line.credit) > 0 ? (
+                      <AmountDisplay
+                        amount={parseFloat(line.credit)}
+                        currency={line.currency_code ?? 'IQD'}
+                      />
+                    ) : (
+                      <span style={{ color: theme.textMuted }}>—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -215,12 +356,31 @@ export default function JournalDetail() {
 
       {/* Linked POs panel */}
       <Card style={{ marginBottom: '16px' }}>
-        <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>Linked Purchase Orders</span>
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>{linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''}</span>
+        <div
+          style={{
+            padding: '14px 16px',
+            borderBottom: `1px solid ${theme.border}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
+            Linked Purchase Orders
+          </span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+            {linkedPOs.length} PO{linkedPOs.length !== 1 ? 's' : ''}
+          </span>
         </div>
         {linkedPOs.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+          <div
+            style={{
+              padding: '20px',
+              textAlign: 'center',
+              color: theme.textMuted,
+              fontSize: '13px',
+            }}
+          >
             No purchase orders linked to this journal entry.
           </div>
         ) : (
@@ -228,28 +388,65 @@ export default function JournalDetail() {
             <thead>
               <tr style={{ background: theme.bgSurface }}>
                 {['PO Number', 'Vendor', 'Status', 'Amount'].map((h) => (
-                  <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 600, fontSize: '11px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>{h}</th>
+                  <th
+                    key={h}
+                    style={{
+                      padding: '8px 16px',
+                      textAlign: 'left',
+                      fontWeight: 600,
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {linkedPOs.map((po) => (
-                <tr key={po.po_id}
-                  onClick={() => navigate(`/procurement/purchase-orders/${po.po_id}`)}
+                <tr
+                  key={po.po_id}
+                  onClick={() => {
+                    navigate(`/procurement/purchase-orders/${po.po_id}`)
+                  }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = theme.bgSurface)}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  style={{ cursor: 'pointer', borderBottom: `1px solid ${theme.border}` }}>
+                  style={{ cursor: 'pointer', borderBottom: `1px solid ${theme.border}` }}
+                >
                   <td style={{ padding: '10px 16px' }}>
-                    <span style={{ fontFamily: 'monospace', color: theme.accent, fontWeight: 600 }}>{po.po_number}</span>
+                    <span style={{ fontFamily: 'monospace', color: theme.accent, fontWeight: 600 }}>
+                      {po.po_number}
+                    </span>
                   </td>
-                  <td style={{ padding: '10px 16px', color: theme.textSecondary }}>{po.vendor_name ?? '—'}</td>
+                  <td style={{ padding: '10px 16px', color: theme.textSecondary }}>
+                    {po.vendor_name ?? '—'}
+                  </td>
                   <td style={{ padding: '10px 16px' }}>
-                    <Badge variant={po.status === 'approved' ? 'success' : po.status === 'draft' ? 'warning' : 'neutral'}>{po.status ?? '—'}</Badge>
+                    <Badge
+                      variant={
+                        po.status === 'approved'
+                          ? 'success'
+                          : po.status === 'draft'
+                            ? 'warning'
+                            : 'neutral'
+                      }
+                    >
+                      {po.status ?? '—'}
+                    </Badge>
                   </td>
                   <td style={{ padding: '10px 16px' }}>
                     {po.total_amount ? (
-                      <AmountDisplay amount={parseFloat(po.total_amount)} currency={po.currency_code ?? 'IQD'} />
-                    ) : '—'}
+                      <AmountDisplay
+                        amount={parseFloat(po.total_amount)}
+                        currency={po.currency_code ?? 'IQD'}
+                      />
+                    ) : (
+                      '—'
+                    )}
                   </td>
                 </tr>
               ))}
@@ -263,9 +460,21 @@ export default function JournalDetail() {
       {/* Print preview */}
       {entry.status === 'posted' && (
         <Card style={{ marginBottom: '16px', marginTop: '16px' }}>
-          <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>Print Preview</span>
-            <Button variant="primary" size="sm" onClick={handlePrint}>Print / Save as PDF</Button>
+          <div
+            style={{
+              padding: '14px 16px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
+              Print Preview
+            </span>
+            <Button variant="primary" size="sm" onClick={handlePrint}>
+              Print / Save as PDF
+            </Button>
           </div>
           <div style={{ background: '#f5f5f5', overflow: 'hidden', borderRadius: '0 0 8px 8px' }}>
             <iframe
@@ -285,7 +494,9 @@ export default function JournalDetail() {
         confirmLabel="Cancel Entry"
         variant="danger"
         onConfirm={handleCancel}
-        onCancel={() => setShowCancelDialog(false)}
+        onCancel={() => {
+          setShowCancelDialog(false)
+        }}
         loading={cancelling}
       />
       <ConfirmDialog
@@ -295,7 +506,9 @@ export default function JournalDetail() {
         confirmLabel="Sign Off"
         variant="primary"
         onConfirm={handleAudit}
-        onCancel={() => setShowAuditDialog(false)}
+        onCancel={() => {
+          setShowAuditDialog(false)
+        }}
         loading={auditing}
       />
     </div>

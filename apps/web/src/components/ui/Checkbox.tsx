@@ -9,7 +9,13 @@ interface CheckboxProps {
   className?: string
 }
 
-export function Checkbox({ label, checked = false, onChange, disabled = false, className = '' }: CheckboxProps) {
+export function Checkbox({
+  label,
+  checked = false,
+  onChange,
+  disabled = false,
+  className = '',
+}: CheckboxProps) {
   const { theme } = useTheme()
 
   return (
@@ -48,7 +54,13 @@ export function Checkbox({ label, checked = false, onChange, disabled = false, c
       >
         {checked && (
           <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-            <path d="M1 4l3 3 5-6" stroke={theme.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M1 4l3 3 5-6"
+              stroke={theme.accent}
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         )}
       </span>

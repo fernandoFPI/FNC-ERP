@@ -3,18 +3,46 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MockedProvider } from '@apollo/client/testing'
 import { ThemeProvider } from '../../../theme/ThemeContext'
-import { INTERCO_TRANSACTIONS_QUERY, INTERCO_STOCK_TRANSFERS_QUERY, INTERCO_PRICING_SETTINGS_QUERY, INTERCO_PRICING_HISTORY_QUERY } from '../../../graphql/interco'
+import {
+  INTERCO_TRANSACTIONS_QUERY,
+  INTERCO_STOCK_TRANSFERS_QUERY,
+  INTERCO_PRICING_SETTINGS_QUERY,
+  INTERCO_PRICING_HISTORY_QUERY,
+} from '../../../graphql/interco'
 import IntercoTransactionsPage from '../transactions/IntercoTransactionsPage'
 import IntercoStockTransfersPage from '../stock-transfers/IntercoStockTransfersPage'
 import TransferPricingPage from '../pricing/TransferPricingPage'
 
 const txnsMock = {
-  request: { query: INTERCO_TRANSACTIONS_QUERY, variables: { fromCompanyId: undefined, toCompanyId: undefined, status: undefined, transactionType: undefined, fromDate: undefined, toDate: undefined, page: 1, limit: 20 } },
+  request: {
+    query: INTERCO_TRANSACTIONS_QUERY,
+    variables: {
+      fromCompanyId: undefined,
+      toCompanyId: undefined,
+      status: undefined,
+      transactionType: undefined,
+      fromDate: undefined,
+      toDate: undefined,
+      page: 1,
+      limit: 20,
+    },
+  },
   result: { data: { intercoTransactions: { items: [], total: 0, page: 1, limit: 20 } } },
 }
 
 const stockMock = {
-  request: { query: INTERCO_STOCK_TRANSFERS_QUERY, variables: { fromCompanyId: undefined, toCompanyId: undefined, status: undefined, fromDate: undefined, toDate: undefined, page: 1, limit: 20 } },
+  request: {
+    query: INTERCO_STOCK_TRANSFERS_QUERY,
+    variables: {
+      fromCompanyId: undefined,
+      toCompanyId: undefined,
+      status: undefined,
+      fromDate: undefined,
+      toDate: undefined,
+      page: 1,
+      limit: 20,
+    },
+  },
   result: { data: { intercoStockTransfers: { items: [], total: 0, page: 1, limit: 20 } } },
 }
 
@@ -32,18 +60,18 @@ function wrap(component: React.ReactNode, mocks: unknown[] = []) {
   return render(
     <MockedProvider mocks={mocks as never} addTypename={false}>
       <MemoryRouter>
-        <ThemeProvider>
-          {component}
-        </ThemeProvider>
+        <ThemeProvider>{component}</ThemeProvider>
       </MemoryRouter>
-    </MockedProvider>
+    </MockedProvider>,
   )
 }
 
 describe('IntercoTransactionsPage', () => {
   it('renders page title', () => {
     wrap(<IntercoTransactionsPage />, [txnsMock])
-    expect(screen.getByText(/Inter-?company.*Transaction|Transaction.*Inter-?company/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Inter-?company.*Transaction|Transaction.*Inter-?company/i),
+    ).toBeInTheDocument()
   })
 
   it('shows New Transaction button', () => {

@@ -24,7 +24,9 @@ export const useCompanyStore = create<CompanyState>()(
         set({ activeCompany: company })
         void useAuthStore.getState().loadPermissionsForCompany(company.id)
       },
-      setCompanies: (companies) => set({ companies }),
+      setCompanies: (companies) => {
+        set({ companies })
+      },
     }),
     {
       name: 'fnc-company',

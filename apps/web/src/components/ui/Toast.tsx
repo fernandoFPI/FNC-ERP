@@ -68,34 +68,79 @@ export function Toast() {
               alignItems: hasActions ? 'flex-start' : 'center',
               gap: hasActions ? '12px' : '10px',
               minWidth: isPhone ? 'unset' : '260px',
-              maxWidth: isPhone ? '100%' : (hasActions ? '400px' : '360px'),
+              maxWidth: isPhone ? '100%' : hasActions ? '400px' : '360px',
               width: isPhone ? '100%' : undefined,
             }}
           >
             {hasActions ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}>
-                  <span style={{
-                    width: '6px', height: '6px', borderRadius: '50%',
-                    background: s.color, flexShrink: 0, marginTop: '5px',
-                    boxShadow: `0 0 6px ${s.color}`,
-                  }} />
-                  <span style={{ fontSize: '13px', color: theme.textPrimary, flex: 1, lineHeight: '1.4' }}>{toast.message}</span>
+                <div
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}
+                >
+                  <span
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: s.color,
+                      flexShrink: 0,
+                      marginTop: '5px',
+                      boxShadow: `0 0 6px ${s.color}`,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: '13px',
+                      color: theme.textPrimary,
+                      flex: 1,
+                      lineHeight: '1.4',
+                    }}
+                  >
+                    {toast.message}
+                  </span>
                   <button
-                    onClick={() => removeToast(toast.id)}
-                    style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px', flexShrink: 0 }}
-                  >×</button>
+                    onClick={() => {
+                      removeToast(toast.id)
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: theme.textMuted,
+                      cursor: 'pointer',
+                      fontSize: '16px',
+                      lineHeight: 1,
+                      padding: '2px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    ×
+                  </button>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', paddingLeft: '16px' }}>
                   {toast.actions!.map((action, i) => (
                     <button
                       key={i}
-                      onClick={() => { action.onClick(); removeToast(toast.id) }}
+                      onClick={() => {
+                        action.onClick()
+                        removeToast(toast.id)
+                      }}
                       style={{
-                        padding: '5px 14px', border: 'none', borderRadius: '6px',
-                        fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-                        background: action.variant === 'danger' ? '#ef4444' : action.variant === 'primary' ? theme.accent : theme.bgCanvas,
-                        color: (action.variant === 'danger' || action.variant === 'primary') ? '#fff' : theme.textSecondary,
+                        padding: '5px 14px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        background:
+                          action.variant === 'danger'
+                            ? '#ef4444'
+                            : action.variant === 'primary'
+                              ? theme.accent
+                              : theme.bgCanvas,
+                        color:
+                          action.variant === 'danger' || action.variant === 'primary'
+                            ? '#fff'
+                            : theme.textSecondary,
                       }}
                     >
                       {action.label}
@@ -105,22 +150,42 @@ export function Toast() {
               </>
             ) : (
               <>
-                <span style={{
-                  width: '6px', height: '6px', borderRadius: '50%',
-                  background: s.color, flexShrink: 0,
-                  boxShadow: `0 0 6px ${s.color}`,
-                }} />
-                <span style={{ fontSize: '13px', color: theme.textPrimary, flex: 1 }}>{toast.message}</span>
+                <span
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: s.color,
+                    flexShrink: 0,
+                    boxShadow: `0 0 6px ${s.color}`,
+                  }}
+                />
+                <span style={{ fontSize: '13px', color: theme.textPrimary, flex: 1 }}>
+                  {toast.message}
+                </span>
                 <button
-                  onClick={() => removeToast(toast.id)}
-                  style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px', flexShrink: 0 }}
-                >×</button>
+                  onClick={() => {
+                    removeToast(toast.id)
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: theme.textMuted,
+                    cursor: 'pointer',
+                    fontSize: '16px',
+                    lineHeight: 1,
+                    padding: '2px',
+                    flexShrink: 0,
+                  }}
+                >
+                  ×
+                </button>
               </>
             )}
           </div>
         )
       })}
     </div>,
-    document.body
+    document.body,
   )
 }

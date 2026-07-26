@@ -9,7 +9,11 @@ interface ApprovalState {
 
 export const useApprovalStore = create<ApprovalState>((set) => ({
   pendingCount: 0,
-  setPendingCount: (n) => set({ pendingCount: n }),
+  setPendingCount: (n) => {
+    set({ pendingCount: n })
+  },
   overdueMaintenanceCount: 0,
-  setOverdueMaintenance: (n) => set({ overdueMaintenanceCount: n }),
+  setOverdueMaintenance: (n) => {
+    set({ overdueMaintenanceCount: n })
+  },
 }))

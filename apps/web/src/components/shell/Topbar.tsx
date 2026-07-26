@@ -136,37 +136,48 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
 
   const crumbs = buildCrumbs(location.pathname)
   const initials = user ? getInitials(user.email) : 'U'
-  const displayName = (user?.firstName && user?.lastName)
-    ? `${user.firstName} ${user.lastName}`
-    : null
+  const displayName =
+    user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : null
 
   // Bootstrap and refresh unread notification count
   useEffect(() => {
     const { setUnreadCount } = useNotificationStore.getState()
     const fetchCount = () => {
-      api.get<{ count: number }>('/notifications/unread-count')
-        .then((r) => { if (typeof r.data.count === 'number') setUnreadCount(r.data.count) })
-        .catch(() => { /* non-critical */ })
+      api
+        .get<{ count: number }>('/notifications/unread-count')
+        .then((r) => {
+          if (typeof r.data.count === 'number') setUnreadCount(r.data.count)
+        })
+        .catch(() => {
+          /* non-critical */
+        })
     }
     fetchCount()
     const interval = setInterval(fetchCount, 60_000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+    }
   }, [])
 
   // Fetch profile picture + name on mount. profilePicture is a time-limited
   // presigned URL, so it can't be treated as "already loaded" and cached
   // indefinitely (it's persisted in the auth store) — always refetch it fresh.
   useEffect(() => {
-    if (!user || !user.profileCompleted) return
-    api.get<{ firstName: string | null; lastName: string | null; profilePicture: string | null }>(
-      '/users/me/profile',
-    ).then(r => {
-      setUser({
-        firstName: r.data.firstName ?? undefined,
-        lastName: r.data.lastName ?? undefined,
-        profilePicture: r.data.profilePicture ?? null,
+    if (!user?.profileCompleted) return
+    api
+      .get<{ firstName: string | null; lastName: string | null; profilePicture: string | null }>(
+        '/users/me/profile',
+      )
+      .then((r) => {
+        setUser({
+          firstName: r.data.firstName ?? undefined,
+          lastName: r.data.lastName ?? undefined,
+          profilePicture: r.data.profilePicture ?? null,
+        })
       })
-    }).catch(() => {/* non-critical */})
+      .catch(() => {
+        /* non-critical */
+      })
   }, [user?.id])
 
   function handleSignOut() {
@@ -199,8 +210,11 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
             onClick={onMenuToggle}
             aria-label="Open menu"
             style={{
-              width: '36px', height: '36px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               background: 'none',
               border: 'none',
               color: theme.textSecondary,
@@ -210,7 +224,14 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="3" y1="6" x2="21" y2="6" />
               <line x1="3" y1="12" x2="21" y2="12" />
               <line x1="3" y1="18" x2="21" y2="18" />
@@ -219,26 +240,65 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         )}
 
         {/* Breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, overflow: 'hidden', minWidth: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            flex: 1,
+            overflow: 'hidden',
+            minWidth: 0,
+          }}
+        >
           {crumbs.map((crumb, i) => (
-            <span key={crumb.path} style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: i < crumbs.length - 1 ? 0 : 1, overflow: 'hidden' }}>
+            <span
+              key={crumb.path}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                flexShrink: i < crumbs.length - 1 ? 0 : 1,
+                overflow: 'hidden',
+              }}
+            >
               {i > 0 && (
-                <span style={{ fontSize: '12px', color: theme.textMuted, userSelect: 'none' }}>›</span>
+                <span style={{ fontSize: '12px', color: theme.textMuted, userSelect: 'none' }}>
+                  ›
+                </span>
               )}
               {crumb.isLast || crumb.isId ? (
-                <span style={{ fontSize: '13px', color: theme.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span
+                  style={{
+                    fontSize: '13px',
+                    color: theme.textSecondary,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   {crumb.label}
                 </span>
               ) : (
                 <button
-                  onClick={() => navigate(crumb.path)}
+                  onClick={() => {
+                    navigate(crumb.path)
+                  }}
                   style={{
-                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                    fontSize: '13px', color: theme.textMuted, whiteSpace: 'nowrap',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    color: theme.textMuted,
+                    whiteSpace: 'nowrap',
                     fontFamily: 'inherit',
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = theme.accent }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = theme.textMuted }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = theme.accent
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = theme.textMuted
+                  }}
                 >
                   {crumb.label}
                 </button>
@@ -255,10 +315,14 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
           <button
             aria-label="Search"
             title="Search (Ctrl+K)"
-            onClick={() => window.dispatchEvent(new CustomEvent('fnc:open-search', { detail: { prefill: '' } }))}
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent('fnc:open-search', { detail: { prefill: '' } }))
+            }
             style={{
               height: '34px',
-              display: 'flex', alignItems: 'center', gap: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
               padding: '0 10px 0 8px',
               background: theme.bgSurface,
               border: `1px solid ${theme.border}`,
@@ -269,19 +333,30 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               flexShrink: 0,
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" style={{ flexShrink: 0 }}>
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              style={{ flexShrink: 0 }}
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <span style={{ fontSize: '12px', whiteSpace: 'nowrap' }}>Search</span>
-            <kbd style={{
-              fontSize: '10px',
-              padding: '1px 4px',
-              borderRadius: '4px',
-              background: theme.bgCanvas,
-              border: `1px solid ${theme.border}`,
-              fontFamily: 'inherit',
-              lineHeight: '1.4',
-            }}>
+            <kbd
+              style={{
+                fontSize: '10px',
+                padding: '1px 4px',
+                borderRadius: '4px',
+                background: theme.bgCanvas,
+                border: `1px solid ${theme.border}`,
+                fontFamily: 'inherit',
+                lineHeight: '1.4',
+              }}
+            >
               Ctrl K
             </kbd>
           </button>
@@ -292,11 +367,16 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         {/* Notifications */}
         <div style={{ position: 'relative' }}>
           <button
-            onClick={() => isPhone ? navigate('/notifications') : setNotifOpen(true)}
+            onClick={() => {
+              isPhone ? navigate('/notifications') : setNotifOpen(true)
+            }}
             aria-label="Notifications"
             style={{
-              width: '34px', height: '34px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '34px',
+              height: '34px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               background: theme.bgSurface,
               border: `1px solid ${theme.border}`,
               borderRadius: '8px',
@@ -306,18 +386,30 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            >
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
             {unreadCount > 0 && (
-              <span style={{
-                position: 'absolute',
-                top: '4px', right: '4px',
-                width: '8px', height: '8px',
-                borderRadius: '50%',
-                background: theme.danger,
-                boxShadow: `0 0 4px ${theme.danger}`,
-              }} />
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: theme.danger,
+                  boxShadow: `0 0 4px ${theme.danger}`,
+                }}
+              />
             )}
           </button>
         </div>
@@ -325,10 +417,13 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         {/* Avatar */}
         <div style={{ position: 'relative' }}>
           <button
-            onClick={() => setAvatarMenuOpen((v) => !v)}
+            onClick={() => {
+              setAvatarMenuOpen((v) => !v)
+            }}
             aria-label="User menu"
             style={{
-              width: '34px', height: '34px',
+              width: '34px',
+              height: '34px',
               borderRadius: '50%',
               background: theme.accentBg,
               border: `1px solid ${theme.accentBorder}`,
@@ -337,49 +432,111 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
               fontSize: '12px',
               fontWeight: 700,
               letterSpacing: '0.02em',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               fontFamily: 'inherit',
               WebkitTapHighlightColor: 'transparent',
               overflow: 'hidden',
               padding: 0,
             }}
           >
-            {user?.profilePicture
-              ? <img src={user.profilePicture} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              : initials
-            }
+            {user?.profilePicture ? (
+              <img
+                src={user.profilePicture}
+                alt="avatar"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              initials
+            )}
           </button>
           {avatarMenuOpen && (
             <div
-              style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 500, minWidth: '180px' }}
-              onMouseLeave={() => setAvatarMenuOpen(false)}
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                right: 0,
+                zIndex: 500,
+                minWidth: '180px',
+              }}
+              onMouseLeave={() => {
+                setAvatarMenuOpen(false)
+              }}
             >
-              <div style={{
-                background: theme.bgSurface,
-                border: `1px solid ${theme.border}`,
-                borderRadius: '10px',
-                backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-                overflow: 'hidden',
-              }}>
-                <div style={{ padding: '12px 14px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{
-                    width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
-                    background: theme.accentBg, border: `1px solid ${theme.accentBorder}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    overflow: 'hidden', fontSize: '12px', fontWeight: 700, color: theme.accent,
-                  }}>
-                    {user?.profilePicture
-                      ? <img src={user.profilePicture} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : initials
-                    }
+              <div
+                style={{
+                  background: theme.bgSurface,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '10px',
+                  backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderBottom: `1px solid ${theme.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background: theme.accentBg,
+                      border: `1px solid ${theme.accentBorder}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: theme.accent,
+                    }}
+                  >
+                    {user?.profilePicture ? (
+                      <img
+                        src={user.profilePicture}
+                        alt="avatar"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      initials
+                    )}
                   </div>
                   <div style={{ minWidth: 0 }}>
                     {displayName && (
-                      <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, margin: '0 0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <p
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          color: theme.textPrimary,
+                          margin: '0 0 1px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
                         {displayName}
                       </p>
                     )}
-                    <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email ?? ''}</p>
+                    <p
+                      style={{
+                        fontSize: '11px',
+                        color: theme.textMuted,
+                        margin: 0,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {user?.email ?? ''}
+                    </p>
                   </div>
                 </div>
                 <div style={{ padding: '4px' }}>
@@ -389,15 +546,29 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                   ].map((item) => (
                     <button
                       key={item.path}
-                      onClick={() => { navigate(item.path); setAvatarMenuOpen(false) }}
-                      style={{
-                        display: 'block', width: '100%', padding: '8px 10px',
-                        fontSize: '13px', color: theme.textSecondary,
-                        background: 'none', border: 'none', borderRadius: '6px',
-                        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      onClick={() => {
+                        navigate(item.path)
+                        setAvatarMenuOpen(false)
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        padding: '8px 10px',
+                        fontSize: '13px',
+                        color: theme.textSecondary,
+                        background: 'none',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontFamily: 'inherit',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = theme.bgSurfaceHover
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'none'
+                      }}
                     >
                       {item.label}
                     </button>
@@ -405,13 +576,24 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                   <button
                     onClick={handleSignOut}
                     style={{
-                      display: 'block', width: '100%', padding: '8px 10px',
-                      fontSize: '13px', color: theme.danger,
-                      background: 'none', border: 'none', borderRadius: '6px',
-                      cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      display: 'block',
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '13px',
+                      color: theme.danger,
+                      background: 'none',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: 'inherit',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.dangerBg }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.dangerBg
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none'
+                    }}
                   >
                     Sign out
                   </button>
@@ -422,7 +604,12 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
         </div>
       </div>
 
-      <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
+      <NotificationsDrawer
+        open={notifOpen}
+        onClose={() => {
+          setNotifOpen(false)
+        }}
+      />
     </>
   )
 }

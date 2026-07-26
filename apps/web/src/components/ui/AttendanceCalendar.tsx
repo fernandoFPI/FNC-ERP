@@ -43,13 +43,21 @@ function fmt(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-export function AttendanceCalendar({ month, days, onDayClick, loading = false, onMonthChange }: AttendanceCalendarProps) {
+export function AttendanceCalendar({
+  month,
+  days,
+  onDayClick,
+  loading = false,
+  onMonthChange,
+}: AttendanceCalendarProps) {
   const { theme } = useTheme()
   const [hoverDate, setHoverDate] = useState<string | null>(null)
 
   const cells = getDaysInMonth(month.getFullYear(), month.getMonth())
   const byDate: Record<string, AttendanceDaySummary> = {}
-  days.forEach((d) => { byDate[d.date] = d })
+  days.forEach((d) => {
+    byDate[d.date] = d
+  })
 
   const monthLabel = month.toLocaleString('default', { month: 'long', year: 'numeric' })
 
@@ -75,16 +83,69 @@ export function AttendanceCalendar({ month, days, onDayClick, loading = false, o
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-        <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '18px', padding: '4px 8px' }}>‹</button>
-        <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>{monthLabel}</span>
-        <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '18px', padding: '4px 8px' }}>›</button>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px',
+        }}
+      >
+        <button
+          onClick={prevMonth}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.textMuted,
+            fontSize: '18px',
+            padding: '4px 8px',
+          }}
+        >
+          ‹
+        </button>
+        <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
+          {monthLabel}
+        </span>
+        <button
+          onClick={nextMonth}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.textMuted,
+            fontSize: '18px',
+            padding: '4px 8px',
+          }}
+        >
+          ›
+        </button>
       </div>
 
       {/* Day labels */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', marginBottom: '4px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          gap: '4px',
+          marginBottom: '4px',
+        }}
+      >
         {DAY_LABELS.map((d) => (
-          <div key={d} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '4px 0' }}>{d}</div>
+          <div
+            key={d}
+            style={{
+              textAlign: 'center',
+              fontSize: '10px',
+              fontWeight: 600,
+              color: theme.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              padding: '4px 0',
+            }}
+          >
+            {d}
+          </div>
         ))}
       </div>
 
@@ -102,19 +163,36 @@ export function AttendanceCalendar({ month, days, onDayClick, loading = false, o
           let dotColor = 'transparent'
           let dotTitle = ''
           if (summary) {
-            if (summary.isWeekend) { dotColor = theme.textMuted; dotTitle = 'Weekend' }
-            else if (summary.isLeave) { dotColor = theme.info; dotTitle = summary.leaveTypeName ?? 'Leave' }
-            else if (summary.isAbsent) { dotColor = theme.danger; dotTitle = 'Absent' }
-            else if (summary.hasOvertime) { dotColor = theme.warning; dotTitle = `${summary.hoursWorked?.toFixed(1)} hrs (OT)` }
-            else { dotColor = theme.success; dotTitle = `${summary.hoursWorked?.toFixed(1)} hrs` }
+            if (summary.isWeekend) {
+              dotColor = theme.textMuted
+              dotTitle = 'Weekend'
+            } else if (summary.isLeave) {
+              dotColor = theme.info
+              dotTitle = summary.leaveTypeName ?? 'Leave'
+            } else if (summary.isAbsent) {
+              dotColor = theme.danger
+              dotTitle = 'Absent'
+            } else if (summary.hasOvertime) {
+              dotColor = theme.warning
+              dotTitle = `${summary.hoursWorked?.toFixed(1)} hrs (OT)`
+            } else {
+              dotColor = theme.success
+              dotTitle = `${summary.hoursWorked?.toFixed(1)} hrs`
+            }
           }
 
           return (
             <div
               key={dateStr}
-              onClick={() => summary && onDayClick(dateStr)}
-              onMouseEnter={() => setHoverDate(dateStr)}
-              onMouseLeave={() => setHoverDate(null)}
+              onClick={() => {
+                summary && onDayClick(dateStr)
+              }}
+              onMouseEnter={() => {
+                setHoverDate(dateStr)
+              }}
+              onMouseLeave={() => {
+                setHoverDate(null)
+              }}
               style={{
                 position: 'relative',
                 height: '60px',
@@ -122,24 +200,57 @@ export function AttendanceCalendar({ month, days, onDayClick, loading = false, o
                 borderRadius: '8px',
                 padding: '6px 8px',
                 cursor: summary ? 'pointer' : 'default',
-                background: isHovered && summary ? theme.tableRowHover : isToday ? theme.accentBg : theme.bgSurface,
+                background:
+                  isHovered && summary
+                    ? theme.tableRowHover
+                    : isToday
+                      ? theme.accentBg
+                      : theme.bgSurface,
                 transition: 'background 0.15s',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: isToday ? 700 : 400, color: isToday ? theme.accent : theme.textSecondary }}>
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: isToday ? 700 : 400,
+                  color: isToday ? theme.accent : theme.textSecondary,
+                }}
+              >
                 {cell.getDate()}
               </div>
               {dotColor !== 'transparent' && (
-                <div style={{ position: 'absolute', bottom: '6px', left: '50%', transform: 'translateX(-50%)', width: '7px', height: '7px', borderRadius: '50%', background: dotColor }} />
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '6px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    background: dotColor,
+                  }}
+                />
               )}
               {isHovered && summary && dotTitle && (
-                <div style={{
-                  position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)',
-                  background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '6px',
-                  padding: '4px 8px', fontSize: '11px', color: theme.textSecondary,
-                  whiteSpace: 'nowrap', zIndex: 10, pointerEvents: 'none',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '110%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: theme.bgSurface,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    color: theme.textSecondary,
+                    whiteSpace: 'nowrap',
+                    zIndex: 10,
+                    pointerEvents: 'none',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                  }}
+                >
                   {dotTitle}
                 </div>
               )}

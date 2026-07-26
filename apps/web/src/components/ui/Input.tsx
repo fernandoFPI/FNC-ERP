@@ -74,7 +74,9 @@ export function Input({
       )}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         {prefix && (
-          <span style={{ position: 'absolute', left: '10px', color: theme.textMuted, fontSize: '13px' }}>
+          <span
+            style={{ position: 'absolute', left: '10px', color: theme.textMuted, fontSize: '13px' }}
+          >
             {prefix}
           </span>
         )}
@@ -122,14 +124,19 @@ export function Input({
           }}
         />
         {suffix && (
-          <span style={{ position: 'absolute', right: '10px', color: theme.textMuted, fontSize: '13px' }}>
+          <span
+            style={{
+              position: 'absolute',
+              right: '10px',
+              color: theme.textMuted,
+              fontSize: '13px',
+            }}
+          >
             {suffix}
           </span>
         )}
       </div>
-      {error && (
-        <span style={{ fontSize: '11px', color: theme.danger }}>{error}</span>
-      )}
+      {error && <span style={{ fontSize: '11px', color: theme.danger }}>{error}</span>}
     </div>
   )
 }

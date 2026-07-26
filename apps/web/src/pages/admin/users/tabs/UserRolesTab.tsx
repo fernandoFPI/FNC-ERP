@@ -37,7 +37,7 @@ interface RoleTemplate {
   name: string
   description: string | null
   isSystem: boolean
-  permissions: Array<{ key: string; accessLevel: string }>
+  permissions: { key: string; accessLevel: string }[]
 }
 
 interface POPosition {
@@ -64,7 +64,6 @@ interface UserPermissionsResult {
   permissions: UserPermEntry[]
 }
 
-
 interface UserRolesTabProps {
   userId: string
 }
@@ -77,7 +76,11 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
   const [pendingPerms, setPendingPerms] = useState<Record<string, AccessLevel>>({})
   const [isDirty, setIsDirty] = useState(false)
   const [showAddPositionModal, setShowAddPositionModal] = useState(false)
-  const [positionForm, setPositionForm] = useState({ position: '', scopeType: 'project' as 'project' | 'department', scopeId: '' })
+  const [positionForm, setPositionForm] = useState({
+    position: '',
+    scopeType: 'project' as 'project' | 'department',
+    scopeId: '',
+  })
   const [applyingTemplate, setApplyingTemplate] = useState(false)
 
   const { data: companiesData, loading: loadingCompanies } = useQuery<{ userCompanies: Company[] }>(
@@ -92,7 +95,11 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
     }
   }, [companies, selectedCompanyId])
 
-  const { data: permsData, loading: loadingPerms, refetch: refetchPerms } = useQuery<{
+  const {
+    data: permsData,
+    loading: loadingPerms,
+    refetch: refetchPerms,
+  } = useQuery<{
     userPermissions: UserPermissionsResult
   }>(GET_USER_PERMISSIONS, {
     variables: { userId, companyId: selectedCompanyId },
@@ -128,7 +135,9 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
       setIsDirty(false)
       void refetchPerms()
     },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
 
   const [assignPosition, { loading: assigningPos }] = useMutation(ASSIGN_PO_POSITION, {
@@ -138,12 +147,19 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
       setPositionForm({ position: '', scopeType: 'project', scopeId: '' })
       void refetchPO()
     },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
 
   const [removePosition] = useMutation(REMOVE_PO_POSITION, {
-    onCompleted: () => { addToast({ type: 'success', message: 'Position removed' }); void refetchPO() },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Position removed' })
+      void refetchPO()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
 
   function handlePermChange(next: Record<string, AccessLevel>) {
@@ -196,16 +212,18 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
   return (
     <div>
       {/* Company switcher + save bar */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 16px',
-        borderBottom: `1px solid ${theme.border}`,
-        background: theme.bgSurface,
-        flexWrap: 'wrap',
-        gap: '10px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: `1px solid ${theme.border}`,
+          background: theme.bgSurface,
+          flexWrap: 'wrap',
+          gap: '10px',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <span style={{ fontSize: '12px', color: theme.textMuted }}>Company:</span>
           <div style={{ minWidth: '180px' }}>
@@ -219,7 +237,9 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
             />
           </div>
           {isAdmin && (
-            <Badge variant="accent" size="sm">Admin — permissions not applicable</Badge>
+            <Badge variant="accent" size="sm">
+              Admin — permissions not applicable
+            </Badge>
           )}
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -241,24 +261,30 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
       <div style={{ padding: '16px' }}>
         {/* Template quick-apply */}
         {!isAdmin && templates.length > 0 && (
-          <div style={{
-            marginBottom: '16px',
-            padding: '12px 16px',
-            background: theme.bgSurface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            flexWrap: 'wrap',
-          }}>
-            <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>Quick apply template:</span>
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '12px 16px',
+              background: theme.bgSurface,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+              Quick apply template:
+            </span>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               {templates.map((t) => (
                 <button
                   key={t.id}
                   disabled={applyingTemplate || saving}
-                  onClick={() => handleApplyTemplate(t)}
+                  onClick={() => {
+                    handleApplyTemplate(t)
+                  }}
                   style={{
                     padding: '4px 10px',
                     fontSize: '12px',
@@ -271,7 +297,9 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                 >
                   {t.name}
                   {t.isSystem && (
-                    <span style={{ marginLeft: '4px', fontSize: '10px', color: theme.textMuted }}>(system)</span>
+                    <span style={{ marginLeft: '4px', fontSize: '10px', color: theme.textMuted }}>
+                      (system)
+                    </span>
                   )}
                 </button>
               ))}
@@ -283,31 +311,42 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
         {loadingPerms ? (
           <div style={{ padding: '20px', color: theme.textMuted }}>Loading permissions…</div>
         ) : (
-          <PermissionTree
-            value={pendingPerms}
-            onChange={handlePermChange}
-            disabled={isAdmin}
-          />
+          <PermissionTree value={pendingPerms} onChange={handlePermChange} disabled={isAdmin} />
         )}
 
         {/* PO Positions */}
         <div style={{ marginTop: '24px' }}>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '10px',
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '10px',
+            }}
+          >
             <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
               PO Positions
             </h3>
-            <Button variant="secondary" size="sm" onClick={() => setShowAddPositionModal(true)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setShowAddPositionModal(true)
+              }}
+            >
               Add Position
             </Button>
           </div>
           <Card padding="none">
             {poPositions.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+              <div
+                style={{
+                  padding: '20px',
+                  textAlign: 'center',
+                  color: theme.textMuted,
+                  fontSize: '13px',
+                }}
+              >
                 No PO positions assigned to this user.
               </div>
             ) : (
@@ -316,16 +355,21 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                   <thead>
                     <tr style={{ background: theme.bgSurface }}>
                       {['Position', 'Scope', 'Status', ''].map((h) => (
-                        <th key={h} style={{
-                          padding: '8px 14px',
-                          textAlign: 'left',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          borderBottom: `1px solid ${theme.border}`,
-                        }}>{h}</th>
+                        <th
+                          key={h}
+                          style={{
+                            padding: '8px 14px',
+                            textAlign: 'left',
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            color: theme.textMuted,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.06em',
+                            borderBottom: `1px solid ${theme.border}`,
+                          }}
+                        >
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -334,11 +378,22 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                       <tr key={pos.id} style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
                         <td style={{ padding: '10px 14px' }}>
                           <Badge variant="neutral" size="sm">
-                            {PO_POSITION_OPTIONS.find((o) => o.value === pos.position)?.label ?? pos.position}
+                            {PO_POSITION_OPTIONS.find((o) => o.value === pos.position)?.label ??
+                              pos.position}
                           </Badge>
                         </td>
-                        <td style={{ padding: '10px 14px', color: theme.textSecondary, fontSize: '12px' }}>
-                          {pos.projectName ? `Project: ${pos.projectName}` : pos.departmentName ? `Dept: ${pos.departmentName}` : '—'}
+                        <td
+                          style={{
+                            padding: '10px 14px',
+                            color: theme.textSecondary,
+                            fontSize: '12px',
+                          }}
+                        >
+                          {pos.projectName
+                            ? `Project: ${pos.projectName}`
+                            : pos.departmentName
+                              ? `Dept: ${pos.departmentName}`
+                              : '—'}
                         </td>
                         <td style={{ padding: '10px 14px' }}>
                           <Badge variant={pos.isActive ? 'success' : 'neutral'} size="sm">
@@ -369,10 +424,19 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
         <Modal
           open={showAddPositionModal}
           title="Add PO Position"
-          onClose={() => setShowAddPositionModal(false)}
+          onClose={() => {
+            setShowAddPositionModal(false)
+          }}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setShowAddPositionModal(false)}>Cancel</Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowAddPositionModal(false)
+                }}
+              >
+                Cancel
+              </Button>
               <Button
                 variant="primary"
                 loading={assigningPos}
@@ -383,8 +447,12 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                       input: {
                         employeeId: poPositions[0]?.employeeId ?? '',
                         position: positionForm.position,
-                        projectId: positionForm.scopeType === 'project' ? positionForm.scopeId : undefined,
-                        departmentId: positionForm.scopeType === 'department' ? positionForm.scopeId : undefined,
+                        projectId:
+                          positionForm.scopeType === 'project' ? positionForm.scopeId : undefined,
+                        departmentId:
+                          positionForm.scopeType === 'department'
+                            ? positionForm.scopeId
+                            : undefined,
                       },
                     },
                   })
@@ -400,21 +468,32 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
               <SearchableSelect
                 label="Position *"
                 value={positionForm.position}
-                onChange={(v) => setPositionForm((f) => ({ ...f, position: v }))}
+                onChange={(v) => {
+                  setPositionForm((f) => ({ ...f, position: v }))
+                }}
                 placeholder="Select position…"
                 options={PO_POSITION_OPTIONS}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
+                }}
+              >
                 Scope type *
               </label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 {(['project', 'department'] as const).map((t) => (
                   <button
                     key={t}
-                    onClick={() => setPositionForm((f) => ({ ...f, scopeType: t, scopeId: '' }))}
+                    onClick={() => {
+                      setPositionForm((f) => ({ ...f, scopeType: t, scopeId: '' }))
+                    }}
                     style={{
                       padding: '6px 14px',
                       fontSize: '12px',
@@ -433,12 +512,21 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
             </div>
 
             <div>
-              <label style={{ fontSize: '12px', color: theme.textMuted, display: 'block', marginBottom: '4px' }}>
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
+                }}
+              >
                 {positionForm.scopeType === 'project' ? 'Project' : 'Department'} *
               </label>
               <input
                 value={positionForm.scopeId}
-                onChange={(e) => setPositionForm((f) => ({ ...f, scopeId: e.target.value }))}
+                onChange={(e) => {
+                  setPositionForm((f) => ({ ...f, scopeId: e.target.value }))
+                }}
                 placeholder={`Enter ${positionForm.scopeType} ID`}
                 style={{
                   width: '100%',
@@ -457,7 +545,6 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
           </div>
         </Modal>
       )}
-
     </div>
   )
 }

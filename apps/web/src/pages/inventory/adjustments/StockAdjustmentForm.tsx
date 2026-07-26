@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
-import { PRODUCTS_QUERY, STOCK_LOCATIONS_QUERY, STOCK_BALANCES_QUERY, CREATE_STOCK_ADJUSTMENT, STOCK_SNAPSHOT_QUERY } from '../../../graphql/inventory'
+import {
+  PRODUCTS_QUERY,
+  STOCK_LOCATIONS_QUERY,
+  STOCK_BALANCES_QUERY,
+  CREATE_STOCK_ADJUSTMENT,
+  STOCK_SNAPSHOT_QUERY,
+} from '../../../graphql/inventory'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -35,8 +41,10 @@ export default function StockAdjustmentForm() {
     refetchQueries: [{ query: STOCK_SNAPSHOT_QUERY }],
   })
 
-  const products: Array<{ id: string; sku: string; name: string; uom: string; average_cost: string }> = productsData?.products ?? []
-  const locations: Array<{ id: string; name: string; code: string; type: string }> = locationsData?.stockLocations ?? []
+  const products: { id: string; sku: string; name: string; uom: string; average_cost: string }[] =
+    productsData?.products ?? []
+  const locations: { id: string; name: string; code: string; type: string }[] =
+    locationsData?.stockLocations ?? []
   const warehouses = locations.filter((l) => l.type === 'warehouse')
 
   const currentBalance = balanceData?.stockBalances?.[0]
@@ -49,9 +57,18 @@ export default function StockAdjustmentForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!productId) { addToast({ type: 'error', message: 'Select a product' }); return }
-    if (!locationId) { addToast({ type: 'error', message: 'Select a location' }); return }
-    if (newQty === '' || isNaN(parsedNewQty) || parsedNewQty < 0) { addToast({ type: 'error', message: 'Enter a valid quantity (0 or more)' }); return }
+    if (!productId) {
+      addToast({ type: 'error', message: 'Select a product' })
+      return
+    }
+    if (!locationId) {
+      addToast({ type: 'error', message: 'Select a location' })
+      return
+    }
+    if (newQty === '' || isNaN(parsedNewQty) || parsedNewQty < 0) {
+      addToast({ type: 'error', message: 'Enter a valid quantity (0 or more)' })
+      return
+    }
 
     try {
       await createAdjustment({
@@ -75,54 +92,100 @@ export default function StockAdjustmentForm() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
-      <PageHeader title="Stock Adjustment" subtitle="Set the actual on-hand quantity for a product at a location" backPath="/inventory/balances" />
+      <PageHeader
+        title="Stock Adjustment"
+        subtitle="Set the actual on-hand quantity for a product at a location"
+        backPath="/inventory/balances"
+      />
 
       <form onSubmit={handleSubmit}>
-        <Card style={{ marginTop: '20px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
+        <Card
+          style={{
+            marginTop: '20px',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
+          }}
+        >
           {/* Product + Location */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <Select
               label="Product"
               value={productId}
-              onChange={(e) => { setProductId(e.target.value); setUnitCost('') }}
+              onChange={(e) => {
+                setProductId(e.target.value)
+                setUnitCost('')
+              }}
               required
             >
               <option value="">Select product…</option>
               {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.sku} — {p.name}
+                </option>
               ))}
             </Select>
 
             <Select
               label="Location"
               value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
+              onChange={(e) => {
+                setLocationId(e.target.value)
+              }}
               required
             >
               <option value="">Select location…</option>
               {warehouses.map((l) => (
-                <option key={l.id} value={l.id}>{l.name} ({l.code})</option>
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.code})
+                </option>
               ))}
             </Select>
           </div>
 
           {/* Current balance display */}
           {productId && locationId && (
-            <div style={{ padding: '12px 16px', borderRadius: '8px', background: theme.bgSurface, border: `1px solid ${theme.border}`, display: 'flex', gap: '32px', fontSize: '13px' }}>
+            <div
+              style={{
+                padding: '12px 16px',
+                borderRadius: '8px',
+                background: theme.bgSurface,
+                border: `1px solid ${theme.border}`,
+                display: 'flex',
+                gap: '32px',
+                fontSize: '13px',
+              }}
+            >
               <div>
-                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Current qty on hand</div>
-                <div style={{ fontWeight: 600, color: theme.textPrimary }}>{currentQty.toFixed(4)} {selectedProduct?.uom ?? ''}</div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
+                  Current qty on hand
+                </div>
+                <div style={{ fontWeight: 600, color: theme.textPrimary }}>
+                  {currentQty.toFixed(4)} {selectedProduct?.uom ?? ''}
+                </div>
               </div>
               <div>
-                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Average cost</div>
-                <div style={{ fontWeight: 600, color: theme.textPrimary }}>{currentCost.toFixed(4)}</div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
+                  Average cost
+                </div>
+                <div style={{ fontWeight: 600, color: theme.textPrimary }}>
+                  {currentCost.toFixed(4)}
+                </div>
               </div>
               {diff !== null && (
                 <div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>Adjustment</div>
-                  <div style={{ fontWeight: 600, color: diff > 0 ? '#16a34a' : diff < 0 ? '#dc2626' : theme.textMuted }}>
-                    {diff > 0 ? '+' : ''}{diff.toFixed(4)} {selectedProduct?.uom ?? ''}
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
+                    Adjustment
+                  </div>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      color: diff > 0 ? '#16a34a' : diff < 0 ? '#dc2626' : theme.textMuted,
+                    }}
+                  >
+                    {diff > 0 ? '+' : ''}
+                    {diff.toFixed(4)} {selectedProduct?.uom ?? ''}
                   </div>
                 </div>
               )}
@@ -137,7 +200,9 @@ export default function StockAdjustmentForm() {
               min="0"
               step="0.0001"
               value={newQty}
-              onChange={(e) => setNewQty(e.target.value)}
+              onChange={(e) => {
+                setNewQty(e.target.value)
+              }}
               placeholder={currentQty.toFixed(4)}
               required
             />
@@ -147,14 +212,18 @@ export default function StockAdjustmentForm() {
               min="0"
               step="0.0001"
               value={unitCost}
-              onChange={(e) => setUnitCost(e.target.value)}
+              onChange={(e) => {
+                setUnitCost(e.target.value)
+              }}
               placeholder={currentCost > 0 ? currentCost.toFixed(4) : '0.0000'}
             />
             <Input
               label="Adjustment date"
               type="date"
               value={adjustmentDate}
-              onChange={(e) => setAdjustmentDate(e.target.value)}
+              onChange={(e) => {
+                setAdjustmentDate(e.target.value)
+              }}
               required
             />
           </div>
@@ -162,25 +231,47 @@ export default function StockAdjustmentForm() {
           <Textarea
             label="Reason / notes"
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            onChange={(e) => {
+              setNotes(e.target.value)
+            }}
             placeholder="e.g. Physical count on 2026-06-15 — correcting system discrepancy"
             rows={3}
           />
 
           {/* Warning if reducing to zero */}
           {diff !== null && diff < 0 && parsedNewQty === 0 && (
-            <div style={{ padding: '10px 14px', borderRadius: '7px', background: '#fef2f2', border: '1px solid #fca5a5', fontSize: '13px', color: '#991b1b' }}>
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '7px',
+                background: '#fef2f2',
+                border: '1px solid #fca5a5',
+                fontSize: '13px',
+                color: '#991b1b',
+              }}
+            >
               This will zero out stock for this product at this location.
             </div>
           )}
 
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <Button type="button" variant="ghost" onClick={() => navigate('/inventory/balances')}>Cancel</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                navigate('/inventory/balances')
+              }}
+            >
+              Cancel
+            </Button>
             <Button type="submit" variant="primary" loading={loading} disabled={diff === 0}>
-              {diff === null ? 'Apply adjustment' : diff === 0 ? 'No change' : `Apply adjustment (${diff > 0 ? '+' : ''}${diff?.toFixed(4)})`}
+              {diff === null
+                ? 'Apply adjustment'
+                : diff === 0
+                  ? 'No change'
+                  : `Apply adjustment (${diff > 0 ? '+' : ''}${diff?.toFixed(4)})`}
             </Button>
           </div>
-
         </Card>
       </form>
     </div>

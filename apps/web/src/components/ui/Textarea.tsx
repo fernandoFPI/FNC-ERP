@@ -35,11 +35,13 @@ export function Textarea({
   return (
     <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
       {label && (
-        <label style={{
-          fontSize: isPhone ? '13px' : '12px',
-          fontWeight: 500,
-          color: error ? theme.danger : theme.textSecondary,
-        }}>
+        <label
+          style={{
+            fontSize: isPhone ? '13px' : '12px',
+            fontWeight: 500,
+            color: error ? theme.danger : theme.textSecondary,
+          }}
+        >
           {label}
           {required && <span style={{ color: theme.danger }}> *</span>}
         </label>
@@ -67,8 +69,12 @@ export function Textarea({
           width: '100%',
           ...style,
         }}
-        onFocus={(e) => { e.currentTarget.style.borderColor = theme.accent }}
-        onBlur={(e) => { e.currentTarget.style.borderColor = error ? theme.dangerBorder : theme.borderInput }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = theme.accent
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = error ? theme.dangerBorder : theme.borderInput
+        }}
       />
       {error && <span style={{ fontSize: '11px', color: theme.danger }}>{error}</span>}
     </div>

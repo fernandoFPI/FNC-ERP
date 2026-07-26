@@ -17,7 +17,13 @@ export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
   const { theme } = useTheme()
   const total = segments.reduce((s, c) => s + c.amount, 0) || 1
 
-  const palette = [theme.accent, theme.success, theme.warning, theme.danger, theme.info ?? theme.accent]
+  const palette = [
+    theme.accent,
+    theme.success,
+    theme.warning,
+    theme.danger,
+    theme.info ?? theme.accent,
+  ]
 
   // Donut geometry
   const SIZE = 160
@@ -34,7 +40,14 @@ export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
       {/* Donut */}
       <svg width={SIZE} height={SIZE} style={{ flexShrink: 0 }}>
         {/* background track */}
-        <circle cx={cx} cy={cy} r={R} fill="none" stroke={theme.bgSurfaceHover} strokeWidth={STROKE} />
+        <circle
+          cx={cx}
+          cy={cy}
+          r={R}
+          fill="none"
+          stroke={theme.bgSurfaceHover}
+          strokeWidth={STROKE}
+        />
 
         {segments.map((seg, i) => {
           const pct = seg.amount / total
@@ -62,8 +75,17 @@ export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
         })}
 
         {/* center label */}
-        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="11" fill={theme.textMuted}>Total</text>
-        <text x={cx} y={cy + 10} textAnchor="middle" fontSize="13" fontWeight="600" fill={theme.textPrimary}>
+        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="11" fill={theme.textMuted}>
+          Total
+        </text>
+        <text
+          x={cx}
+          y={cy + 10}
+          textAnchor="middle"
+          fontSize="13"
+          fontWeight="600"
+          fill={theme.textPrimary}
+        >
           {total.toLocaleString()}
         </text>
       </svg>
@@ -75,10 +97,28 @@ export function CostBreakdownChart({ segments, currency = 'IQD' }: Props) {
           const pct = ((seg.amount / total) * 100).toFixed(1)
           return (
             <div key={seg.key} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: color, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: '13px', color: theme.textSecondary }}>{seg.label}</span>
+              <div
+                style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '2px',
+                  background: color,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ flex: 1, fontSize: '13px', color: theme.textSecondary }}>
+                {seg.label}
+              </span>
               <span style={{ fontSize: '12px', color: theme.textMuted }}>{pct}%</span>
-              <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary, minWidth: '80px', textAlign: 'right' }}>
+              <span
+                style={{
+                  fontFamily: 'monospace',
+                  fontSize: '13px',
+                  color: theme.textPrimary,
+                  minWidth: '80px',
+                  textAlign: 'right',
+                }}
+              >
                 {seg.amount.toLocaleString()} {currency}
               </span>
             </div>

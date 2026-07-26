@@ -3,7 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { Table, type Column } from '../Table'
 import { ThemeProvider } from '../../../theme/ThemeContext'
 
-type Row = { id: string; name: string; value: number }
+interface Row {
+  id: string
+  name: string
+  value: number
+}
 
 const columns: Column<Row>[] = [
   { key: 'id', header: 'ID' },

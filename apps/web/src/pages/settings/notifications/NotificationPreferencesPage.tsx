@@ -16,7 +16,9 @@ interface MyPreferences {
   notificationPreferences: string | null
 }
 
-interface PreferencesData { myPreferences: MyPreferences }
+interface PreferencesData {
+  myPreferences: MyPreferences
+}
 
 interface NotifPrefs {
   email_project_updates: boolean
@@ -57,26 +59,116 @@ const DEFAULT_PREFS: NotifPrefs = {
   new_user_invitation_accepted_inApp: true,
 }
 
-const NOTIF_ROWS: { key: keyof NotifPrefs; label: string; description: string; channel: 'Email' | 'In-App' | 'Admin' }[] = [
-  { key: 'email_project_updates', label: 'Project Updates', description: 'Stage changes and milestone completions', channel: 'Email' },
-  { key: 'email_invoice_alerts', label: 'Invoice Alerts', description: 'Overdue invoices and payment receipts', channel: 'Email' },
-  { key: 'email_payroll_reminders', label: 'Payroll Reminders', description: 'Payroll run and approval reminders', channel: 'Email' },
-  { key: 'email_maintenance_alerts', label: 'Maintenance Alerts', description: 'Equipment maintenance due notifications', channel: 'Email' },
-  { key: 'email_fx_alerts', label: 'FX Rate Alerts', description: 'Significant exchange rate movements', channel: 'Email' },
-  { key: 'in_app_all', label: 'In-App Notifications', description: 'Show all notifications inside the app', channel: 'In-App' },
-  { key: 'admin_outbox_failures', label: 'Outbox Failures', description: 'Alert when events fail all retry attempts and land in DLQ', channel: 'Admin' },
-  { key: 'admin_dlq_alerts', label: 'DLQ Alerts', description: 'Receive alerts when DLQ entries need manual review', channel: 'Admin' },
-  { key: 'admin_system_health', label: 'System Health', description: 'Alert when a service health check goes critical', channel: 'Admin' },
+const NOTIF_ROWS: {
+  key: keyof NotifPrefs
+  label: string
+  description: string
+  channel: 'Email' | 'In-App' | 'Admin'
+}[] = [
+  {
+    key: 'email_project_updates',
+    label: 'Project Updates',
+    description: 'Stage changes and milestone completions',
+    channel: 'Email',
+  },
+  {
+    key: 'email_invoice_alerts',
+    label: 'Invoice Alerts',
+    description: 'Overdue invoices and payment receipts',
+    channel: 'Email',
+  },
+  {
+    key: 'email_payroll_reminders',
+    label: 'Payroll Reminders',
+    description: 'Payroll run and approval reminders',
+    channel: 'Email',
+  },
+  {
+    key: 'email_maintenance_alerts',
+    label: 'Maintenance Alerts',
+    description: 'Equipment maintenance due notifications',
+    channel: 'Email',
+  },
+  {
+    key: 'email_fx_alerts',
+    label: 'FX Rate Alerts',
+    description: 'Significant exchange rate movements',
+    channel: 'Email',
+  },
+  {
+    key: 'in_app_all',
+    label: 'In-App Notifications',
+    description: 'Show all notifications inside the app',
+    channel: 'In-App',
+  },
+  {
+    key: 'admin_outbox_failures',
+    label: 'Outbox Failures',
+    description: 'Alert when events fail all retry attempts and land in DLQ',
+    channel: 'Admin',
+  },
+  {
+    key: 'admin_dlq_alerts',
+    label: 'DLQ Alerts',
+    description: 'Receive alerts when DLQ entries need manual review',
+    channel: 'Admin',
+  },
+  {
+    key: 'admin_system_health',
+    label: 'System Health',
+    description: 'Alert when a service health check goes critical',
+    channel: 'Admin',
+  },
 ]
 
-const SYSADMIN_ROWS: { key: keyof NotifPrefs; label: string; description: string; channel: 'Email' | 'In-App' }[] = [
-  { key: 'outbox_dlq_critical_inApp', label: 'DLQ Critical — In-App', description: 'In-app alert for critical-priority DLQ events', channel: 'In-App' },
-  { key: 'outbox_dlq_critical_email', label: 'DLQ Critical — Email', description: 'Email alert for critical-priority DLQ events', channel: 'Email' },
-  { key: 'outbox_dlq_high_inApp', label: 'DLQ High — In-App', description: 'In-app alert for high-priority DLQ events', channel: 'In-App' },
-  { key: 'outbox_dlq_high_email', label: 'DLQ High — Email', description: 'Email alert for high-priority DLQ events', channel: 'Email' },
-  { key: 'system_health_degraded_inApp', label: 'Service Degraded — In-App', description: 'In-app alert when any service enters degraded state', channel: 'In-App' },
-  { key: 'system_health_degraded_email', label: 'Service Degraded — Email', description: 'Email alert when any service enters degraded state', channel: 'Email' },
-  { key: 'new_user_invitation_accepted_inApp', label: 'Invitation Accepted — In-App', description: 'In-app alert when a user accepts an invitation', channel: 'In-App' },
+const SYSADMIN_ROWS: {
+  key: keyof NotifPrefs
+  label: string
+  description: string
+  channel: 'Email' | 'In-App'
+}[] = [
+  {
+    key: 'outbox_dlq_critical_inApp',
+    label: 'DLQ Critical — In-App',
+    description: 'In-app alert for critical-priority DLQ events',
+    channel: 'In-App',
+  },
+  {
+    key: 'outbox_dlq_critical_email',
+    label: 'DLQ Critical — Email',
+    description: 'Email alert for critical-priority DLQ events',
+    channel: 'Email',
+  },
+  {
+    key: 'outbox_dlq_high_inApp',
+    label: 'DLQ High — In-App',
+    description: 'In-app alert for high-priority DLQ events',
+    channel: 'In-App',
+  },
+  {
+    key: 'outbox_dlq_high_email',
+    label: 'DLQ High — Email',
+    description: 'Email alert for high-priority DLQ events',
+    channel: 'Email',
+  },
+  {
+    key: 'system_health_degraded_inApp',
+    label: 'Service Degraded — In-App',
+    description: 'In-app alert when any service enters degraded state',
+    channel: 'In-App',
+  },
+  {
+    key: 'system_health_degraded_email',
+    label: 'Service Degraded — Email',
+    description: 'Email alert when any service enters degraded state',
+    channel: 'Email',
+  },
+  {
+    key: 'new_user_invitation_accepted_inApp',
+    label: 'Invitation Accepted — In-App',
+    description: 'In-app alert when a user accepts an invitation',
+    channel: 'In-App',
+  },
 ]
 
 export default function NotificationPreferencesPage() {
@@ -92,8 +184,13 @@ export default function NotificationPreferencesPage() {
   const { data, loading } = useQuery<PreferencesData>(MY_PREFERENCES_QUERY)
 
   const [updatePreferences, { loading: saving }] = useMutation(UPDATE_PREFERENCES, {
-    onCompleted: () => { addToast({ type: 'success', message: 'Notification preferences saved' }); setDirty(false) },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Notification preferences saved' })
+      setDirty(false)
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
     refetchQueries: [{ query: MY_PREFERENCES_QUERY }],
   })
 
@@ -109,7 +206,7 @@ export default function NotificationPreferencesPage() {
   }, [data])
 
   function toggle(key: keyof NotifPrefs) {
-    setLocalPrefs(p => ({ ...p, [key]: !p[key] }))
+    setLocalPrefs((p) => ({ ...p, [key]: !p[key] }))
     setDirty(true)
   }
 
@@ -128,15 +225,17 @@ export default function NotificationPreferencesPage() {
   }
 
   const grouped: Record<string, typeof NOTIF_ROWS> = {
-    Email: NOTIF_ROWS.filter(r => r.channel === 'Email'),
-    'In-App': NOTIF_ROWS.filter(r => r.channel === 'In-App'),
-    ...(isAdmin ? { 'Admin Alerts': NOTIF_ROWS.filter(r => r.channel === 'Admin') } : {}),
+    Email: NOTIF_ROWS.filter((r) => r.channel === 'Email'),
+    'In-App': NOTIF_ROWS.filter((r) => r.channel === 'In-App'),
+    ...(isAdmin ? { 'Admin Alerts': NOTIF_ROWS.filter((r) => r.channel === 'Admin') } : {}),
   }
 
   function renderToggle(key: keyof NotifPrefs) {
     return (
       <div
-        onClick={() => toggle(key)}
+        onClick={() => {
+          toggle(key)
+        }}
         style={{
           width: '42px',
           height: '24px',
@@ -148,17 +247,19 @@ export default function NotificationPreferencesPage() {
           flexShrink: 0,
         }}
       >
-        <div style={{
-          position: 'absolute',
-          top: '3px',
-          left: localPrefs[key] ? '21px' : '3px',
-          width: '18px',
-          height: '18px',
-          borderRadius: '50%',
-          background: 'white',
-          transition: 'left 0.2s',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-        }} />
+        <div
+          style={{
+            position: 'absolute',
+            top: '3px',
+            left: localPrefs[key] ? '21px' : '3px',
+            width: '18px',
+            height: '18px',
+            borderRadius: '50%',
+            background: 'white',
+            transition: 'left 0.2s',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          }}
+        />
       </div>
     )
   }
@@ -170,7 +271,9 @@ export default function NotificationPreferencesPage() {
         subtitle="Control which notifications you receive and how"
         actions={
           dirty ? (
-            <Button variant="primary" size="sm" onClick={handleSave} loading={saving}>Save Changes</Button>
+            <Button variant="primary" size="sm" onClick={handleSave} loading={saving}>
+              Save Changes
+            </Button>
           ) : undefined
         }
       />
@@ -181,9 +284,21 @@ export default function NotificationPreferencesPage() {
         <>
           {Object.entries(grouped).map(([channel, rows]) => (
             <Card key={channel} padding="none" style={{ marginBottom: '16px' }}>
-              <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{channel}</h3>
-                <Badge variant={channel === 'Admin Alerts' ? 'warning' : 'neutral'} size="sm">{channel === 'Admin Alerts' ? 'Admin only' : `${rows.length} types`}</Badge>
+              <div
+                style={{
+                  padding: '12px 20px',
+                  borderBottom: `1px solid ${theme.border}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                  {channel}
+                </h3>
+                <Badge variant={channel === 'Admin Alerts' ? 'warning' : 'neutral'} size="sm">
+                  {channel === 'Admin Alerts' ? 'Admin only' : `${rows.length} types`}
+                </Badge>
               </div>
               {rows.map((row, i) => (
                 <div
@@ -197,7 +312,9 @@ export default function NotificationPreferencesPage() {
                   }}
                 >
                   <div>
-                    <p style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>{row.label}</p>
+                    <p style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
+                      {row.label}
+                    </p>
                     <p style={{ fontSize: '12px', color: theme.textMuted }}>{row.description}</p>
                   </div>
                   {renderToggle(row.key)}
@@ -209,15 +326,36 @@ export default function NotificationPreferencesPage() {
           {/* System-admin-only section */}
           {isSysAdmin && (
             <div style={{ marginTop: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}
+              >
                 <div style={{ flex: 1, height: '1px', background: theme.border }} />
-                <Badge variant="danger" size="sm">System Admin Only</Badge>
+                <Badge variant="danger" size="sm">
+                  System Admin Only
+                </Badge>
                 <div style={{ flex: 1, height: '1px', background: theme.border }} />
               </div>
-              <Card padding="none" style={{ border: `1px solid ${theme.warningBorder ?? theme.border}` }}>
-                <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: '10px', background: theme.warningBg ?? theme.bgSurface, borderRadius: '12px 12px 0 0' }}>
-                  <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>Platform Operations</h3>
-                  <Badge variant="danger" size="sm">System admin only</Badge>
+              <Card
+                padding="none"
+                style={{ border: `1px solid ${theme.warningBorder ?? theme.border}` }}
+              >
+                <div
+                  style={{
+                    padding: '12px 20px',
+                    borderBottom: `1px solid ${theme.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    background: theme.warningBg ?? theme.bgSurface,
+                    borderRadius: '12px 12px 0 0',
+                  }}
+                >
+                  <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                    Platform Operations
+                  </h3>
+                  <Badge variant="danger" size="sm">
+                    System admin only
+                  </Badge>
                 </div>
                 {SYSADMIN_ROWS.map((row, i) => (
                   <div
@@ -227,13 +365,25 @@ export default function NotificationPreferencesPage() {
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       padding: '14px 20px',
-                      borderBottom: i < SYSADMIN_ROWS.length - 1 ? `1px solid ${theme.tableBorder}` : 'none',
+                      borderBottom:
+                        i < SYSADMIN_ROWS.length - 1 ? `1px solid ${theme.tableBorder}` : 'none',
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
-                        <p style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>{row.label}</p>
-                        <Badge variant={row.channel === 'Email' ? 'info' : 'neutral'} size="sm">{row.channel}</Badge>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginBottom: '2px',
+                        }}
+                      >
+                        <p style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
+                          {row.label}
+                        </p>
+                        <Badge variant={row.channel === 'Email' ? 'info' : 'neutral'} size="sm">
+                          {row.channel}
+                        </Badge>
                       </div>
                       <p style={{ fontSize: '12px', color: theme.textMuted }}>{row.description}</p>
                     </div>

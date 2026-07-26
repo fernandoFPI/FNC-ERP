@@ -21,5 +21,5 @@ ReactDOM.createRoot(root).render(
         </ThemeProvider>
       </QueryClientProvider>
     </ApolloProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 )

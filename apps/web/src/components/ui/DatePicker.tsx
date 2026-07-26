@@ -15,9 +15,19 @@ interface DatePickerProps {
 }
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export function DatePicker({ value, onChange, label, error, min, max, disabled = false, placeholder = 'YYYY-MM-DD', className = '' }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  label,
+  error,
+  min,
+  max,
+  disabled = false,
+  placeholder = 'YYYY-MM-DD',
+  className = '',
+}: DatePickerProps) {
   const { theme } = useTheme()
   const [open, setOpen] = useState(false)
   const [viewDate, setViewDate] = useState(() => {
@@ -31,7 +41,9 @@ export function DatePicker({ value, onChange, label, error, min, max, disabled =
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   const firstDay = new Date(viewDate.year, viewDate.month, 1).getDay()
@@ -52,9 +64,19 @@ export function DatePicker({ value, onChange, label, error, min, max, disabled =
   }
 
   return (
-    <div ref={ref} className={className} style={{ display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}>
+    <div
+      ref={ref}
+      className={className}
+      style={{ display: 'flex', flexDirection: 'column', gap: '4px', position: 'relative' }}
+    >
       {label && (
-        <label style={{ fontSize: '12px', fontWeight: 500, color: error ? theme.danger : theme.textSecondary }}>
+        <label
+          style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            color: error ? theme.danger : theme.textSecondary,
+          }}
+        >
           {label}
         </label>
       )}
@@ -82,8 +104,12 @@ export function DatePicker({ value, onChange, label, error, min, max, disabled =
           }}
         />
         <svg
-          width="14" height="14" viewBox="0 0 24 24" fill="none"
-          stroke={theme.textMuted} strokeWidth="2"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={theme.textMuted}
+          strokeWidth="2"
           style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }}
         >
           <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -96,30 +122,77 @@ export function DatePicker({ value, onChange, label, error, min, max, disabled =
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 600 }}>
           <Card padding="sm" rimHighlight style={{ width: '240px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <button onClick={() => setViewDate(v => {
-                const m = v.month - 1
-                return m < 0 ? { year: v.year - 1, month: 11 } : { ...v, month: m }
-              })} style={{ background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '16px' }}>‹</button>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '8px',
+              }}
+            >
+              <button
+                onClick={() => {
+                  setViewDate((v) => {
+                    const m = v.month - 1
+                    return m < 0 ? { year: v.year - 1, month: 11 } : { ...v, month: m }
+                  })
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                }}
+              >
+                ‹
+              </button>
               <span style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
                 {MONTHS[viewDate.month]} {viewDate.year}
               </span>
-              <button onClick={() => setViewDate(v => {
-                const m = v.month + 1
-                return m > 11 ? { year: v.year + 1, month: 0 } : { ...v, month: m }
-              })} style={{ background: 'none', border: 'none', color: theme.textSecondary, cursor: 'pointer', fontSize: '16px' }}>›</button>
+              <button
+                onClick={() => {
+                  setViewDate((v) => {
+                    const m = v.month + 1
+                    return m > 11 ? { year: v.year + 1, month: 0 } : { ...v, month: m }
+                  })
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                }}
+              >
+                ›
+              </button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-              {DAYS.map(d => (
-                <div key={d} style={{ textAlign: 'center', fontSize: '10px', color: theme.textMuted, padding: '4px 0', fontWeight: 600 }}>{d}</div>
+              {DAYS.map((d) => (
+                <div
+                  key={d}
+                  style={{
+                    textAlign: 'center',
+                    fontSize: '10px',
+                    color: theme.textMuted,
+                    padding: '4px 0',
+                    fontWeight: 600,
+                  }}
+                >
+                  {d}
+                </div>
               ))}
               {cells.map((cell, idx) => (
                 <div key={idx} style={{ textAlign: 'center' }}>
                   {cell !== null && (
                     <button
-                      onClick={() => selectDay(cell)}
+                      onClick={() => {
+                        selectDay(cell)
+                      }}
                       style={{
-                        width: '28px', height: '28px',
+                        width: '28px',
+                        height: '28px',
                         borderRadius: '6px',
                         fontSize: '12px',
                         border: 'none',

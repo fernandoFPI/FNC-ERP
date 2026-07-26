@@ -22,16 +22,29 @@ const FONT: Record<string, number> = { sm: 11, md: 13, lg: 17, xl: 22 }
 const DOT: Record<string, number> = { sm: 7, md: 9, lg: 11, xl: 14 }
 
 export function EmployeeAvatar({
-  firstName, lastName, size = 'md', photoUrl, status = 'active',
+  firstName,
+  lastName,
+  size = 'md',
+  photoUrl,
+  status = 'active',
 }: EmployeeAvatarProps) {
   const { theme } = useTheme()
   const px = SIZES[size]
   const initials = `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase()
   const bg = COLORS[hashName(`${firstName}${lastName}`) % COLORS.length]
-  const dotColor = status === 'active' ? theme.success : status === 'on-leave' ? theme.info : theme.textMuted
+  const dotColor =
+    status === 'active' ? theme.success : status === 'on-leave' ? theme.info : theme.textMuted
 
   return (
-    <div style={{ position: 'relative', display: 'inline-block', width: px, height: px, flexShrink: 0 }}>
+    <div
+      style={{
+        position: 'relative',
+        display: 'inline-block',
+        width: px,
+        height: px,
+        flexShrink: 0,
+      }}
+    >
       {photoUrl ? (
         <img
           src={photoUrl}
@@ -39,20 +52,37 @@ export function EmployeeAvatar({
           style={{ width: px, height: px, borderRadius: '50%', objectFit: 'cover' }}
         />
       ) : (
-        <div style={{
-          width: px, height: px, borderRadius: '50%',
-          background: `${bg}33`, border: `1.5px solid ${bg}66`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: bg, fontSize: FONT[size], fontWeight: 600, userSelect: 'none',
-        }}>
+        <div
+          style={{
+            width: px,
+            height: px,
+            borderRadius: '50%',
+            background: `${bg}33`,
+            border: `1.5px solid ${bg}66`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: bg,
+            fontSize: FONT[size],
+            fontWeight: 600,
+            userSelect: 'none',
+          }}
+        >
           {initials}
         </div>
       )}
-      <div style={{
-        position: 'absolute', bottom: 0, right: 0,
-        width: DOT[size], height: DOT[size], borderRadius: '50%',
-        background: dotColor, border: `2px solid ${theme.bgSurface}`,
-      }} />
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          right: 0,
+          width: DOT[size],
+          height: DOT[size],
+          borderRadius: '50%',
+          background: dotColor,
+          border: `2px solid ${theme.bgSurface}`,
+        }}
+      />
     </div>
   )
 }

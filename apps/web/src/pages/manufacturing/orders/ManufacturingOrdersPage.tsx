@@ -10,7 +10,8 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 
 const FILTER_DEFAULTS = { search: '', status: '' }
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
@@ -18,7 +19,11 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 const MO_STATUSES = ['draft', 'confirmed', 'in_progress', 'done', 'cancelled']
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
-  draft: 'neutral', confirmed: 'info', in_progress: 'warning', done: 'success', cancelled: 'danger',
+  draft: 'neutral',
+  confirmed: 'info',
+  in_progress: 'warning',
+  done: 'success',
+  cancelled: 'danger',
 }
 
 interface MO {
@@ -42,7 +47,10 @@ export default function ManufacturingOrdersPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined)
   const currentFilters = { search, status: statusFilter ?? '' }
-  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('manufacturing_orders', FILTER_DEFAULTS)
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
+    'manufacturing_orders',
+    FILTER_DEFAULTS,
+  )
 
   const { data, loading, refetch } = useQuery(MANUFACTURING_ORDERS_QUERY, {
     variables: { status: statusFilter },
@@ -52,12 +60,16 @@ export default function ManufacturingOrdersPage() {
   const orders: MO[] = data?.manufacturingOrders ?? []
 
   const statusCounts = MO_STATUSES.reduce<Record<string, number>>((acc, s) => {
-    acc[s] = orders.filter(o => o.status === s).length
+    acc[s] = orders.filter((o) => o.status === s).length
     return acc
   }, {})
 
   const filtered = search
-    ? orders.filter(o => o.mo_number.toLowerCase().includes(search.toLowerCase()) || (o.product_name ?? '').toLowerCase().includes(search.toLowerCase()))
+    ? orders.filter(
+        (o) =>
+          o.mo_number.toLowerCase().includes(search.toLowerCase()) ||
+          (o.product_name ?? '').toLowerCase().includes(search.toLowerCase()),
+      )
     : orders
 
   const columns: Column<MO>[] = [
@@ -65,19 +77,84 @@ export default function ManufacturingOrdersPage() {
       key: 'mo_number',
       header: 'MO Number',
       render: (o) => (
-        <button onClick={() => navigate(`/manufacturing/orders/${o.id}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.accent, fontFamily: 'monospace', fontSize: '13px', fontWeight: 600 }}>
+        <button
+          onClick={() => {
+            navigate(`/manufacturing/orders/${o.id}`)
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.accent,
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            fontWeight: 600,
+          }}
+        >
           {o.mo_number}
         </button>
       ),
     },
-    { key: 'product_name', header: 'Product', render: (o) => <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{o.product_name ?? '—'}</span> },
-    { key: 'status', header: 'Status', render: (o) => <Badge variant={STATUS_VARIANT[o.status] ?? 'neutral'}>{o.status.replace('_', ' ')}</Badge> },
-    { key: 'qty_planned', header: 'Qty Planned', render: (o) => <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{parseFloat(o.qty_planned).toLocaleString()}</span> },
-    { key: 'qty_produced', header: 'Produced', render: (o) => <span style={{ fontFamily: 'monospace', color: theme.success }}>{parseFloat(o.qty_produced).toLocaleString()}</span> },
-    { key: 'planned_cost', header: 'Planned Cost', render: (o) => <AmountDisplay amount={parseFloat(o.planned_cost)} currency="IQD" /> },
-    { key: 'actual_cost', header: 'Actual Cost', render: (o) => <AmountDisplay amount={parseFloat(o.actual_cost)} currency="IQD" /> },
-    { key: 'work_center_name', header: 'Work Center', render: (o) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{o.work_center_name ?? '—'}</span> },
-    { key: 'scheduled_start', header: 'Scheduled', render: (o) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{o.scheduled_start?.slice(0, 10) ?? '—'}</span> },
+    {
+      key: 'product_name',
+      header: 'Product',
+      render: (o) => (
+        <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{o.product_name ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (o) => (
+        <Badge variant={STATUS_VARIANT[o.status] ?? 'neutral'}>{o.status.replace('_', ' ')}</Badge>
+      ),
+    },
+    {
+      key: 'qty_planned',
+      header: 'Qty Planned',
+      render: (o) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
+          {parseFloat(o.qty_planned).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'qty_produced',
+      header: 'Produced',
+      render: (o) => (
+        <span style={{ fontFamily: 'monospace', color: theme.success }}>
+          {parseFloat(o.qty_produced).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'planned_cost',
+      header: 'Planned Cost',
+      render: (o) => <AmountDisplay amount={parseFloat(o.planned_cost)} currency="IQD" />,
+    },
+    {
+      key: 'actual_cost',
+      header: 'Actual Cost',
+      render: (o) => <AmountDisplay amount={parseFloat(o.actual_cost)} currency="IQD" />,
+    },
+    {
+      key: 'work_center_name',
+      header: 'Work Center',
+      render: (o) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {o.work_center_name ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'scheduled_start',
+      header: 'Scheduled',
+      render: (o) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {o.scheduled_start?.slice(0, 10) ?? '—'}
+        </span>
+      ),
+    },
   ]
 
   return (
@@ -85,14 +162,34 @@ export default function ManufacturingOrdersPage() {
       <PageHeader
         title="Manufacturing Orders"
         subtitle={`${filtered.length} orders`}
-        actions={<Button variant="primary" size="sm" onClick={() => navigate('/manufacturing/orders/new')}>New MO</Button>}
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              navigate('/manufacturing/orders/new')
+            }}
+          >
+            New MO
+          </Button>
+        }
       />
 
-      <div style={{ display: 'flex', gap: '8px', marginTop: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
-        {MO_STATUSES.map(s => (
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          marginTop: '16px',
+          marginBottom: '12px',
+          flexWrap: 'wrap',
+        }}
+      >
+        {MO_STATUSES.map((s) => (
           <button
             key={s}
-            onClick={() => setStatusFilter(s === statusFilter ? undefined : s)}
+            onClick={() => {
+              setStatusFilter(s === statusFilter ? undefined : s)
+            }}
             style={{
               padding: '4px 12px',
               borderRadius: '16px',
@@ -110,7 +207,12 @@ export default function ManufacturingOrdersPage() {
       </div>
 
       <Card>
-        <FilterBar search={search} onSearchChange={setSearch} resultCount={filtered.length} onRefresh={() => refetch()}>
+        <FilterBar
+          search={search}
+          onSearchChange={setSearch}
+          resultCount={filtered.length}
+          onRefresh={() => refetch()}
+        >
           <FilterPresets
             presets={presets}
             onApply={(preset) => {
@@ -118,7 +220,9 @@ export default function ManufacturingOrdersPage() {
               setSearch(r.search)
               setStatusFilter(r.status || undefined)
             }}
-            onSave={(name) => savePreset(name, currentFilters)}
+            onSave={(name) => {
+              savePreset(name, currentFilters)
+            }}
             onDelete={deletePreset}
           />
         </FilterBar>

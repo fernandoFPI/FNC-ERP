@@ -32,52 +32,65 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   unreadCount: 0,
   isDrawerOpen: false,
 
-  addNotification: (n) =>
+  addNotification: (n) => {
     set((s) => ({
       notifications: [n, ...s.notifications],
       unreadCount: s.unreadCount + (n.isRead ? 0 : 1),
-    })),
+    }))
+  },
 
-  markAsRead: (id) =>
+  markAsRead: (id) => {
     set((s) => {
       const notif = s.notifications.find((n) => n.id === id)
       const wasUnread = notif && !notif.isRead
       return {
-        notifications: s.notifications.map((n) => n.id === id ? { ...n, isRead: true } : n),
+        notifications: s.notifications.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
         unreadCount: wasUnread ? Math.max(0, s.unreadCount - 1) : s.unreadCount,
       }
-    }),
+    })
+  },
 
-  markAllAsRead: () =>
+  markAllAsRead: () => {
     set((s) => ({
       notifications: s.notifications.map((n) => ({ ...n, isRead: true })),
       unreadCount: 0,
-    })),
+    }))
+  },
 
-  setUnreadCount: (count) => set({ unreadCount: count }),
+  setUnreadCount: (count) => {
+    set({ unreadCount: count })
+  },
 
-  setDrawerOpen: (open) => set({ isDrawerOpen: open }),
+  setDrawerOpen: (open) => {
+    set({ isDrawerOpen: open })
+  },
 
-  setNotifications: (notifications) =>
-    set({ notifications, unreadCount: notifications.filter((n) => !n.isRead).length }),
+  setNotifications: (notifications) => {
+    set({ notifications, unreadCount: notifications.filter((n) => !n.isRead).length })
+  },
 
-  appendNotifications: (more) =>
-    set((s) => ({ notifications: [...s.notifications, ...more] })),
+  appendNotifications: (more) => {
+    set((s) => ({ notifications: [...s.notifications, ...more] }))
+  },
 
   // Legacy aliases
-  markRead: (id) =>
+  markRead: (id) => {
     set((s) => {
       const notif = s.notifications.find((n) => n.id === id)
       const wasUnread = notif && !notif.isRead
       return {
-        notifications: s.notifications.map((n) => n.id === id ? { ...n, isRead: true } : n),
+        notifications: s.notifications.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
         unreadCount: wasUnread ? Math.max(0, s.unreadCount - 1) : s.unreadCount,
       }
-    }),
-  markAllRead: () =>
+    })
+  },
+  markAllRead: () => {
     set((s) => ({
       notifications: s.notifications.map((n) => ({ ...n, isRead: true })),
       unreadCount: 0,
-    })),
-  clearAll: () => set({ notifications: [], unreadCount: 0 }),
+    }))
+  },
+  clearAll: () => {
+    set({ notifications: [], unreadCount: 0 })
+  },
 }))

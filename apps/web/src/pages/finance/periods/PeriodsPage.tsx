@@ -4,7 +4,8 @@ import { ACCOUNTING_PERIODS_QUERY, CREATE_PERIOD, CLOSE_PERIOD } from '../../../
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
@@ -29,7 +30,9 @@ export default function PeriodsPage() {
   const [closingId, setClosingId] = useState<string | null>(null)
   const [form, setForm] = useState({ name: '', start_date: '', end_date: '' })
 
-  const { data, loading, refetch } = useQuery(ACCOUNTING_PERIODS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading, refetch } = useQuery(ACCOUNTING_PERIODS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  })
   const [createPeriod, { loading: creating }] = useMutation(CREATE_PERIOD)
   const [closePeriod, { loading: closing }] = useMutation(CLOSE_PERIOD)
 
@@ -65,24 +68,51 @@ export default function PeriodsPage() {
   }
 
   const columns: Column<AccountingPeriod>[] = [
-    { key: 'name', header: 'Period Name', render: (p) => <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{p.name}</span> },
-    { key: 'start_date', header: 'Start Date', render: (p) => <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.start_date}</span> },
-    { key: 'end_date', header: 'End Date', render: (p) => <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.end_date}</span> },
+    {
+      key: 'name',
+      header: 'Period Name',
+      render: (p) => <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{p.name}</span>,
+    },
+    {
+      key: 'start_date',
+      header: 'Start Date',
+      render: (p) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.start_date}</span>
+      ),
+    },
+    {
+      key: 'end_date',
+      header: 'End Date',
+      render: (p) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.end_date}</span>
+      ),
+    },
     {
       key: 'status',
       header: 'Status',
-      render: (p) => <Badge variant={p.status === 'open' ? 'success' : 'neutral'}>{p.status}</Badge>,
+      render: (p) => (
+        <Badge variant={p.status === 'open' ? 'success' : 'neutral'}>{p.status}</Badge>
+      ),
     },
     {
       key: 'actions',
       header: '',
-      render: (p) => p.status === 'open' ? (
-        <Button variant="ghost" size="sm" onClick={() => setClosingId(p.id)}>
-          Close Period
-        </Button>
-      ) : (
-        <span style={{ fontSize: '12px', color: theme.textMuted }}>{p.closed_at ? `Closed ${p.closed_at.slice(0, 10)}` : ''}</span>
-      ),
+      render: (p) =>
+        p.status === 'open' ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setClosingId(p.id)
+            }}
+          >
+            Close Period
+          </Button>
+        ) : (
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+            {p.closed_at ? `Closed ${p.closed_at.slice(0, 10)}` : ''}
+          </span>
+        ),
     },
   ]
 
@@ -92,7 +122,15 @@ export default function PeriodsPage() {
         title="Accounting Periods"
         subtitle={`${periods.length} periods`}
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowForm(true)}>New Period</Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setShowForm(true)
+            }}
+          >
+            New Period
+          </Button>
         }
       />
 
@@ -100,16 +138,65 @@ export default function PeriodsPage() {
         <Table columns={columns} data={periods} loading={loading} rowKey="id" />
       </Card>
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Create Accounting Period">
-        <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
-          <Input label="Period Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required placeholder="e.g. Q1 2025" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            <Input label="Start Date" type="date" value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} required />
-            <Input label="End Date" type="date" value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} required />
+      <Modal
+        open={showForm}
+        onClose={() => {
+          setShowForm(false)
+        }}
+        title="Create Accounting Period"
+      >
+        <form
+          onSubmit={handleCreate}
+          style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
+        >
+          <Input
+            label="Period Name"
+            value={form.name}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, name: e.target.value }))
+            }}
+            required
+            placeholder="e.g. Q1 2025"
+          />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <Input
+              label="Start Date"
+              type="date"
+              value={form.start_date}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, start_date: e.target.value }))
+              }}
+              required
+            />
+            <Input
+              label="End Date"
+              type="date"
+              value={form.end_date}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, end_date: e.target.value }))
+              }}
+              required
+            />
           </div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="ghost" type="button" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button variant="primary" type="submit" loading={creating}>Create</Button>
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setShowForm(false)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={creating}>
+              Create
+            </Button>
           </div>
         </form>
       </Modal>
@@ -121,7 +208,9 @@ export default function PeriodsPage() {
         confirmLabel="Close Period"
         variant="danger"
         onConfirm={handleClose}
-        onCancel={() => setClosingId(null)}
+        onCancel={() => {
+          setClosingId(null)
+        }}
         loading={closing}
       />
     </div>

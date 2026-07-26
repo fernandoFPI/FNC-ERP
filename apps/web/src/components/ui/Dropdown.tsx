@@ -26,12 +26,19 @@ export function Dropdown({ trigger, items, align = 'left', className = '' }: Dro
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   return (
     <div ref={ref} className={className} style={{ position: 'relative', display: 'inline-flex' }}>
-      <div onClick={() => setOpen((v) => !v)} style={{ cursor: 'pointer' }}>
+      <div
+        onClick={() => {
+          setOpen((v) => !v)
+        }}
+        style={{ cursor: 'pointer' }}
+      >
         {trigger}
       </div>
       {open && (
@@ -49,7 +56,10 @@ export function Dropdown({ trigger, items, align = 'left', className = '' }: Dro
               {items.map((item, idx) => (
                 <button
                   key={idx}
-                  onClick={() => { item.onClick(); setOpen(false) }}
+                  onClick={() => {
+                    item.onClick()
+                    setOpen(false)
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -65,8 +75,12 @@ export function Dropdown({ trigger, items, align = 'left', className = '' }: Dro
                     textAlign: 'left',
                     fontFamily: 'inherit',
                   }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = theme.bgSurfaceHover
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'none'
+                  }}
                 >
                   {item.icon}
                   {item.label}

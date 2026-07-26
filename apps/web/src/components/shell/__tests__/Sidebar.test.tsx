@@ -15,9 +15,19 @@ const poQueueMock = {
 beforeEach(() => {
   localStorage.clear()
   useAuthStore.setState({
-    user: { id: 'u1', email: 'user@fnc.com', role: 'company_admin', mfaEnabled: false, system_admin: false } as never,
-    isAuthenticated: true, accessToken: 'tok', refreshToken: 'ref',
-    mfaPending: false, tempToken: null, themePreference: null,
+    user: {
+      id: 'u1',
+      email: 'user@fnc.com',
+      role: 'company_admin',
+      mfaEnabled: false,
+      system_admin: false,
+    } as never,
+    isAuthenticated: true,
+    accessToken: 'tok',
+    refreshToken: 'ref',
+    mfaPending: false,
+    tempToken: null,
+    themePreference: null,
   })
 })
 
@@ -29,7 +39,7 @@ function wrap(initialPath = '/dashboard') {
           <Sidebar />
         </ThemeProvider>
       </MemoryRouter>
-    </MockedProvider>
+    </MockedProvider>,
   )
 }
 

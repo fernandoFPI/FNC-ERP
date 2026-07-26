@@ -40,9 +40,14 @@ interface IntercoTxData {
   }
 }
 
-function statusVariant(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent' {
+function statusVariant(
+  status: string,
+): 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent' {
   const m: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent'> = {
-    posted: 'success', draft: 'neutral', cancelled: 'danger', pending: 'warning',
+    posted: 'success',
+    draft: 'neutral',
+    cancelled: 'danger',
+    pending: 'warning',
   }
   return m[status?.toLowerCase()] ?? 'neutral'
 }
@@ -81,7 +86,10 @@ export default function IntercoTransactionsPage() {
   const [toDate, setToDate] = useState('')
   const [page] = useState(1)
   const currentFilters = { search, status: statusFilter, type: typeFilter, fromDate, toDate }
-  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets('interco_transactions', FILTER_DEFAULTS)
+  const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
+    'interco_transactions',
+    FILTER_DEFAULTS,
+  )
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState<CreateTxForm>(EMPTY_FORM)
 
@@ -103,11 +111,16 @@ export default function IntercoTransactionsPage() {
       setForm(EMPTY_FORM)
       refetch()
     },
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
 
-  const items = (data?.intercoTransactions.items ?? []).filter(r =>
-    !search || r.reference.toLowerCase().includes(search.toLowerCase()) || r.fromCompanyName.toLowerCase().includes(search.toLowerCase())
+  const items = (data?.intercoTransactions.items ?? []).filter(
+    (r) =>
+      !search ||
+      r.reference.toLowerCase().includes(search.toLowerCase()) ||
+      r.fromCompanyName.toLowerCase().includes(search.toLowerCase()),
   )
 
   function handleCreate() {
@@ -133,13 +146,25 @@ export default function IntercoTransactionsPage() {
         title="Intercompany Transactions"
         subtitle="Charges, loans, and settlements between group entities"
         actions={
-          <Button variant="primary" size="sm" onClick={() => setShowCreate(true)}>+ New Transaction</Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setShowCreate(true)
+            }}
+          >
+            + New Transaction
+          </Button>
         }
       />
 
       <Card padding="sm" style={{ marginBottom: '16px' }}>
         <FilterBar
-          search={{ value: search, onChange: setSearch, placeholder: 'Search reference or company…' }}
+          search={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search reference or company…',
+          }}
           filters={[
             {
               key: 'status',
@@ -168,7 +193,9 @@ export default function IntercoTransactionsPage() {
           toDate={toDate}
           onFromDateChange={setFromDate}
           onToDateChange={setToDate}
-          onRefresh={() => { refetch() }}
+          onRefresh={() => {
+            refetch()
+          }}
           resultCount={items.length}
         >
           <FilterPresets
@@ -181,7 +208,9 @@ export default function IntercoTransactionsPage() {
               setFromDate(r.fromDate)
               setToDate(r.toDate)
             }}
-            onSave={(name) => savePreset(name, currentFilters)}
+            onSave={(name) => {
+              savePreset(name, currentFilters)
+            }}
             onDelete={deletePreset}
           />
         </FilterBar>
@@ -190,8 +219,12 @@ export default function IntercoTransactionsPage() {
       <Card padding="none">
         {loading ? (
           <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map(i => (
-              <div key={i} className="skeleton" style={{ height: '48px', borderRadius: '6px', marginBottom: '8px' }} />
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="skeleton"
+                style={{ height: '48px', borderRadius: '6px', marginBottom: '8px' }}
+              />
             ))}
           </div>
         ) : items.length ? (
@@ -200,27 +233,61 @@ export default function IntercoTransactionsPage() {
               <thead>
                 <tr style={{ background: theme.bgSurface }}>
                   {['Reference', 'Type', 'From', 'To', 'Amount', 'Status', 'Date'].map((h, i) => (
-                    <th key={i} style={{ padding: '10px 14px', textAlign: i === 4 ? 'right' : 'left', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    <th
+                      key={i}
+                      style={{
+                        padding: '10px 14px',
+                        textAlign: i === 4 ? 'right' : 'left',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        color: theme.textMuted,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        borderBottom: `1px solid ${theme.border}`,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {items.map(row => (
-                  <tr key={row.id} style={{ borderBottom: `1px solid ${theme.tableBorder}`, cursor: 'pointer' }}
-                    onClick={() => navigate(`/interco/transactions/${row.id}`)}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.tableRowHover }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                    <td style={{ padding: '12px 14px', color: theme.accent, fontWeight: 500 }}>{row.reference}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant="neutral" size="sm">{row.transactionType.replace('interco_', '')}</Badge>
+                {items.map((row) => (
+                  <tr
+                    key={row.id}
+                    style={{ borderBottom: `1px solid ${theme.tableBorder}`, cursor: 'pointer' }}
+                    onClick={() => {
+                      navigate(`/interco/transactions/${row.id}`)
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.tableRowHover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    <td style={{ padding: '12px 14px', color: theme.accent, fontWeight: 500 }}>
+                      {row.reference}
                     </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{row.fromCompanyName}</td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{row.toCompanyName}</td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <Badge variant="neutral" size="sm">
+                        {row.transactionType.replace('interco_', '')}
+                      </Badge>
+                    </td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
+                      {row.fromCompanyName}
+                    </td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
+                      {row.toCompanyName}
+                    </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                       <AmountDisplay amount={row.amount} currency={row.currencyCode} size="sm" />
                     </td>
                     <td style={{ padding: '12px 14px' }}>
-                      <Badge variant={statusVariant(row.status)} size="sm">{row.status}</Badge>
+                      <Badge variant={statusVariant(row.status)} size="sm">
+                        {row.status}
+                      </Badge>
                     </td>
                     <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
                       {new Date(row.createdAt).toLocaleDateString()}
@@ -231,20 +298,36 @@ export default function IntercoTransactionsPage() {
             </table>
           </div>
         ) : (
-          <EmptyState title="No transactions" message="Create a new intercompany transaction to get started." />
+          <EmptyState
+            title="No transactions"
+            message="Create a new intercompany transaction to get started."
+          />
         )}
       </Card>
 
       {/* Create Modal */}
       <Modal
         open={showCreate}
-        onClose={() => setShowCreate(false)}
+        onClose={() => {
+          setShowCreate(false)
+        }}
         title="New Intercompany Transaction"
         size="md"
         footer={
           <>
-            <Button variant="secondary" size="md" onClick={() => setShowCreate(false)} disabled={creating}>Cancel</Button>
-            <Button variant="primary" size="md" onClick={handleCreate} loading={creating}>Create</Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                setShowCreate(false)
+              }}
+              disabled={creating}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" size="md" onClick={handleCreate} loading={creating}>
+              Create
+            </Button>
           </>
         }
       >
@@ -252,23 +335,55 @@ export default function IntercoTransactionsPage() {
           <Select
             label="Transaction Type"
             value={form.transactionType}
-            onChange={(e) => setForm(f => ({ ...f, transactionType: e.target.value }))}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, transactionType: e.target.value }))
+            }}
             options={[
               { value: 'interco_charge', label: 'Interco Charge' },
               { value: 'interco_loan', label: 'Interco Loan' },
               { value: 'interco_settlement', label: 'Settlement' },
             ]}
           />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            <Input label="From Company ID" value={form.fromCompanyId} onChange={(e) => setForm(f => ({ ...f, fromCompanyId: e.target.value }))} placeholder="e.g. 1" />
-            <Input label="To Company ID" value={form.toCompanyId} onChange={(e) => setForm(f => ({ ...f, toCompanyId: e.target.value }))} placeholder="e.g. 2" />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <Input
+              label="From Company ID"
+              value={form.fromCompanyId}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, fromCompanyId: e.target.value }))
+              }}
+              placeholder="e.g. 1"
+            />
+            <Input
+              label="To Company ID"
+              value={form.toCompanyId}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, toCompanyId: e.target.value }))
+              }}
+              placeholder="e.g. 2"
+            />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-            <Input label="Amount" type="number" value={form.amount} onChange={(e) => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" />
+            <Input
+              label="Amount"
+              type="number"
+              value={form.amount}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, amount: e.target.value }))
+              }}
+              placeholder="0.00"
+            />
             <Select
               label="Currency"
               value={form.currencyCode}
-              onChange={(e) => setForm(f => ({ ...f, currencyCode: e.target.value }))}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, currencyCode: e.target.value }))
+              }}
               options={[
                 { value: 'USD', label: 'USD' },
                 { value: 'IQD', label: 'IQD' },
@@ -276,10 +391,37 @@ export default function IntercoTransactionsPage() {
               ]}
             />
           </div>
-          <Input label="Description" value={form.description} onChange={(e) => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Transaction description…" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            <Input label="From Account ID" value={form.fromAccountId} onChange={(e) => setForm(f => ({ ...f, fromAccountId: e.target.value }))} placeholder="Account ID" />
-            <Input label="To Account ID" value={form.toAccountId} onChange={(e) => setForm(f => ({ ...f, toAccountId: e.target.value }))} placeholder="Account ID" />
+          <Input
+            label="Description"
+            value={form.description}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, description: e.target.value }))
+            }}
+            placeholder="Transaction description…"
+          />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <Input
+              label="From Account ID"
+              value={form.fromAccountId}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, fromAccountId: e.target.value }))
+              }}
+              placeholder="Account ID"
+            />
+            <Input
+              label="To Account ID"
+              value={form.toAccountId}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, toAccountId: e.target.value }))
+              }}
+              placeholder="Account ID"
+            />
           </div>
         </div>
       </Modal>

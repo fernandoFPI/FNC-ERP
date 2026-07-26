@@ -16,10 +16,17 @@ interface MyPreferences {
   notificationPreferences: string | null
 }
 
-interface PreferencesData { myPreferences: MyPreferences }
+interface PreferencesData {
+  myPreferences: MyPreferences
+}
 
 const THEMES: { key: ThemeKey; label: string; description: string; preview: string }[] = [
-  { key: 'light-flat', label: 'Light Flat', description: 'Clean white, maximum readability', preview: '#f4f6f8' },
+  {
+    key: 'light-flat',
+    label: 'Light Flat',
+    description: 'Clean white, maximum readability',
+    preview: '#f4f6f8',
+  },
   { key: 'black', label: 'Black', description: 'Pure black, maximum contrast', preview: '#1c1e21' },
 ]
 
@@ -42,8 +49,12 @@ export default function AppearancePage() {
   const { data, loading } = useQuery<PreferencesData>(MY_PREFERENCES_QUERY)
 
   const [updatePreferences, { loading: updating }] = useMutation(UPDATE_PREFERENCES, {
-    onCompleted: () => addToast({ type: 'success', message: 'Preferences saved' }),
-    onError: (e) => addToast({ type: 'error', message: e.message }),
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Preferences saved' })
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
     refetchQueries: [{ query: MY_PREFERENCES_QUERY }],
   })
 
@@ -72,14 +83,31 @@ export default function AppearancePage() {
 
       {/* Theme Cards */}
       <Card padding="md" style={{ marginBottom: '20px' }}>
-        <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '16px' }}>Theme</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-          {THEMES.map(t => {
+        <h3
+          style={{
+            fontSize: '13px',
+            fontWeight: 600,
+            color: theme.textPrimary,
+            marginBottom: '16px',
+          }}
+        >
+          Theme
+        </h3>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+            gap: '12px',
+          }}
+        >
+          {THEMES.map((t) => {
             const isActive = themeKey === t.key
             return (
               <div
                 key={t.key}
-                onClick={() => handleThemeChange(t.key)}
+                onClick={() => {
+                  handleThemeChange(t.key)
+                }}
                 style={{
                   padding: '16px',
                   borderRadius: '12px',
@@ -88,23 +116,37 @@ export default function AppearancePage() {
                   cursor: 'pointer',
                   transition: 'border-color 0.15s, background 0.15s',
                 }}
-                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = theme.accentBorder }}
-                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = theme.border }}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.borderColor = theme.accentBorder
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.borderColor = theme.border
+                }}
               >
-                <div style={{
-                  width: '100%',
-                  height: '48px',
-                  borderRadius: '8px',
-                  background: t.preview,
-                  border: `1px solid ${theme.border}`,
-                  marginBottom: '10px',
-                }} />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div
+                  style={{
+                    width: '100%',
+                    height: '48px',
+                    borderRadius: '8px',
+                    background: t.preview,
+                    border: `1px solid ${theme.border}`,
+                    marginBottom: '10px',
+                  }}
+                />
+                <div
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
                   <div>
-                    <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>{t.label}</p>
+                    <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                      {t.label}
+                    </p>
                     <p style={{ fontSize: '11px', color: theme.textMuted }}>{t.description}</p>
                   </div>
-                  {isActive && <Badge variant="accent" size="sm">Active</Badge>}
+                  {isActive && (
+                    <Badge variant="accent" size="sm">
+                      Active
+                    </Badge>
+                  )}
                 </div>
               </div>
             )
@@ -114,21 +156,41 @@ export default function AppearancePage() {
 
       {/* Formats */}
       <Card padding="md">
-        <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '16px' }}>Formats</h3>
+        <h3
+          style={{
+            fontSize: '13px',
+            fontWeight: 600,
+            color: theme.textPrimary,
+            marginBottom: '16px',
+          }}
+        >
+          Formats
+        </h3>
         {loading ? (
           <div className="skeleton" style={{ height: '80px', borderRadius: '8px' }} />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', maxWidth: '600px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+              maxWidth: '600px',
+            }}
+          >
             <Select
               label="Date Format"
               value={prefs?.dateFormat ?? 'MM/DD/YYYY'}
-              onChange={(e) => handleFormatChange('dateFormat', e.target.value)}
+              onChange={(e) => {
+                handleFormatChange('dateFormat', e.target.value)
+              }}
               options={DATE_FORMATS}
             />
             <Select
               label="Number Format"
               value={prefs?.numberFormat ?? 'en-US'}
-              onChange={(e) => handleFormatChange('numberFormat', e.target.value)}
+              onChange={(e) => {
+                handleFormatChange('numberFormat', e.target.value)
+              }}
               options={NUMBER_FORMATS}
             />
           </div>

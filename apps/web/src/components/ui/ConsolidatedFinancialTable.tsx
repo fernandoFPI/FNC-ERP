@@ -2,7 +2,10 @@ import { useTheme } from '../../theme/ThemeContext'
 import { Button } from './Button'
 import { formatNumber } from '../../lib/format'
 
-interface Company { id: string; name: string }
+interface Company {
+  id: string
+  name: string
+}
 
 interface ConsolidatedRow {
   accountType: string
@@ -32,18 +35,23 @@ function groupByType(rows: ConsolidatedRow[]): Map<string, ConsolidatedRow[]> {
   return map
 }
 
-function exportCsv(data: ConsolidatedRow[], companies: Company[], currency: string, showEliminations: boolean) {
-  const headers = ['Code', 'Account', ...companies.map(c => c.name)]
+function exportCsv(
+  data: ConsolidatedRow[],
+  companies: Company[],
+  currency: string,
+  showEliminations: boolean,
+) {
+  const headers = ['Code', 'Account', ...companies.map((c) => c.name)]
   if (showEliminations) headers.push('Eliminations')
   headers.push('Consolidated')
-  const rows = data.map(r => [
+  const rows = data.map((r) => [
     r.accountCode,
     r.accountName,
-    ...companies.map(c => String(r.companies[c.id] ?? 0)),
+    ...companies.map((c) => String(r.companies[c.id] ?? 0)),
     ...(showEliminations ? [String(r.eliminated)] : []),
     String(r.consolidated),
   ])
-  const csv = [headers, ...rows].map(row => row.join(',')).join('\n')
+  const csv = [headers, ...rows].map((row) => row.join(',')).join('\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -63,9 +71,7 @@ export function ConsolidatedFinancialTable({
 }: ConsolidatedFinancialTableProps) {
   const { theme } = useTheme()
   const grouped = groupByType(data)
-  const priorByCode = priorData
-    ? new Map(priorData.map(r => [r.accountCode, r]))
-    : undefined
+  const priorByCode = priorData ? new Map(priorData.map((r) => [r.accountCode, r])) : undefined
 
   const grandTotal = {
     companies: companies.reduce<Record<string, number>>((acc, c) => {
@@ -106,14 +112,20 @@ export function ConsolidatedFinancialTable({
 
   const formatAmt = (v: number) => formatNumber(v)
   const formatElim = (v: number) =>
-    v !== 0 ? <span style={{ color: theme.danger }}>{`(${formatAmt(Math.abs(v))})`}</span> : <span>—</span>
+    v !== 0 ? (
+      <span style={{ color: theme.danger }}>{`(${formatAmt(Math.abs(v))})`}</span>
+    ) : (
+      <span>—</span>
+    )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <Button
           size="sm"
-          onClick={() => exportCsv(data, companies, currency, showEliminations)}
+          onClick={() => {
+            exportCsv(data, companies, currency, showEliminations)
+          }}
         >
           Export CSV
         </Button>
@@ -123,39 +135,47 @@ export function ConsolidatedFinancialTable({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
           <thead>
             <tr>
-              <th style={{
-                ...thStyle,
-                textAlign: 'left',
-                position: 'sticky',
-                left: 0,
-                zIndex: 2,
-                minWidth: 200,
-                background: theme.bgSurfaceHover,
-              }}>
+              <th
+                style={{
+                  ...thStyle,
+                  textAlign: 'left',
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 2,
+                  minWidth: 200,
+                  background: theme.bgSurfaceHover,
+                }}
+              >
                 Account
               </th>
-              {companies.map(c => (
-                <th key={c.id} style={thStyle}>{c.name}</th>
+              {companies.map((c) => (
+                <th key={c.id} style={thStyle}>
+                  {c.name}
+                </th>
               ))}
               {showEliminations && (
                 <th style={{ ...thStyle, color: theme.danger }}>Eliminations</th>
               )}
               <th style={{ ...thStyle, color: theme.accent }}>Consolidated ({currency})</th>
-              {priorByCode && (
-                <th style={{ ...thStyle, color: theme.textMuted }}>vs Prior</th>
-              )}
+              {priorByCode && <th style={{ ...thStyle, color: theme.textMuted }}>vs Prior</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)} style={{ ...tdStyle, textAlign: 'center', padding: 28 }}>
+                <td
+                  colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)}
+                  style={{ ...tdStyle, textAlign: 'center', padding: 28 }}
+                >
                   Loading…
                 </td>
               </tr>
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)} style={{ ...tdStyle, textAlign: 'center', padding: 28 }}>
+                <td
+                  colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)}
+                  style={{ ...tdStyle, textAlign: 'center', padding: 28 }}
+                >
                   No data available.
                 </td>
               </tr>
@@ -174,7 +194,9 @@ export function ConsolidatedFinancialTable({
                   // Type header
                   <tr key={`type-${type}`}>
                     <td
-                      colSpan={companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)}
+                      colSpan={
+                        companies.length + (showEliminations ? 3 : 2) + (priorByCode ? 1 : 0)
+                      }
                       style={{
                         padding: '10px 14px',
                         color: theme.accent,
@@ -193,58 +215,79 @@ export function ConsolidatedFinancialTable({
                   </tr>,
 
                   // Account rows
-                  ...rows.map(row => (
-                    <tr key={row.accountCode} style={{ cursor: 'default' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = theme.bgSurfaceHover)}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  ...rows.map((row) => (
+                    <tr
+                      key={row.accountCode}
+                      style={{ cursor: 'default' }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.background = theme.bgSurfaceHover)
+                      }
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <td style={{
-                        ...tdStyle,
-                        textAlign: 'left',
-                        position: 'sticky',
-                        left: 0,
-                        background: 'inherit',
-                        zIndex: 1,
-                      }}>
-                        <span style={{ color: theme.textMuted, fontSize: 11, marginRight: 6 }}>{row.accountCode}</span>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          textAlign: 'left',
+                          position: 'sticky',
+                          left: 0,
+                          background: 'inherit',
+                          zIndex: 1,
+                        }}
+                      >
+                        <span style={{ color: theme.textMuted, fontSize: 11, marginRight: 6 }}>
+                          {row.accountCode}
+                        </span>
                         <span style={{ color: theme.textPrimary }}>{row.accountName}</span>
                       </td>
-                      {companies.map(c => (
+                      {companies.map((c) => (
                         <td key={c.id} style={tdStyle}>
                           {formatAmt(row.companies[c.id] ?? 0)}
                         </td>
                       ))}
-                      {showEliminations && (
-                        <td style={tdStyle}>{formatElim(row.eliminated)}</td>
-                      )}
+                      {showEliminations && <td style={tdStyle}>{formatElim(row.eliminated)}</td>}
                       <td style={{ ...tdStyle, fontWeight: 600, color: theme.textPrimary }}>
                         {formatAmt(row.consolidated)}
                       </td>
-                      {priorByCode && (() => {
-                        const prior = priorByCode.get(row.accountCode)
-                        const pv = prior?.consolidated ?? 0
-                        const pct = pv !== 0 ? ((row.consolidated - pv) / Math.abs(pv)) * 100 : null
-                        return (
-                          <td style={{ ...tdStyle, color: pct === null ? theme.textMuted : pct >= 0 ? theme.success : theme.danger, fontWeight: 500 }}>
-                            {pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
-                          </td>
-                        )
-                      })()}
+                      {priorByCode &&
+                        (() => {
+                          const prior = priorByCode.get(row.accountCode)
+                          const pv = prior?.consolidated ?? 0
+                          const pct =
+                            pv !== 0 ? ((row.consolidated - pv) / Math.abs(pv)) * 100 : null
+                          return (
+                            <td
+                              style={{
+                                ...tdStyle,
+                                color:
+                                  pct === null
+                                    ? theme.textMuted
+                                    : pct >= 0
+                                      ? theme.success
+                                      : theme.danger,
+                                fontWeight: 500,
+                              }}
+                            >
+                              {pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
+                            </td>
+                          )
+                        })()}
                     </tr>
                   )),
 
                   // Subtotal row
                   <tr key={`subtotal-${type}`}>
-                    <td style={{
-                      ...subtotalStyle,
-                      textAlign: 'left',
-                      position: 'sticky',
-                      left: 0,
-                      zIndex: 1,
-                    }}>
+                    <td
+                      style={{
+                        ...subtotalStyle,
+                        textAlign: 'left',
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 1,
+                      }}
+                    >
                       Total {type}
                     </td>
-                    {companies.map(c => (
+                    {companies.map((c) => (
                       <td key={c.id} style={subtotalStyle}>
                         {formatAmt(typeTotal.companies[c.id] ?? 0)}
                       </td>
@@ -264,61 +307,81 @@ export function ConsolidatedFinancialTable({
             {/* Grand total */}
             {!loading && data.length > 0 && (
               <tr style={{ background: theme.accentBg }}>
-                <td style={{
-                  ...subtotalStyle,
-                  textAlign: 'left',
-                  background: theme.accentBg,
-                  color: theme.accent,
-                  position: 'sticky',
-                  left: 0,
-                  zIndex: 1,
-                  borderTop: `2px solid ${theme.accentBorder}`,
-                }}>
+                <td
+                  style={{
+                    ...subtotalStyle,
+                    textAlign: 'left',
+                    background: theme.accentBg,
+                    color: theme.accent,
+                    position: 'sticky',
+                    left: 0,
+                    zIndex: 1,
+                    borderTop: `2px solid ${theme.accentBorder}`,
+                  }}
+                >
                   GRAND TOTAL
                 </td>
-                {companies.map(c => (
-                  <td key={c.id} style={{
-                    ...subtotalStyle,
-                    background: theme.accentBg,
-                    borderTop: `2px solid ${theme.accentBorder}`,
-                  }}>
+                {companies.map((c) => (
+                  <td
+                    key={c.id}
+                    style={{
+                      ...subtotalStyle,
+                      background: theme.accentBg,
+                      borderTop: `2px solid ${theme.accentBorder}`,
+                    }}
+                  >
                     {formatAmt(grandTotal.companies[c.id] ?? 0)}
                   </td>
                 ))}
                 {showEliminations && (
-                  <td style={{
-                    ...subtotalStyle,
-                    background: theme.accentBg,
-                    borderTop: `2px solid ${theme.accentBorder}`,
-                  }}>
+                  <td
+                    style={{
+                      ...subtotalStyle,
+                      background: theme.accentBg,
+                      borderTop: `2px solid ${theme.accentBorder}`,
+                    }}
+                  >
                     {formatElim(grandTotal.eliminated)}
                   </td>
                 )}
-                <td style={{
-                  ...subtotalStyle,
-                  background: theme.accentBg,
-                  color: theme.accent,
-                  fontSize: 14,
-                  borderTop: `2px solid ${theme.accentBorder}`,
-                }}>
+                <td
+                  style={{
+                    ...subtotalStyle,
+                    background: theme.accentBg,
+                    color: theme.accent,
+                    fontSize: 14,
+                    borderTop: `2px solid ${theme.accentBorder}`,
+                  }}
+                >
                   {formatAmt(grandTotal.consolidated)}
                 </td>
-                {priorByCode && (() => {
-                  const priorTotal = priorData!.reduce((s, r) => s + r.consolidated, 0)
-                  const pct = priorTotal !== 0 ? ((grandTotal.consolidated - priorTotal) / Math.abs(priorTotal)) * 100 : null
-                  return (
-                    <td style={{
-                      ...subtotalStyle,
-                      background: theme.accentBg,
-                      color: pct === null ? theme.textMuted : pct >= 0 ? theme.success : theme.danger,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      borderTop: `2px solid ${theme.accentBorder}`,
-                    }}>
-                      {pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
-                    </td>
-                  )
-                })()}
+                {priorByCode &&
+                  (() => {
+                    const priorTotal = priorData!.reduce((s, r) => s + r.consolidated, 0)
+                    const pct =
+                      priorTotal !== 0
+                        ? ((grandTotal.consolidated - priorTotal) / Math.abs(priorTotal)) * 100
+                        : null
+                    return (
+                      <td
+                        style={{
+                          ...subtotalStyle,
+                          background: theme.accentBg,
+                          color:
+                            pct === null
+                              ? theme.textMuted
+                              : pct >= 0
+                                ? theme.success
+                                : theme.danger,
+                          fontSize: 14,
+                          fontWeight: 700,
+                          borderTop: `2px solid ${theme.accentBorder}`,
+                        }}
+                      >
+                        {pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
+                      </td>
+                    )
+                  })()}
               </tr>
             )}
           </tbody>

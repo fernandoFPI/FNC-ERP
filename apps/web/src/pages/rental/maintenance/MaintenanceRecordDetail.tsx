@@ -57,19 +57,22 @@ function relativeTime(dateStr?: string): string {
 }
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = {
-  scheduled: 'neutral', in_progress: 'warning', completed: 'success', cancelled: 'danger',
+  scheduled: 'neutral',
+  in_progress: 'warning',
+  completed: 'success',
+  cancelled: 'danger',
 }
 
 export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCompleted }: Props) {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
-  const [record,    setRecord]    = useState<MaintenanceRecord | null>(null)
-  const [loading,   setLoading]   = useState(false)
-  const [starting,  setStarting]  = useState(false)
-  const [completing,setCompleting]= useState(false)
-  const [showCancel,setShowCancel]= useState(false)
-  const [cancelling,setCancelling]= useState(false)
+  const [record, setRecord] = useState<MaintenanceRecord | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [starting, setStarting] = useState(false)
+  const [completing, setCompleting] = useState(false)
+  const [showCancel, setShowCancel] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
 
   const [form, setForm] = useState({
     engineHoursAtService: '',
@@ -94,7 +97,17 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
   useEffect(() => {
     if (open) fetchRecord()
-    else { setRecord(null); setForm({ engineHoursAtService: '', actualCost: '', findings: '', partsReplaced: '', nextServiceNotes: '', downtimeHours: '' }) }
+    else {
+      setRecord(null)
+      setForm({
+        engineHoursAtService: '',
+        actualCost: '',
+        findings: '',
+        partsReplaced: '',
+        nextServiceNotes: '',
+        downtimeHours: '',
+      })
+    }
   }, [open, assetId, recordId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleStart() {
@@ -114,15 +127,20 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
     setCompleting(true)
     try {
       const res = await api.post(`/rental/assets/${assetId}/maintenance/${recordId}/complete`, {
-        engine_hours_at_service: form.engineHoursAtService ? parseFloat(form.engineHoursAtService) : null,
-        actual_cost:             form.actualCost !== '' ? form.actualCost : null,
-        findings:                form.findings        || null,
-        parts_replaced:          form.partsReplaced   || null,
-        next_service_notes:      form.nextServiceNotes|| null,
-        downtime_hours:          form.downtimeHours   ? parseFloat(form.downtimeHours) : null,
+        engine_hours_at_service: form.engineHoursAtService
+          ? parseFloat(form.engineHoursAtService)
+          : null,
+        actual_cost: form.actualCost !== '' ? form.actualCost : null,
+        findings: form.findings || null,
+        parts_replaced: form.partsReplaced || null,
+        next_service_notes: form.nextServiceNotes || null,
+        downtime_hours: form.downtimeHours ? parseFloat(form.downtimeHours) : null,
       })
       const nextDue = (res.data as { nextServiceDue?: string })?.nextServiceDue
-      addToast({ type: 'success', message: nextDue ? `Next service due: ${nextDue}` : 'Asset returned to available status' })
+      addToast({
+        type: 'success',
+        message: nextDue ? `Next service due: ${nextDue}` : 'Asset returned to available status',
+      })
       onCompleted()
       onClose()
     } catch {
@@ -149,7 +167,9 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
   const drawerTitle = loading
     ? 'Loading…'
-    : (record?.schedule_name ?? record?.maintenance_type?.replace(/_/g, ' ') ?? 'Maintenance Record')
+    : (record?.schedule_name ??
+      record?.maintenance_type?.replace(/_/g, ' ') ??
+      'Maintenance Record')
 
   return (
     <>
@@ -162,14 +182,22 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
         {!loading && record && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-
             {/* Asset + status header */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div
+              style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}
+            >
               <div>
                 <div style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>
                   {record.asset_name ?? 'Unknown Asset'}
                 </div>
-                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', textTransform: 'capitalize' }}>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: theme.textMuted,
+                    marginTop: '2px',
+                    textTransform: 'capitalize',
+                  }}
+                >
                   {record.maintenance_type?.replace(/_/g, ' ')}
                 </div>
               </div>
@@ -179,22 +207,60 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
             </div>
 
             {/* Schedule info */}
-            <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '14px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: theme.textMuted, marginBottom: '10px' }}>
+            <div
+              style={{
+                background: theme.bgSurface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                padding: '14px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: theme.textMuted,
+                  marginBottom: '10px',
+                }}
+              >
                 Schedule Info
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '10px',
+                }}
+              >
                 {[
-                  ['Type',           record.maintenance_type?.replace(/_/g, ' ') ?? '—'],
-                  ['Trigger',        record.trigger_type?.replace(/_/g, ' ')     ?? '—'],
-                  ['Due Date',       record.due_date                              ?? '—'],
-                  ['Due Engine Hrs', record.due_engine_hours != null ? `${record.due_engine_hours}h` : '—'],
-                  ['Est. Cost',      record.estimated_cost ? formatCurrency(record.estimated_cost, 'IQD') : '—'],
-                  ['Interval',       record.interval_description                  ?? '—'],
+                  ['Type', record.maintenance_type?.replace(/_/g, ' ') ?? '—'],
+                  ['Trigger', record.trigger_type?.replace(/_/g, ' ') ?? '—'],
+                  ['Due Date', record.due_date ?? '—'],
+                  [
+                    'Due Engine Hrs',
+                    record.due_engine_hours != null ? `${record.due_engine_hours}h` : '—',
+                  ],
+                  [
+                    'Est. Cost',
+                    record.estimated_cost ? formatCurrency(record.estimated_cost, 'IQD') : '—',
+                  ],
+                  ['Interval', record.interval_description ?? '—'],
                 ].map(([label, value]) => (
                   <div key={label}>
-                    <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>{label}</div>
-                    <div style={{ fontSize: '12px', color: theme.textSecondary, textTransform: 'capitalize' }}>{value}</div>
+                    <div style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '2px' }}>
+                      {label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: theme.textSecondary,
+                        textTransform: 'capitalize',
+                      }}
+                    >
+                      {value}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -202,19 +268,45 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
             {/* Scheduled → start / cancel */}
             {record.status === 'scheduled' && (
-              <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '16px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '6px' }}>
+              <div
+                style={{
+                  background: theme.bgSurface,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '10px',
+                  padding: '16px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: theme.textPrimary,
+                    marginBottom: '6px',
+                  }}
+                >
                   Ready to begin maintenance
                 </div>
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '14px' }}>
-                  Starting maintenance will set this asset to "In maintenance" status until work is complete.
+                  Starting maintenance will set this asset to "In maintenance" status until work is
+                  complete.
                 </div>
-                <Button variant="primary" size="md" loading={starting} onClick={handleStart}
-                  style={{ width: '100%' }}>
+                <Button
+                  variant="primary"
+                  size="md"
+                  loading={starting}
+                  onClick={handleStart}
+                  style={{ width: '100%' }}
+                >
                   Start Maintenance
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowCancel(true)}
-                  style={{ width: '100%', marginTop: '8px', color: theme.danger }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowCancel(true)
+                  }}
+                  style={{ width: '100%', marginTop: '8px', color: theme.danger }}
+                >
                   Cancel Schedule
                 </Button>
               </div>
@@ -223,7 +315,16 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
             {/* In progress → completion form */}
             {record.status === 'in_progress' && (
               <>
-                <div style={{ padding: '8px 12px', background: theme.warningBg, border: `1px solid ${theme.warningBorder}`, borderRadius: '8px', fontSize: '11px', color: theme.warning }}>
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    background: theme.warningBg,
+                    border: `1px solid ${theme.warningBorder}`,
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                    color: theme.warning,
+                  }}
+                >
                   Maintenance started {relativeTime(record.started_at)}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -232,27 +333,35 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                       label="Engine hours at service"
                       type="number"
                       value={form.engineHoursAtService}
-                      onChange={e => setForm(f => ({ ...f, engineHoursAtService: e.target.value }))}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, engineHoursAtService: e.target.value }))
+                      }}
                       placeholder="Current cumulative engine hours"
                     />
                   )}
                   <CurrencyInput
                     label="Actual cost"
                     value={form.actualCost}
-                    onChange={v => setForm(f => ({ ...f, actualCost: v }))}
+                    onChange={(v) => {
+                      setForm((f) => ({ ...f, actualCost: v }))
+                    }}
                     currency="IQD"
                   />
                   <Textarea
                     label="Findings"
                     value={form.findings}
-                    onChange={e => setForm(f => ({ ...f, findings: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, findings: e.target.value }))
+                    }}
                     placeholder="Describe the condition found during maintenance…"
                     rows={3}
                   />
                   <Textarea
                     label="Parts replaced"
                     value={form.partsReplaced}
-                    onChange={e => setForm(f => ({ ...f, partsReplaced: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, partsReplaced: e.target.value }))
+                    }}
                     placeholder="List parts replaced, with part numbers if known…"
                     rows={2}
                   />
@@ -261,17 +370,26 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
                     type="number"
                     step="0.5"
                     value={form.downtimeHours}
-                    onChange={e => setForm(f => ({ ...f, downtimeHours: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, downtimeHours: e.target.value }))
+                    }}
                     placeholder="Total hours asset was out of service"
                   />
                   <Textarea
                     label="Notes for next service"
                     value={form.nextServiceNotes}
-                    onChange={e => setForm(f => ({ ...f, nextServiceNotes: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, nextServiceNotes: e.target.value }))
+                    }}
                     rows={2}
                   />
-                  <Button variant="primary" size="md" loading={completing} onClick={handleComplete}
-                    style={{ width: '100%' }}>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    loading={completing}
+                    onClick={handleComplete}
+                    style={{ width: '100%' }}
+                  >
                     Complete Maintenance
                   </Button>
                 </div>
@@ -280,28 +398,69 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
             {/* Completed → read-only */}
             {record.status === 'completed' && (
-              <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '10px', padding: '16px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
+              <div
+                style={{
+                  background: theme.bgSurface,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '10px',
+                  padding: '16px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: theme.textPrimary,
+                    marginBottom: '10px',
+                  }}
+                >
                   Completion Record
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+                <div
+                  style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}
+                >
                   {[
-                    ['Completed',     record.completed_at
-                      ? `${relativeTime(record.completed_at)}${record.completed_by_name ? ` · ${record.completed_by_name}` : ''}` : '—'],
-                    ['Engine hours',  record.engine_hours_at_service != null ? `${record.engine_hours_at_service}h` : '—'],
-                    ['Actual cost',   record.actual_cost ? formatCurrency(record.actual_cost, 'IQD') : '—'],
-                    ['Downtime',      record.downtime_hours != null ? `${record.downtime_hours}h` : '—'],
-                    ['Findings',      record.findings      ?? '—'],
-                    ['Parts replaced',record.parts_replaced ?? '—'],
+                    [
+                      'Completed',
+                      record.completed_at
+                        ? `${relativeTime(record.completed_at)}${record.completed_by_name ? ` · ${record.completed_by_name}` : ''}`
+                        : '—',
+                    ],
+                    [
+                      'Engine hours',
+                      record.engine_hours_at_service != null
+                        ? `${record.engine_hours_at_service}h`
+                        : '—',
+                    ],
+                    [
+                      'Actual cost',
+                      record.actual_cost ? formatCurrency(record.actual_cost, 'IQD') : '—',
+                    ],
+                    ['Downtime', record.downtime_hours != null ? `${record.downtime_hours}h` : '—'],
+                    ['Findings', record.findings ?? '—'],
+                    ['Parts replaced', record.parts_replaced ?? '—'],
                   ].map(([label, value]) => (
-                    <div key={label} style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '8px' }}>
+                    <div
+                      key={label}
+                      style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '8px' }}
+                    >
                       <span style={{ color: theme.textMuted }}>{label}</span>
                       <span style={{ color: theme.textSecondary }}>{value}</span>
                     </div>
                   ))}
                 </div>
                 {record.next_service_due && (
-                  <div style={{ marginTop: '12px', padding: '8px 12px', background: theme.infoBg, border: `1px solid ${theme.infoBorder}`, borderRadius: '8px', fontSize: '11px', color: theme.info }}>
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '8px 12px',
+                      background: theme.infoBg,
+                      border: `1px solid ${theme.infoBorder}`,
+                      borderRadius: '8px',
+                      fontSize: '11px',
+                      color: theme.info,
+                    }}
+                  >
                     Next service due: {record.next_service_due}
                   </div>
                 )}
@@ -310,7 +469,6 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
 
             {/* Activity log */}
             <ActivityLog recordId={recordId} tableName="asset_maintenance_records" />
-
           </div>
         )}
       </Drawer>
@@ -322,7 +480,9 @@ export function MaintenanceRecordDetail({ recordId, assetId, open, onClose, onCo
         confirmLabel="Cancel Schedule"
         variant="danger"
         onConfirm={handleCancel}
-        onCancel={() => setShowCancel(false)}
+        onCancel={() => {
+          setShowCancel(false)
+        }}
         loading={cancelling}
       />
     </>

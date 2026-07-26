@@ -15,9 +15,19 @@ const poQueueMock = {
 beforeEach(() => {
   localStorage.clear()
   useAuthStore.setState({
-    user: { id: 'u1', email: 'user@fnc.com', role: 'company_admin', mfaEnabled: false, system_admin: false } as never,
-    isAuthenticated: true, accessToken: 'tok', refreshToken: 'ref',
-    mfaPending: false, tempToken: null, themePreference: null,
+    user: {
+      id: 'u1',
+      email: 'user@fnc.com',
+      role: 'company_admin',
+      mfaEnabled: false,
+      system_admin: false,
+    } as never,
+    isAuthenticated: true,
+    accessToken: 'tok',
+    refreshToken: 'ref',
+    mfaPending: false,
+    tempToken: null,
+    themePreference: null,
   })
 })
 
@@ -29,7 +39,7 @@ function wrap(initialPath = '/dashboard') {
           <Sidebar />
         </ThemeProvider>
       </MemoryRouter>
-    </MockedProvider>
+    </MockedProvider>,
   )
 }
 
@@ -72,7 +82,12 @@ describe('Sidebar Phase 5 — Group section', () => {
 
   it('shows Admin link for system admin', () => {
     useAuthStore.setState({
-      user: { id: '1', email: 'admin@fnc.com', mfaEnabled: false, system_admin: true } as unknown as ReturnType<typeof useAuthStore.getState>['user'],
+      user: {
+        id: '1',
+        email: 'admin@fnc.com',
+        mfaEnabled: false,
+        system_admin: true,
+      } as unknown as ReturnType<typeof useAuthStore.getState>['user'],
       isAuthenticated: true,
       accessToken: 'token',
       refreshToken: 'refresh',

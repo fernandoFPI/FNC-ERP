@@ -39,8 +39,18 @@ function JsonNode({ value, depth, defaultCollapsed }: JsonNodeProps) {
     return (
       <span>
         <button
-          onClick={() => setOpen(o => !o)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textSecondary, padding: '0 2px', fontFamily: 'monospace', fontSize: 13 }}
+          onClick={() => {
+            setOpen((o) => !o)
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.textSecondary,
+            padding: '0 2px',
+            fontFamily: 'monospace',
+            fontSize: 13,
+          }}
         >
           {open ? '▼' : '▶'}
         </button>
@@ -67,8 +77,18 @@ function JsonNode({ value, depth, defaultCollapsed }: JsonNodeProps) {
     return (
       <span>
         <button
-          onClick={() => setOpen(o => !o)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textSecondary, padding: '0 2px', fontFamily: 'monospace', fontSize: 13 }}
+          onClick={() => {
+            setOpen((o) => !o)
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.textSecondary,
+            padding: '0 2px',
+            fontFamily: 'monospace',
+            fontSize: 13,
+          }}
         >
           {open ? '▼' : '▶'}
         </button>
@@ -101,25 +121,31 @@ export function JsonViewer({ data, collapsed = false, title }: JsonViewerProps) 
   const handleCopy = () => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(() => {
       setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setTimeout(() => {
+        setCopied(false)
+      }, 2000)
     })
   }
 
   return (
-    <div style={{
-      background: theme.bgSurface,
-      border: `1px solid ${theme.border}`,
-      borderRadius: 8,
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '8px 12px',
-        borderBottom: `1px solid ${theme.border}`,
-        background: theme.bgSurfaceHover,
-      }}>
+    <div
+      style={{
+        background: theme.bgSurface,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 8,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 12px',
+          borderBottom: `1px solid ${theme.border}`,
+          background: theme.bgSurfaceHover,
+        }}
+      >
         <span style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 600 }}>
           {title ?? 'JSON'}
         </span>
@@ -127,14 +153,16 @@ export function JsonViewer({ data, collapsed = false, title }: JsonViewerProps) 
           {copied ? 'Copied!' : 'Copy'}
         </Button>
       </div>
-      <div style={{
-        padding: '12px 16px',
-        fontFamily: 'monospace',
-        fontSize: 13,
-        lineHeight: 1.6,
-        overflowX: 'auto',
-        color: theme.textPrimary,
-      }}>
+      <div
+        style={{
+          padding: '12px 16px',
+          fontFamily: 'monospace',
+          fontSize: 13,
+          lineHeight: 1.6,
+          overflowX: 'auto',
+          color: theme.textPrimary,
+        }}
+      >
         <JsonNode value={data} depth={0} defaultCollapsed={collapsed} />
       </div>
     </div>

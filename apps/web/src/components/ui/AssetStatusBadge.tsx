@@ -50,17 +50,19 @@ export function AssetStatusBadge({ status, maintenanceStatus }: Props) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
       <Badge variant={STATUS_VARIANT[status] ?? 'neutral'}>{status.replace('_', ' ')}</Badge>
-      {maintenanceStatus && maintenanceStatus !== 'ok' && (
-        maintenanceStatus === 'overdue' ? (
-          <span style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}>
+      {maintenanceStatus &&
+        maintenanceStatus !== 'ok' &&
+        (maintenanceStatus === 'overdue' ? (
+          <span
+            style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}
+          >
             <Badge variant="danger">{MAINTENANCE_LABEL[maintenanceStatus]}</Badge>
           </span>
         ) : (
           <Badge variant={MAINTENANCE_VARIANT[maintenanceStatus]}>
             {MAINTENANCE_LABEL[maintenanceStatus]}
           </Badge>
-        )
-      )}
+        ))}
       {maintenanceStatus === 'ok' && (
         <span style={{ fontSize: '11px', color: theme.success }}>✓</span>
       )}

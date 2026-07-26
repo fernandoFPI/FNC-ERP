@@ -24,16 +24,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   const { theme } = useTheme()
   return (
     <Card style={{ padding: '20px', marginBottom: '16px' }}>
-      <div style={{
-        fontSize: '12px', fontWeight: 700, color: theme.textMuted,
-        textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px',
-        paddingBottom: '10px', borderBottom: `1px solid ${theme.border}`,
-      }}>
+      <div
+        style={{
+          fontSize: '12px',
+          fontWeight: 700,
+          color: theme.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          marginBottom: '16px',
+          paddingBottom: '10px',
+          borderBottom: `1px solid ${theme.border}`,
+        }}
+      >
         {title}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {children}
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>{children}</div>
     </Card>
   )
 }
@@ -70,10 +75,14 @@ function ConfigField({
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
         <label style={{ fontSize: '12px', color: theme.textMuted }}>{label}</label>
         {entry?.source === 'db' && (
-          <Badge variant="success" size="sm">DB</Badge>
+          <Badge variant="success" size="sm">
+            DB
+          </Badge>
         )}
         {entry?.source === 'env' && (
-          <Badge variant="neutral" size="sm">env</Badge>
+          <Badge variant="neutral" size="sm">
+            env
+          </Badge>
         )}
       </div>
 
@@ -106,11 +115,19 @@ function ConfigField({
         {isSensitive && hasValue && !editing && (
           <button
             type="button"
-            onClick={() => { setEditing(true); onChange(configKey, '') }}
+            onClick={() => {
+              setEditing(true)
+              onChange(configKey, '')
+            }}
             style={{
-              padding: '6px 10px', fontSize: '12px', color: theme.accent,
-              background: 'none', border: `1px solid ${theme.border}`,
-              borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap',
+              padding: '6px 10px',
+              fontSize: '12px',
+              color: theme.accent,
+              background: 'none',
+              border: `1px solid ${theme.border}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
             Change
@@ -126,9 +143,13 @@ function ConfigField({
               onChange(configKey, '•••••')
             }}
             style={{
-              padding: '6px 10px', fontSize: '12px', color: theme.textMuted,
-              background: 'none', border: `1px solid ${theme.border}`,
-              borderRadius: '6px', cursor: 'pointer',
+              padding: '6px 10px',
+              fontSize: '12px',
+              color: theme.textMuted,
+              background: 'none',
+              border: `1px solid ${theme.border}`,
+              borderRadius: '6px',
+              cursor: 'pointer',
             }}
           >
             Cancel
@@ -157,12 +178,20 @@ export default function IntegrationsPage() {
     setLoading(true)
     api
       .get<{ entries: ConfigEntry[] }>('/admin/system-config')
-      .then((r) => setEntries(r.data.entries))
-      .catch(() => addToast({ type: 'error', message: 'Failed to load system configuration' }))
-      .finally(() => setLoading(false))
+      .then((r) => {
+        setEntries(r.data.entries)
+      })
+      .catch(() => {
+        addToast({ type: 'error', message: 'Failed to load system configuration' })
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [addToast])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   function getEntry(key: string): ConfigEntry | undefined {
     return entries.find((e) => e.key === key)
@@ -203,7 +232,7 @@ export default function IntegrationsPage() {
       await api.put('/admin/system-config', { updates })
       addToast({ type: 'success', message: 'Configuration saved' })
       setEdits({})
-      void load()
+      load()
     } catch {
       addToast({ type: 'error', message: 'Failed to save configuration' })
     } finally {
@@ -237,7 +266,6 @@ export default function IntegrationsPage() {
         </div>
       ) : (
         <div style={{ marginTop: '20px' }}>
-
           {/* ── SMTP ─────────────────────────────────────────── */}
           <Section title="Email Server (SMTP)">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px', gap: '12px' }}>
@@ -251,11 +279,22 @@ export default function IntegrationsPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
               <ConfigField label="From Name" {...fieldProps('email.from_name', 'FNC Group')} />
-              <ConfigField label="From Address" {...fieldProps('email.from_address', 'noreply@example.com')} />
-              <ConfigField label="Reply-To (optional)" {...fieldProps('email.reply_to', 'support@example.com')} />
+              <ConfigField
+                label="From Address"
+                {...fieldProps('email.from_address', 'noreply@example.com')}
+              />
+              <ConfigField
+                label="Reply-To (optional)"
+                {...fieldProps('email.reply_to', 'support@example.com')}
+              />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button variant="ghost" size="sm" loading={testingSmtp} onClick={() => void handleTestSmtp()}>
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={testingSmtp}
+                onClick={() => void handleTestSmtp()}
+              >
                 Send Test Email
               </Button>
             </div>
@@ -277,43 +316,69 @@ export default function IntegrationsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <ConfigField
                 label="ExchangeRate-API Key (primary)"
-                {...fieldProps('fx.exchange_rate_api_key', 'Your API key from exchangerate-api.com')}
+                {...fieldProps(
+                  'fx.exchange_rate_api_key',
+                  'Your API key from exchangerate-api.com',
+                )}
               />
               <ConfigField
                 label="Open Exchange Rates App ID (fallback)"
-                {...fieldProps('fx.open_exchange_rates_app_id', 'Your App ID from openexchangerates.org')}
+                {...fieldProps(
+                  'fx.open_exchange_rates_app_id',
+                  'Your App ID from openexchangerates.org',
+                )}
               />
             </div>
             <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
-              Used by the daily FX sync job. The primary key is tried first; the fallback is used if the primary fails.
+              Used by the daily FX sync job. The primary key is tried first; the fallback is used if
+              the primary fails.
             </p>
           </Section>
 
           {/* ── B2 Storage ────────────────────────────────────── */}
           <Section title="File Storage (Backblaze B2)">
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-              <ConfigField label="B2 Endpoint URL" {...fieldProps('storage.b2_endpoint', 'https://s3.us-west-004.backblazeb2.com')} />
+              <ConfigField
+                label="B2 Endpoint URL"
+                {...fieldProps('storage.b2_endpoint', 'https://s3.us-west-004.backblazeb2.com')}
+              />
               <ConfigField label="Region" {...fieldProps('storage.b2_region', 'us-west-004')} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <ConfigField label="B2 Key ID" {...fieldProps('storage.b2_key_id')} />
-              <ConfigField label="B2 Application Key (secret)" {...fieldProps('storage.b2_application_key')} />
+              <ConfigField
+                label="B2 Application Key (secret)"
+                {...fieldProps('storage.b2_application_key')}
+              />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <ConfigField label="Bucket Name" {...fieldProps('storage.b2_bucket_name', 'fnc-erp-prod')} />
-              <ConfigField label="Public CDN URL (optional)" {...fieldProps('storage.b2_bucket_public_url', 'https://cdn.example.com')} />
+              <ConfigField
+                label="Bucket Name"
+                {...fieldProps('storage.b2_bucket_name', 'fnc-erp-prod')}
+              />
+              <ConfigField
+                label="Public CDN URL (optional)"
+                {...fieldProps('storage.b2_bucket_public_url', 'https://cdn.example.com')}
+              />
             </div>
           </Section>
 
           {/* ── Save bar ─────────────────────────────────────── */}
-          <div style={{
-            display: 'flex', justifyContent: 'flex-end', gap: '12px',
-            paddingTop: '8px', marginTop: '4px',
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px',
+              paddingTop: '8px',
+              marginTop: '4px',
+            }}
+          >
             {hasChanges && (
               <Button
                 variant="ghost"
-                onClick={() => setEdits({})}
+                onClick={() => {
+                  setEdits({})
+                }}
               >
                 Discard changes
               </Button>
@@ -329,19 +394,22 @@ export default function IntegrationsPage() {
           </div>
 
           {/* ── Info note ────────────────────────────────────── */}
-          <div style={{
-            marginTop: '20px',
-            padding: '12px 16px',
-            background: theme.bgSurface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: '10px',
-            fontSize: '12px',
-            color: theme.textMuted,
-          }}>
+          <div
+            style={{
+              marginTop: '20px',
+              padding: '12px 16px',
+              background: theme.bgSurface,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '10px',
+              fontSize: '12px',
+              color: theme.textMuted,
+            }}
+          >
             <strong>DB</strong> badge = value stored in database (overrides .env).&nbsp;
-            <strong>env</strong> badge = read from the server environment file.&nbsp;
-            Changes saved here take effect within 5 minutes for background workers (FX sync, email).
-            Infrastructure settings (DATABASE_URL, JWT_SECRET, service ports) are intentionally not configurable here.
+            <strong>env</strong> badge = read from the server environment file.&nbsp; Changes saved
+            here take effect within 5 minutes for background workers (FX sync, email).
+            Infrastructure settings (DATABASE_URL, JWT_SECRET, service ports) are intentionally not
+            configurable here.
           </div>
         </div>
       )}

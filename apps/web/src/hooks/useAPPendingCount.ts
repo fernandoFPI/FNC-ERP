@@ -9,7 +9,9 @@ export function useAPPendingCount(): number {
 
     async function fetch() {
       try {
-        const res = await api.get<{ pending_approval_count?: number }>('/finance/vendor-invoices/ap-summary')
+        const res = await api.get<{ pending_approval_count?: number }>(
+          '/finance/vendor-invoices/ap-summary',
+        )
         if (!cancelled) setCount(res.data.pending_approval_count ?? 0)
       } catch {
         // silently ignore — badge is non-critical
@@ -17,8 +19,13 @@ export function useAPPendingCount(): number {
     }
 
     void fetch()
-    const interval = setInterval(() => { void fetch() }, 60_000)
-    return () => { cancelled = true; clearInterval(interval) }
+    const interval = setInterval(() => {
+      void fetch()
+    }, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
   }, [])
 
   return count

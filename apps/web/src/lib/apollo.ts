@@ -1,4 +1,11 @@
-import { ApolloClient, ApolloLink, InMemoryCache, createHttpLink, from, fromPromise } from '@apollo/client'
+import {
+  ApolloClient,
+  ApolloLink,
+  InMemoryCache,
+  createHttpLink,
+  from,
+  fromPromise,
+} from '@apollo/client'
 import { getMainDefinition } from '@apollo/client/utilities'
 import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
@@ -23,10 +30,12 @@ const authLink = setContext((_, { headers }: { headers?: Record<string, string> 
 })
 
 let isRefreshing = false
-let pendingRequests: Array<() => void> = []
+let pendingRequests: (() => void)[] = []
 
 function resolvePendingRequests() {
-  pendingRequests.forEach(cb => cb())
+  pendingRequests.forEach((cb) => {
+    cb()
+  })
   pendingRequests = []
 }
 
@@ -34,14 +43,11 @@ async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = useAuthStore.getState().refreshToken
   if (!refreshToken) return null
   try {
-    const response = await fetch(
-      `${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      }
-    )
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
     if (!response.ok) return null
     const data = await response.json()
     const newToken = data.data?.accessToken
@@ -71,25 +77,31 @@ const errorLink = onError(({ networkError, operation, forward }) => {
   if (networkError && 'statusCode' in networkError && networkError.statusCode === 401) {
     if (isRefreshing) {
       return fromPromise(
-        new Promise<void>(resolve => { pendingRequests.push(resolve) })
+        new Promise<void>((resolve) => {
+          pendingRequests.push(resolve)
+        }),
       ).flatMap(() => forward(operation))
     }
     isRefreshing = true
     return fromPromise(
-      refreshAccessToken().then(newToken => {
-        if (newToken) {
-          resolvePendingRequests()
-          return newToken
-        }
-        pendingRequests = []
-        useAuthStore.getState().clearAuth()
-        window.location.href = '/login'
-        return null
-      }).finally(() => { isRefreshing = false })
-    ).flatMap(newToken => {
+      refreshAccessToken()
+        .then((newToken) => {
+          if (newToken) {
+            resolvePendingRequests()
+            return newToken
+          }
+          pendingRequests = []
+          useAuthStore.getState().clearAuth()
+          window.location.href = '/login'
+          return null
+        })
+        .finally(() => {
+          isRefreshing = false
+        }),
+    ).flatMap((newToken) => {
       if (!newToken) return forward(operation)
       operation.setContext(({ headers = {} }: { headers?: Record<string, string> }) => ({
-        headers: { ...headers, authorization: `Bearer ${newToken}` }
+        headers: { ...headers, authorization: `Bearer ${newToken}` },
       }))
       return forward(operation)
     })
@@ -126,13 +138,13 @@ export const apolloClient = new ApolloClient({
       ProjectInvoice: {
         fields: {
           payments: { merge: false },
-          lines:    { merge: false },
+          lines: { merge: false },
         },
       },
       ProjectContract: {
         fields: {
           milestones: { merge: false },
-          invoices:   { merge: false },
+          invoices: { merge: false },
         },
       },
     },

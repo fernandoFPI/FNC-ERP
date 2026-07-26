@@ -6,7 +6,7 @@ export interface BOMLineInput {
   unit_cost: number
 }
 
-export function useBOMCostPreview(lines: BOMLineInput[], qty: number = 1) {
+export function useBOMCostPreview(lines: BOMLineInput[], qty = 1) {
   const [preview, setPreview] = useState<number | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 

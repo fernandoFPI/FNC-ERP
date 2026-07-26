@@ -31,7 +31,7 @@ function wrap(ui: React.ReactNode, initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>{ui}</ThemeProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -43,9 +43,30 @@ beforeEach(() => {
 // ── AccountsPage ─────────────────────────────────────────────────────────────
 describe('AccountsPage', () => {
   const accounts = [
-    { id: '1', code: '1001', name: 'Cash', account_type: 'asset', currency_code: 'IQD', is_active: true },
-    { id: '2', code: '4001', name: 'Sales Revenue', account_type: 'revenue', currency_code: 'IQD', is_active: true },
-    { id: '3', code: '5001', name: 'Office Expense', account_type: 'expense', currency_code: 'USD', is_active: false },
+    {
+      id: '1',
+      code: '1001',
+      name: 'Cash',
+      account_type: 'asset',
+      currency_code: 'IQD',
+      is_active: true,
+    },
+    {
+      id: '2',
+      code: '4001',
+      name: 'Sales Revenue',
+      account_type: 'revenue',
+      currency_code: 'IQD',
+      is_active: true,
+    },
+    {
+      id: '3',
+      code: '5001',
+      name: 'Office Expense',
+      account_type: 'expense',
+      currency_code: 'USD',
+      is_active: false,
+    },
   ]
 
   beforeEach(() => {
@@ -149,8 +170,24 @@ describe('JournalDetail', () => {
       total_credit: '1000',
       created_by_email: 'user@fnc.com',
       lines: [
-        { id: 'l1', account_id: 'a1', account_code: '1001', account_name: 'Cash', debit: '1000', credit: '0', currency_code: 'IQD' },
-        { id: 'l2', account_id: 'a2', account_code: '4001', account_name: 'Revenue', debit: '0', credit: '1000', currency_code: 'IQD' },
+        {
+          id: 'l1',
+          account_id: 'a1',
+          account_code: '1001',
+          account_name: 'Cash',
+          debit: '1000',
+          credit: '0',
+          currency_code: 'IQD',
+        },
+        {
+          id: 'l2',
+          account_id: 'a2',
+          account_code: '4001',
+          account_name: 'Revenue',
+          debit: '0',
+          credit: '1000',
+          currency_code: 'IQD',
+        },
       ],
     }
     mockUseQuery.mockReturnValue({ data: { journalEntry: entry }, loading: false })

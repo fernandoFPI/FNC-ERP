@@ -41,16 +41,17 @@ export function Select({
 
   // When options array is provided (no raw JSX children) use the searchable portal select
   if (options && !children) {
-    const ssOptions = placeholder
-      ? [{ value: '', label: placeholder }, ...options]
-      : options
+    const ssOptions = placeholder ? [{ value: '', label: placeholder }, ...options] : options
 
     function handleChange(val: string) {
       onChange?.({ target: { value: val } } as React.ChangeEvent<HTMLSelectElement>)
     }
 
     return (
-      <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: '4px', ...style }}>
+      <div
+        className={className}
+        style={{ display: 'flex', flexDirection: 'column', gap: '4px', ...style }}
+      >
         <SearchableSelect
           label={label}
           error={error}
@@ -67,13 +68,18 @@ export function Select({
 
   // Fallback: children-based native select (used when <option> JSX is passed directly)
   return (
-    <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: '4px', ...style }}>
+    <div
+      className={className}
+      style={{ display: 'flex', flexDirection: 'column', gap: '4px', ...style }}
+    >
       {label && (
-        <label style={{
-          fontSize: isPhone ? '13px' : '12px',
-          fontWeight: 500,
-          color: error ? theme.danger : theme.textSecondary,
-        }}>
+        <label
+          style={{
+            fontSize: isPhone ? '13px' : '12px',
+            fontWeight: 500,
+            color: error ? theme.danger : theme.textSecondary,
+          }}
+        >
           {label}
           {required && <span style={{ color: theme.danger }}> *</span>}
         </label>

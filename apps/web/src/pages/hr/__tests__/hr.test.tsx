@@ -8,7 +8,12 @@ const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@apollo/client')>()
-  return { ...actual, useQuery: (...args: unknown[]) => mockUseQuery(...args), useMutation: (...args: unknown[]) => mockUseMutation(...args), gql: actual.gql }
+  return {
+    ...actual,
+    useQuery: (...args: unknown[]) => mockUseQuery(...args),
+    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    gql: actual.gql,
+  }
 })
 
 vi.mock('../../../store/toastStore', () => ({ useToastStore: () => vi.fn() }))
@@ -20,7 +25,11 @@ vi.mock('react-router-dom', async (importOriginal) => {
 })
 
 function wrap(ui: React.ReactNode) {
-  return render(<MemoryRouter><ThemeProvider>{ui}</ThemeProvider></MemoryRouter>)
+  return render(
+    <MemoryRouter>
+      <ThemeProvider>{ui}</ThemeProvider>
+    </MemoryRouter>,
+  )
 }
 
 beforeEach(() => {
@@ -32,12 +41,34 @@ beforeEach(() => {
 // ── EmployeesPage ─────────────────────────────────────────────────────────────
 describe('EmployeesPage', () => {
   const employees = [
-    { id: 'e1', employee_number: 'EMP-001', first_name: 'Ahmad', last_name: 'Hassan', job_title: 'Engineer', employment_type: 'full_time', status: 'active', department_name: 'Engineering' },
-    { id: 'e2', employee_number: 'EMP-002', first_name: 'Sara', last_name: 'Ali', job_title: 'Designer', employment_type: 'full_time', status: 'inactive', department_name: 'Design' },
+    {
+      id: 'e1',
+      employee_number: 'EMP-001',
+      first_name: 'Ahmad',
+      last_name: 'Hassan',
+      job_title: 'Engineer',
+      employment_type: 'full_time',
+      status: 'active',
+      department_name: 'Engineering',
+    },
+    {
+      id: 'e2',
+      employee_number: 'EMP-002',
+      first_name: 'Sara',
+      last_name: 'Ali',
+      job_title: 'Designer',
+      employment_type: 'full_time',
+      status: 'inactive',
+      department_name: 'Design',
+    },
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { employees, departments: [] }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({
+      data: { employees, departments: [] },
+      loading: false,
+      refetch: vi.fn(),
+    })
   })
 
   it('renders employee list with avatar and name', async () => {
@@ -110,7 +141,13 @@ describe('EmployeeForm', () => {
 // ── SalaryConfigForm ───────────────────────────────────────────────────────────
 describe('SalaryConfigForm', () => {
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { employee: { id: 'e1', first_name: 'Ahmad', last_name: 'Hassan' }, employeeSalaryConfig: null }, loading: false })
+    mockUseQuery.mockReturnValue({
+      data: {
+        employee: { id: 'e1', first_name: 'Ahmad', last_name: 'Hassan' },
+        employeeSalaryConfig: null,
+      },
+      loading: false,
+    })
   })
 
   it('renders base salary section', async () => {
@@ -141,11 +178,24 @@ describe('SalaryConfigForm', () => {
 // ── OvertimePage ───────────────────────────────────────────────────────────────
 describe('OvertimePage', () => {
   const pendingOT = [
-    { id: 'ot1', employee_id: 'e1', employee_name: 'Ahmad Hassan', work_date: '2026-06-01', regular_hours: 8, overtime_hours: 2, overtime_multiplier: 1.5, status: 'pending' as const },
+    {
+      id: 'ot1',
+      employee_id: 'e1',
+      employee_name: 'Ahmad Hassan',
+      work_date: '2026-06-01',
+      regular_hours: 8,
+      overtime_hours: 2,
+      overtime_multiplier: 1.5,
+      status: 'pending' as const,
+    },
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { overtimeRequests: pendingOT }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({
+      data: { overtimeRequests: pendingOT },
+      loading: false,
+      refetch: vi.fn(),
+    })
   })
 
   it('shows pending OT cards in left panel', async () => {
@@ -162,7 +212,13 @@ describe('OvertimePage', () => {
   })
 
   it('shows Approve all button when multiple pending', async () => {
-    mockUseQuery.mockReturnValue({ data: { overtimeRequests: [...pendingOT, { ...pendingOT[0], id: 'ot2', employee_name: 'Sara Ali' }] }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({
+      data: {
+        overtimeRequests: [...pendingOT, { ...pendingOT[0], id: 'ot2', employee_name: 'Sara Ali' }],
+      },
+      loading: false,
+      refetch: vi.fn(),
+    })
     const OvertimePage = (await import('../overtime/OvertimePage')).default
     wrap(<OvertimePage />)
     expect(screen.getByRole('button', { name: /approve all/i })).toBeInTheDocument()
@@ -172,7 +228,15 @@ describe('OvertimePage', () => {
 // ── WorkLocationsPage ──────────────────────────────────────────────────────────
 describe('WorkLocationsPage', () => {
   it('renders work locations list', async () => {
-    mockUseQuery.mockReturnValue({ data: { workLocations: [{ id: 'l1', name: 'Main Office', code: 'HQ', location_type: 'office', is_active: true }] }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({
+      data: {
+        workLocations: [
+          { id: 'l1', name: 'Main Office', code: 'HQ', location_type: 'office', is_active: true },
+        ],
+      },
+      loading: false,
+      refetch: vi.fn(),
+    })
     const WorkLocationsPage = (await import('../locations/WorkLocationsPage')).default
     wrap(<WorkLocationsPage />)
     expect(screen.getByText('Main Office')).toBeInTheDocument()

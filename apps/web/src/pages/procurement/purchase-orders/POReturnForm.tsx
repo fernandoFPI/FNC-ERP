@@ -21,7 +21,6 @@ interface POLine {
   currency_code?: string
 }
 
-
 interface ReturnItem {
   po_line_id: string
   description: string
@@ -59,8 +58,11 @@ export default function POReturnForm() {
 
   const { data, loading } = useQuery<{
     purchaseOrder: {
-      id: string; po_number: string; vendor_name: string
-      currency_code: string; status: string
+      id: string
+      po_number: string
+      vendor_name: string
+      currency_code: string
+      status: string
       lines: POLine[]
     }
   }>(PURCHASE_ORDER_QUERY, { variables: { id }, skip: !id })
@@ -76,36 +78,49 @@ export default function POReturnForm() {
 
   useEffect(() => {
     if (!po?.lines) return
-    setItems(po.lines.map((line) => ({
-      po_line_id:          line.id,
-      description:         line.description,
-      quantity_returned:   '',
-      original_unit_price: parseFloat(String(line.unit_price)),
-      assessed_unit_price: stripZeros(line.unit_price),
-      damage_notes:        '',
-      max_qty:             parseFloat(String(line.qty_received ?? line.qty)),
-      selected:            false,
-    })))
+    setItems(
+      po.lines.map((line) => ({
+        po_line_id: line.id,
+        description: line.description,
+        quantity_returned: '',
+        original_unit_price: parseFloat(String(line.unit_price)),
+        assessed_unit_price: stripZeros(line.unit_price),
+        damage_notes: '',
+        max_qty: parseFloat(String(line.qty_received ?? line.qty)),
+        selected: false,
+      })),
+    )
   }, [po])
 
   // Reset assessed prices when switching to full_refund
   useEffect(() => {
     if (returnType === 'full_refund') {
-      setItems((prev) => prev.map((it) => ({
-        ...it, assessed_unit_price: stripZeros(it.original_unit_price),
-      })))
+      setItems((prev) =>
+        prev.map((it) => ({
+          ...it,
+          assessed_unit_price: stripZeros(it.original_unit_price),
+        })),
+      )
       setUploadedPhotos([])
     }
   }, [returnType])
 
   function toggleItem(idx: number) {
-    setItems((prev) => prev.map((it, i) =>
-      i === idx ? { ...it, selected: !it.selected, quantity_returned: it.selected ? '' : stripZeros(it.max_qty) } : it,
-    ))
+    setItems((prev) =>
+      prev.map((it, i) =>
+        i === idx
+          ? {
+              ...it,
+              selected: !it.selected,
+              quantity_returned: it.selected ? '' : stripZeros(it.max_qty),
+            }
+          : it,
+      ),
+    )
   }
 
   function updateItem(idx: number, field: keyof ReturnItem, value: string) {
-    setItems((prev) => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it))
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
   }
 
   async function handlePhotoUpload(files: FileList) {
@@ -118,8 +133,8 @@ export default function POReturnForm() {
       try {
         // Request a file record + presigned upload URL
         const initRes = await api.post<{ fileId: string; uploadUrl: string }>('/files/upload-url', {
-          filename:  file.name,
-          mimeType:  file.type,
+          filename: file.name,
+          mimeType: file.type,
           sizeBytes: file.size,
           category: 'po_return_damage_photo',
         })
@@ -165,7 +180,8 @@ export default function POReturnForm() {
       if (qty > it.max_qty) return `Quantity for "${it.description}" cannot exceed ${it.max_qty}`
       if (returnType === 'damage') {
         const assessed = parseFloat(it.assessed_unit_price)
-        if (isNaN(assessed) || assessed < 0) return `Enter a valid assessed price for "${it.description}"`
+        if (isNaN(assessed) || assessed < 0)
+          return `Enter a valid assessed price for "${it.description}"`
         if (Math.round(assessed * 10000) > Math.round(it.original_unit_price * 10000))
           return `Assessed price for "${it.description}" cannot exceed original price`
       }
@@ -179,40 +195,49 @@ export default function POReturnForm() {
 
   async function handleSave() {
     const err = validate()
-    if (err) { addToast({ type: 'error', message: err }); return }
+    if (err) {
+      addToast({ type: 'error', message: err })
+      return
+    }
 
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
         return_type: returnType,
-        notes:       notes || undefined,
+        notes: notes || undefined,
         damage_description: returnType === 'damage' ? damageDescription : undefined,
         currency_code: po?.currency_code ?? 'IQD',
         items: selectedItems.map((it) => ({
-          po_line_id:          it.po_line_id,
-          description:         it.description,
-          quantity_returned:   parseFloat(it.quantity_returned),
+          po_line_id: it.po_line_id,
+          description: it.description,
+          quantity_returned: parseFloat(it.quantity_returned),
           original_unit_price: it.original_unit_price,
-          assessed_unit_price: returnType === 'full_refund'
-            ? it.original_unit_price
-            : parseFloat(it.assessed_unit_price),
+          assessed_unit_price:
+            returnType === 'full_refund'
+              ? it.original_unit_price
+              : parseFloat(it.assessed_unit_price),
           damage_notes: it.damage_notes || undefined,
         })),
       }
 
       const r = await api.post<{ id: string; return_number: string }>(
-        `/procurement/purchase-orders/${id}/returns`, payload,
+        `/procurement/purchase-orders/${id}/returns`,
+        payload,
       )
 
       // Attach uploaded photos to the return
       if (uploadedPhotos.length > 0) {
-        await Promise.all(uploadedPhotos.map((p) =>
-          api.post('/files/attach', {
-            fileId:     p.file_id,
-            entityType: 'po_return',
-            entityId:   r.data.id,
-          }).catch(() => {}),
-        ))
+        await Promise.all(
+          uploadedPhotos.map((p) =>
+            api
+              .post('/files/attach', {
+                fileId: p.file_id,
+                entityType: 'po_return',
+                entityId: r.data.id,
+              })
+              .catch(() => {}),
+          ),
+        )
       }
 
       addToast({ type: 'success', message: `Return ${r.data.return_number} created` })
@@ -225,10 +250,18 @@ export default function POReturnForm() {
   }
 
   if (loading) {
-    return <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>Loading PO…</div>
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted }}>
+        Loading PO…
+      </div>
+    )
   }
   if (!po) {
-    return <div style={{ padding: '40px', textAlign: 'center', color: theme.danger }}>Purchase order not found.</div>
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: theme.danger }}>
+        Purchase order not found.
+      </div>
+    )
   }
   if (!['received', 'invoiced', 'completed'].includes(po.status)) {
     return (
@@ -246,8 +279,13 @@ export default function POReturnForm() {
     marginBottom: '16px',
   }
   const labelStyle: React.CSSProperties = {
-    fontSize: '11px', fontWeight: 600, color: theme.textMuted,
-    textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px', display: 'block',
+    fontSize: '11px',
+    fontWeight: 600,
+    color: theme.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    marginBottom: '6px',
+    display: 'block',
   }
 
   return (
@@ -268,15 +306,27 @@ export default function POReturnForm() {
               <button
                 key={type}
                 type="button"
-                onClick={() => setReturnType(type)}
+                onClick={() => {
+                  setReturnType(type)
+                }}
                 style={{
-                  flex: 1, padding: '14px 16px', borderRadius: '8px',
+                  flex: 1,
+                  padding: '14px 16px',
+                  borderRadius: '8px',
                   border: `2px solid ${active ? theme.accent : theme.border}`,
                   background: active ? theme.accentBg : theme.bgCanvas,
-                  cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontFamily: 'inherit',
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: '13px', color: active ? theme.accent : theme.textPrimary }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    color: active ? theme.accent : theme.textPrimary,
+                  }}
+                >
                   {type === 'full_refund' ? '↩ Full Refund' : '⚠ Damage Return'}
                 </div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
@@ -298,7 +348,9 @@ export default function POReturnForm() {
             <label style={labelStyle}>Damage Report Description *</label>
             <Textarea
               value={damageDescription}
-              onChange={(e) => setDamageDescription(e.target.value)}
+              onChange={(e) => {
+                setDamageDescription(e.target.value)
+              }}
               placeholder="Describe the damage in detail — what happened, extent of damage, condition on return…"
               rows={4}
             />
@@ -316,8 +368,12 @@ export default function POReturnForm() {
               onClick={() => fileInputRef.current?.click()}
               style={{
                 border: `2px dashed ${uploadedPhotos.length === 0 ? theme.danger : theme.accent}`,
-                borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer',
-                background: theme.bgCanvas, marginBottom: uploadedPhotos.length > 0 ? '14px' : '0',
+                borderRadius: '8px',
+                padding: '24px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                background: theme.bgCanvas,
+                marginBottom: uploadedPhotos.length > 0 ? '14px' : '0',
                 transition: 'border-color 0.15s',
               }}
             >
@@ -335,7 +391,9 @@ export default function POReturnForm() {
               accept="image/*"
               multiple
               style={{ display: 'none' }}
-              onChange={(e) => { if (e.target.files?.length) void handlePhotoUpload(e.target.files) }}
+              onChange={(e) => {
+                if (e.target.files?.length) void handlePhotoUpload(e.target.files)
+              }}
             />
 
             {/* Photo thumbnails */}
@@ -345,8 +403,11 @@ export default function POReturnForm() {
                   <div
                     key={photo.file_id}
                     style={{
-                      position: 'relative', width: '90px', height: '90px',
-                      borderRadius: '8px', overflow: 'hidden',
+                      position: 'relative',
+                      width: '90px',
+                      height: '90px',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
                       border: `1px solid ${theme.border}`,
                     }}
                   >
@@ -357,24 +418,43 @@ export default function POReturnForm() {
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                     ) : (
-                      <div style={{
-                        width: '100%', height: '100%', display: 'flex',
-                        alignItems: 'center', justifyContent: 'center',
-                        background: theme.bgSurface, fontSize: '10px', color: theme.textMuted,
-                        padding: '4px', textAlign: 'center',
-                      }}>
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: theme.bgSurface,
+                          fontSize: '10px',
+                          color: theme.textMuted,
+                          padding: '4px',
+                          textAlign: 'center',
+                        }}
+                      >
                         {photo.original_filename}
                       </div>
                     )}
                     <button
                       type="button"
-                      onClick={() => removePhoto(photo.file_id)}
+                      onClick={() => {
+                        removePhoto(photo.file_id)
+                      }}
                       style={{
-                        position: 'absolute', top: '3px', right: '3px',
-                        width: '20px', height: '20px', borderRadius: '50%',
-                        background: 'rgba(0,0,0,0.6)', border: 'none',
-                        color: '#fff', fontSize: '11px', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        position: 'absolute',
+                        top: '3px',
+                        right: '3px',
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.6)',
+                        border: 'none',
+                        color: '#fff',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                     >
                       ×
@@ -385,11 +465,16 @@ export default function POReturnForm() {
             )}
           </div>
 
-          <div style={{
-            ...cardStyle, background: '#fffbeb', border: '1px solid #fcd34d',
-          }}>
+          <div
+            style={{
+              ...cardStyle,
+              background: '#fffbeb',
+              border: '1px solid #fcd34d',
+            }}
+          >
             <div style={{ fontSize: '12px', color: '#92400e' }}>
-              <strong>Note:</strong> Employee responsibility and salary deduction will be assigned by the approver (Finance / HR) after submission.
+              <strong>Note:</strong> Employee responsibility and salary deduction will be assigned
+              by the approver (Finance / HR) after submission.
             </div>
           </div>
         </>
@@ -404,25 +489,40 @@ export default function POReturnForm() {
               key={item.po_line_id}
               style={{
                 border: `1px solid ${item.selected ? theme.accent : theme.border}`,
-                borderRadius: '8px', padding: '14px',
+                borderRadius: '8px',
+                padding: '14px',
                 background: item.selected ? theme.accentBg : theme.bgCanvas,
                 transition: 'border-color 0.15s, background 0.15s',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: item.selected ? '14px' : '0' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: item.selected ? '14px' : '0',
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={item.selected}
-                  onChange={() => toggleItem(idx)}
-                  style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: theme.accent }}
+                  onChange={() => {
+                    toggleItem(idx)
+                  }}
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    cursor: 'pointer',
+                    accentColor: theme.accent,
+                  }}
                 />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
                     {item.description}
                   </div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                    Max returnable: {fmtN(item.max_qty)} &nbsp;·&nbsp;
-                    Original price: {po.currency_code} {fmtN(item.original_unit_price)}
+                    Max returnable: {fmtN(item.max_qty)} &nbsp;·&nbsp; Original price:{' '}
+                    {po.currency_code} {fmtN(item.original_unit_price)}
                   </div>
                 </div>
               </div>
@@ -437,7 +537,9 @@ export default function POReturnForm() {
                       max={item.max_qty}
                       step="any"
                       value={item.quantity_returned}
-                      onChange={(e) => updateItem(idx, 'quantity_returned', e.target.value)}
+                      onChange={(e) => {
+                        updateItem(idx, 'quantity_returned', e.target.value)
+                      }}
                       placeholder={`Max ${item.max_qty}`}
                     />
                   </div>
@@ -456,7 +558,9 @@ export default function POReturnForm() {
                         max={item.original_unit_price}
                         step="any"
                         value={item.assessed_unit_price}
-                        onChange={(e) => updateItem(idx, 'assessed_unit_price', e.target.value)}
+                        onChange={(e) => {
+                          updateItem(idx, 'assessed_unit_price', e.target.value)
+                        }}
                       />
                     </div>
                   )}
@@ -466,19 +570,31 @@ export default function POReturnForm() {
                       <label style={labelStyle}>Item-Level Damage Notes (optional)</label>
                       <Input
                         value={item.damage_notes}
-                        onChange={(e) => updateItem(idx, 'damage_notes', e.target.value)}
+                        onChange={(e) => {
+                          updateItem(idx, 'damage_notes', e.target.value)
+                        }}
                         placeholder="Specific damage notes for this item…"
                       />
                     </div>
                   )}
 
-                  <div style={{ gridColumn: '1 / -1', paddingTop: '4px', borderTop: `1px solid ${theme.border}` }}>
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Line return value: </span>
+                  <div
+                    style={{
+                      gridColumn: '1 / -1',
+                      paddingTop: '4px',
+                      borderTop: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                      Line return value:{' '}
+                    </span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
                       {po.currency_code}{' '}
                       {fmtN(
                         (parseFloat(item.quantity_returned) || 0) *
-                        (returnType === 'full_refund' ? item.original_unit_price : (parseFloat(item.assessed_unit_price) || 0))
+                          (returnType === 'full_refund'
+                            ? item.original_unit_price
+                            : parseFloat(item.assessed_unit_price) || 0),
                       )}
                     </span>
                     {returnType === 'damage' && parseFloat(item.quantity_returned) > 0 && (
@@ -486,7 +602,8 @@ export default function POReturnForm() {
                         Loss: {po.currency_code}{' '}
                         {fmtN(
                           (parseFloat(item.quantity_returned) || 0) *
-                          (item.original_unit_price - (parseFloat(item.assessed_unit_price) || 0))
+                            (item.original_unit_price -
+                              (parseFloat(item.assessed_unit_price) || 0)),
                         )}
                       </span>
                     )}
@@ -509,28 +626,39 @@ export default function POReturnForm() {
         <label style={labelStyle}>General Notes (optional)</label>
         <Textarea
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => {
+            setNotes(e.target.value)
+          }}
           placeholder="Any additional notes about this return…"
           rows={3}
         />
       </div>
 
       {/* Summary + submit */}
-      <div style={{
-        ...cardStyle, marginBottom: '40px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        background: selectedItems.length > 0 ? theme.accentBg : theme.bgSurface,
-        border: `1px solid ${selectedItems.length > 0 ? theme.accent : theme.border}`,
-      }}>
+      <div
+        style={{
+          ...cardStyle,
+          marginBottom: '40px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: selectedItems.length > 0 ? theme.accentBg : theme.bgSurface,
+          border: `1px solid ${selectedItems.length > 0 ? theme.accent : theme.border}`,
+        }}
+      >
         <div>
           <div style={{ fontSize: '12px', color: theme.textMuted }}>
             {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} selected
             {returnType === 'damage' && uploadedPhotos.length > 0 && (
-              <span style={{ marginLeft: '8px' }}>· {uploadedPhotos.length} photo{uploadedPhotos.length !== 1 ? 's' : ''} attached</span>
+              <span style={{ marginLeft: '8px' }}>
+                · {uploadedPhotos.length} photo{uploadedPhotos.length !== 1 ? 's' : ''} attached
+              </span>
             )}
           </div>
           {selectedItems.length > 0 && (
-            <div style={{ fontSize: '16px', fontWeight: 700, color: theme.accent, marginTop: '2px' }}>
+            <div
+              style={{ fontSize: '16px', fontWeight: 700, color: theme.accent, marginTop: '2px' }}
+            >
               Total Return Value: {po.currency_code} {fmtN(totalReturned)}
             </div>
           )}
@@ -541,7 +669,12 @@ export default function POReturnForm() {
           )}
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <Button variant="secondary" onClick={() => navigate(`/procurement/purchase-orders/${id}`)}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              navigate(`/procurement/purchase-orders/${id}`)
+            }}
+          >
             Cancel
           </Button>
           <Button

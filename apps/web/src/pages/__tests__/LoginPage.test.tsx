@@ -27,7 +27,7 @@ function wrap() {
       <ThemeProvider>
         <LoginPage />
       </ThemeProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -41,7 +41,9 @@ describe('LoginPage', () => {
   it('shows loading state on submit', async () => {
     mockLogin.mockImplementation(() => new Promise(() => {})) // never resolves
     wrap()
-    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), {
+      target: { value: 'a@b.com' },
+    })
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => {
@@ -59,7 +61,9 @@ describe('LoginPage', () => {
     const { default: axios } = await import('axios')
     vi.spyOn(axios, 'isAxiosError').mockReturnValue(true)
     wrap()
-    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), {
+      target: { value: 'a@b.com' },
+    })
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrong' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => {
@@ -70,18 +74,25 @@ describe('LoginPage', () => {
   it('navigates to /mfa when requiresMFA is true', async () => {
     mockLogin.mockResolvedValue({ requiresMFA: true, tempToken: 'temp123' })
     wrap()
-    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), {
+      target: { value: 'a@b.com' },
+    })
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/mfa', expect.objectContaining({ state: expect.objectContaining({ tempToken: 'temp123' }) }))
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/mfa',
+        expect.objectContaining({ state: expect.objectContaining({ tempToken: 'temp123' }) }),
+      )
     })
   })
 
   it('navigates to /dashboard on successful login without MFA', async () => {
     mockLogin.mockResolvedValue({ requiresMFA: false })
     wrap()
-    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), { target: { value: 'a@b.com' } })
+    fireEvent.change(screen.getByPlaceholderText('you@fnc-group.com'), {
+      target: { value: 'a@b.com' },
+    })
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'password' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => {

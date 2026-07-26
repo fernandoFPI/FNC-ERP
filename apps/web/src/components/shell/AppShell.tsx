@@ -31,16 +31,24 @@ export function AppShell() {
 
   // BottomNav "More" button opens phone sidebar drawer
   useEffect(() => {
-    const handler = (_e: Event) => setPhoneDrawerOpen(true)
+    const handler = (_e: Event) => {
+      setPhoneDrawerOpen(true)
+    }
     window.addEventListener('fnc:open-sidebar', handler)
-    return () => window.removeEventListener('fnc:open-sidebar', handler)
+    return () => {
+      window.removeEventListener('fnc:open-sidebar', handler)
+    }
   }, [])
 
   // Help button opens the help drawer
   useEffect(() => {
-    const handler = (_e: Event) => setHelpOpen(true)
+    const handler = (_e: Event) => {
+      setHelpOpen(true)
+    }
     window.addEventListener('fnc:open-help', handler)
-    return () => window.removeEventListener('fnc:open-help', handler)
+    return () => {
+      window.removeEventListener('fnc:open-help', handler)
+    }
   }, [])
 
   // fnc:open-search event — Topbar button or any other trigger
@@ -51,7 +59,9 @@ export function AppShell() {
       setSearchOpen(true)
     }
     window.addEventListener('fnc:open-search', handler)
-    return () => window.removeEventListener('fnc:open-search', handler)
+    return () => {
+      window.removeEventListener('fnc:open-search', handler)
+    }
   }, [])
 
   // "Type anywhere" — any printable keystroke outside an input opens search
@@ -76,7 +86,9 @@ export function AppShell() {
       }
     }
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    return () => {
+      document.removeEventListener('keydown', handler)
+    }
   }, [searchOpen])
 
   // Escape closes any open drawer
@@ -90,7 +102,9 @@ export function AppShell() {
       }
     }
     document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    return () => {
+      document.removeEventListener('keydown', handler)
+    }
   }, [])
 
   // Body scroll lock when phone drawer is open
@@ -100,13 +114,19 @@ export function AppShell() {
     } else {
       document.body.style.overflow = ''
     }
-    return () => { document.body.style.overflow = '' }
+    return () => {
+      document.body.style.overflow = ''
+    }
   }, [isPhone, phoneDrawerOpen])
 
   // Swipe to open/close phone sidebar (no-op on tablet/desktop since callbacks guard isPhone)
   useSwipeGesture(pageRef as RefObject<HTMLElement>, {
-    onSwipeRight: () => { if (isPhone && !phoneDrawerOpen) setPhoneDrawerOpen(true) },
-    onSwipeLeft:  () => { if (isPhone && phoneDrawerOpen) setPhoneDrawerOpen(false) },
+    onSwipeRight: () => {
+      if (isPhone && !phoneDrawerOpen) setPhoneDrawerOpen(true)
+    },
+    onSwipeLeft: () => {
+      if (isPhone && phoneDrawerOpen) setPhoneDrawerOpen(false)
+    },
   })
 
   // ── PHONE LAYOUT ────────────────────────────────────────────────────────────
@@ -134,7 +154,9 @@ export function AppShell() {
         {/* Sidebar drawer + backdrop */}
         {phoneDrawerOpen && (
           <div
-            onClick={() => setPhoneDrawerOpen(false)}
+            onClick={() => {
+              setPhoneDrawerOpen(false)
+            }}
             style={{
               position: 'fixed',
               inset: 0,
@@ -146,27 +168,47 @@ export function AppShell() {
         <Sidebar
           mobile
           expanded={phoneDrawerOpen}
-          onClose={() => setPhoneDrawerOpen(false)}
+          onClose={() => {
+            setPhoneDrawerOpen(false)
+          }}
         />
 
-        <Topbar compact onMenuToggle={() => setPhoneDrawerOpen(true)} />
+        <Topbar
+          compact
+          onMenuToggle={() => {
+            setPhoneDrawerOpen(true)
+          }}
+        />
 
-        <main style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: '12px',
-          paddingBottom: 'calc(64px + env(safe-area-inset-bottom) + 12px)',
-          position: 'relative',
-          zIndex: 1,
-        }}>
+        <main
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '12px',
+            paddingBottom: 'calc(64px + env(safe-area-inset-bottom) + 12px)',
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
           <Outlet />
         </main>
 
         <BottomNav />
         <Toast />
         <TourModeBanner />
-        <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
-        <SearchPalette open={searchOpen} prefill={searchPrefill} onClose={() => setSearchOpen(false)} />
+        <HelpDrawer
+          open={helpOpen}
+          onClose={() => {
+            setHelpOpen(false)
+          }}
+        />
+        <SearchPalette
+          open={searchOpen}
+          prefill={searchPrefill}
+          onClose={() => {
+            setSearchOpen(false)
+          }}
+        />
       </div>
     )
   }
@@ -174,13 +216,15 @@ export function AppShell() {
   // ── TABLET LAYOUT ────────────────────────────────────────────────────────────
   if (isTablet) {
     return (
-      <div style={{
-        height: '100dvh',
-        display: 'flex',
-        position: 'relative',
-        background: theme.bgCanvas,
-        overflow: 'hidden',
-      }}>
+      <div
+        style={{
+          height: '100dvh',
+          display: 'flex',
+          position: 'relative',
+          background: theme.bgCanvas,
+          overflow: 'hidden',
+        }}
+      >
         {theme.hasOrbs && (
           <>
             <div className="orb orb-1" style={{ background: theme.orb1 }} />
@@ -191,19 +235,28 @@ export function AppShell() {
 
         <Sidebar
           rail={!tabletSidebarExpanded}
-          onToggle={() => setTabletSidebarExpanded((v) => !v)}
+          onToggle={() => {
+            setTabletSidebarExpanded((v) => !v)
+          }}
         />
 
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          minWidth: 0,
-          position: 'relative',
-          zIndex: 1,
-        }}>
-          <Topbar compact onMenuToggle={() => setTabletSidebarExpanded((v) => !v)} />
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minWidth: 0,
+            position: 'relative',
+            zIndex: 1,
+          }}
+        >
+          <Topbar
+            compact
+            onMenuToggle={() => {
+              setTabletSidebarExpanded((v) => !v)
+            }}
+          />
           <main style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
             <Outlet />
           </main>
@@ -211,21 +264,34 @@ export function AppShell() {
 
         <Toast />
         <TourModeBanner />
-        <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
-        <SearchPalette open={searchOpen} prefill={searchPrefill} onClose={() => setSearchOpen(false)} />
+        <HelpDrawer
+          open={helpOpen}
+          onClose={() => {
+            setHelpOpen(false)
+          }}
+        />
+        <SearchPalette
+          open={searchOpen}
+          prefill={searchPrefill}
+          onClose={() => {
+            setSearchOpen(false)
+          }}
+        />
       </div>
     )
   }
 
   // ── DESKTOP LAYOUT ── Keep exactly as it was — no changes ───────────────────
   return (
-    <div style={{
-      display: 'flex',
-      height: '100vh',
-      position: 'relative',
-      background: theme.bgCanvas,
-      overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        display: 'flex',
+        height: '100vh',
+        position: 'relative',
+        background: theme.bgCanvas,
+        overflow: 'hidden',
+      }}
+    >
       {theme.hasOrbs && (
         <>
           <div className="orb orb-1" style={{ background: theme.orb1 }} />
@@ -236,15 +302,17 @@ export function AppShell() {
 
       <Sidebar />
 
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        minWidth: 0,
-        position: 'relative',
-        zIndex: 1,
-      }}>
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          minWidth: 0,
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
         <Topbar />
         <main style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
           <Outlet />
@@ -253,8 +321,19 @@ export function AppShell() {
 
       <Toast />
       <TourModeBanner />
-      <HelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <SearchPalette open={searchOpen} prefill={searchPrefill} onClose={() => setSearchOpen(false)} />
+      <HelpDrawer
+        open={helpOpen}
+        onClose={() => {
+          setHelpOpen(false)
+        }}
+      />
+      <SearchPalette
+        open={searchOpen}
+        prefill={searchPrefill}
+        onClose={() => {
+          setSearchOpen(false)
+        }}
+      />
     </div>
   )
 }

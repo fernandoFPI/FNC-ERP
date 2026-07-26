@@ -74,8 +74,12 @@ export function TourModeBanner() {
             fontWeight: 600,
             fontFamily: 'inherit',
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = `${accent}28` }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = `${accent}15` }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = `${accent}28`
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = `${accent}15`
+          }}
         >
           Exit Tour
         </button>

@@ -34,11 +34,19 @@ const APDashboard = lazy(() => import('../pages/finance/ap/APDashboard'))
 const VendorInvoiceDetail = lazy(() => import('../pages/finance/ap/VendorInvoiceDetail'))
 const VendorInvoiceForm = lazy(() => import('../pages/finance/ap/VendorInvoiceForm'))
 const CostCentersPage = lazy(() => import('../pages/finance/cost-centers/CostCentersPage'))
-const AnalyticAccountsPage = lazy(() => import('../pages/finance/analytic-accounts/AnalyticAccountsPage'))
-const AnalyticAccountDetail = lazy(() => import('../pages/finance/analytic-accounts/AnalyticAccountDetail'))
+const AnalyticAccountsPage = lazy(
+  () => import('../pages/finance/analytic-accounts/AnalyticAccountsPage'),
+)
+const AnalyticAccountDetail = lazy(
+  () => import('../pages/finance/analytic-accounts/AnalyticAccountDetail'),
+)
 const WHTPayablePage = lazy(() => import('../pages/finance/wht-payable/WHTPayablePage'))
-const PaymentVouchersPage = lazy(() => import('../pages/finance/payment-vouchers/PaymentVouchersPage'))
-const PaymentVoucherDetail = lazy(() => import('../pages/finance/payment-vouchers/PaymentVoucherDetail'))
+const PaymentVouchersPage = lazy(
+  () => import('../pages/finance/payment-vouchers/PaymentVouchersPage'),
+)
+const PaymentVoucherDetail = lazy(
+  () => import('../pages/finance/payment-vouchers/PaymentVoucherDetail'),
+)
 const FixedAssetsPage = lazy(() => import('../pages/finance/assets/AssetsPage'))
 const FixedAssetForm = lazy(() => import('../pages/finance/assets/AssetForm'))
 const FixedAssetDetail = lazy(() => import('../pages/finance/assets/AssetDetail'))
@@ -59,9 +67,15 @@ const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLay
 const VendorsPage = lazy(() => import('../pages/procurement/vendors/VendorsPage'))
 const VendorForm = lazy(() => import('../pages/procurement/vendors/VendorForm'))
 const VendorDetail = lazy(() => import('../pages/procurement/vendors/VendorDetail'))
-const PurchaseOrdersPage = lazy(() => import('../pages/procurement/purchase-orders/PurchaseOrdersPage'))
-const PurchaseOrderForm = lazy(() => import('../pages/procurement/purchase-orders/PurchaseOrderForm'))
-const PurchaseOrderDetail = lazy(() => import('../pages/procurement/purchase-orders/PurchaseOrderDetail'))
+const PurchaseOrdersPage = lazy(
+  () => import('../pages/procurement/purchase-orders/PurchaseOrdersPage'),
+)
+const PurchaseOrderForm = lazy(
+  () => import('../pages/procurement/purchase-orders/PurchaseOrderForm'),
+)
+const PurchaseOrderDetail = lazy(
+  () => import('../pages/procurement/purchase-orders/PurchaseOrderDetail'),
+)
 const ApprovalQueue = lazy(() => import('../pages/procurement/purchase-orders/ApprovalQueue'))
 const MyPOQueue = lazy(() => import('../pages/procurement/purchase-orders/MyPOQueue'))
 const ReceiptForm = lazy(() => import('../pages/procurement/receipts/ReceiptForm'))
@@ -85,11 +99,21 @@ const WorkCentersPage = lazy(() => import('../pages/manufacturing/work-centers/W
 const BOMsPage = lazy(() => import('../pages/manufacturing/boms/BOMsPage'))
 const BOMForm = lazy(() => import('../pages/manufacturing/boms/BOMForm'))
 const BOMDetail = lazy(() => import('../pages/manufacturing/boms/BOMDetail'))
-const ManufacturingOrdersPage = lazy(() => import('../pages/manufacturing/orders/ManufacturingOrdersPage'))
-const ManufacturingOrderForm = lazy(() => import('../pages/manufacturing/orders/ManufacturingOrderForm'))
-const ManufacturingOrderDetail = lazy(() => import('../pages/manufacturing/orders/ManufacturingOrderDetail'))
-const ManufacturingRequestsPage = lazy(() => import('../pages/manufacturing/requests/ManufacturingRequestsPage'))
-const ManufacturingRequestDetail = lazy(() => import('../pages/manufacturing/requests/ManufacturingRequestDetail'))
+const ManufacturingOrdersPage = lazy(
+  () => import('../pages/manufacturing/orders/ManufacturingOrdersPage'),
+)
+const ManufacturingOrderForm = lazy(
+  () => import('../pages/manufacturing/orders/ManufacturingOrderForm'),
+)
+const ManufacturingOrderDetail = lazy(
+  () => import('../pages/manufacturing/orders/ManufacturingOrderDetail'),
+)
+const ManufacturingRequestsPage = lazy(
+  () => import('../pages/manufacturing/requests/ManufacturingRequestsPage'),
+)
+const ManufacturingRequestDetail = lazy(
+  () => import('../pages/manufacturing/requests/ManufacturingRequestDetail'),
+)
 
 // Rental
 const RentalLayout = lazy(() => import('../pages/rental/RentalLayout'))
@@ -109,22 +133,40 @@ const ExecutiveDashboard = lazy(() => import('../pages/reporting/executive/Execu
 const CashFlowStatement = lazy(() => import('../pages/reporting/financial/CashFlowStatement'))
 const ConsolidatedPL = lazy(() => import('../pages/reporting/consolidated/ConsolidatedPL'))
 const ConsolidatedBS = lazy(() => import('../pages/reporting/consolidated/ConsolidatedBS'))
-const ConsolidatedTrialBalance = lazy(() => import('../pages/reporting/consolidated/ConsolidatedTrialBalance'))
-const ProjectProfitabilityReport = lazy(() => import('../pages/reporting/projects/ProjectProfitabilityReport'))
+const ConsolidatedTrialBalance = lazy(
+  () => import('../pages/reporting/consolidated/ConsolidatedTrialBalance'),
+)
+const ProjectProfitabilityReport = lazy(
+  () => import('../pages/reporting/projects/ProjectProfitabilityReport'),
+)
 const PayrollCostReport = lazy(() => import('../pages/reporting/payroll/PayrollCostReport'))
-const AttendanceSummaryReport = lazy(() => import('../pages/reporting/payroll/AttendanceSummaryReport'))
-const InventoryValuationReport = lazy(() => import('../pages/reporting/inventory/InventoryValuationReport'))
+const AttendanceSummaryReport = lazy(
+  () => import('../pages/reporting/payroll/AttendanceSummaryReport'),
+)
+const InventoryValuationReport = lazy(
+  () => import('../pages/reporting/inventory/InventoryValuationReport'),
+)
 const WHTReport = lazy(() => import('../pages/reporting/compliance/WHTReport'))
 const FXExposureReport = lazy(() => import('../pages/reporting/compliance/FXExposureReport'))
 const PayrollTaxReport = lazy(() => import('../pages/reporting/compliance/PayrollTaxReport'))
 
 // Inter-company
 const IntercoLayout = lazy(() => import('../pages/interco/IntercoLayout'))
-const IntercoTransactionsPage = lazy(() => import('../pages/interco/transactions/IntercoTransactionsPage'))
-const IntercoTransactionDetail = lazy(() => import('../pages/interco/transactions/IntercoTransactionDetail'))
-const IntercoStockTransfersPage = lazy(() => import('../pages/interco/stock-transfers/IntercoStockTransfersPage'))
-const IntercoStockTransferDetail = lazy(() => import('../pages/interco/stock-transfers/IntercoStockTransferDetail'))
-const IntercoStockTransferForm = lazy(() => import('../pages/interco/stock-transfers/IntercoStockTransferForm'))
+const IntercoTransactionsPage = lazy(
+  () => import('../pages/interco/transactions/IntercoTransactionsPage'),
+)
+const IntercoTransactionDetail = lazy(
+  () => import('../pages/interco/transactions/IntercoTransactionDetail'),
+)
+const IntercoStockTransfersPage = lazy(
+  () => import('../pages/interco/stock-transfers/IntercoStockTransfersPage'),
+)
+const IntercoStockTransferDetail = lazy(
+  () => import('../pages/interco/stock-transfers/IntercoStockTransferDetail'),
+)
+const IntercoStockTransferForm = lazy(
+  () => import('../pages/interco/stock-transfers/IntercoStockTransferForm'),
+)
 const TransferPricingPage = lazy(() => import('../pages/interco/pricing/TransferPricingPage'))
 
 // Admin pages (now mounted under /settings/*)
@@ -137,7 +179,9 @@ const DLQPage = lazy(() => import('../pages/admin/outbox/DLQPage'))
 const SystemHealthPage = lazy(() => import('../pages/admin/health/SystemHealthPage'))
 const AuditLogPage = lazy(() => import('../pages/admin/audit/AuditLogPage'))
 const EventConfigsPage = lazy(() => import('../pages/admin/event-configs/EventConfigsPage'))
-const NotificationRoutingPage = lazy(() => import('../pages/admin/notification-routing/NotificationRoutingPage'))
+const NotificationRoutingPage = lazy(
+  () => import('../pages/admin/notification-routing/NotificationRoutingPage'),
+)
 const JobHistoryPage = lazy(() => import('../pages/settings/system/JobHistoryPage'))
 const BankAccountsPage = lazy(() => import('../pages/admin/bank-accounts/BankAccountsPage'))
 const RoleTemplatesPage = lazy(() => import('../pages/admin/roles/RoleTemplatesPage'))
@@ -148,12 +192,22 @@ const InventoryImportPage = lazy(() => import('../pages/settings/inventory/Inven
 const WorkflowImportPage = lazy(() => import('../pages/settings/workflow/WorkflowImportPage'))
 const ProfilePage = lazy(() => import('../pages/settings/profile/ProfilePage'))
 const AppearancePage = lazy(() => import('../pages/settings/appearance/AppearancePage'))
-const NotificationPreferencesPage = lazy(() => import('../pages/settings/notifications/NotificationPreferencesPage'))
+const NotificationPreferencesPage = lazy(
+  () => import('../pages/settings/notifications/NotificationPreferencesPage'),
+)
 const CompanySettingsPage = lazy(() => import('../pages/settings/company/CompanySettingsPage'))
-const AccountingSettingsPage = lazy(() => import('../pages/settings/company/accounting/AccountingSettingsPage'))
-const IntegrationsPage = lazy(() => import('../pages/settings/company/integrations/IntegrationsPage'))
-const DocumentNumberingPage = lazy(() => import('../pages/settings/company/numbering/DocumentNumberingPage'))
-const LifecycleSettingsPage = lazy(() => import('../pages/settings/company/lifecycle/LifecycleSettingsPage'))
+const AccountingSettingsPage = lazy(
+  () => import('../pages/settings/company/accounting/AccountingSettingsPage'),
+)
+const IntegrationsPage = lazy(
+  () => import('../pages/settings/company/integrations/IntegrationsPage'),
+)
+const DocumentNumberingPage = lazy(
+  () => import('../pages/settings/company/numbering/DocumentNumberingPage'),
+)
+const LifecycleSettingsPage = lazy(
+  () => import('../pages/settings/company/lifecycle/LifecycleSettingsPage'),
+)
 const InviteHistoryPage = lazy(() => import('../pages/settings/users/InviteHistoryPage'))
 const POPositionsPage = lazy(() => import('../pages/procurement/positions/POPositionsPage'))
 
@@ -212,7 +266,9 @@ function AdminCompanyRedirect() {
 
 function PageSpinner() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+    <div
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
+    >
       <Spinner size="lg" />
     </div>
   )
@@ -220,12 +276,11 @@ function PageSpinner() {
 
 function ComingSoon({ module }: { module: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+    <div
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}
+    >
       <Card padding="lg" style={{ maxWidth: '400px', width: '100%' }}>
-        <EmptyState
-          title={module}
-          message="Coming in the next phase. Check back soon!"
-        />
+        <EmptyState title={module} message="Coming in the next phase. Check back soon!" />
       </Card>
     </div>
   )
@@ -239,7 +294,11 @@ function withSuspense(element: React.ReactNode) {
   )
 }
 
-function withPerm(permKey: string, element: React.ReactNode, minLevel: 'view' | 'edit' | 'approve' | 'admin' = 'view') {
+function withPerm(
+  permKey: string,
+  element: React.ReactNode,
+  minLevel: 'view' | 'edit' | 'approve' | 'admin' = 'view',
+) {
   return withSuspense(
     <PermissionRoute permKey={permKey} minLevel={minLevel}>
       {element}
@@ -266,11 +325,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/complete-profile',
-    element: (
-      <PrivateRoute>
-        {withSuspense(<CompleteProfilePage />)}
-      </PrivateRoute>
-    ),
+    element: <PrivateRoute>{withSuspense(<CompleteProfilePage />)}</PrivateRoute>,
   },
   {
     element: (
@@ -290,43 +345,106 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/finance/accounts" replace /> },
           { path: 'accounts', element: withPerm('finance.accounts.view', <AccountsPage />) },
-          { path: 'accounts/new', element: withPerm('finance.accounts.edit', <AccountForm />, 'edit') },
-          { path: 'accounts/:id/edit', element: withPerm('finance.accounts.edit', <AccountForm />, 'edit') },
-          { path: 'accounts/:id/ledger', element: withPerm('finance.accounts.view', <AccountLedger />) },
+          {
+            path: 'accounts/new',
+            element: withPerm('finance.accounts.edit', <AccountForm />, 'edit'),
+          },
+          {
+            path: 'accounts/:id/edit',
+            element: withPerm('finance.accounts.edit', <AccountForm />, 'edit'),
+          },
+          {
+            path: 'accounts/:id/ledger',
+            element: withPerm('finance.accounts.view', <AccountLedger />),
+          },
           { path: 'journals', element: withPerm('finance.journals.view', <JournalsPage />) },
-          { path: 'journals/new', element: withPerm('finance.journals.edit', <JournalForm />, 'edit') },
+          {
+            path: 'journals/new',
+            element: withPerm('finance.journals.edit', <JournalForm />, 'edit'),
+          },
           { path: 'journals/:id', element: withPerm('finance.journals.view', <JournalDetail />) },
           { path: 'fx-rates', element: withPerm('finance.fx_rates.view', <FXRatesPage />) },
           { path: 'periods', element: withPerm('finance.periods.view', <PeriodsPage />) },
-          { path: 'reports/trial-balance', element: withPerm('finance.reports.view', <TrialBalance />) },
-          { path: 'reports/profit-loss', element: withPerm('finance.reports.view', <ProfitLoss />) },
-          { path: 'reports/balance-sheet', element: withPerm('finance.reports.view', <BalanceSheet />) },
+          {
+            path: 'reports/trial-balance',
+            element: withPerm('finance.reports.view', <TrialBalance />),
+          },
+          {
+            path: 'reports/profit-loss',
+            element: withPerm('finance.reports.view', <ProfitLoss />),
+          },
+          {
+            path: 'reports/balance-sheet',
+            element: withPerm('finance.reports.view', <BalanceSheet />),
+          },
           { path: 'ar', element: withPerm('finance.ar.view', <ARDashboard />) },
           { path: 'ap', element: withPerm('finance.ap.view', <APDashboard />) },
           { path: 'ap/new', element: withPerm('finance.ap.edit', <VendorInvoiceForm />, 'edit') },
           { path: 'ap/:id', element: withPerm('finance.ap.view', <VendorInvoiceDetail />) },
-          { path: 'ap/:id/edit', element: withPerm('finance.ap.edit', <VendorInvoiceForm />, 'edit') },
-          { path: 'payment-vouchers', element: withPerm('finance.ap.view', <PaymentVouchersPage />) },
-          { path: 'payment-vouchers/:id', element: withPerm('finance.ap.view', <PaymentVoucherDetail />) },
-          { path: 'cost-centers', element: withPerm('finance.cost_centers.view', <CostCentersPage />) },
-          { path: 'analytic-accounts', element: withPerm('finance.analytic_accounts.view', <AnalyticAccountsPage />) },
-          { path: 'analytic-accounts/:id', element: withPerm('finance.analytic_accounts.view', <AnalyticAccountDetail />) },
+          {
+            path: 'ap/:id/edit',
+            element: withPerm('finance.ap.edit', <VendorInvoiceForm />, 'edit'),
+          },
+          {
+            path: 'payment-vouchers',
+            element: withPerm('finance.ap.view', <PaymentVouchersPage />),
+          },
+          {
+            path: 'payment-vouchers/:id',
+            element: withPerm('finance.ap.view', <PaymentVoucherDetail />),
+          },
+          {
+            path: 'cost-centers',
+            element: withPerm('finance.cost_centers.view', <CostCentersPage />),
+          },
+          {
+            path: 'analytic-accounts',
+            element: withPerm('finance.analytic_accounts.view', <AnalyticAccountsPage />),
+          },
+          {
+            path: 'analytic-accounts/:id',
+            element: withPerm('finance.analytic_accounts.view', <AnalyticAccountDetail />),
+          },
           { path: 'wht-payable', element: withPerm('finance.ap.view', <WHTPayablePage />) },
           { path: 'assets', element: withPerm('finance.assets.view', <FixedAssetsPage />) },
-          { path: 'assets/new', element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit') },
+          {
+            path: 'assets/new',
+            element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit'),
+          },
           { path: 'assets/:id', element: withPerm('finance.assets.view', <FixedAssetDetail />) },
-          { path: 'assets/:id/edit', element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit') },
+          {
+            path: 'assets/:id/edit',
+            element: withPerm('finance.assets.edit', <FixedAssetForm />, 'edit'),
+          },
           { path: 'bank', element: withPerm('finance.bank.view', <BankReconPage />) },
-          { path: 'bank/:accountId', element: withPerm('finance.bank.view', <ReconcileWorkspace />) },
-          { path: 'bank/:accountId/reconcile/:statementId', element: withPerm('finance.bank.edit', <ReconcileWorkspace />, 'edit') },
+          {
+            path: 'bank/:accountId',
+            element: withPerm('finance.bank.view', <ReconcileWorkspace />),
+          },
+          {
+            path: 'bank/:accountId/reconcile/:statementId',
+            element: withPerm('finance.bank.edit', <ReconcileWorkspace />, 'edit'),
+          },
           { path: 'payment-terms', element: withPerm('finance.terms.view', <PaymentTermsPage />) },
           { path: 'retention', element: withPerm('finance.retention.view', <RetentionPage />) },
-          { path: 'retention/:id', element: withPerm('finance.retention.view', <RetentionDetail />) },
+          {
+            path: 'retention/:id',
+            element: withPerm('finance.retention.view', <RetentionDetail />),
+          },
           { path: 'budget', element: withPerm('finance.budget.view', <BudgetPage />) },
           { path: 'budget/:id', element: withPerm('finance.budget.view', <BudgetDetail />) },
-          { path: 'revaluation', element: withPerm('finance.revaluation.view', <RevaluationPage />) },
-          { path: 'expense-claims', element: withPerm('finance.expenses.view', <ExpenseClaimsPage />) },
-          { path: 'expense-claims/:id', element: withPerm('finance.expenses.view', <ExpenseClaimDetail />) },
+          {
+            path: 'revaluation',
+            element: withPerm('finance.revaluation.view', <RevaluationPage />),
+          },
+          {
+            path: 'expense-claims',
+            element: withPerm('finance.expenses.view', <ExpenseClaimsPage />),
+          },
+          {
+            path: 'expense-claims/:id',
+            element: withPerm('finance.expenses.view', <ExpenseClaimDetail />),
+          },
           { path: 'petty-cash', element: withPerm('finance.petty_cash.view', <PettyCashPage />) },
         ],
       },
@@ -337,17 +455,44 @@ export const router = createBrowserRouter([
         element: withPerm('procurement.po.view', <ProcurementLayout />),
         children: [
           { index: true, element: <Navigate to="/procurement/purchase-orders" replace /> },
-          { path: 'purchase-orders', element: withPerm('procurement.po.view', <PurchaseOrdersPage />) },
-          { path: 'purchase-orders/new', element: withPerm('procurement.po.edit', <PurchaseOrderForm />, 'edit') },
-          { path: 'purchase-orders/:id', element: withPerm('procurement.po.view', <PurchaseOrderDetail />) },
-          { path: 'purchase-orders/:id/receive', element: withPerm('procurement.po.edit', <ReceiptForm />, 'edit') },
-          { path: 'purchase-orders/:id/returns/new', element: withPerm('procurement.po.edit', <POReturnForm />, 'edit') },
-          { path: 'purchase-orders/:id/returns/:returnId', element: withPerm('procurement.po.view', <POReturnDetail />) },
+          {
+            path: 'purchase-orders',
+            element: withPerm('procurement.po.view', <PurchaseOrdersPage />),
+          },
+          {
+            path: 'purchase-orders/new',
+            element: withPerm('procurement.po.edit', <PurchaseOrderForm />, 'edit'),
+          },
+          {
+            path: 'purchase-orders/:id',
+            element: withPerm('procurement.po.view', <PurchaseOrderDetail />),
+          },
+          {
+            path: 'purchase-orders/:id/receive',
+            element: withPerm('procurement.po.edit', <ReceiptForm />, 'edit'),
+          },
+          {
+            path: 'purchase-orders/:id/returns/new',
+            element: withPerm('procurement.po.edit', <POReturnForm />, 'edit'),
+          },
+          {
+            path: 'purchase-orders/:id/returns/:returnId',
+            element: withPerm('procurement.po.view', <POReturnDetail />),
+          },
           { path: 'vendors', element: withPerm('procurement.vendors.view', <VendorsPage />) },
-          { path: 'vendors/new', element: withPerm('procurement.vendors.edit', <VendorForm />, 'edit') },
+          {
+            path: 'vendors/new',
+            element: withPerm('procurement.vendors.edit', <VendorForm />, 'edit'),
+          },
           { path: 'vendors/:id', element: withPerm('procurement.vendors.view', <VendorDetail />) },
-          { path: 'vendors/:id/edit', element: withPerm('procurement.vendors.edit', <VendorForm />, 'edit') },
-          { path: 'purchase-orders/approval-queue', element: withPerm('procurement.po.approve', <ApprovalQueue />, 'approve') },
+          {
+            path: 'vendors/:id/edit',
+            element: withPerm('procurement.vendors.edit', <VendorForm />, 'edit'),
+          },
+          {
+            path: 'purchase-orders/approval-queue',
+            element: withPerm('procurement.po.approve', <ApprovalQueue />, 'approve'),
+          },
           { path: 'queue', element: withPerm('procurement.po.view', <MyPOQueue />) },
           // Legacy redirect — PO Positions moved to Settings
           { path: 'positions', element: <Navigate to="/settings/users/po-positions" replace /> },
@@ -360,17 +505,32 @@ export const router = createBrowserRouter([
         element: withPerm('inventory.products.view', <InventoryLayout />),
         children: [
           { index: true, element: <Navigate to="/inventory/balances" replace /> },
-          { path: 'balances', element: withPerm('inventory.stock_moves.view', <StockBalancesPage />) },
+          {
+            path: 'balances',
+            element: withPerm('inventory.stock_moves.view', <StockBalancesPage />),
+          },
           { path: 'products', element: withPerm('inventory.products.view', <ProductsPage />) },
-          { path: 'products/new', element: withPerm('inventory.products.edit', <ProductForm />, 'edit') },
+          {
+            path: 'products/new',
+            element: withPerm('inventory.products.edit', <ProductForm />, 'edit'),
+          },
           { path: 'products/:id', element: withPerm('inventory.products.view', <ProductDetail />) },
-          { path: 'products/:id/edit', element: withPerm('inventory.products.edit', <ProductForm />, 'edit') },
+          {
+            path: 'products/:id/edit',
+            element: withPerm('inventory.products.edit', <ProductForm />, 'edit'),
+          },
           { path: 'locations', element: withPerm('inventory.locations.view', <LocationsPage />) },
           { path: 'moves', element: withPerm('inventory.stock_moves.view', <StockMovesPage />) },
-          { path: 'moves/transfer', element: withPerm('inventory.stock_moves.edit', <TransferForm />, 'edit') },
+          {
+            path: 'moves/transfer',
+            element: withPerm('inventory.stock_moves.edit', <TransferForm />, 'edit'),
+          },
           { path: 'lots', element: withPerm('inventory.lots.view', <LotsPage />) },
           { path: 'lots/:id', element: withPerm('inventory.lots.view', <LotTraceability />) },
-          { path: 'adjust', element: withPerm('inventory.stock_moves.edit', <StockAdjustmentForm />, 'edit') },
+          {
+            path: 'adjust',
+            element: withPerm('inventory.stock_moves.edit', <StockAdjustmentForm />, 'edit'),
+          },
           { path: 'store-out', element: withPerm('inventory.stock_moves.view', <StoreOutPage />) },
         ],
       },
@@ -388,7 +548,10 @@ export const router = createBrowserRouter([
           { path: 'contracts', element: withPerm('projects.view', <ContractsPage />) },
           { path: 'contracts/new', element: withPerm('projects.edit', <ContractForm />, 'edit') },
           { path: 'contracts/:id', element: withPerm('projects.view', <ContractDetail />) },
-          { path: 'contracts/:id/edit', element: withPerm('projects.edit', <ContractForm />, 'edit') },
+          {
+            path: 'contracts/:id/edit',
+            element: withPerm('projects.edit', <ContractForm />, 'edit'),
+          },
           { path: 'invoices', element: withPerm('projects.invoices.view', <InvoicesPage />) },
           { path: 'invoices/:id', element: withPerm('projects.invoices.view', <InvoiceDetail />) },
         ],
@@ -400,16 +563,37 @@ export const router = createBrowserRouter([
         element: withPerm('manufacturing.orders.view', <ManufacturingLayout />),
         children: [
           { index: true, element: <Navigate to="/manufacturing/orders" replace /> },
-          { path: 'work-centers', element: withPerm('manufacturing.work_centers.view', <WorkCentersPage />) },
+          {
+            path: 'work-centers',
+            element: withPerm('manufacturing.work_centers.view', <WorkCentersPage />),
+          },
           { path: 'boms', element: withPerm('manufacturing.boms.view', <BOMsPage />) },
           { path: 'boms/new', element: withPerm('manufacturing.boms.edit', <BOMForm />, 'edit') },
           { path: 'boms/:id', element: withPerm('manufacturing.boms.view', <BOMDetail />) },
-          { path: 'boms/:id/edit', element: withPerm('manufacturing.boms.edit', <BOMForm />, 'edit') },
-          { path: 'orders', element: withPerm('manufacturing.orders.view', <ManufacturingOrdersPage />) },
-          { path: 'orders/new', element: withPerm('manufacturing.orders.edit', <ManufacturingOrderForm />, 'edit') },
-          { path: 'orders/:id', element: withPerm('manufacturing.orders.view', <ManufacturingOrderDetail />) },
-          { path: 'requests', element: withPerm('manufacturing.orders.view', <ManufacturingRequestsPage />) },
-          { path: 'requests/:id', element: withPerm('manufacturing.orders.view', <ManufacturingRequestDetail />) },
+          {
+            path: 'boms/:id/edit',
+            element: withPerm('manufacturing.boms.edit', <BOMForm />, 'edit'),
+          },
+          {
+            path: 'orders',
+            element: withPerm('manufacturing.orders.view', <ManufacturingOrdersPage />),
+          },
+          {
+            path: 'orders/new',
+            element: withPerm('manufacturing.orders.edit', <ManufacturingOrderForm />, 'edit'),
+          },
+          {
+            path: 'orders/:id',
+            element: withPerm('manufacturing.orders.view', <ManufacturingOrderDetail />),
+          },
+          {
+            path: 'requests',
+            element: withPerm('manufacturing.orders.view', <ManufacturingRequestsPage />),
+          },
+          {
+            path: 'requests/:id',
+            element: withPerm('manufacturing.orders.view', <ManufacturingRequestDetail />),
+          },
         ],
       },
 
@@ -423,13 +607,31 @@ export const router = createBrowserRouter([
           { path: 'assets', element: withPerm('rental.assets.view', <AssetsPage />) },
           { path: 'assets/new', element: withPerm('rental.assets.edit', <AssetForm />, 'edit') },
           { path: 'assets/:id', element: withPerm('rental.assets.view', <AssetDetail />) },
-          { path: 'assets/:id/edit', element: withPerm('rental.assets.edit', <AssetForm />, 'edit') },
-          { path: 'contracts', element: withPerm('rental.contracts.view', <RentalContractsPage />) },
-          { path: 'contracts/new', element: withPerm('rental.contracts.edit', <RentalContractForm />, 'edit') },
-          { path: 'contracts/:id', element: withPerm('rental.contracts.view', <RentalContractDetail />) },
-          { path: 'contracts/:id/edit', element: withPerm('rental.contracts.edit', <RentalContractForm />, 'edit') },
+          {
+            path: 'assets/:id/edit',
+            element: withPerm('rental.assets.edit', <AssetForm />, 'edit'),
+          },
+          {
+            path: 'contracts',
+            element: withPerm('rental.contracts.view', <RentalContractsPage />),
+          },
+          {
+            path: 'contracts/new',
+            element: withPerm('rental.contracts.edit', <RentalContractForm />, 'edit'),
+          },
+          {
+            path: 'contracts/:id',
+            element: withPerm('rental.contracts.view', <RentalContractDetail />),
+          },
+          {
+            path: 'contracts/:id/edit',
+            element: withPerm('rental.contracts.edit', <RentalContractForm />, 'edit'),
+          },
           { path: 'invoices', element: withPerm('projects.invoices.view', <RentalInvoicesPage />) },
-          { path: 'maintenance', element: withPerm('rental.maintenance.view', <MaintenancePage />) },
+          {
+            path: 'maintenance',
+            element: withPerm('rental.maintenance.view', <MaintenancePage />),
+          },
         ],
       },
 
@@ -440,10 +642,19 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/hr/employees" replace /> },
           { path: 'employees', element: withPerm('hr.employees.view', <EmployeesPage />) },
-          { path: 'employees/new', element: withPerm('hr.employees.edit', <EmployeeForm />, 'edit') },
+          {
+            path: 'employees/new',
+            element: withPerm('hr.employees.edit', <EmployeeForm />, 'edit'),
+          },
           { path: 'employees/:id', element: withPerm('hr.employees.view', <EmployeeDetail />) },
-          { path: 'employees/:id/edit', element: withPerm('hr.employees.edit', <EmployeeForm />, 'edit') },
-          { path: 'employees/:id/salary', element: withPerm('hr.salary.view', <SalaryConfigForm />) },
+          {
+            path: 'employees/:id/edit',
+            element: withPerm('hr.employees.edit', <EmployeeForm />, 'edit'),
+          },
+          {
+            path: 'employees/:id/salary',
+            element: withPerm('hr.salary.view', <SalaryConfigForm />),
+          },
           { path: 'departments', element: withPerm('hr.departments.view', <DepartmentsPage />) },
           { path: 'locations', element: withPerm('hr.departments.view', <WorkLocationsPage />) },
           { path: 'shifts', element: withPerm('hr.departments.view', <ShiftConfigsPage />) },
@@ -477,18 +688,51 @@ export const router = createBrowserRouter([
         element: withPerm('reporting.executive.view', <ReportingLayout />),
         children: [
           { index: true, element: <Navigate to="/reporting/executive" replace /> },
-          { path: 'executive', element: withPerm('reporting.executive.view', <ExecutiveDashboard />) },
-          { path: 'financial/cash-flow', element: withPerm('reporting.financial.view', <CashFlowStatement />) },
-          { path: 'consolidated/pl', element: withPerm('reporting.consolidated.view', <ConsolidatedPL />) },
-          { path: 'consolidated/bs', element: withPerm('reporting.consolidated.view', <ConsolidatedBS />) },
-          { path: 'consolidated/trial-balance', element: withPerm('reporting.consolidated.view', <ConsolidatedTrialBalance />) },
-          { path: 'projects/profitability', element: withPerm('reporting.operational.view', <ProjectProfitabilityReport />) },
-          { path: 'payroll/costs', element: withPerm('reporting.operational.view', <PayrollCostReport />) },
-          { path: 'payroll/attendance', element: withPerm('reporting.operational.view', <AttendanceSummaryReport />) },
-          { path: 'inventory/valuation', element: withPerm('reporting.operational.view', <InventoryValuationReport />) },
+          {
+            path: 'executive',
+            element: withPerm('reporting.executive.view', <ExecutiveDashboard />),
+          },
+          {
+            path: 'financial/cash-flow',
+            element: withPerm('reporting.financial.view', <CashFlowStatement />),
+          },
+          {
+            path: 'consolidated/pl',
+            element: withPerm('reporting.consolidated.view', <ConsolidatedPL />),
+          },
+          {
+            path: 'consolidated/bs',
+            element: withPerm('reporting.consolidated.view', <ConsolidatedBS />),
+          },
+          {
+            path: 'consolidated/trial-balance',
+            element: withPerm('reporting.consolidated.view', <ConsolidatedTrialBalance />),
+          },
+          {
+            path: 'projects/profitability',
+            element: withPerm('reporting.operational.view', <ProjectProfitabilityReport />),
+          },
+          {
+            path: 'payroll/costs',
+            element: withPerm('reporting.operational.view', <PayrollCostReport />),
+          },
+          {
+            path: 'payroll/attendance',
+            element: withPerm('reporting.operational.view', <AttendanceSummaryReport />),
+          },
+          {
+            path: 'inventory/valuation',
+            element: withPerm('reporting.operational.view', <InventoryValuationReport />),
+          },
           { path: 'compliance/wht', element: withPerm('reporting.compliance.view', <WHTReport />) },
-          { path: 'compliance/fx-exposure', element: withPerm('reporting.compliance.view', <FXExposureReport />) },
-          { path: 'compliance/payroll-tax', element: withPerm('reporting.compliance.view', <PayrollTaxReport />) },
+          {
+            path: 'compliance/fx-exposure',
+            element: withPerm('reporting.compliance.view', <FXExposureReport />),
+          },
+          {
+            path: 'compliance/payroll-tax',
+            element: withPerm('reporting.compliance.view', <PayrollTaxReport />),
+          },
         ],
       },
 
@@ -498,12 +742,30 @@ export const router = createBrowserRouter([
         element: withPerm('interco.transactions.view', <IntercoLayout />),
         children: [
           { index: true, element: <Navigate to="/interco/transactions" replace /> },
-          { path: 'transactions', element: withPerm('interco.transactions.view', <IntercoTransactionsPage />) },
-          { path: 'transactions/:id', element: withPerm('interco.transactions.view', <IntercoTransactionDetail />) },
-          { path: 'stock-transfers', element: withPerm('interco.stock_transfers.view', <IntercoStockTransfersPage />) },
-          { path: 'stock-transfers/new', element: withPerm('interco.stock_transfers.view', <IntercoStockTransferForm />) },
-          { path: 'stock-transfers/:id', element: withPerm('interco.stock_transfers.view', <IntercoStockTransferDetail />) },
-          { path: 'pricing', element: withPerm('interco.transactions.view', <TransferPricingPage />) },
+          {
+            path: 'transactions',
+            element: withPerm('interco.transactions.view', <IntercoTransactionsPage />),
+          },
+          {
+            path: 'transactions/:id',
+            element: withPerm('interco.transactions.view', <IntercoTransactionDetail />),
+          },
+          {
+            path: 'stock-transfers',
+            element: withPerm('interco.stock_transfers.view', <IntercoStockTransfersPage />),
+          },
+          {
+            path: 'stock-transfers/new',
+            element: withPerm('interco.stock_transfers.view', <IntercoStockTransferForm />),
+          },
+          {
+            path: 'stock-transfers/:id',
+            element: withPerm('interco.stock_transfers.view', <IntercoStockTransferDetail />),
+          },
+          {
+            path: 'pricing',
+            element: withPerm('interco.transactions.view', <TransferPricingPage />),
+          },
         ],
       },
 
@@ -524,33 +786,81 @@ export const router = createBrowserRouter([
 
           // Company (company_admin + system_admin)
           { path: 'company', element: <Navigate to="/settings/company/general" replace /> },
-          { path: 'company/general', element: withPerm('admin.companies.view', <CompanySettingsPage />) },
-          { path: 'company/bank-accounts', element: withPerm('admin.companies.admin', <BankAccountsPage />, 'admin') },
-          { path: 'company/tax', element: withPerm('admin.companies.view', <CompanySettingsPage />) },
-          { path: 'company/accounting', element: withPerm('admin.companies.view', <AccountingSettingsPage />) },
-          { path: 'company/integrations', element: withPerm('admin.companies.admin', <IntegrationsPage />, 'admin') },
-          { path: 'company/numbering', element: withPerm('admin.companies.admin', <DocumentNumberingPage />, 'admin') },
-          { path: 'company/lifecycle', element: withPerm('admin.companies.admin', <LifecycleSettingsPage />, 'admin') },
+          {
+            path: 'company/general',
+            element: withPerm('admin.companies.view', <CompanySettingsPage />),
+          },
+          {
+            path: 'company/bank-accounts',
+            element: withPerm('admin.companies.admin', <BankAccountsPage />, 'admin'),
+          },
+          {
+            path: 'company/tax',
+            element: withPerm('admin.companies.view', <CompanySettingsPage />),
+          },
+          {
+            path: 'company/accounting',
+            element: withPerm('admin.companies.view', <AccountingSettingsPage />),
+          },
+          {
+            path: 'company/integrations',
+            element: withPerm('admin.companies.admin', <IntegrationsPage />, 'admin'),
+          },
+          {
+            path: 'company/numbering',
+            element: withPerm('admin.companies.admin', <DocumentNumberingPage />, 'admin'),
+          },
+          {
+            path: 'company/lifecycle',
+            element: withPerm('admin.companies.admin', <LifecycleSettingsPage />, 'admin'),
+          },
 
           // Users & Roles (system_admin)
           { path: 'users', element: withPerm('admin.users.view', <UsersPage />) },
-          { path: 'users/po-positions', element: withPerm('procurement.positions.view', <POPositionsPage />) },
-          { path: 'users/role-templates', element: withPerm('admin.roles.admin', <RoleTemplatesPage />, 'admin') },
+          {
+            path: 'users/po-positions',
+            element: withPerm('procurement.positions.view', <POPositionsPage />),
+          },
+          {
+            path: 'users/role-templates',
+            element: withPerm('admin.roles.admin', <RoleTemplatesPage />, 'admin'),
+          },
           { path: 'users/invites', element: withPerm('admin.users.view', <InviteHistoryPage />) },
           { path: 'users/:id', element: withPerm('admin.users.view', <UserDetail />) },
 
           // System (system_admin)
-          { path: 'system/companies', element: withPerm('admin.companies.view', <CompaniesPage />) },
-          { path: 'system/companies/:id', element: withPerm('admin.companies.view', <CompanyDetail />) },
+          {
+            path: 'system/companies',
+            element: withPerm('admin.companies.view', <CompaniesPage />),
+          },
+          {
+            path: 'system/companies/:id',
+            element: withPerm('admin.companies.view', <CompanyDetail />),
+          },
           { path: 'system/health', element: withPerm('admin.system.view', <SystemHealthPage />) },
           { path: 'system/outbox', element: withPerm('admin.system.view', <OutboxMonitorPage />) },
           { path: 'system/dlq', element: withPerm('admin.system.view', <DLQPage />) },
-          { path: 'system/events', element: withPerm('admin.system.admin', <EventConfigsPage />, 'admin') },
-          { path: 'system/notification-routing', element: withPerm('admin.system.admin', <NotificationRoutingPage />, 'admin') },
-          { path: 'system/job-history', element: withPerm('admin.system.view', <JobHistoryPage />) },
+          {
+            path: 'system/events',
+            element: withPerm('admin.system.admin', <EventConfigsPage />, 'admin'),
+          },
+          {
+            path: 'system/notification-routing',
+            element: withPerm('admin.system.admin', <NotificationRoutingPage />, 'admin'),
+          },
+          {
+            path: 'system/job-history',
+            element: withPerm('admin.system.view', <JobHistoryPage />),
+          },
           { path: 'system/audit', element: withPerm('admin.system.view', <AuditLogPage />) },
-          { path: 'system/inventory-import', element: withPerm('admin.system.admin', <InventoryImportPage />, 'admin') },
-          { path: 'system/workflow-import', element: withPerm('admin.system.admin', <WorkflowImportPage />, 'admin') },
+          {
+            path: 'system/inventory-import',
+            element: withPerm('admin.system.admin', <InventoryImportPage />, 'admin'),
+          },
+          {
+            path: 'system/workflow-import',
+            element: withPerm('admin.system.admin', <WorkflowImportPage />, 'admin'),
+          },
         ],
       },
 
@@ -568,8 +878,14 @@ export const router = createBrowserRouter([
           { path: 'dlq', element: <Navigate to="/settings/system/dlq" replace /> },
           { path: 'event-configs', element: <Navigate to="/settings/system/events" replace /> },
           { path: 'audit', element: <Navigate to="/settings/system/audit" replace /> },
-          { path: 'bank-accounts', element: <Navigate to="/settings/company/bank-accounts" replace /> },
-          { path: 'role-templates', element: <Navigate to="/settings/users/role-templates" replace /> },
+          {
+            path: 'bank-accounts',
+            element: <Navigate to="/settings/company/bank-accounts" replace />,
+          },
+          {
+            path: 'role-templates',
+            element: <Navigate to="/settings/users/role-templates" replace />,
+          },
         ],
       },
 

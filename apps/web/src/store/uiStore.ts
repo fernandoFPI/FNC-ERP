@@ -11,14 +11,19 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   sidebarCollapsed: localStorage.getItem('fnc-sidebar-collapsed') === 'true',
-  toggleSidebar: () =>
+  toggleSidebar: () => {
     set((s) => {
       const next = !s.sidebarCollapsed
       localStorage.setItem('fnc-sidebar-collapsed', String(next))
       return { sidebarCollapsed: next }
-    }),
+    })
+  },
   accountTypeFilter: '',
-  setAccountTypeFilter: (type) => set({ accountTypeFilter: type }),
+  setAccountTypeFilter: (type) => {
+    set({ accountTypeFilter: type })
+  },
   notificationsOpen: false,
-  setNotificationsOpen: (open) => set({ notificationsOpen: open }),
+  setNotificationsOpen: (open) => {
+    set({ notificationsOpen: open })
+  },
 }))

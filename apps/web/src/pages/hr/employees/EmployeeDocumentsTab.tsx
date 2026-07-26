@@ -1,6 +1,11 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
-import { ENTITY_ATTACHMENTS_QUERY, ATTACH_FILE, DETACH_FILE, FILE_DOWNLOAD_URL_QUERY } from '../../../graphql/hr'
+import {
+  ENTITY_ATTACHMENTS_QUERY,
+  ATTACH_FILE,
+  DETACH_FILE,
+  FILE_DOWNLOAD_URL_QUERY,
+} from '../../../graphql/hr'
 import { REQUEST_UPLOAD_URL } from '../../../graphql/procurement'
 import { useTheme } from '../../../theme/ThemeContext'
 import { Card } from '../../../components/ui/Card'
@@ -115,7 +120,9 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
         },
       })
       if (!proxyRes.ok) {
-        const errJson = await proxyRes.json().catch(() => ({})) as { error?: { message?: string } }
+        const errJson = (await proxyRes.json().catch(() => ({}))) as {
+          error?: { message?: string }
+        }
         throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
       }
 
@@ -129,7 +136,8 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
       })
 
       addToast({ type: 'success', message: 'Document uploaded' })
-      setUploadModalOpen(false); setPendingFile(null)
+      setUploadModalOpen(false)
+      setPendingFile(null)
       refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
@@ -144,8 +152,12 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
       const url = dlData?.fileDownloadUrl?.downloadUrl
       if (!url) throw new Error('No download URL')
       const a = document.createElement('a')
-      a.href = url; a.download = filename; a.target = '_blank'
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      a.href = url
+      a.download = filename
+      a.target = '_blank'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -154,9 +166,12 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
   async function handleDetach() {
     if (!deleteTarget) return
     try {
-      await detachFile({ variables: { attachmentId: deleteTarget.id, entityType: 'employee', entityId: employeeId } })
+      await detachFile({
+        variables: { attachmentId: deleteTarget.id, entityType: 'employee', entityId: employeeId },
+      })
       addToast({ type: 'success', message: 'Document removed' })
-      setDeleteTarget(null); refetch()
+      setDeleteTarget(null)
+      refetch()
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     }
@@ -164,20 +179,53 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={handleFileChosen} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={handleFileChosen}
+      />
 
       <Card>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: `1px solid ${theme.border}` }}>
-          <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>Documents ({attachments.length})</span>
-          <Button variant="primary" size="sm" onClick={openFilePicker}>Upload document</Button>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '14px 16px',
+            borderBottom: `1px solid ${theme.border}`,
+          }}
+        >
+          <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
+            Documents ({attachments.length})
+          </span>
+          <Button variant="primary" size="sm" onClick={openFilePicker}>
+            Upload document
+          </Button>
         </div>
 
         {loading && (
-          <div style={{ padding: '32px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>Loading…</div>
+          <div
+            style={{
+              padding: '32px',
+              textAlign: 'center',
+              color: theme.textMuted,
+              fontSize: '13px',
+            }}
+          >
+            Loading…
+          </div>
         )}
 
         {!loading && attachments.length === 0 && (
-          <div style={{ padding: '40px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+          <div
+            style={{
+              padding: '40px',
+              textAlign: 'center',
+              color: theme.textMuted,
+              fontSize: '13px',
+            }}
+          >
             No documents uploaded yet
           </div>
         )}
@@ -185,27 +233,76 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
         {!loading && attachments.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {attachments.map((att, i) => (
-              <div key={att.id} style={{
-                display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
-                borderBottom: i < attachments.length - 1 ? `1px solid ${theme.border}` : undefined,
-              }}>
-                <span style={{ fontSize: '22px', flexShrink: 0 }}>{fileIcon(att.file.mimeType)}</span>
+              <div
+                key={att.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px 16px',
+                  borderBottom:
+                    i < attachments.length - 1 ? `1px solid ${theme.border}` : undefined,
+                }}
+              >
+                <span style={{ fontSize: '22px', flexShrink: 0 }}>
+                  {fileIcon(att.file.mimeType)}
+                </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div
+                    style={{
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      color: theme.textPrimary,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {att.label || att.file.originalFilename}
                   </div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      marginTop: '2px',
+                      display: 'flex',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
                     <span>{att.file.originalFilename}</span>
                     <span>·</span>
                     <span>{formatBytes(att.file.sizeBytes)}</span>
                     <span>·</span>
-                    <Badge variant="neutral" size="sm">{att.file.category}</Badge>
-                    {att.createdAt && <><span>·</span><span>{att.createdAt.slice(0, 10)}</span></>}
+                    <Badge variant="neutral" size="sm">
+                      {att.file.category}
+                    </Badge>
+                    {att.createdAt && (
+                      <>
+                        <span>·</span>
+                        <span>{att.createdAt.slice(0, 10)}</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                  <Button variant="ghost" size="sm" onClick={() => handleDownload(att.file.id, att.file.originalFilename)}>Download</Button>
-                  <Button variant="ghost" size="sm" style={{ color: theme.danger }} onClick={() => setDeleteTarget(att)}>Remove</Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDownload(att.file.id, att.file.originalFilename)}
+                  >
+                    Download
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    style={{ color: theme.danger }}
+                    onClick={() => {
+                      setDeleteTarget(att)
+                    }}
+                  >
+                    Remove
+                  </Button>
                 </div>
               </div>
             ))}
@@ -214,31 +311,95 @@ export function EmployeeDocumentsTab({ employeeId }: { employeeId: string }) {
       </Card>
 
       {/* Upload modal */}
-      <Modal open={uploadModalOpen} onClose={() => { setUploadModalOpen(false); setPendingFile(null) }} title="Upload document" size="sm"
-        footer={<><Button variant="secondary" onClick={() => { setUploadModalOpen(false); setPendingFile(null) }}>Cancel</Button><Button variant="primary" onClick={handleUpload} loading={uploading}>Upload</Button></>}>
+      <Modal
+        open={uploadModalOpen}
+        onClose={() => {
+          setUploadModalOpen(false)
+          setPendingFile(null)
+        }}
+        title="Upload document"
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setUploadModalOpen(false)
+                setPendingFile(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleUpload} loading={uploading}>
+              Upload
+            </Button>
+          </>
+        }
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {pendingFile && (
-            <div style={{ background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '12px', fontSize: '13px', color: theme.textSecondary }}>
-              {fileIcon(pendingFile.type)} <strong>{pendingFile.name}</strong> — {formatBytes(pendingFile.size)}
+            <div
+              style={{
+                background: theme.bgSurface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                padding: '12px',
+                fontSize: '13px',
+                color: theme.textSecondary,
+              }}
+            >
+              {fileIcon(pendingFile.type)} <strong>{pendingFile.name}</strong> —{' '}
+              {formatBytes(pendingFile.size)}
             </div>
           )}
           <div>
             <SearchableSelect
               label="Category"
               value={uploadCategory}
-              onChange={(v) => setUploadCategory(v)}
+              onChange={(v) => {
+                setUploadCategory(v)
+              }}
               options={CATEGORY_OPTIONS}
             />
           </div>
-          <Input label="Label (optional)" value={uploadLabel} onChange={(e) => setUploadLabel(e.target.value)} placeholder="e.g. Employment contract 2025" />
+          <Input
+            label="Label (optional)"
+            value={uploadLabel}
+            onChange={(e) => {
+              setUploadLabel(e.target.value)
+            }}
+            placeholder="e.g. Employment contract 2025"
+          />
         </div>
       </Modal>
 
       {/* Remove confirm */}
-      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Remove document" size="sm"
-        footer={<><Button variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</Button><Button variant="danger" onClick={handleDetach} loading={detaching}>Remove</Button></>}>
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => {
+          setDeleteTarget(null)
+        }}
+        title="Remove document"
+        size="sm"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeleteTarget(null)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleDetach} loading={detaching}>
+              Remove
+            </Button>
+          </>
+        }
+      >
         <p style={{ margin: 0, color: theme.textPrimary, fontSize: '13px' }}>
-          Remove <strong>{deleteTarget?.label || deleteTarget?.file.originalFilename}</strong> from this employee's record? The file will be detached but not permanently deleted.
+          Remove <strong>{deleteTarget?.label || deleteTarget?.file.originalFilename}</strong> from
+          this employee's record? The file will be detached but not permanently deleted.
         </p>
       </Modal>
     </div>

@@ -28,15 +28,23 @@ export default function NotificationRoutingPage() {
     setLoading(true)
     api
       .get<{ routes: RouteEntry[] }>('/admin/notification-routing')
-      .then((r) => setRoutes(r.data.routes))
-      .catch(() => addToast({ type: 'error', message: 'Failed to load notification routing' }))
-      .finally(() => setLoading(false))
+      .then((r) => {
+        setRoutes(r.data.routes)
+      })
+      .catch(() => {
+        addToast({ type: 'error', message: 'Failed to load notification routing' })
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [addToast])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   function getEnabled(key: string, fallback: boolean): boolean {
-    return edits[key] !== undefined ? edits[key]! : fallback
+    return edits[key] !== undefined ? edits[key] : fallback
   }
 
   function toggle(key: string, current: boolean) {
@@ -53,7 +61,7 @@ export default function NotificationRoutingPage() {
       await api.put('/admin/notification-routing', { updates })
       addToast({ type: 'success', message: 'Notification routing saved' })
       setEdits({})
-      void load()
+      load()
     } catch {
       addToast({ type: 'error', message: 'Failed to save routing config' })
     } finally {
@@ -89,7 +97,9 @@ export default function NotificationRoutingPage() {
                       type="button"
                       role="switch"
                       aria-checked={enabled}
-                      onClick={() => toggle(route.key, enabled)}
+                      onClick={() => {
+                        toggle(route.key, enabled)
+                      }}
                       style={{
                         flexShrink: 0,
                         width: '40px',
@@ -102,28 +112,38 @@ export default function NotificationRoutingPage() {
                         transition: 'background 0.2s',
                       }}
                     >
-                      <span style={{
-                        position: 'absolute',
-                        top: '3px',
-                        left: enabled ? '20px' : '3px',
-                        width: '16px',
-                        height: '16px',
-                        borderRadius: '50%',
-                        background: '#fff',
-                        transition: 'left 0.2s',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                      }} />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '3px',
+                          left: enabled ? '20px' : '3px',
+                          width: '16px',
+                          height: '16px',
+                          borderRadius: '50%',
+                          background: '#fff',
+                          transition: 'left 0.2s',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        }}
+                      />
                     </button>
 
                     {/* Label + description */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
+                        <span
+                          style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}
+                        >
                           {route.label}
                         </span>
-                        {changed && <Badge variant="warning" size="sm">Unsaved</Badge>}
+                        {changed && (
+                          <Badge variant="warning" size="sm">
+                            Unsaved
+                          </Badge>
+                        )}
                         {!route.configured && !changed && (
-                          <Badge variant="neutral" size="sm">Default on</Badge>
+                          <Badge variant="neutral" size="sm">
+                            Default on
+                          </Badge>
                         )}
                       </div>
                       <p style={{ margin: '2px 0 0', fontSize: '12px', color: theme.textMuted }}>
@@ -132,18 +152,20 @@ export default function NotificationRoutingPage() {
                     </div>
 
                     {/* Status pill */}
-                    <span style={{
-                      flexShrink: 0,
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '3px 10px',
-                      borderRadius: '12px',
-                      background: enabled ? theme.successBg : theme.bgSurface,
-                      color: enabled ? theme.success : theme.textMuted,
-                      border: `1px solid ${enabled ? theme.successBorder : theme.border}`,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                    }}>
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 10px',
+                        borderRadius: '12px',
+                        background: enabled ? theme.successBg : theme.bgSurface,
+                        color: enabled ? theme.success : theme.textMuted,
+                        border: `1px solid ${enabled ? theme.successBorder : theme.border}`,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
                       {enabled ? 'Email on' : 'Email off'}
                     </span>
                   </div>
@@ -152,9 +174,18 @@ export default function NotificationRoutingPage() {
             })}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+          <div
+            style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}
+          >
             {hasChanges && (
-              <Button variant="ghost" onClick={() => setEdits({})}>Discard changes</Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEdits({})
+                }}
+              >
+                Discard changes
+              </Button>
             )}
             <Button
               variant="primary"
@@ -166,19 +197,21 @@ export default function NotificationRoutingPage() {
             </Button>
           </div>
 
-          <div style={{
-            marginTop: '20px',
-            padding: '12px 16px',
-            background: theme.bgSurface,
-            border: `1px solid ${theme.border}`,
-            borderRadius: '10px',
-            fontSize: '12px',
-            color: theme.textMuted,
-          }}>
-            <strong>Security emails</strong> (password reset, new device login, MFA setup, user invitations)
-            are always sent and cannot be disabled here.
-            Disabling an email here only suppresses the outgoing message — the event is still
-            processed and in-app notifications are still created.
+          <div
+            style={{
+              marginTop: '20px',
+              padding: '12px 16px',
+              background: theme.bgSurface,
+              border: `1px solid ${theme.border}`,
+              borderRadius: '10px',
+              fontSize: '12px',
+              color: theme.textMuted,
+            }}
+          >
+            <strong>Security emails</strong> (password reset, new device login, MFA setup, user
+            invitations) are always sent and cannot be disabled here. Disabling an email here only
+            suppresses the outgoing message — the event is still processed and in-app notifications
+            are still created.
           </div>
         </>
       )}

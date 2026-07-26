@@ -44,8 +44,11 @@ export default function WHTReport() {
   })
 
   const d = data?.whtReport
-  const rows = (d?.rows ?? []).filter(r =>
-    !search || r.vendorName.toLowerCase().includes(search.toLowerCase()) || r.taxId.includes(search)
+  const rows = (d?.rows ?? []).filter(
+    (r) =>
+      !search ||
+      r.vendorName.toLowerCase().includes(search.toLowerCase()) ||
+      r.taxId.includes(search),
   )
 
   return (
@@ -54,7 +57,15 @@ export default function WHTReport() {
         title="Withholding Tax Report"
         subtitle="WHT deductions by vendor and period"
         actions={
-          <Button variant="ghost" size="sm" onClick={() => { refetch() }}>Refresh</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              refetch()
+            }}
+          >
+            Refresh
+          </Button>
         }
       />
 
@@ -71,17 +82,32 @@ export default function WHTReport() {
       </Card>
 
       {d && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px',
+          }}
+        >
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Total WHT</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Total WHT
+            </p>
             <AmountDisplay amount={d.totalWHT} currency="IQD" size="md" />
           </Card>
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Vendor Count</p>
-            <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>{d.vendorCount}</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Vendor Count
+            </p>
+            <p style={{ fontSize: '22px', fontWeight: 500, color: theme.textPrimary }}>
+              {d.vendorCount}
+            </p>
           </Card>
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Payments Subject to WHT</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Payments Subject to WHT
+            </p>
             <AmountDisplay amount={d.totalPaymentsSubjectToWHT} currency="IQD" size="md" />
           </Card>
         </div>
@@ -90,8 +116,12 @@ export default function WHTReport() {
       <Card padding="none">
         {loading ? (
           <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map(i => (
-              <div key={i} className="skeleton" style={{ height: '40px', borderRadius: '6px', marginBottom: '8px' }} />
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="skeleton"
+                style={{ height: '40px', borderRadius: '6px', marginBottom: '8px' }}
+              />
             ))}
           </div>
         ) : rows.length ? (
@@ -99,36 +129,86 @@ export default function WHTReport() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ background: theme.bgSurface }}>
-                  {['Vendor', 'Tax ID', 'Type', 'Rate', 'Payment', 'WHT Amount', 'Period'].map((h, i) => (
-                    <th key={i} style={{ padding: '10px 14px', textAlign: i >= 3 && i <= 5 ? 'right' : 'left', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}`, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
+                  {['Vendor', 'Tax ID', 'Type', 'Rate', 'Payment', 'WHT Amount', 'Period'].map(
+                    (h, i) => (
+                      <th
+                        key={i}
+                        style={{
+                          padding: '10px 14px',
+                          textAlign: i >= 3 && i <= 5 ? 'right' : 'left',
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          color: theme.textMuted,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                          borderBottom: `1px solid ${theme.border}`,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.tableRowHover }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                    <td style={{ padding: '12px 14px', color: theme.textPrimary, fontWeight: 500 }}>{row.vendorName}</td>
-                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>{row.taxId}</td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant="info" size="sm">{row.whtType}</Badge>
+                  <tr
+                    key={i}
+                    style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.tableRowHover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    <td style={{ padding: '12px 14px', color: theme.textPrimary, fontWeight: 500 }}>
+                      {row.vendorName}
                     </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right', color: theme.textSecondary }}>{row.rate}%</td>
+                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
+                      {row.taxId}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <Badge variant="info" size="sm">
+                        {row.whtType}
+                      </Badge>
+                    </td>
+                    <td
+                      style={{
+                        padding: '12px 14px',
+                        textAlign: 'right',
+                        color: theme.textSecondary,
+                      }}
+                    >
+                      {row.rate}%
+                    </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                       <AmountDisplay amount={row.paymentAmount} currency="IQD" size="sm" />
                     </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 500, color: theme.warning }}>
+                    <td
+                      style={{
+                        padding: '12px 14px',
+                        textAlign: 'right',
+                        fontWeight: 500,
+                        color: theme.warning,
+                      }}
+                    >
                       <AmountDisplay amount={row.whtAmount} currency="IQD" size="sm" />
                     </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{row.period}</td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
+                      {row.period}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <EmptyState title="No WHT data" message="Adjust the date range to load withholding tax records." />
+          <EmptyState
+            title="No WHT data"
+            message="Adjust the date range to load withholding tax records."
+          />
         )}
       </Card>
     </div>

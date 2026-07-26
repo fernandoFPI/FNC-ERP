@@ -32,12 +32,19 @@ export function CurrencyInput({
   const [focused, setFocused] = useState(false)
 
   const displayValue = focused
-    ? value === '' ? '' : String(value)
-    : value === '' ? '' : formatWithCommas(value as number)
+    ? value === ''
+      ? ''
+      : String(value)
+    : value === ''
+      ? ''
+      : formatWithCommas(value)
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value.replace(/,/g, '')
-    if (raw === '') { onChange(''); return }
+    if (raw === '') {
+      onChange('')
+      return
+    }
     if (!/^\d*\.?\d{0,4}$/.test(raw)) return
     if (raw.length > 20) return
     const n = parseFloat(raw)
@@ -47,11 +54,13 @@ export function CurrencyInput({
   return (
     <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
       {label && (
-        <label style={{
-          fontSize: isPhone ? '13px' : '12px',
-          fontWeight: 500,
-          color: error ? theme.danger : theme.textSecondary,
-        }}>
+        <label
+          style={{
+            fontSize: isPhone ? '13px' : '12px',
+            fontWeight: 500,
+            color: error ? theme.danger : theme.textSecondary,
+          }}
+        >
           {label}
         </label>
       )}
@@ -64,8 +73,14 @@ export function CurrencyInput({
           disabled={disabled}
           inputMode="decimal"
           pattern="[0-9]*\.?[0-9]*"
-          onFocus={(e) => { setFocused(true); e.currentTarget.style.borderColor = theme.accent }}
-          onBlur={(e) => { setFocused(false); e.currentTarget.style.borderColor = error ? theme.dangerBorder : theme.borderInput }}
+          onFocus={(e) => {
+            setFocused(true)
+            e.currentTarget.style.borderColor = theme.accent
+          }}
+          onBlur={(e) => {
+            setFocused(false)
+            e.currentTarget.style.borderColor = error ? theme.dangerBorder : theme.borderInput
+          }}
           style={{
             minHeight: isPhone ? '44px' : '36px',
             height: isPhone ? 'auto' : '36px',
@@ -81,15 +96,17 @@ export function CurrencyInput({
             opacity: disabled ? 0.5 : 1,
           }}
         />
-        <span style={{
-          position: 'absolute',
-          right: '12px',
-          fontSize: '11px',
-          fontWeight: 600,
-          color: theme.textMuted,
-          pointerEvents: 'none',
-          letterSpacing: '0.04em',
-        }}>
+        <span
+          style={{
+            position: 'absolute',
+            right: '12px',
+            fontSize: '11px',
+            fontWeight: 600,
+            color: theme.textMuted,
+            pointerEvents: 'none',
+            letterSpacing: '0.04em',
+          }}
+        >
           {currency}
         </span>
       </div>

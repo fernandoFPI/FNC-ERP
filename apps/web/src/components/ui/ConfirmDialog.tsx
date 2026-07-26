@@ -28,7 +28,7 @@ export function ConfirmDialog({
   loading = false,
 }: ConfirmDialogProps) {
   const handleClose = onClose ?? onCancel ?? (() => undefined)
-  const resolvedVariant = (confirmVariant ?? (variant === 'danger' ? 'danger' : 'primary')) as 'primary' | 'danger'
+  const resolvedVariant = confirmVariant ?? (variant === 'danger' ? 'danger' : 'primary')
 
   return (
     <Modal
@@ -38,8 +38,12 @@ export function ConfirmDialog({
       size="sm"
       footer={
         <>
-          <Button variant="secondary" size="md" onClick={handleClose} disabled={loading}>Cancel</Button>
-          <Button variant={resolvedVariant} size="md" onClick={onConfirm} loading={loading}>{confirmLabel}</Button>
+          <Button variant="secondary" size="md" onClick={handleClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button variant={resolvedVariant} size="md" onClick={onConfirm} loading={loading}>
+            {confirmLabel}
+          </Button>
         </>
       }
     >

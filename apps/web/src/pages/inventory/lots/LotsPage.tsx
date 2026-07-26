@@ -6,7 +6,8 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { EmptyState } from '../../../components/ui/EmptyState'
 
@@ -56,8 +57,7 @@ export default function LotsPage() {
     if (search) {
       const q = search.toLowerCase()
       const matches =
-        l.lot_number.toLowerCase().includes(q) ||
-        (l.product_name ?? '').toLowerCase().includes(q)
+        l.lot_number.toLowerCase().includes(q) || (l.product_name ?? '').toLowerCase().includes(q)
       if (!matches) return false
     }
     if (expiryFilter) {
@@ -79,7 +79,9 @@ export default function LotsPage() {
     {
       key: 'product_name',
       header: 'Product',
-      render: (l) => <span style={{ color: theme.textPrimary }}>{l.product_name ?? l.product_id}</span>,
+      render: (l) => (
+        <span style={{ color: theme.textPrimary }}>{l.product_name ?? l.product_id}</span>
+      ),
     },
     {
       key: 'current_qty',
@@ -105,11 +107,14 @@ export default function LotsPage() {
       render: (l) => {
         if (!l.expiry_date) return <span style={{ color: theme.textMuted }}>—</span>
         const status = expiryStatus(l.expiry_date)
-        const variant = status === 'expired' ? 'danger' : status === 'expiring' ? 'warning' : 'success'
+        const variant =
+          status === 'expired' ? 'danger' : status === 'expiring' ? 'warning' : 'success'
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.expiry_date}</span>
-            <Badge variant={variant}>{status === 'expiring' ? 'Expiring soon' : status === 'expired' ? 'Expired' : 'OK'}</Badge>
+            <Badge variant={variant}>
+              {status === 'expiring' ? 'Expiring soon' : status === 'expired' ? 'Expired' : 'OK'}
+            </Badge>
           </div>
         )
       },
@@ -127,15 +132,16 @@ export default function LotsPage() {
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
-      <PageHeader
-        title="Lots"
-        subtitle={`${filtered.length} lots tracked`}
-      />
+      <PageHeader title="Lots" subtitle={`${filtered.length} lots tracked`} />
 
       <Card style={{ marginTop: '20px' }}>
         <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
           <FilterBar
-            search={{ value: search, onChange: setSearch, placeholder: 'Search lot number or product…' }}
+            search={{
+              value: search,
+              onChange: setSearch,
+              placeholder: 'Search lot number or product…',
+            }}
             filters={[
               {
                 key: 'expiry',
@@ -153,7 +159,11 @@ export default function LotsPage() {
         {!loading && filtered.length === 0 ? (
           <EmptyState
             title="No lots found"
-            message={search || expiryFilter ? 'Try adjusting your filters.' : 'Lots are created automatically when stock is received with a lot number.'}
+            message={
+              search || expiryFilter
+                ? 'Try adjusting your filters.'
+                : 'Lots are created automatically when stock is received with a lot number.'
+            }
           />
         ) : (
           <Table
@@ -161,7 +171,9 @@ export default function LotsPage() {
             data={filtered}
             loading={loading}
             rowKey="id"
-            onRowClick={(l) => navigate(`/inventory/lots/${l.id}`)}
+            onRowClick={(l) => {
+              navigate(`/inventory/lots/${l.id}`)
+            }}
           />
         )}
       </Card>

@@ -11,7 +11,9 @@ export function useApprovalQueueCount() {
     if (!isAuthenticated) return
     api
       .get<{ total: number }>('/procurement/purchase-orders/approval-queue/count')
-      .then((r) => setPendingCount((r.data as unknown as { total: number }).total ?? 0))
+      .then((r) => {
+        setPendingCount((r.data as unknown as { total: number }).total ?? 0)
+      })
       .catch(() => undefined)
   }
 

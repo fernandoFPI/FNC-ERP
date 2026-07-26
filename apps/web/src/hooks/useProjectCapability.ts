@@ -13,7 +13,10 @@
 
 import { usePermission } from './usePermission'
 import {
-  CAP_RANK, PROJECT_ROLE_MATRIX, type CapLevel, type ProjectModule,
+  CAP_RANK,
+  PROJECT_ROLE_MATRIX,
+  type CapLevel,
+  type ProjectModule,
 } from '../lib/projectCapabilityMatrix'
 
 export type { CapLevel, ProjectModule }

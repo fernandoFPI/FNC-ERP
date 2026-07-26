@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
-import { PRODUCT_QUERY, PRODUCTS_QUERY, CREATE_PRODUCT, UPDATE_PRODUCT } from '../../../graphql/inventory'
+import {
+  PRODUCT_QUERY,
+  PRODUCTS_QUERY,
+  CREATE_PRODUCT,
+  UPDATE_PRODUCT,
+} from '../../../graphql/inventory'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -37,9 +42,17 @@ export default function ProductForm() {
   const addToast = useToastStore((s) => s.addToast)
 
   const [form, setForm] = useState({
-    sku: '', name: '', description: '', category: '', sub_category: '', uom: 'pc',
-    valuation_method: 'avco', standard_cost: '0',
-    reorder_point: '', reorder_qty: '', is_active: true,
+    sku: '',
+    name: '',
+    description: '',
+    category: '',
+    sub_category: '',
+    uom: 'pc',
+    valuation_method: 'avco',
+    standard_cost: '0',
+    reorder_point: '',
+    reorder_qty: '',
+    is_active: true,
   })
 
   const { data: productData } = useQuery(PRODUCT_QUERY, {
@@ -51,8 +64,12 @@ export default function ProductForm() {
     const p = productData?.product
     if (!p) return
     setForm({
-      sku: p.sku ?? '', name: p.name ?? '', description: p.description ?? '',
-      category: p.category ?? '', sub_category: p.sub_category ?? '', uom: p.uom ?? 'pc',
+      sku: p.sku ?? '',
+      name: p.name ?? '',
+      description: p.description ?? '',
+      category: p.category ?? '',
+      sub_category: p.sub_category ?? '',
+      uom: p.uom ?? 'pc',
       valuation_method: p.valuation_method ?? 'avco',
       standard_cost: String(p.standard_cost ?? '0'),
       reorder_point: p.reorder_point ? String(p.reorder_point) : '',
@@ -64,15 +81,18 @@ export default function ProductForm() {
   const [createProduct, { loading: creating }] = useMutation(CREATE_PRODUCT)
   const [updateProduct, { loading: updating }] = useMutation(UPDATE_PRODUCT)
 
-  const field = (key: keyof typeof form) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const field =
+    (key: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }))
+    }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
       const input = {
-        sku: form.sku, name: form.name,
+        sku: form.sku,
+        name: form.name,
         description: form.description || undefined,
         category: form.category || undefined,
         sub_category: form.sub_category || undefined,
@@ -87,7 +107,10 @@ export default function ProductForm() {
         await updateProduct({ variables: { id, input } })
         addToast({ type: 'success', message: 'Product updated' })
       } else {
-        await createProduct({ variables: { input }, refetchQueries: [{ query: PRODUCTS_QUERY, variables: {} }] })
+        await createProduct({
+          variables: { input },
+          refetchQueries: [{ query: PRODUCTS_QUERY, variables: {} }],
+        })
         addToast({ type: 'success', message: 'Product created' })
       }
       navigate('/inventory/products')
@@ -107,19 +130,53 @@ export default function ProductForm() {
       />
 
       <form onSubmit={handleSubmit}>
-        <Card style={{ marginTop: '20px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <Card
+          style={{
+            marginTop: '20px',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+          }}
+        >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px' }}>
-            <Input label="SKU" value={form.sku} onChange={field('sku')} required placeholder="e.g. INK-001" disabled={isEdit} />
+            <Input
+              label="SKU"
+              value={form.sku}
+              onChange={field('sku')}
+              required
+              placeholder="e.g. INK-001"
+              disabled={isEdit}
+            />
             <Input label="Product Name" value={form.name} onChange={field('name')} required />
           </div>
 
-          <Textarea label="Description" value={form.description} onChange={field('description')} rows={2} />
+          <Textarea
+            label="Description"
+            value={form.description}
+            onChange={field('description')}
+            rows={2}
+          />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
-            <Select label="Category" value={form.category} onChange={(e) => {
-              const val = e.target.value
-              setForm((f) => ({ ...f, category: val, sub_category: val !== 'raw_material' ? '' : f.sub_category }))
-            }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: '16px',
+            }}
+          >
+            <Select
+              label="Category"
+              value={form.category}
+              onChange={(e) => {
+                const val = e.target.value
+                setForm((f) => ({
+                  ...f,
+                  category: val,
+                  sub_category: val !== 'raw_material' ? '' : f.sub_category,
+                }))
+              }}
+            >
               <option value="">— None —</option>
               <option value="raw_material">Raw Material</option>
               <option value="finished_goods">Finished Goods</option>
@@ -127,32 +184,95 @@ export default function ProductForm() {
               <option value="service">Service</option>
             </Select>
             {form.category === 'raw_material' && (
-              <Select label="Store / Sub-category" value={form.sub_category} onChange={field('sub_category')}>
+              <Select
+                label="Store / Sub-category"
+                value={form.sub_category}
+                onChange={field('sub_category')}
+              >
                 <option value="">— All Stores —</option>
                 {RAW_MATERIAL_SUB_CATEGORIES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </Select>
             )}
             <Input label="UOM" value={form.uom} onChange={field('uom')} placeholder="pc, kg, L…" />
-            <Select label="Valuation" value={form.valuation_method} onChange={field('valuation_method')}>
+            <Select
+              label="Valuation"
+              value={form.valuation_method}
+              onChange={field('valuation_method')}
+            >
               <option value="avco">AVCO</option>
               <option value="fifo">FIFO</option>
               <option value="standard">Standard Cost</option>
             </Select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
-            <Input label="Standard Cost" type="number" step="0.01" min="0" value={form.standard_cost} onChange={field('standard_cost')} />
-            <Input label="Reorder Point" type="number" step="0.01" min="0" value={form.reorder_point} onChange={field('reorder_point')} placeholder="Optional" />
-            <Input label="Reorder Qty" type="number" step="0.01" min="0" value={form.reorder_qty} onChange={field('reorder_qty')} placeholder="Optional" />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: '16px',
+            }}
+          >
+            <Input
+              label="Standard Cost"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.standard_cost}
+              onChange={field('standard_cost')}
+            />
+            <Input
+              label="Reorder Point"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.reorder_point}
+              onChange={field('reorder_point')}
+              placeholder="Optional"
+            />
+            <Input
+              label="Reorder Qty"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.reorder_qty}
+              onChange={field('reorder_qty')}
+              placeholder="Optional"
+            />
           </div>
 
-          <Checkbox label="Active" checked={form.is_active} onChange={(checked) => setForm((f) => ({ ...f, is_active: checked }))} />
+          <Checkbox
+            label="Active"
+            checked={form.is_active}
+            onChange={(checked) => {
+              setForm((f) => ({ ...f, is_active: checked }))
+            }}
+          />
 
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', borderTop: `1px solid ${theme.border}`, paddingTop: '16px' }}>
-            <Button variant="ghost" type="button" onClick={() => navigate('/inventory/products')}>Cancel</Button>
-            <Button variant="primary" type="submit" loading={loading}>{isEdit ? 'Save Changes' : 'Create Product'}</Button>
+          <div
+            style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'flex-end',
+              borderTop: `1px solid ${theme.border}`,
+              paddingTop: '16px',
+            }}
+          >
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                navigate('/inventory/products')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={loading}>
+              {isEdit ? 'Save Changes' : 'Create Product'}
+            </Button>
           </div>
         </Card>
       </form>

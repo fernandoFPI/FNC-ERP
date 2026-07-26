@@ -31,61 +31,76 @@ const checkColor: Record<'ok' | 'warn' | 'fail', string> = {
 function PulseDot({ color }: { color: string }) {
   return (
     <span style={{ position: 'relative', display: 'inline-block', width: 10, height: 10 }}>
-      <span style={{
-        display: 'inline-block',
-        width: 10,
-        height: 10,
-        borderRadius: '50%',
-        background: color,
-        position: 'absolute',
-        top: 0,
-        left: 0,
-      }} />
-      <span style={{
-        display: 'inline-block',
-        width: 10,
-        height: 10,
-        borderRadius: '50%',
-        background: color,
-        opacity: 0.4,
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        animation: 'pulse-ring 1.5s ease-out infinite',
-      }} />
+      <span
+        style={{
+          display: 'inline-block',
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          background: color,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+        }}
+      />
+      <span
+        style={{
+          display: 'inline-block',
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          background: color,
+          opacity: 0.4,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          animation: 'pulse-ring 1.5s ease-out infinite',
+        }}
+      />
     </span>
   )
 }
 
-export function SystemHealthCard({ service, status, latencyMs, checks, uptime, lastChecked }: SystemHealthCardProps) {
+export function SystemHealthCard({
+  service,
+  status,
+  latencyMs,
+  checks,
+  uptime,
+  lastChecked,
+}: SystemHealthCardProps) {
   const { theme } = useTheme()
 
-  const statusColor = status === 'ok' ? theme.success : status === 'degraded' ? theme.warning : theme.danger
+  const statusColor =
+    status === 'ok' ? theme.success : status === 'degraded' ? theme.warning : theme.danger
 
-  const latencyColor = latencyMs === undefined
-    ? theme.textMuted
-    : latencyMs <= 200
-      ? theme.success
-      : latencyMs <= 500
-        ? theme.warning
-        : theme.danger
+  const latencyColor =
+    latencyMs === undefined
+      ? theme.textMuted
+      : latencyMs <= 200
+        ? theme.success
+        : latencyMs <= 500
+          ? theme.warning
+          : theme.danger
 
   const checkDotColor = (v: 'ok' | 'warn' | 'fail') =>
     v === 'ok' ? theme.success : v === 'warn' ? theme.warning : theme.danger
 
-  const checkEntries = Object.entries(checks) as Array<[string, 'ok' | 'warn' | 'fail']>
+  const checkEntries = Object.entries(checks)
 
   return (
-    <div style={{
-      background: theme.bgSurface,
-      border: `1px solid ${theme.border}`,
-      borderRadius: 12,
-      padding: '16px 20px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-      backdropFilter: 'blur(8px)',
-    }}>
+    <div
+      style={{
+        background: theme.bgSurface,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 12,
+        padding: '16px 20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        backdropFilter: 'blur(8px)',
+      }}
+    >
       <style>{`
         @keyframes pulse-ring {
           0% { transform: scale(1); opacity: 0.4; }
@@ -115,14 +130,16 @@ export function SystemHealthCard({ service, status, latencyMs, checks, uptime, l
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {checkEntries.map(([name, val]) => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                background: checkDotColor(val),
-                display: 'inline-block',
-                flexShrink: 0,
-              }} />
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: checkDotColor(val),
+                  display: 'inline-block',
+                  flexShrink: 0,
+                }}
+              />
               <span style={{ color: theme.textSecondary, fontSize: 12 }}>{name}</span>
             </div>
           ))}
@@ -130,13 +147,20 @@ export function SystemHealthCard({ service, status, latencyMs, checks, uptime, l
       )}
 
       {/* Uptime + last checked */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: theme.textMuted }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: 11,
+          color: theme.textMuted,
+        }}
+      >
         {uptime !== undefined && (
-          <span>Uptime: <span style={{ color: theme.textSecondary }}>{formatUptime(uptime)}</span></span>
+          <span>
+            Uptime: <span style={{ color: theme.textSecondary }}>{formatUptime(uptime)}</span>
+          </span>
         )}
-        {lastChecked && (
-          <span>Checked {formatRelativeTime(lastChecked)}</span>
-        )}
+        {lastChecked && <span>Checked {formatRelativeTime(lastChecked)}</span>}
       </div>
 
       {/* suppress unused import warning */}

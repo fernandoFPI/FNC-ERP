@@ -1,8 +1,26 @@
 import { gql } from '@apollo/client'
 
 export const INTERCO_TRANSACTIONS_QUERY = gql`
-  query IntercoTransactions($fromCompanyId: ID, $toCompanyId: ID, $status: String, $transactionType: String, $fromDate: String, $toDate: String, $page: Int, $limit: Int) {
-    intercoTransactions(fromCompanyId: $fromCompanyId, toCompanyId: $toCompanyId, status: $status, transactionType: $transactionType, fromDate: $fromDate, toDate: $toDate, page: $page, limit: $limit) {
+  query IntercoTransactions(
+    $fromCompanyId: ID
+    $toCompanyId: ID
+    $status: String
+    $transactionType: String
+    $fromDate: String
+    $toDate: String
+    $page: Int
+    $limit: Int
+  ) {
+    intercoTransactions(
+      fromCompanyId: $fromCompanyId
+      toCompanyId: $toCompanyId
+      status: $status
+      transactionType: $transactionType
+      fromDate: $fromDate
+      toDate: $toDate
+      page: $page
+      limit: $limit
+    ) {
       items {
         id
         reference
@@ -53,8 +71,24 @@ export const INTERCO_TRANSACTION_QUERY = gql`
 `
 
 export const INTERCO_STOCK_TRANSFERS_QUERY = gql`
-  query IntercoStockTransfers($fromCompanyId: ID, $toCompanyId: ID, $status: String, $fromDate: String, $toDate: String, $page: Int, $limit: Int) {
-    intercoStockTransfers(fromCompanyId: $fromCompanyId, toCompanyId: $toCompanyId, status: $status, fromDate: $fromDate, toDate: $toDate, page: $page, limit: $limit) {
+  query IntercoStockTransfers(
+    $fromCompanyId: ID
+    $toCompanyId: ID
+    $status: String
+    $fromDate: String
+    $toDate: String
+    $page: Int
+    $limit: Int
+  ) {
+    intercoStockTransfers(
+      fromCompanyId: $fromCompanyId
+      toCompanyId: $toCompanyId
+      status: $status
+      fromDate: $fromDate
+      toDate: $toDate
+      page: $page
+      limit: $limit
+    ) {
       items {
         id
         transferNumber

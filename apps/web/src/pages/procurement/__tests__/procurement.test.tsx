@@ -31,7 +31,7 @@ function wrap(ui: React.ReactNode, initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>{ui}</ThemeProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -44,7 +44,10 @@ beforeEach(() => {
 // ── PurchaseOrderForm ────────────────────────────────────────────────────────
 describe('PurchaseOrderForm', () => {
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { vendors: [], analyticAccounts: [], products: [] }, loading: false })
+    mockUseQuery.mockReturnValue({
+      data: { vendors: [], analyticAccounts: [], products: [] },
+      loading: false,
+    })
   })
 
   it('starts with one PO line and an Add Line button', async () => {
@@ -123,7 +126,9 @@ describe('PurchaseOrderDetail', () => {
     mockPO('pending_approval')
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
-    expect(screen.queryByRole('button', { name: /submit for inventory check/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /submit for inventory check/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows approve and reject UI for pending_approval status', async () => {
@@ -182,7 +187,11 @@ describe('ApprovalQueue', () => {
   ]
 
   beforeEach(() => {
-    mockUseQuery.mockReturnValue({ data: { myApprovalQueue: pendingPOs, purchaseOrders: pendingPOs }, loading: false, refetch: vi.fn() })
+    mockUseQuery.mockReturnValue({
+      data: { myApprovalQueue: pendingPOs, purchaseOrders: pendingPOs },
+      loading: false,
+      refetch: vi.fn(),
+    })
   })
 
   it('renders POs in the approval queue', async () => {

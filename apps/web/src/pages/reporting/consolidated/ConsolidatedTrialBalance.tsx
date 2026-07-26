@@ -56,7 +56,15 @@ export default function ConsolidatedTrialBalance() {
         title="Consolidated Trial Balance"
         subtitle="Group-wide debit/credit balances"
         actions={
-          <Button variant="ghost" size="sm" onClick={() => { refetch() }}>Refresh</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              refetch()
+            }}
+          >
+            Refresh
+          </Button>
         }
       />
 
@@ -68,7 +76,9 @@ export default function ConsolidatedTrialBalance() {
             <input
               type="date"
               value={asOfDate}
-              onChange={(e) => setAsOfDate(e.target.value)}
+              onChange={(e) => {
+                setAsOfDate(e.target.value)
+              }}
               style={{
                 background: theme.bgSurface,
                 border: `1px solid ${theme.borderInput}`,
@@ -80,7 +90,9 @@ export default function ConsolidatedTrialBalance() {
               }}
             />
           </div>
-          <Button variant="primary" size="sm" onClick={handleApply}>Apply</Button>
+          <Button variant="primary" size="sm" onClick={handleApply}>
+            Apply
+          </Button>
           {d && (
             <div style={{ marginLeft: 'auto' }}>
               <Badge variant={d.isBalanced ? 'success' : 'danger'}>
@@ -93,13 +105,24 @@ export default function ConsolidatedTrialBalance() {
 
       {/* Summary */}
       {d && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px',
+          }}
+        >
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Total Debits</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Total Debits
+            </p>
             <AmountDisplay amount={d.totalDebits} currency={d.currency} size="md" />
           </Card>
           <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>Total Credits</p>
+            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
+              Total Credits
+            </p>
             <AmountDisplay amount={d.totalCredits} currency={d.currency} size="md" />
           </Card>
         </div>
@@ -109,8 +132,12 @@ export default function ConsolidatedTrialBalance() {
       <Card padding="none">
         {loading ? (
           <div style={{ padding: '24px' }}>
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="skeleton" style={{ height: '36px', borderRadius: '6px', marginBottom: '6px' }} />
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div
+                key={i}
+                className="skeleton"
+                style={{ height: '36px', borderRadius: '6px', marginBottom: '6px' }}
+              />
             ))}
           </div>
         ) : d?.rows.length ? (
@@ -118,24 +145,104 @@ export default function ConsolidatedTrialBalance() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ background: theme.bgSurface }}>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>Code</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>Account</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>Type</th>
-                  {d.companies.map(c => (
-                    <th key={c.id} style={{ padding: '10px 14px', textAlign: 'right', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}`, whiteSpace: 'nowrap' }}>{c.name}</th>
+                  <th
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'left',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    Code
+                  </th>
+                  <th
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'left',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    Account
+                  </th>
+                  <th
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'left',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    Type
+                  </th>
+                  {d.companies.map((c) => (
+                    <th
+                      key={c.id}
+                      style={{
+                        padding: '10px 14px',
+                        textAlign: 'right',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        color: theme.textMuted,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        borderBottom: `1px solid ${theme.border}`,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {c.name}
+                    </th>
                   ))}
-                  <th style={{ padding: '10px 16px', textAlign: 'right', fontSize: '10px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${theme.border}` }}>Consolidated</th>
+                  <th
+                    style={{
+                      padding: '10px 16px',
+                      textAlign: 'right',
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      borderBottom: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    Consolidated
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {d.rows.map((row, ri) => (
-                  <tr key={ri} style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.tableRowHover }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
-                    <td style={{ padding: '10px 16px', color: theme.textMuted, fontSize: '12px' }}>{row.accountCode}</td>
-                    <td style={{ padding: '10px 16px', color: theme.textSecondary }}>{row.accountName}</td>
+                  <tr
+                    key={ri}
+                    style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.tableRowHover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                    }}
+                  >
+                    <td style={{ padding: '10px 16px', color: theme.textMuted, fontSize: '12px' }}>
+                      {row.accountCode}
+                    </td>
+                    <td style={{ padding: '10px 16px', color: theme.textSecondary }}>
+                      {row.accountName}
+                    </td>
                     <td style={{ padding: '10px 16px' }}>
-                      <Badge variant="neutral" size="sm">{row.accountType}</Badge>
+                      <Badge variant="neutral" size="sm">
+                        {row.accountType}
+                      </Badge>
                     </td>
                     {row.companies.map((amt, ci) => (
                       <td key={ci} style={{ padding: '10px 14px', textAlign: 'right' }}>
@@ -143,7 +250,12 @@ export default function ConsolidatedTrialBalance() {
                       </td>
                     ))}
                     <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 500 }}>
-                      <AmountDisplay amount={row.consolidated} currency={d.currency} size="sm" colored />
+                      <AmountDisplay
+                        amount={row.consolidated}
+                        currency={d.currency}
+                        size="sm"
+                        colored
+                      />
                     </td>
                   </tr>
                 ))}

@@ -8,11 +8,18 @@ const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@apollo/client')>()
-  return { ...actual, useQuery: (...args: unknown[]) => mockUseQuery(...args), useMutation: (...args: unknown[]) => mockUseMutation(...args), gql: actual.gql }
+  return {
+    ...actual,
+    useQuery: (...args: unknown[]) => mockUseQuery(...args),
+    useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    gql: actual.gql,
+  }
 })
 
 vi.mock('../../../store/toastStore', () => ({ useToastStore: () => vi.fn() }))
-vi.mock('../../../store/authStore', () => ({ useAuthStore: () => ({ user: { id: 'u1', email: 'user@test.com' } }) }))
+vi.mock('../../../store/authStore', () => ({
+  useAuthStore: () => ({ user: { id: 'u1', email: 'user@test.com' } }),
+}))
 vi.mock('../../../hooks/usePayrollStatus', () => ({ usePayrollStatus: vi.fn() }))
 
 const mockNavigate = vi.fn()
@@ -22,20 +29,42 @@ vi.mock('react-router-dom', async (importOriginal) => {
 })
 
 function wrap(ui: React.ReactNode) {
-  return render(<MemoryRouter><ThemeProvider>{ui}</ThemeProvider></MemoryRouter>)
+  return render(
+    <MemoryRouter>
+      <ThemeProvider>{ui}</ThemeProvider>
+    </MemoryRouter>,
+  )
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({ data: { createPayrollRun: { id: 'pr1' } } }), { loading: false }])
+  mockUseMutation.mockReturnValue([
+    vi.fn().mockResolvedValue({ data: { createPayrollRun: { id: 'pr1' } } }),
+    { loading: false },
+  ])
   mockUseQuery.mockReturnValue({ data: undefined, loading: false, refetch: vi.fn() })
 })
 
 // ── PayrollRunsPage ────────────────────────────────────────────────────────────
 describe('PayrollRunsPage', () => {
   const runs = [
-    { id: 'pr1', period_name: 'June 2026 Payroll', start_date: '2026-06-01', end_date: '2026-06-30', status: 'draft', created_at: '2026-06-01' },
-    { id: 'pr2', period_name: 'May 2026 Payroll', start_date: '2026-05-01', end_date: '2026-05-31', status: 'posted', total_net: '50000000', created_at: '2026-05-01' },
+    {
+      id: 'pr1',
+      period_name: 'June 2026 Payroll',
+      start_date: '2026-06-01',
+      end_date: '2026-06-30',
+      status: 'draft',
+      created_at: '2026-06-01',
+    },
+    {
+      id: 'pr2',
+      period_name: 'May 2026 Payroll',
+      start_date: '2026-05-01',
+      end_date: '2026-05-31',
+      status: 'posted',
+      total_net: '50000000',
+      created_at: '2026-05-01',
+    },
   ]
 
   beforeEach(() => {
@@ -85,7 +114,18 @@ describe('PayrollRunForm', () => {
 
   it('shows overlap warning when period conflicts with existing run', async () => {
     mockUseQuery.mockReturnValue({
-      data: { payrollRuns: { runs: [{ period_start: '2026-06-01', period_end: '2026-06-30', status: 'draft', name: 'Existing' }] } },
+      data: {
+        payrollRuns: {
+          runs: [
+            {
+              period_start: '2026-06-01',
+              period_end: '2026-06-30',
+              status: 'draft',
+              name: 'Existing',
+            },
+          ],
+        },
+      },
       loading: false,
     })
     const PayrollRunForm = (await import('../runs/PayrollRunForm')).default
@@ -110,9 +150,28 @@ describe('PayrollRunForm', () => {
 // ── PayrollRunDetail ───────────────────────────────────────────────────────────
 describe('PayrollRunDetail', () => {
   function mockRun(status: string) {
-    const run = { id: 'pr1', period_name: 'June 2026 Payroll', start_date: '2026-06-01', end_date: '2026-06-30', status, state_history: [] }
-    const payslips = [{ id: 'l1', employee_name: 'Ahmad Hassan', gross_salary: '2000000', net_salary: '1800000', currency_code: 'IQD' }]
-    mockUseQuery.mockReturnValue({ data: { payrollRun: run, payslips }, loading: false, refetch: vi.fn() })
+    const run = {
+      id: 'pr1',
+      period_name: 'June 2026 Payroll',
+      start_date: '2026-06-01',
+      end_date: '2026-06-30',
+      status,
+      state_history: [],
+    }
+    const payslips = [
+      {
+        id: 'l1',
+        employee_name: 'Ahmad Hassan',
+        gross_salary: '2000000',
+        net_salary: '1800000',
+        currency_code: 'IQD',
+      },
+    ]
+    mockUseQuery.mockReturnValue({
+      data: { payrollRun: run, payslips },
+      loading: false,
+      refetch: vi.fn(),
+    })
   }
 
   it('shows Process button for draft status', async () => {
@@ -141,7 +200,13 @@ describe('PayrollRunDetail', () => {
 // ── PayslipsPage ───────────────────────────────────────────────────────────────
 describe('PayslipsPage', () => {
   const payslips = [
-    { id: 'ps1', employee_name: 'June 2026', gross_salary: '2000000', net_salary: '1800000', currency_code: 'IQD' },
+    {
+      id: 'ps1',
+      employee_name: 'June 2026',
+      gross_salary: '2000000',
+      net_salary: '1800000',
+      currency_code: 'IQD',
+    },
   ]
 
   beforeEach(() => {

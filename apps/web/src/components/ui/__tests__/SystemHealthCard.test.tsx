@@ -7,7 +7,7 @@ function wrap(props: React.ComponentProps<typeof SystemHealthCard>) {
   return render(
     <ThemeProvider>
       <SystemHealthCard {...props} />
-    </ThemeProvider>
+    </ThemeProvider>,
   )
 }
 

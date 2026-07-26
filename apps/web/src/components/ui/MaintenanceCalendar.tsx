@@ -21,7 +21,20 @@ function getFirstDayOfMonth(year: number, month: number) {
   return new Date(year, month, 1).getDay()
 }
 
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export function MaintenanceCalendar({ events, onEventClick }: Props) {
@@ -41,12 +54,16 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
   }
 
   function prevMonth() {
-    if (month === 0) { setMonth(11); setYear(y => y - 1) }
-    else setMonth(m => m - 1)
+    if (month === 0) {
+      setMonth(11)
+      setYear((y) => y - 1)
+    } else setMonth((m) => m - 1)
   }
   function nextMonth() {
-    if (month === 11) { setMonth(0); setYear(y => y + 1) }
-    else setMonth(m => m + 1)
+    if (month === 11) {
+      setMonth(0)
+      setYear((y) => y + 1)
+    } else setMonth((m) => m + 1)
   }
 
   const TYPE_COLOR: Record<string, string> = {
@@ -65,16 +82,64 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-        <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textSecondary, fontSize: '18px' }}>‹</button>
-        <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>{MONTH_NAMES[month]} {year}</span>
-        <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textSecondary, fontSize: '18px' }}>›</button>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px',
+        }}
+      >
+        <button
+          onClick={prevMonth}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.textSecondary,
+            fontSize: '18px',
+          }}
+        >
+          ‹
+        </button>
+        <span style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '15px' }}>
+          {MONTH_NAMES[month]} {year}
+        </span>
+        <button
+          onClick={nextMonth}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.textSecondary,
+            fontSize: '18px',
+          }}
+        >
+          ›
+        </button>
       </div>
 
       {/* Day names */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '1px', marginBottom: '4px' }}>
-        {DAY_NAMES.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: '11px', color: theme.textMuted, paddingBottom: '4px' }}>{d}</div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          gap: '1px',
+          marginBottom: '4px',
+        }}
+      >
+        {DAY_NAMES.map((d) => (
+          <div
+            key={d}
+            style={{
+              textAlign: 'center',
+              fontSize: '11px',
+              color: theme.textMuted,
+              paddingBottom: '4px',
+            }}
+          >
+            {d}
+          </div>
         ))}
       </div>
 
@@ -84,7 +149,8 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
           if (!day) return <div key={`empty-${idx}`} />
           const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
           const dayEvents = eventsByDate[dateStr] ?? []
-          const isToday = year === now.getFullYear() && month === now.getMonth() && day === now.getDate()
+          const isToday =
+            year === now.getFullYear() && month === now.getMonth() && day === now.getDate()
 
           return (
             <div
@@ -97,10 +163,17 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
                 background: isToday ? theme.accentBg : theme.bgSurface,
               }}
             >
-              <div style={{ fontSize: '11px', color: isToday ? theme.accent : theme.textMuted, fontWeight: isToday ? 600 : 400, marginBottom: '2px' }}>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: isToday ? theme.accent : theme.textMuted,
+                  fontWeight: isToday ? 600 : 400,
+                  marginBottom: '2px',
+                }}
+              >
                 {day}
               </div>
-              {dayEvents.slice(0, 2).map(ev => (
+              {dayEvents.slice(0, 2).map((ev) => (
                 <button
                   key={ev.id}
                   onClick={() => onEventClick?.(ev)}
@@ -125,7 +198,9 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
                 </button>
               ))}
               {dayEvents.length > 2 && (
-                <div style={{ fontSize: '9px', color: theme.textMuted }}>+{dayEvents.length - 2} more</div>
+                <div style={{ fontSize: '9px', color: theme.textMuted }}>
+                  +{dayEvents.length - 2} more
+                </div>
               )}
             </div>
           )
@@ -134,10 +209,19 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: '16px', marginTop: '12px', flexWrap: 'wrap' }}>
-        {(['scheduled', 'completed', 'overdue'] as const).map(t => (
+        {(['scheduled', 'completed', 'overdue'] as const).map((t) => (
           <div key={t} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: TYPE_COLOR[t] }} />
-            <span style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'capitalize' }}>{t}</span>
+            <div
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '2px',
+                background: TYPE_COLOR[t],
+              }}
+            />
+            <span style={{ fontSize: '11px', color: theme.textMuted, textTransform: 'capitalize' }}>
+              {t}
+            </span>
           </div>
         ))}
       </div>

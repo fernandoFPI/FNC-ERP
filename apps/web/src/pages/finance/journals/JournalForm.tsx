@@ -1,7 +1,11 @@
 ﻿import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
-import { CREATE_JOURNAL_ENTRY, JOURNAL_ENTRIES_QUERY, ACCOUNTS_QUERY } from '../../../graphql/finance'
+import {
+  CREATE_JOURNAL_ENTRY,
+  JOURNAL_ENTRIES_QUERY,
+  ACCOUNTS_QUERY,
+} from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -51,7 +55,7 @@ export default function JournalForm() {
   const isBalanced = Math.abs(totalDebit - totalCredit) < 0.001
 
   function updateLine(i: number, field: keyof JournalLine, value: string) {
-    setLines((prev) => prev.map((l, idx) => idx === i ? { ...l, [field]: value } : l))
+    setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: value } : l)))
   }
 
   function addLine() {
@@ -106,13 +110,22 @@ export default function JournalForm() {
 
       <form onSubmit={handleSubmit}>
         <Card style={{ marginTop: '20px', padding: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '16px', marginBottom: '20px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '200px 1fr',
+              gap: '16px',
+              marginBottom: '20px',
+            }}
+          >
             <div data-tour="journal-entry-date">
               <Input
                 label="Entry Date"
                 type="date"
                 value={entryDate}
-                onChange={(e) => setEntryDate(e.target.value)}
+                onChange={(e) => {
+                  setEntryDate(e.target.value)
+                }}
                 required
               />
             </div>
@@ -120,7 +133,9 @@ export default function JournalForm() {
               <Textarea
                 label="Description"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                }}
                 rows={2}
                 placeholder="Purpose of this entry…"
               />
@@ -128,41 +143,66 @@ export default function JournalForm() {
           </div>
 
           {/* Lines table */}
-          <div data-tour="journal-lines-table" style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 160px 120px 120px 32px',
-              gap: '0',
-              background: theme.bgSurface,
-              padding: '8px 12px',
-              borderBottom: `1px solid ${theme.border}`,
-            }}>
+          <div
+            data-tour="journal-lines-table"
+            style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 160px 120px 120px 32px',
+                gap: '0',
+                background: theme.bgSurface,
+                padding: '8px 12px',
+                borderBottom: `1px solid ${theme.border}`,
+              }}
+            >
               {['Account', 'Description', 'Debit', 'Credit', ''].map((h) => (
-                <span key={h} style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+                <span
+                  key={h}
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  {h}
+                </span>
               ))}
             </div>
 
             {lines.map((line, i) => (
-              <div key={i} style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 160px 120px 120px 32px',
-                gap: '0',
-                padding: '8px 12px',
-                borderBottom: `1px solid ${theme.border}`,
-                alignItems: 'center',
-              }}>
+              <div
+                key={i}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 160px 120px 120px 32px',
+                  gap: '0',
+                  padding: '8px 12px',
+                  borderBottom: `1px solid ${theme.border}`,
+                  alignItems: 'center',
+                }}
+              >
                 <Select
                   value={line.account_id}
-                  onChange={(e) => updateLine(i, 'account_id', e.target.value)}
+                  onChange={(e) => {
+                    updateLine(i, 'account_id', e.target.value)
+                  }}
                 >
                   <option value="">Select account…</option>
                   {accountOptions.map((o: { value: string; label: string }) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
                   ))}
                 </Select>
                 <Input
                   value={line.description}
-                  onChange={(e) => updateLine(i, 'description', e.target.value)}
+                  onChange={(e) => {
+                    updateLine(i, 'description', e.target.value)
+                  }}
                   placeholder="Description"
                 />
                 <Input
@@ -170,19 +210,32 @@ export default function JournalForm() {
                   min="0"
                   step="0.01"
                   value={line.debit}
-                  onChange={(e) => updateLine(i, 'debit', e.target.value)}
+                  onChange={(e) => {
+                    updateLine(i, 'debit', e.target.value)
+                  }}
                 />
                 <Input
                   type="number"
                   min="0"
                   step="0.01"
                   value={line.credit}
-                  onChange={(e) => updateLine(i, 'credit', e.target.value)}
+                  onChange={(e) => {
+                    updateLine(i, 'credit', e.target.value)
+                  }}
                 />
                 <button
                   type="button"
-                  onClick={() => removeLine(i)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.danger, fontSize: '16px', padding: '0 4px' }}
+                  onClick={() => {
+                    removeLine(i)
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: theme.danger,
+                    fontSize: '16px',
+                    padding: '0 4px',
+                  }}
                 >
                   ×
                 </button>
@@ -190,15 +243,19 @@ export default function JournalForm() {
             ))}
 
             {/* Totals */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 160px 120px 120px 32px',
-              padding: '8px 12px',
-              background: theme.bgSurface,
-              alignItems: 'center',
-            }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 160px 120px 120px 32px',
+                padding: '8px 12px',
+                background: theme.bgSurface,
+                alignItems: 'center',
+              }}
+            >
               <span />
-              <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}>Totals</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}>
+                Totals
+              </span>
               <AmountDisplay amount={totalDebit} currency="IQD" />
               <AmountDisplay amount={totalCredit} currency="IQD" />
               <span />
@@ -207,18 +264,45 @@ export default function JournalForm() {
 
           {!isBalanced && totalDebit + totalCredit > 0 && (
             <div style={{ color: theme.danger, fontSize: '13px', marginTop: '8px' }}>
-              Entry is not balanced. Difference: {Math.abs(totalDebit - totalCredit).toLocaleString()}
+              Entry is not balanced. Difference:{' '}
+              {Math.abs(totalDebit - totalCredit).toLocaleString()}
             </div>
           )}
 
           <div style={{ marginTop: '12px' }}>
-            <Button data-tour="add-line-btn" variant="ghost" size="sm" type="button" onClick={addLine}>+ Add Line</Button>
+            <Button
+              data-tour="add-line-btn"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={addLine}
+            >
+              + Add Line
+            </Button>
           </div>
         </Card>
 
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
-          <Button variant="ghost" type="button" onClick={() => navigate('/finance/journals')}>Cancel</Button>
-          <Button data-tour="create-entry-btn" variant="primary" type="submit" loading={loading} disabled={!isBalanced}>Create Entry</Button>
+        <div
+          style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}
+        >
+          <Button
+            variant="ghost"
+            type="button"
+            onClick={() => {
+              navigate('/finance/journals')
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            data-tour="create-entry-btn"
+            variant="primary"
+            type="submit"
+            loading={loading}
+            disabled={!isBalanced}
+          >
+            Create Entry
+          </Button>
         </div>
       </form>
     </div>

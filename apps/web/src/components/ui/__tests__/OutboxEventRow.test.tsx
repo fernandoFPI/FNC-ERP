@@ -21,7 +21,7 @@ function wrap(props: React.ComponentProps<typeof OutboxEventRow>) {
           <OutboxEventRow {...props} />
         </tbody>
       </table>
-    </ThemeProvider>
+    </ThemeProvider>,
   )
 }
 

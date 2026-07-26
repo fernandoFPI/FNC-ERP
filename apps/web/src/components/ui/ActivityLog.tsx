@@ -24,24 +24,42 @@ export function ActivityLog({ recordId, tableName }: ActivityLogProps) {
   useEffect(() => {
     if (!recordId || !tableName) return
     setLoading(true)
-    api.get<AuditEntry[]>('/admin/audit', { params: { table_name: tableName, record_id: recordId } })
+    api
+      .get<AuditEntry[]>('/admin/audit', { params: { table_name: tableName, record_id: recordId } })
       .then((r) => {
         const entries = (r.data as unknown as AuditEntry[]) ?? []
-        setEvents(entries.map((e) => ({
-          id: e.id,
-          title: e.action.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase()),
-          description: e.new_values
-            ? Object.entries(e.new_values).slice(0, 3).map(([k, v]) => `${k}: ${String(v ?? '')}`).join(' · ')
-            : undefined,
-          user: e.user_email,
-          timestamp: e.created_at,
-          variant: e.action.includes('CANCEL') || e.action.includes('REJECT') ? 'danger'
-            : e.action.includes('APPROV') || e.action.includes('POST') || e.action.includes('COMPLET') ? 'success'
-            : 'default',
-        })))
+        setEvents(
+          entries.map((e) => ({
+            id: e.id,
+            title: e.action
+              .replace(/_/g, ' ')
+              .toLowerCase()
+              .replace(/^\w/, (c) => c.toUpperCase()),
+            description: e.new_values
+              ? Object.entries(e.new_values)
+                  .slice(0, 3)
+                  .map(([k, v]) => `${k}: ${String(v ?? '')}`)
+                  .join(' · ')
+              : undefined,
+            user: e.user_email,
+            timestamp: e.created_at,
+            variant:
+              e.action.includes('CANCEL') || e.action.includes('REJECT')
+                ? 'danger'
+                : e.action.includes('APPROV') ||
+                    e.action.includes('POST') ||
+                    e.action.includes('COMPLET')
+                  ? 'success'
+                  : 'default',
+          })),
+        )
       })
-      .catch(() => setEvents([]))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        setEvents([])
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [recordId, tableName])
 
   return <Timeline events={events} loading={loading} />

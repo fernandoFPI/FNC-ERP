@@ -22,12 +22,14 @@ export function Grid({
   const activeCols = isPhone ? phoneCols : isTablet ? tabletCols : cols
 
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,
-      gap: `${gap}px`,
-      ...style,
-    }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${activeCols}, minmax(0, 1fr))`,
+        gap: `${gap}px`,
+        ...style,
+      }}
+    >
       {children}
     </div>
   )

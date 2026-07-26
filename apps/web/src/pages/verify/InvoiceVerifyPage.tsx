@@ -13,7 +13,9 @@ const VERIFY_URL = import.meta.env.VITE_API_URL as string
 
 function fmt(n: number, cur: string) {
   return (
-    new Intl.NumberFormat('en-IQ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) +
+    new Intl.NumberFormat('en-IQ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      n,
+    ) +
     ' ' +
     cur
   )
@@ -208,19 +210,29 @@ export default function InvoiceVerifyPage() {
       setZoom(Math.min(1, entry.contentRect.width / NATURAL_W))
     })
     obs.observe(el)
-    return () => obs.disconnect()
+    return () => {
+      obs.disconnect()
+    }
   }, [])
 
   useEffect(() => {
-    if (!token) { setError(true); setLoading(false); return }
+    if (!token) {
+      setError(true)
+      setLoading(false)
+      return
+    }
     fetch(`${VERIFY_URL}/api/v1/verify/invoice/${token}`)
       .then((r) => r.json())
       .then((body) => {
         if (body.success) setResult(body.data as VerifyResponse)
         else setError(true)
       })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        setError(true)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [token])
 
   const inv = result?.invoice
@@ -228,11 +240,16 @@ export default function InvoiceVerifyPage() {
   const valid = result?.valid ?? false
   const notFound = !loading && !error && result && !inv
 
-  const rawHtml = inv ? buildInvoiceHTML(inv, bank ?? undefined, inv.paymentType, inv.companyStampImage) : null
+  const rawHtml = inv
+    ? buildInvoiceHTML(inv, bank ?? undefined, inv.paymentType, inv.companyStampImage)
+    : null
   // Inject zoom into the srcDoc so the full invoice width fits the container and
   // the iframe can size itself to the zoomed content height (scroll works naturally).
   const invoiceHtml = rawHtml
-    ? rawHtml.replace('</head>', `<style>html{zoom:${zoom.toFixed(3)};overflow-x:hidden}body{margin:0}</style></head>`)
+    ? rawHtml.replace(
+        '</head>',
+        `<style>html{zoom:${zoom.toFixed(3)};overflow-x:hidden}body{margin:0}</style></head>`,
+      )
     : null
 
   const verifiedAt = new Date()
@@ -253,7 +270,9 @@ export default function InvoiceVerifyPage() {
           <div className="vp-center">
             <div>
               <div className="vp-spinner" />
-              <div style={{ fontSize: '13px', color: '#64748b', textAlign: 'center' }}>Verifying invoice…</div>
+              <div style={{ fontSize: '13px', color: '#64748b', textAlign: 'center' }}>
+                Verifying invoice…
+              </div>
             </div>
           </div>
         )}
@@ -263,7 +282,14 @@ export default function InvoiceVerifyPage() {
           <div className="vp-center">
             <div className="vp-err-card">
               <div style={{ fontSize: '48px', marginBottom: '18px', lineHeight: 1 }}>❌</div>
-              <div style={{ fontSize: '20px', fontWeight: 700, color: '#b91c1c', marginBottom: '10px' }}>
+              <div
+                style={{
+                  fontSize: '20px',
+                  fontWeight: 700,
+                  color: '#b91c1c',
+                  marginBottom: '10px',
+                }}
+              >
                 Invalid QR Code
               </div>
               <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.65 }}>
@@ -311,13 +337,17 @@ export default function InvoiceVerifyPage() {
                 </div>
 
                 <div className="vp-rows">
-                  <Row label="Invoice #"    value={inv.invoiceNumber} />
-                  <Row label="Status"       value={inv.status.charAt(0).toUpperCase() + inv.status.slice(1)} color={valid ? 'green' : 'red'} />
+                  <Row label="Invoice #" value={inv.invoiceNumber} />
+                  <Row
+                    label="Status"
+                    value={inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                    color={valid ? 'green' : 'red'}
+                  />
                   <Row label="Invoice Date" value={fmtDate(String(inv.invoiceDate))} />
-                  <Row label="Due Date"     value={fmtDate(String(inv.dueDate))} />
-                  <Row label="Client"       value={inv.clientName ?? '—'} />
-                  <Row label="Project"      value={inv.projectName ?? '—'} />
-                  <Row label="Net Payable"  value={fmt(inv.netPayable, inv.currencyCode)} bold />
+                  <Row label="Due Date" value={fmtDate(String(inv.dueDate))} />
+                  <Row label="Client" value={inv.clientName ?? '—'} />
+                  <Row label="Project" value={inv.projectName ?? '—'} />
+                  <Row label="Net Payable" value={fmt(inv.netPayable, inv.currencyCode)} bold />
                 </div>
               </div>
 
@@ -327,13 +357,22 @@ export default function InvoiceVerifyPage() {
                 <div className="vp-issuer-name">{inv.companyName ?? 'FNC Group'}</div>
                 <div className="vp-issuer-legal">{inv.companyLegalName ?? ''}</div>
                 <div className="vp-issuer-time">
-                  Verified {verifiedAt.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })} at{' '}
+                  Verified{' '}
+                  {verifiedAt.toLocaleDateString('en-GB', {
+                    day: '2-digit',
+                    month: 'long',
+                    year: 'numeric',
+                  })}{' '}
+                  at{' '}
                   {verifiedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
 
               {/* Print */}
-              <button className="vp-print" onClick={() => iframeRef.current?.contentWindow?.print()}>
+              <button
+                className="vp-print"
+                onClick={() => iframeRef.current?.contentWindow?.print()}
+              >
                 Print / Save as PDF
               </button>
             </div>

@@ -21,7 +21,7 @@ const ICONS: Record<string, (color: string) => JSX.Element> = {
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8">
       <line x1="18" y1="20" x2="18" y2="10" />
       <line x1="12" y1="20" x2="12" y2="4" />
-      <line x1="6"  y1="20" x2="6"  y2="14" />
+      <line x1="6" y1="20" x2="6" y2="14" />
     </svg>
   ),
   bell: (c) => (
@@ -32,10 +32,10 @@ const ICONS: Record<string, (color: string) => JSX.Element> = {
   ),
   list: (c) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8">
-      <line x1="8" y1="6"  x2="21" y2="6" />
+      <line x1="8" y1="6" x2="21" y2="6" />
       <line x1="8" y1="12" x2="21" y2="12" />
       <line x1="8" y1="18" x2="21" y2="18" />
-      <line x1="3" y1="6"  x2="3.01" y2="6" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
       <line x1="3" y1="12" x2="3.01" y2="12" />
       <line x1="3" y1="18" x2="3.01" y2="18" />
     </svg>
@@ -76,9 +76,9 @@ const ICONS: Record<string, (color: string) => JSX.Element> = {
   ),
   grid: (c) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8">
-      <rect x="3"  y="3"  width="7" height="7" rx="1.5" />
-      <rect x="14" y="3"  width="7" height="7" rx="1.5" />
-      <rect x="3"  y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
@@ -102,40 +102,40 @@ interface BottomNavItem {
 
 const NAV_SETS: Record<string, BottomNavItem[]> = {
   management: [
-    { label: 'Home',    icon: 'home',        path: '/dashboard' },
+    { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Reports', icon: 'bar-chart-2', path: '/reporting/executive' },
-    { label: 'Projects',icon: 'briefcase',   path: '/projects' },
-    { label: 'Notifs',  icon: 'bell',        path: '/settings/notifications' },
+    { label: 'Projects', icon: 'briefcase', path: '/projects' },
+    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
   ],
   finance: [
-    { label: 'Home',    icon: 'home',             path: '/dashboard' },
-    { label: 'AR',      icon: 'arrow-down-circle', path: '/finance/ar' },
-    { label: 'AP',      icon: 'arrow-up-circle',   path: '/finance/ap' },
-    { label: 'Notifs',  icon: 'bell',              path: '/settings/notifications' },
+    { label: 'Home', icon: 'home', path: '/dashboard' },
+    { label: 'AR', icon: 'arrow-down-circle', path: '/finance/ar' },
+    { label: 'AP', icon: 'arrow-up-circle', path: '/finance/ap' },
+    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
   ],
   project_manager: [
-    { label: 'Home',     icon: 'home',      path: '/dashboard' },
+    { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Projects', icon: 'briefcase', path: '/projects' },
-    { label: 'Queue',    icon: 'list',      path: '/procurement/queue' },
-    { label: 'Notifs',   icon: 'bell',      path: '/settings/notifications' },
+    { label: 'Queue', icon: 'list', path: '/procurement/queue' },
+    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
   ],
   store_keeper: [
-    { label: 'Home',  icon: 'home',    path: '/dashboard' },
+    { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Stock', icon: 'package', path: '/inventory/balances' },
-    { label: 'Queue', icon: 'list',    path: '/procurement/queue' },
-    { label: 'Notifs',icon: 'bell',    path: '/settings/notifications' },
+    { label: 'Queue', icon: 'list', path: '/procurement/queue' },
+    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
   ],
   hr_admin: [
-    { label: 'Home',   icon: 'home',     path: '/dashboard' },
-    { label: 'Staff',  icon: 'users',    path: '/hr/employees' },
-    { label: 'Attend.',icon: 'clock',    path: '/attendance' },
-    { label: 'Notifs', icon: 'bell',     path: '/settings/notifications' },
+    { label: 'Home', icon: 'home', path: '/dashboard' },
+    { label: 'Staff', icon: 'users', path: '/hr/employees' },
+    { label: 'Attend.', icon: 'clock', path: '/attendance' },
+    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
   ],
   default: [
-    { label: 'Home',    icon: 'home',     path: '/dashboard' },
-    { label: 'Queue',   icon: 'list',     path: '/procurement/queue' },
-    { label: 'Notifs',  icon: 'bell',     path: '/settings/notifications' },
-    { label: 'Settings',icon: 'settings', path: '/settings' },
+    { label: 'Home', icon: 'home', path: '/dashboard' },
+    { label: 'Queue', icon: 'list', path: '/procurement/queue' },
+    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Settings', icon: 'settings', path: '/settings' },
   ],
 }
 
@@ -143,18 +143,18 @@ const NAV_SETS: Record<string, BottomNavItem[]> = {
 
 export function BottomNav() {
   const { theme } = useTheme()
-  const navigate  = useNavigate()
-  const location  = useLocation()
-  const user      = useAuthStore((s) => s.user)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const user = useAuthStore((s) => s.user)
 
   function getNavItems(): BottomNavItem[] {
-    const role  = user?.role
+    const role = user?.role
     if (role === 'system_admin' || role === 'company_admin') return NAV_SETS.management
     const perms = user?.permissions ?? {}
-    if (perms['finance.journals.view'])    return NAV_SETS.finance
-    if (perms['projects.edit'])            return NAV_SETS.project_manager
+    if (perms['finance.journals.view']) return NAV_SETS.finance
+    if (perms['projects.edit']) return NAV_SETS.project_manager
     if (perms['inventory.stock_moves.edit']) return NAV_SETS.store_keeper
-    if (perms['hr.employees.edit'])        return NAV_SETS.hr_admin
+    if (perms['hr.employees.edit']) return NAV_SETS.hr_admin
     return NAV_SETS.default
   }
 
@@ -165,28 +165,33 @@ export function BottomNav() {
   }
 
   return (
-    <nav className="fnc-bottom-nav" style={{
-      position: 'fixed',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: '64px',
-      background: theme.bgSurface,
-      backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-      WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-      borderTop: `0.5px solid ${theme.border}`,
-      display: 'flex',
-      alignItems: 'stretch',
-      zIndex: 40,
-      paddingBottom: 'env(safe-area-inset-bottom)',
-    }}>
+    <nav
+      className="fnc-bottom-nav"
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '64px',
+        background: theme.bgSurface,
+        backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+        WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+        borderTop: `0.5px solid ${theme.border}`,
+        display: 'flex',
+        alignItems: 'stretch',
+        zIndex: 40,
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+    >
       {items.map((item) => {
         const active = isActive(item.path)
-        const color  = active ? theme.accent : theme.textMuted
+        const color = active ? theme.accent : theme.textMuted
         return (
           <button
             key={item.path}
-            onClick={() => navigate(item.path)}
+            onClick={() => {
+              navigate(item.path)
+            }}
             style={{
               flex: 1,
               display: 'flex',
@@ -204,23 +209,27 @@ export function BottomNav() {
             }}
           >
             {active && (
-              <div style={{
-                position: 'absolute',
-                top: '6px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: '4px',
-                height: '4px',
-                borderRadius: '50%',
-                background: theme.accent,
-              }} />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '6px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '4px',
+                  height: '4px',
+                  borderRadius: '50%',
+                  background: theme.accent,
+                }}
+              />
             )}
             {ICONS[item.icon]?.(color)}
-            <span style={{
-              fontSize: '10px',
-              fontWeight: active ? 600 : 400,
-              letterSpacing: '0.02em',
-            }}>
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: active ? 600 : 400,
+                letterSpacing: '0.02em',
+              }}
+            >
               {item.label}
             </span>
           </button>

@@ -7,11 +7,11 @@ export type AccessLevel = 'none' | 'view' | 'edit' | 'approve' | 'admin'
 export interface User {
   id: string
   email: string
-  role: string          // system_admin | company_admin | module_admin | user
+  role: string // system_admin | company_admin | module_admin | user
   mfaEnabled: boolean
   system_admin?: boolean
   companyId?: string
-  employeeId?: string | null   // linked HR employee record; used for ID-based project-role matching
+  employeeId?: string | null // linked HR employee record; used for ID-based project-role matching
   permissions: Record<string, AccessLevel>
   profileCompleted: boolean
   firstName?: string
@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthState>()(
       tempToken: null,
       themePreference: null,
 
-      setAuth: (user, accessToken, refreshToken) =>
+      setAuth: (user, accessToken, refreshToken) => {
         set({
           user: { ...user, permissions: {} },
           accessToken,
@@ -55,7 +55,8 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: true,
           mfaPending: false,
           tempToken: null,
-        }),
+        })
+      },
 
       setProfileCompleted: () => {
         const current = get().user
@@ -63,10 +64,13 @@ export const useAuthStore = create<AuthState>()(
         set({ user: { ...current, profileCompleted: true } })
       },
 
-      setMFAPending: (tempToken) =>
-        set({ mfaPending: true, tempToken, isAuthenticated: false }),
+      setMFAPending: (tempToken) => {
+        set({ mfaPending: true, tempToken, isAuthenticated: false })
+      },
 
-      setAccessToken: (token) => set({ accessToken: token }),
+      setAccessToken: (token) => {
+        set({ accessToken: token })
+      },
 
       setUser: (partial) => {
         const current = get().user
@@ -74,7 +78,7 @@ export const useAuthStore = create<AuthState>()(
         set({ user: { ...current, ...partial } })
       },
 
-      clearAuth: () =>
+      clearAuth: () => {
         set({
           user: null,
           accessToken: null,
@@ -83,7 +87,8 @@ export const useAuthStore = create<AuthState>()(
           mfaPending: false,
           tempToken: null,
           themePreference: null,
-        }),
+        })
+      },
 
       loadPermissionsForCompany: async (companyId: string) => {
         const { user } = get()
@@ -101,11 +106,11 @@ export const useAuthStore = create<AuthState>()(
 
           const result = await api.get<{
             data: {
-              permissions: Array<{
-                submodules: Array<{
-                  permissions: Array<{ key: string; accessLevel: string }>
-                }>
-              }>
+              permissions: {
+                submodules: {
+                  permissions: { key: string; accessLevel: string }[]
+                }[]
+              }[]
             }
           }>(`/auth/users/${user.id}/permissions`, { params: { company_id: companyId } })
 

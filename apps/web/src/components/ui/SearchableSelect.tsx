@@ -20,7 +20,17 @@ interface Props {
   minDropdownWidth?: number
 }
 
-export function SearchableSelect({ value, onChange, options, placeholder = 'Search…', label, error, required, disabled, minDropdownWidth = 260 }: Props) {
+export function SearchableSelect({
+  value,
+  onChange,
+  options,
+  placeholder = 'Search…',
+  label,
+  error,
+  required,
+  disabled,
+  minDropdownWidth = 260,
+}: Props) {
   const { theme, themeKey } = useTheme()
   const isDark = themeKey.startsWith('dark')
 
@@ -35,13 +45,16 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sear
   const selected = options.find((o) => o.value === value)
 
   const filtered = query.trim()
-    ? options.filter((o) =>
-        o.label.toLowerCase().includes(query.toLowerCase()) ||
-        (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase())
+    ? options.filter(
+        (o) =>
+          o.label.toLowerCase().includes(query.toLowerCase()) ||
+          (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase()),
       )
     : options
 
-  useEffect(() => { setHighlighted(0) }, [query])
+  useEffect(() => {
+    setHighlighted(0)
+  }, [query])
 
   // Position the portal dropdown — flips upward when insufficient space below
   const reposition = useCallback(() => {
@@ -52,13 +65,30 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sear
     const spaceBelow = window.innerHeight - rect.bottom - MARGIN
     const spaceAbove = rect.top - MARGIN
     const openUpward = spaceBelow < 200 && spaceAbove > spaceBelow
-    const availableHeight = openUpward ? Math.min(MAX_HEIGHT, spaceAbove) : Math.min(MAX_HEIGHT, spaceBelow)
+    const availableHeight = openUpward
+      ? Math.min(MAX_HEIGHT, spaceAbove)
+      : Math.min(MAX_HEIGHT, spaceBelow)
     const dropWidth = Math.max(rect.width, minDropdownWidth)
     // Keep left edge inside viewport
     const left = Math.min(rect.left, window.innerWidth - dropWidth - MARGIN)
-    setDropdownStyle(openUpward
-      ? { position: 'fixed', bottom: window.innerHeight - rect.top + MARGIN, left, width: dropWidth, maxHeight: availableHeight, zIndex: 9999 }
-      : { position: 'fixed', top: rect.bottom + MARGIN, left, width: dropWidth, maxHeight: availableHeight, zIndex: 9999 },
+    setDropdownStyle(
+      openUpward
+        ? {
+            position: 'fixed',
+            bottom: window.innerHeight - rect.top + MARGIN,
+            left,
+            width: dropWidth,
+            maxHeight: availableHeight,
+            zIndex: 9999,
+          }
+        : {
+            position: 'fixed',
+            top: rect.bottom + MARGIN,
+            left,
+            width: dropWidth,
+            maxHeight: availableHeight,
+            zIndex: 9999,
+          },
     )
   }, [minDropdownWidth])
 
@@ -72,7 +102,10 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sear
     if (!open) return
     window.addEventListener('scroll', reposition, true)
     window.addEventListener('resize', reposition)
-    return () => { window.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition) }
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
   }, [open, reposition])
 
   // Close on outside click
@@ -86,7 +119,9 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sear
       setQuery('')
     }
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+    }
   }, [open])
 
   // Scroll highlighted item into view
@@ -96,28 +131,52 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sear
     item?.scrollIntoView({ block: 'nearest' })
   }, [highlighted])
 
-  const select = useCallback((opt: SearchableSelectOption) => {
-    onChange(opt.value)
-    setOpen(false)
-    setQuery('')
-  }, [onChange])
+  const select = useCallback(
+    (opt: SearchableSelectOption) => {
+      onChange(opt.value)
+      setOpen(false)
+      setQuery('')
+    },
+    [onChange],
+  )
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!open) {
-      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { setOpen(true); e.preventDefault() }
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        setOpen(true)
+        e.preventDefault()
+      }
       return
     }
-    if (e.key === 'ArrowDown') { setHighlighted((h) => Math.min(h + 1, filtered.length - 1)); e.preventDefault() }
-    else if (e.key === 'ArrowUp') { setHighlighted((h) => Math.max(h - 1, 0)); e.preventDefault() }
-    else if (e.key === 'Enter') { if (filtered[highlighted]) select(filtered[highlighted]); e.preventDefault() }
-    else if (e.key === 'Escape') { setOpen(false); setQuery('') }
+    if (e.key === 'ArrowDown') {
+      setHighlighted((h) => Math.min(h + 1, filtered.length - 1))
+      e.preventDefault()
+    } else if (e.key === 'ArrowUp') {
+      setHighlighted((h) => Math.max(h - 1, 0))
+      e.preventDefault()
+    } else if (e.key === 'Enter') {
+      if (filtered[highlighted]) select(filtered[highlighted])
+      e.preventDefault()
+    } else if (e.key === 'Escape') {
+      setOpen(false)
+      setQuery('')
+    }
   }
 
   return (
     <div style={{ position: 'relative' }}>
       {label && (
-        <label style={{ display: 'block', fontSize: '12px', color: error ? theme.danger : theme.textSecondary, marginBottom: '4px', fontWeight: 500 }}>
-          {label}{required && <span style={{ color: theme.danger }}> *</span>}
+        <label
+          style={{
+            display: 'block',
+            fontSize: '12px',
+            color: error ? theme.danger : theme.textSecondary,
+            marginBottom: '4px',
+            fontWeight: 500,
+          }}
+        >
+          {label}
+          {required && <span style={{ color: theme.danger }}> *</span>}
         </label>
       )}
 
@@ -125,122 +184,266 @@ export function SearchableSelect({ value, onChange, options, placeholder = 'Sear
       <div
         ref={triggerRef}
         tabIndex={disabled ? -1 : 0}
-        onClick={() => { if (disabled) return; setOpen((o) => !o) }}
+        onClick={() => {
+          if (disabled) return
+          setOpen((o) => !o)
+        }}
         onKeyDown={handleKeyDown}
         style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 10px', height: '36px', borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 10px',
+          height: '36px',
+          borderRadius: '6px',
           cursor: disabled ? 'not-allowed' : 'pointer',
           border: `1px solid ${error ? theme.dangerBorder : open ? theme.accent : theme.borderInput}`,
           background: theme.bgSurface,
-          opacity: disabled ? 0.5 : 1, userSelect: 'none', outline: 'none',
+          opacity: disabled ? 0.5 : 1,
+          userSelect: 'none',
+          outline: 'none',
         }}
       >
         {selected?.sublabel ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', flex: 1, minWidth: 0 }}>
-            <span style={{ fontFamily: 'monospace', fontSize: '11px', color: theme.textMuted, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', padding: '1px 5px', borderRadius: '3px', flexShrink: 0 }}>
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              overflow: 'hidden',
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '11px',
+                color: theme.textMuted,
+                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                flexShrink: 0,
+              }}
+            >
               {selected.sublabel}
             </span>
-            <span style={{ fontSize: '13px', color: theme.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span
+              style={{
+                fontSize: '13px',
+                color: theme.textPrimary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {selected.label}
             </span>
           </span>
         ) : (
-          <span style={{ fontSize: '13px', color: selected ? theme.textPrimary : theme.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          <span
+            style={{
+              fontSize: '13px',
+              color: selected ? theme.textPrimary : theme.textMuted,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+            }}
+          >
             {selected ? selected.label : placeholder}
           </span>
         )}
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
-          style={{ flexShrink: 0, marginLeft: '6px', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-          <path d="M2 4l4 4 4-4" stroke={theme.textMuted} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          style={{
+            flexShrink: 0,
+            marginLeft: '6px',
+            transform: open ? 'rotate(180deg)' : 'none',
+            transition: 'transform 0.15s',
+          }}
+        >
+          <path
+            d="M2 4l4 4 4-4"
+            stroke={theme.textMuted}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </div>
 
-      {error && <span style={{ fontSize: '11px', color: theme.danger, marginTop: '2px', display: 'block' }}>{error}</span>}
+      {error && (
+        <span style={{ fontSize: '11px', color: theme.danger, marginTop: '2px', display: 'block' }}>
+          {error}
+        </span>
+      )}
 
       {/* Portal dropdown — escapes Card overflow:hidden */}
-      {open && createPortal(
-        <div
-          ref={listRef}
-          style={{
-            ...dropdownStyle,
-            background: isDark ? '#1e2030' : '#ffffff',
-            border: `1px solid ${theme.border}`,
-            borderRadius: '8px',
-            boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {/* Search input */}
-          <div style={{ padding: '8px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}>
-            <div style={{ position: 'relative' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2"
-                style={{ position: 'absolute', left: '8px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input
-                ref={inputRef}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Search…"
-                style={{
-                  width: '100%', padding: '6px 8px 6px 28px', fontSize: '13px',
-                  border: `1px solid ${theme.border}`, borderRadius: '6px',
-                  background: isDark ? '#12131f' : '#f0f2f5',
-                  color: theme.textPrimary, outline: 'none', boxSizing: 'border-box',
-                }}
-              />
+      {open &&
+        createPortal(
+          <div
+            ref={listRef}
+            style={{
+              ...dropdownStyle,
+              background: isDark ? '#1e2030' : '#ffffff',
+              border: `1px solid ${theme.border}`,
+              borderRadius: '8px',
+              boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {/* Search input */}
+            <div
+              style={{ padding: '8px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}
+            >
+              <div style={{ position: 'relative' }}>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={theme.textMuted}
+                  strokeWidth="2"
+                  style={{
+                    position: 'absolute',
+                    left: '8px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search…"
+                  style={{
+                    width: '100%',
+                    padding: '6px 8px 6px 28px',
+                    fontSize: '13px',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    background: isDark ? '#12131f' : '#f0f2f5',
+                    color: theme.textPrimary,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Options list */}
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: '12px', fontSize: '13px', color: theme.textMuted, textAlign: 'center' }}>No results</div>
-            ) : (
-              filtered.map((opt, idx) => {
-                const isCustom = opt.value === ''
-                const isSelected = opt.value === value
-                const isHighlighted = idx === highlighted
-                return (
-                  <div key={opt.value} data-idx={idx}
-                    onMouseEnter={() => setHighlighted(idx)}
-                    onMouseDown={(e) => { e.preventDefault(); select(opt) }}
-                    style={{
-                      padding: '8px 12px', cursor: 'pointer',
-                      borderBottom: isCustom ? `1px solid ${theme.border}` : 'none',
-                      background: isHighlighted
-                        ? (isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)')
-                        : isSelected
-                          ? (isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.08)')
-                          : 'transparent',
-                    }}
-                  >
-                    {opt.sublabel ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: '11px', color: isSelected ? theme.accent : theme.textMuted, background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', padding: '1px 6px', borderRadius: '4px', flexShrink: 0 }}>
-                          {opt.sublabel}
-                        </span>
-                        <span style={{ fontSize: '13px', color: isSelected ? theme.accent : (isDark ? theme.textPrimary : '#1a1a2e'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* Options list */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {filtered.length === 0 ? (
+                <div
+                  style={{
+                    padding: '12px',
+                    fontSize: '13px',
+                    color: theme.textMuted,
+                    textAlign: 'center',
+                  }}
+                >
+                  No results
+                </div>
+              ) : (
+                filtered.map((opt, idx) => {
+                  const isCustom = opt.value === ''
+                  const isSelected = opt.value === value
+                  const isHighlighted = idx === highlighted
+                  return (
+                    <div
+                      key={opt.value}
+                      data-idx={idx}
+                      onMouseEnter={() => {
+                        setHighlighted(idx)
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        select(opt)
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        borderBottom: isCustom ? `1px solid ${theme.border}` : 'none',
+                        background: isHighlighted
+                          ? isDark
+                            ? 'rgba(255,255,255,0.07)'
+                            : 'rgba(0,0,0,0.05)'
+                          : isSelected
+                            ? isDark
+                              ? 'rgba(99,102,241,0.15)'
+                              : 'rgba(99,102,241,0.08)'
+                            : 'transparent',
+                      }}
+                    >
+                      {opt.sublabel ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '11px',
+                              color: isSelected ? theme.accent : theme.textMuted,
+                              background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {opt.sublabel}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '13px',
+                              color: isSelected
+                                ? theme.accent
+                                : isDark
+                                  ? theme.textPrimary
+                                  : '#1a1a2e',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {opt.label}
+                          </span>
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '13px',
+                            fontStyle: isCustom ? 'italic' : 'normal',
+                            color: isSelected
+                              ? theme.accent
+                              : isCustom
+                                ? theme.textMuted
+                                : isDark
+                                  ? theme.textPrimary
+                                  : '#1a1a2e',
+                          }}
+                        >
                           {opt.label}
                         </span>
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: '13px', fontStyle: isCustom ? 'italic' : 'normal', color: isSelected ? theme.accent : isCustom ? theme.textMuted : (isDark ? theme.textPrimary : '#1a1a2e') }}>
-                        {opt.label}
-                      </span>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>,
-        document.body,
-      )}
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

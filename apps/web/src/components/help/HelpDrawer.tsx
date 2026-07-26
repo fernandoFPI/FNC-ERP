@@ -50,7 +50,9 @@ export function HelpDrawer({ open, onClose }: Props) {
   function handleTourStart() {
     if (!displayTopic?.tourKey) return
     onClose()
-    setTimeout(() => startTour(displayTopic.tourKey!, navigate, theme), 300)
+    setTimeout(() => {
+      startTour(displayTopic.tourKey!, navigate, theme)
+    }, 300)
   }
 
   const drawerWidth = 360
@@ -103,7 +105,9 @@ export function HelpDrawer({ open, onClose }: Props) {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '18px' }}>❓</span>
-            <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Help & Guides</span>
+            <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
+              Help & Guides
+            </span>
           </div>
           <button
             onClick={onClose}
@@ -117,28 +121,57 @@ export function HelpDrawer({ open, onClose }: Props) {
               display: 'flex',
               borderRadius: '6px',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = theme.bgSurfaceHover
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'none'
+            }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
 
         {/* Search */}
-        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}>
+        <div
+          style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}`, flexShrink: 0 }}
+        >
           <div style={{ position: 'relative' }}>
             <svg
-              width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-              style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: theme.textSecondary, pointerEvents: 'none' }}
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              style={{
+                position: 'absolute',
+                left: '10px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: theme.textSecondary,
+                pointerEvents: 'none',
+              }}
             >
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
               ref={searchRef}
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value)
+              }}
               placeholder="Search guides…"
               style={{
                 width: '100%',
@@ -154,14 +187,31 @@ export function HelpDrawer({ open, onClose }: Props) {
             />
             {search && (
               <button
-                onClick={() => setSearch('')}
+                onClick={() => {
+                  setSearch('')
+                }}
                 style={{
-                  position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer', color: theme.textSecondary, padding: '2px',
+                  position: 'absolute',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: theme.textSecondary,
+                  padding: '2px',
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             )}
@@ -170,19 +220,28 @@ export function HelpDrawer({ open, onClose }: Props) {
 
         {/* Scrollable content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 0 24px' }}>
-
           {/* Search results */}
           {search.trim() ? (
             <div style={{ padding: '12px 16px' }}>
               {filtered.length === 0 ? (
-                <p style={{ color: theme.textSecondary, fontSize: '13px', textAlign: 'center', marginTop: '24px' }}>
+                <p
+                  style={{
+                    color: theme.textSecondary,
+                    fontSize: '13px',
+                    textAlign: 'center',
+                    marginTop: '24px',
+                  }}
+                >
                   No guides found for "{search}"
                 </p>
               ) : (
                 filtered.map((topic) => (
                   <button
                     key={topic.key}
-                    onClick={() => { setActiveTopic(topic); setSearch('') }}
+                    onClick={() => {
+                      setActiveTopic(topic)
+                      setSearch('')
+                    }}
                     style={{
                       width: '100%',
                       background: 'none',
@@ -196,13 +255,23 @@ export function HelpDrawer({ open, onClose }: Props) {
                       alignItems: 'flex-start',
                       gap: '10px',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.bgSurfaceHover }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.bgSurfaceHover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'none'
+                    }}
                   >
                     <span style={{ fontSize: '18px', flexShrink: 0 }}>{topic.emoji}</span>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>{topic.title}</div>
-                      <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>{topic.summary}</div>
+                      <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
+                        {topic.title}
+                      </div>
+                      <div
+                        style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}
+                      >
+                        {topic.summary}
+                      </div>
                     </div>
                   </button>
                 ))
@@ -214,21 +283,47 @@ export function HelpDrawer({ open, onClose }: Props) {
               {displayTopic ? (
                 <div style={{ padding: '16px' }}>
                   {/* Topic header */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      marginBottom: '6px',
+                    }}
+                  >
                     <span style={{ fontSize: '24px' }}>{displayTopic.emoji}</span>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary }}>{displayTopic.title}</div>
+                      <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary }}>
+                        {displayTopic.title}
+                      </div>
                       {activeTopic && (
                         <button
-                          onClick={() => setActiveTopic(null)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.accent, fontSize: '12px', padding: '0', marginTop: '2px' }}
+                          onClick={() => {
+                            setActiveTopic(null)
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: theme.accent,
+                            fontSize: '12px',
+                            padding: '0',
+                            marginTop: '2px',
+                          }}
                         >
                           ← Back to current page
                         </button>
                       )}
                     </div>
                   </div>
-                  <p style={{ fontSize: '13px', color: theme.textSecondary, margin: '0 0 16px', lineHeight: '1.5' }}>
+                  <p
+                    style={{
+                      fontSize: '13px',
+                      color: theme.textSecondary,
+                      margin: '0 0 16px',
+                      lineHeight: '1.5',
+                    }}
+                  >
                     {displayTopic.summary}
                   </p>
 
@@ -253,7 +348,14 @@ export function HelpDrawer({ open, onClose }: Props) {
                         gap: '8px',
                       }}
                     >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                      >
                         <polygon points="5 3 19 12 5 21 5 3" />
                       </svg>
                       Start guided tour — {tours[displayTopic.tourKey].title}
@@ -262,25 +364,58 @@ export function HelpDrawer({ open, onClose }: Props) {
 
                   {/* Steps */}
                   <div style={{ marginBottom: '20px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: theme.textSecondary, textTransform: 'uppercase', marginBottom: '12px' }}>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        letterSpacing: '0.08em',
+                        color: theme.textSecondary,
+                        textTransform: 'uppercase',
+                        marginBottom: '12px',
+                      }}
+                    >
                       How to use
                     </div>
                     {displayTopic.steps.map((step, i) => (
                       <div key={i} style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
                         <div
                           style={{
-                            width: '22px', height: '22px', borderRadius: '50%',
-                            background: theme.accent + '22', color: theme.accent,
-                            fontSize: '12px', fontWeight: 700,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0, marginTop: '1px',
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            background: theme.accent + '22',
+                            color: theme.accent,
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                            marginTop: '1px',
                           }}
                         >
                           {i + 1}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary, marginBottom: '3px' }}>{step.title}</div>
-                          <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5' }}>{step.body}</div>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: '13px',
+                              color: theme.textPrimary,
+                              marginBottom: '3px',
+                            }}
+                          >
+                            {step.title}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: theme.textSecondary,
+                              lineHeight: '1.5',
+                            }}
+                          >
+                            {step.body}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -297,13 +432,35 @@ export function HelpDrawer({ open, onClose }: Props) {
                         marginBottom: '20px',
                       }}
                     >
-                      <div style={{ fontSize: '12px', fontWeight: 700, color: theme.accent, marginBottom: '8px' }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          color: theme.accent,
+                          marginBottom: '8px',
+                        }}
+                      >
                         💡 Tips
                       </div>
                       {displayTopic.tips.map((tip, i) => (
-                        <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: i < displayTopic.tips.length - 1 ? '6px' : 0 }}>
+                        <div
+                          key={i}
+                          style={{
+                            display: 'flex',
+                            gap: '8px',
+                            marginBottom: i < displayTopic.tips.length - 1 ? '6px' : 0,
+                          }}
+                        >
                           <span style={{ color: theme.accent, flexShrink: 0 }}>•</span>
-                          <span style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.5' }}>{tip}</span>
+                          <span
+                            style={{
+                              fontSize: '13px',
+                              color: theme.textSecondary,
+                              lineHeight: '1.5',
+                            }}
+                          >
+                            {tip}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -324,7 +481,9 @@ export function HelpDrawer({ open, onClose }: Props) {
               {/* Browse all topics */}
               <div style={{ padding: '0 16px' }}>
                 <button
-                  onClick={() => setBrowseOpen((v) => !v)}
+                  onClick={() => {
+                    setBrowseOpen((v) => !v)
+                  }}
                   style={{
                     width: '100%',
                     background: 'none',
@@ -337,11 +496,24 @@ export function HelpDrawer({ open, onClose }: Props) {
                     marginBottom: browseOpen ? '12px' : '0',
                   }}
                 >
-                  <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: theme.textSecondary, textTransform: 'uppercase' }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      color: theme.textSecondary,
+                      textTransform: 'uppercase',
+                    }}
+                  >
                     Browse all topics
                   </span>
                   <svg
-                    width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
                     style={{
                       color: theme.textSecondary,
                       transform: browseOpen ? 'rotate(180deg)' : 'rotate(0deg)',
@@ -352,52 +524,80 @@ export function HelpDrawer({ open, onClose }: Props) {
                   </svg>
                 </button>
 
-                {browseOpen && helpGroups.map((group) => (
-                  <div key={group.label} style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: theme.textSecondary, marginBottom: '6px', paddingLeft: '2px' }}>
-                      {group.label}
-                    </div>
-                    {group.topics.map((topic) => {
-                      const isActive = displayTopic?.key === topic.key
-                      return (
-                        <button
-                          key={topic.key}
-                          onClick={() => { setActiveTopic(topic); setBrowseOpen(false) }}
-                          style={{
-                            width: '100%',
-                            background: isActive ? theme.accent + '18' : 'none',
-                            border: 'none',
-                            borderRadius: '6px',
-                            padding: '7px 10px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            marginBottom: '2px',
-                          }}
-                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = theme.bgSurfaceHover }}
-                          onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'none' }}
-                        >
-                          <span style={{ fontSize: '15px', flexShrink: 0 }}>{topic.emoji}</span>
-                          <span style={{ fontSize: '13px', color: isActive ? theme.accent : theme.textPrimary, fontWeight: isActive ? 600 : 400 }}>
-                            {topic.title}
-                          </span>
-                          {topic.tourKey && (
+                {browseOpen &&
+                  helpGroups.map((group) => (
+                    <div key={group.label} style={{ marginBottom: '16px' }}>
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: theme.textSecondary,
+                          marginBottom: '6px',
+                          paddingLeft: '2px',
+                        }}
+                      >
+                        {group.label}
+                      </div>
+                      {group.topics.map((topic) => {
+                        const isActive = displayTopic?.key === topic.key
+                        return (
+                          <button
+                            key={topic.key}
+                            onClick={() => {
+                              setActiveTopic(topic)
+                              setBrowseOpen(false)
+                            }}
+                            style={{
+                              width: '100%',
+                              background: isActive ? theme.accent + '18' : 'none',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '7px 10px',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              marginBottom: '2px',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!isActive) e.currentTarget.style.background = theme.bgSurfaceHover
+                            }}
+                            onMouseLeave={(e) => {
+                              if (!isActive) e.currentTarget.style.background = 'none'
+                            }}
+                          >
+                            <span style={{ fontSize: '15px', flexShrink: 0 }}>{topic.emoji}</span>
                             <span
                               style={{
-                                marginLeft: 'auto', fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
-                                background: theme.accent + '20', color: theme.accent, fontWeight: 600, flexShrink: 0,
+                                fontSize: '13px',
+                                color: isActive ? theme.accent : theme.textPrimary,
+                                fontWeight: isActive ? 600 : 400,
                               }}
                             >
-                              tour
+                              {topic.title}
                             </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                ))}
+                            {topic.tourKey && (
+                              <span
+                                style={{
+                                  marginLeft: 'auto',
+                                  fontSize: '10px',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  background: theme.accent + '20',
+                                  color: theme.accent,
+                                  fontWeight: 600,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                tour
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
               </div>
             </>
           )}

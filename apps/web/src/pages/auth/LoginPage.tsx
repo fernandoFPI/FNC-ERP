@@ -12,11 +12,17 @@ import axios from 'axios'
 const STORAGE_KEY = 'fnc_recent_accounts'
 const MAX_ACCOUNTS = 5
 
-interface RecentAccount { email: string; addedAt: string }
+interface RecentAccount {
+  email: string
+  addedAt: string
+}
 
 function readAccounts(): RecentAccount[] {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as RecentAccount[] }
-  catch { return [] }
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as RecentAccount[]
+  } catch {
+    return []
+  }
 }
 
 function persistAccounts(list: RecentAccount[]) {
@@ -163,28 +169,39 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundImage: 'url(/login-background.png)',
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundImage: 'url(/login-background.png)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
       {/* Dark overlay so the card stays readable against the photo */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'rgba(0, 0, 0, 0.15)',
-        backdropFilter: 'blur(1px)',
-      }} />
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.15)',
+          backdropFilter: 'blur(1px)',
+        }}
+      />
 
-      <div style={{ width: '100%', maxWidth: '400px', padding: '24px', position: 'relative', zIndex: 1 }}>
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '400px',
+          padding: '24px',
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
         <Card padding="lg" rimHighlight>
-
           {/* Logo / Brand */}
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
             <div style={{ margin: '0 auto 12px', width: '72px', height: '72px' }}>
@@ -194,7 +211,16 @@ export default function LoginPage() {
                 style={{ width: '110%', height: '110%', objectFit: 'contain', display: 'block' }}
               />
             </div>
-            <h1 style={{ fontSize: '18px', fontWeight: 700, color: theme.textPrimary, margin: '0 0 4px' }}>FNC GROUP</h1>
+            <h1
+              style={{
+                fontSize: '18px',
+                fontWeight: 700,
+                color: theme.textPrimary,
+                margin: '0 0 4px',
+              }}
+            >
+              FNC GROUP
+            </h1>
             <p style={{ fontSize: '13px', color: theme.textSecondary, margin: 0 }}>
               {view === 'accounts' ? 'Welcome back' : 'Sign in to your account'}
             </p>
@@ -203,13 +229,22 @@ export default function LoginPage() {
           {/* ── Account chooser ──────────────────────────────────────────── */}
           {view === 'accounts' && (
             <div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                  marginBottom: '16px',
+                }}
+              >
                 {accounts.map((acct) => {
                   const isLoggingIn = autoLoggingIn === acct.email
                   return (
                     <button
                       key={acct.email}
-                      onClick={() => { if (!autoLoggingIn) void handleAccountClick(acct.email) }}
+                      onClick={() => {
+                        if (!autoLoggingIn) void handleAccountClick(acct.email)
+                      }}
                       disabled={!!autoLoggingIn}
                       style={{
                         display: 'flex',
@@ -219,7 +254,9 @@ export default function LoginPage() {
                         padding: '10px 12px',
                         borderRadius: '10px',
                         border: `1px solid ${isLoggingIn ? theme.accent : 'transparent'}`,
-                        background: isLoggingIn ? (theme.accentBg ?? `${theme.accent}14`) : 'transparent',
+                        background: isLoggingIn
+                          ? (theme.accentBg ?? `${theme.accent}14`)
+                          : 'transparent',
                         cursor: autoLoggingIn ? 'default' : 'pointer',
                         textAlign: 'left',
                         transition: 'background 120ms, border-color 120ms',
@@ -239,23 +276,33 @@ export default function LoginPage() {
                       }}
                     >
                       {/* Avatar */}
-                      <div style={{
-                        width: '40px',
-                        height: '40px',
-                        borderRadius: '50%',
-                        background: avatarColor(acct.email),
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '16px',
-                        fontWeight: 700,
-                        color: '#fff',
-                        flexShrink: 0,
-                        position: 'relative',
-                      }}>
+                      <div
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          background: avatarColor(acct.email),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '16px',
+                          fontWeight: 700,
+                          color: '#fff',
+                          flexShrink: 0,
+                          position: 'relative',
+                        }}
+                      >
                         {isLoggingIn ? (
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" style={{ animation: 'spin 0.8s linear infinite' }}>
-                            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="#fff"
+                            strokeWidth="2.5"
+                            style={{ animation: 'spin 0.8s linear infinite' }}
+                          >
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                           </svg>
                         ) : (
                           acct.email[0].toUpperCase()
@@ -264,18 +311,27 @@ export default function LoginPage() {
 
                       {/* Email + status */}
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{
-                          display: 'block',
-                          fontSize: '13px',
-                          color: theme.textPrimary,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontSize: '13px',
+                            color: theme.textPrimary,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {acct.email}
                         </span>
                         {isLoggingIn && (
-                          <span style={{ display: 'block', fontSize: '11px', color: theme.accent, marginTop: '1px' }}>
+                          <span
+                            style={{
+                              display: 'block',
+                              fontSize: '11px',
+                              color: theme.accent,
+                              marginTop: '1px',
+                            }}
+                          >
                             Signing in…
                           </span>
                         )}
@@ -287,7 +343,9 @@ export default function LoginPage() {
                           role="button"
                           tabIndex={0}
                           aria-label={`Remove ${acct.email}`}
-                          onClick={(e) => removeAccount(acct.email, e)}
+                          onClick={(e) => {
+                            removeAccount(acct.email, e)
+                          }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               removeAccount(acct.email, e as unknown as React.MouseEvent)
@@ -304,12 +362,23 @@ export default function LoginPage() {
                             flexShrink: 0,
                             cursor: 'pointer',
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = theme.textPrimary }}
-                          onMouseLeave={(e) => { e.currentTarget.style.color = theme.textMuted }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = theme.textPrimary
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = theme.textMuted
+                          }}
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <line x1="18" y1="6" x2="6" y2="18"/>
-                            <line x1="6" y1="6" x2="18" y2="18"/>
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                          >
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
                           </svg>
                         </span>
                       )}
@@ -319,7 +388,13 @@ export default function LoginPage() {
               </div>
 
               {!autoLoggingIn && (
-                <div style={{ textAlign: 'center', borderTop: `1px solid ${theme.border}`, paddingTop: '14px' }}>
+                <div
+                  style={{
+                    textAlign: 'center',
+                    borderTop: `1px solid ${theme.border}`,
+                    paddingTop: '14px',
+                  }}
+                >
                   <button
                     onClick={useAnotherAccount}
                     style={{
@@ -341,12 +416,17 @@ export default function LoginPage() {
 
           {/* ── Login form ───────────────────────────────────────────────── */}
           {view === 'form' && (
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form
+              onSubmit={handleSubmit}
+              style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+            >
               <Input
                 label="Email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                }}
                 placeholder="you@fnc-group.com"
                 autoComplete="email"
                 required
@@ -357,7 +437,9 @@ export default function LoginPage() {
                 label="Password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                }}
                 placeholder="••••••••"
                 autoComplete="current-password"
                 required
@@ -366,18 +448,41 @@ export default function LoginPage() {
                 suffix={
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.textMuted, display: 'flex', alignItems: 'center' }}
+                    onClick={() => {
+                      setShowPassword((v) => !v)
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: theme.textMuted,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
                   >
                     {showPassword ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                      >
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
                       </svg>
                     ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                      >
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
                       </svg>
                     )}
                   </button>
@@ -385,14 +490,16 @@ export default function LoginPage() {
               />
 
               {error && (
-                <div style={{
-                  padding: '10px 12px',
-                  background: theme.dangerBg,
-                  border: `1px solid ${theme.dangerBorder}`,
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  color: theme.danger,
-                }}>
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    background: theme.dangerBg,
+                    border: `1px solid ${theme.dangerBorder}`,
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: theme.danger,
+                  }}
+                >
                   {error}
                 </div>
               )}
@@ -412,7 +519,9 @@ export default function LoginPage() {
                 <div style={{ textAlign: 'center' }}>
                   <button
                     type="button"
-                    onClick={() => setView('accounts')}
+                    onClick={() => {
+                      setView('accounts')
+                    }}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -428,7 +537,6 @@ export default function LoginPage() {
               )}
             </form>
           )}
-
         </Card>
       </div>
 

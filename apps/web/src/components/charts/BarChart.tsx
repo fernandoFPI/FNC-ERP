@@ -54,9 +54,17 @@ export function BarChart({ data, xKey, bars, height = 260, className = '' }: Bar
             }}
             cursor={{ fill: theme.tableRowHover }}
           />
-          {bars.length > 1 && <Legend wrapperStyle={{ fontSize: '12px', color: theme.textSecondary }} />}
+          {bars.length > 1 && (
+            <Legend wrapperStyle={{ fontSize: '12px', color: theme.textSecondary }} />
+          )}
           {bars.map((bar, i) => (
-            <Bar key={bar.key} dataKey={bar.key} name={bar.label} radius={[4, 4, 0, 0]} fill={i === 0 ? 'url(#barGrad)' : theme.barGradEnd} />
+            <Bar
+              key={bar.key}
+              dataKey={bar.key}
+              name={bar.label}
+              radius={[4, 4, 0, 0]}
+              fill={i === 0 ? 'url(#barGrad)' : theme.barGradEnd}
+            />
           ))}
         </ReBarChart>
       </ResponsiveContainer>

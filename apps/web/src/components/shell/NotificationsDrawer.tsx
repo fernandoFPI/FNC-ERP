@@ -8,13 +8,13 @@ import { api } from '../../lib/axios'
 
 function mapRow(row: Record<string, unknown>): AppNotification {
   return {
-    id: String(row['id']),
-    type: String(row['type'] ?? ''),
-    title: String(row['title'] ?? ''),
-    body: row['body'] ? String(row['body']) : undefined,
-    isRead: Boolean(row['is_read']),
-    createdAt: String(row['created_at'] ?? ''),
-    data: row['data'] as Record<string, unknown> | undefined,
+    id: String(row.id),
+    type: String(row.type ?? ''),
+    title: String(row.title ?? ''),
+    body: row.body ? String(row.body) : undefined,
+    isRead: Boolean(row.is_read),
+    createdAt: String(row.created_at ?? ''),
+    data: row.data as Record<string, unknown> | undefined,
   }
 }
 
@@ -26,10 +26,10 @@ interface NotificationsDrawerProps {
 const PAGE_SIZE = 20
 
 function notificationPath(n: AppNotification): string {
-  const d = n.data as Record<string, unknown> | undefined
-  const link      = d?.link       ? String(d.link)       : null
+  const d = n.data
+  const link = d?.link ? String(d.link) : null
   const projectId = d?.project_id ? String(d.project_id) : null
-  const poId      = d?.po_id      ? String(d.po_id)      : null
+  const poId = d?.po_id ? String(d.po_id) : null
 
   // Explicit deep-link from backend always wins
   if (link) return link
@@ -37,7 +37,9 @@ function notificationPath(n: AppNotification): string {
   switch (n.type) {
     case 'PO_APPROVAL_REQUIRED':
     case 'po_approval_required':
-      return poId ? `/procurement/purchase-orders/${poId}` : '/procurement/purchase-orders/approval-queue'
+      return poId
+        ? `/procurement/purchase-orders/${poId}`
+        : '/procurement/purchase-orders/approval-queue'
     case 'OT_APPROVAL_REQUIRED':
       return '/hr/overtime'
     case 'LEAVE_APPROVAL_REQUIRED':
@@ -67,35 +69,41 @@ function notificationPath(n: AppNotification): string {
 function SectionDivider({ label, count }: { label: string; count?: number }) {
   const { theme } = useTheme()
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '14px 20px 6px',
-    }}>
-      <span style={{
-        fontSize: '10px',
-        fontWeight: 700,
-        color: theme.textMuted,
-        textTransform: 'uppercase',
-        letterSpacing: '0.09em',
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-      }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '14px 20px 6px',
+      }}
+    >
+      <span
+        style={{
+          fontSize: '10px',
+          fontWeight: 700,
+          color: theme.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.09em',
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+        }}
+      >
         {label}
       </span>
       {count !== undefined && (
-        <span style={{
-          fontSize: '10px',
-          fontWeight: 600,
-          color: theme.textMuted,
-          background: theme.bgCanvas,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '10px',
-          padding: '0 5px',
-          lineHeight: '16px',
-          flexShrink: 0,
-        }}>
+        <span
+          style={{
+            fontSize: '10px',
+            fontWeight: 600,
+            color: theme.textMuted,
+            background: theme.bgCanvas,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '10px',
+            padding: '0 5px',
+            lineHeight: '16px',
+            flexShrink: 0,
+          }}
+        >
           {count}
         </span>
       )}
@@ -107,16 +115,23 @@ function SectionDivider({ label, count }: { label: string; count?: number }) {
 export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps) {
   const { theme } = useTheme()
   const navigate = useNavigate()
-  const { notifications, unreadCount, markAsRead, markAllAsRead, appendNotifications } = useNotificationStore()
+  const { notifications, unreadCount, markAsRead, markAllAsRead, appendNotifications } =
+    useNotificationStore()
   const loadedRef = useRef(false)
   const pageRef = useRef(1)
 
   useEffect(() => {
     if (!open || loadedRef.current) return
     loadedRef.current = true
-    api.get<Record<string, unknown>[]>('/notifications?page=1&limit=20')
-      .then((r) => { if (Array.isArray(r.data)) useNotificationStore.getState().setNotifications(r.data.map(mapRow)) })
-      .catch(() => { /* no-op if backend not available */ })
+    api
+      .get<Record<string, unknown>[]>('/notifications?page=1&limit=20')
+      .then((r) => {
+        if (Array.isArray(r.data))
+          useNotificationStore.getState().setNotifications(r.data.map(mapRow))
+      })
+      .catch(() => {
+        /* no-op if backend not available */
+      })
   }, [open])
 
   async function handleMarkAllAsRead() {
@@ -131,9 +146,14 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
   async function loadMore() {
     pageRef.current++
-    api.get<Record<string, unknown>[]>(`/notifications?page=${pageRef.current}&limit=${PAGE_SIZE}`)
-      .then((r) => { if (Array.isArray(r.data)) appendNotifications(r.data.map(mapRow)) })
-      .catch(() => { /* no-op */ })
+    api
+      .get<Record<string, unknown>[]>(`/notifications?page=${pageRef.current}&limit=${PAGE_SIZE}`)
+      .then((r) => {
+        if (Array.isArray(r.data)) appendNotifications(r.data.map(mapRow))
+      })
+      .catch(() => {
+        /* no-op */
+      })
   }
 
   function handleNavigate(n: AppNotification) {
@@ -142,28 +162,34 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
   }
 
   const unread = notifications.filter((n) => !n.isRead)
-  const read   = notifications.filter((n) => n.isRead)
+  const read = notifications.filter((n) => n.isRead)
 
   return (
     <Drawer open={open} onClose={onClose} title="Notifications" width="380px" noPadding>
-
       {/* Sub-header: unread count + mark all */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 20px',
-        borderBottom: `1px solid ${theme.border}`,
-        flexShrink: 0,
-        minHeight: '44px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 20px',
+          borderBottom: `1px solid ${theme.border}`,
+          flexShrink: 0,
+          minHeight: '44px',
+        }}
+      >
         {unreadCount > 0 ? (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{
-                width: '7px', height: '7px', borderRadius: '50%',
-                background: theme.accent, flexShrink: 0,
-              }} />
+              <div
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: theme.accent,
+                  flexShrink: 0,
+                }}
+              />
               <span style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: 500 }}>
                 {unreadCount} unread
               </span>
@@ -184,41 +210,59 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
             </button>
           </>
         ) : (
-          <span style={{ fontSize: '12px', color: theme.textMuted }}>
-            You're all caught up
-          </span>
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>You're all caught up</span>
         )}
       </div>
 
       {/* Notification list */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {notifications.length === 0 ? (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '64px 24px',
-            gap: '14px',
-          }}>
-            <div style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: '16px',
-              background: theme.bgCanvas,
-              border: `1px solid ${theme.border}`,
+          <div
+            style={{
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              color: theme.textMuted,
-            }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              padding: '64px 24px',
+              gap: '14px',
+            }}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '16px',
+                background: theme.bgCanvas,
+                border: `1px solid ${theme.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: theme.textMuted,
+              }}
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
+              <div
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: theme.textPrimary,
+                  marginBottom: '4px',
+                }}
+              >
                 No notifications
               </div>
               <div style={{ fontSize: '12px', color: theme.textMuted }}>
@@ -232,7 +276,12 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
               <>
                 <SectionDivider label="Unread" count={unread.length} />
                 {unread.map((n) => (
-                  <NotificationItem key={n.id} notification={n} onRead={handleRead} onNavigate={handleNavigate} />
+                  <NotificationItem
+                    key={n.id}
+                    notification={n}
+                    onRead={handleRead}
+                    onNavigate={handleNavigate}
+                  />
                 ))}
               </>
             )}
@@ -240,7 +289,12 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
               <>
                 <SectionDivider label="Earlier" />
                 {read.map((n) => (
-                  <NotificationItem key={n.id} notification={n} onRead={handleRead} onNavigate={handleNavigate} />
+                  <NotificationItem
+                    key={n.id}
+                    notification={n}
+                    onRead={handleRead}
+                    onNavigate={handleNavigate}
+                  />
                 ))}
               </>
             )}
@@ -250,11 +304,13 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
       {/* Load more */}
       {notifications.length >= PAGE_SIZE && (
-        <div style={{
-          padding: '10px 20px',
-          borderTop: `1px solid ${theme.border}`,
-          flexShrink: 0,
-        }}>
+        <div
+          style={{
+            padding: '10px 20px',
+            borderTop: `1px solid ${theme.border}`,
+            flexShrink: 0,
+          }}
+        >
           <button
             onClick={loadMore}
             style={{

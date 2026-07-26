@@ -16,7 +16,16 @@ export default function HRLayout() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ borderBottom: `1px solid ${theme.border}`, display: 'flex', gap: '0', padding: '0 24px', flexShrink: 0, overflowX: 'auto' }}>
+      <div
+        style={{
+          borderBottom: `1px solid ${theme.border}`,
+          display: 'flex',
+          gap: '0',
+          padding: '0 24px',
+          flexShrink: 0,
+          overflowX: 'auto',
+        }}
+      >
         {TABS.map((tab) => (
           <NavLink
             key={tab.path}

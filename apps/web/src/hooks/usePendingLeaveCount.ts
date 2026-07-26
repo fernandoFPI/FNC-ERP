@@ -12,14 +12,23 @@ export function usePendingLeaveCount(): number {
       try {
         const res = await fetch('/api/v1/hr/leave?status=pending&limit=1')
         const json = await res.json()
-        if (!cancelled) setCount(json.total ?? json.count ?? (Array.isArray(json.leaves) ? json.leaves.length : 0))
-      } catch { /* no-op */ }
+        if (!cancelled)
+          setCount(
+            json.total ?? json.count ?? (Array.isArray(json.leaves) ? json.leaves.length : 0),
+          )
+      } catch {
+        /* no-op */
+      }
     }
 
     fetch_()
     const id = setInterval(fetch_, POLL_INTERVAL)
     window.addEventListener('focus', fetch_)
-    return () => { cancelled = true; clearInterval(id); window.removeEventListener('focus', fetch_) }
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      window.removeEventListener('focus', fetch_)
+    }
   }, [])
 
   return count

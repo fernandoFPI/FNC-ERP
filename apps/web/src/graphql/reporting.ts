@@ -10,9 +10,18 @@ export const EXECUTIVE_DASHBOARD_QUERY = gql`
       totalProjectBudget
       totalHeadcount
       openPOsValue
-      revenueTrend { period value }
-      costsTrend { period value }
-      profitTrend { period value }
+      revenueTrend {
+        period
+        value
+      }
+      costsTrend {
+        period
+        value
+      }
+      profitTrend {
+        period
+        value
+      }
       entityBreakdown {
         companyId
         companyName
@@ -21,8 +30,21 @@ export const EXECUTIVE_DASHBOARD_QUERY = gql`
         netThisMonth
         headcount
       }
-      revenueByEntityMonthly { month yakam factory watanyia }
-      projectProfitabilityScatter { id name budget marginPct actualCost status client_name }
+      revenueByEntityMonthly {
+        month
+        yakam
+        factory
+        watanyia
+      }
+      projectProfitabilityScatter {
+        id
+        name
+        budget
+        marginPct
+        actualCost
+        status
+        client_name
+      }
     }
   }
 `
@@ -38,7 +60,10 @@ export const CONSOLIDATED_PL_QUERY = gql`
         consolidated
         eliminated
       }
-      companies { id name }
+      companies {
+        id
+        name
+      }
       currency
       totalRevenue
       totalExpenses
@@ -58,7 +83,10 @@ export const CONSOLIDATED_BS_QUERY = gql`
         consolidated
         eliminated
       }
-      companies { id name }
+      companies {
+        id
+        name
+      }
       currency
       totalAssets
       totalLiabilities
@@ -79,7 +107,10 @@ export const CONSOLIDATED_TB_QUERY = gql`
         consolidated
         eliminated
       }
-      companies { id name }
+      companies {
+        id
+        name
+      }
       currency
       totalDebits
       totalCredits
@@ -89,8 +120,20 @@ export const CONSOLIDATED_TB_QUERY = gql`
 `
 
 export const PROJECT_PROFITABILITY_QUERY = gql`
-  query ProjectProfitabilityReport($companyId: ID, $status: [String], $projectType: String, $fromDate: String, $toDate: String) {
-    projectProfitabilityReport(companyId: $companyId, status: $status, projectType: $projectType, fromDate: $fromDate, toDate: $toDate) {
+  query ProjectProfitabilityReport(
+    $companyId: ID
+    $status: [String]
+    $projectType: String
+    $fromDate: String
+    $toDate: String
+  ) {
+    projectProfitabilityReport(
+      companyId: $companyId
+      status: $status
+      projectType: $projectType
+      fromDate: $fromDate
+      toDate: $toDate
+    ) {
       id
       code
       name
@@ -102,14 +145,23 @@ export const PROJECT_PROFITABILITY_QUERY = gql`
       margin
       marginPct
       status
-      costBreakdown { key label amount }
+      costBreakdown {
+        key
+        label
+        amount
+      }
     }
   }
 `
 
 export const PAYROLL_COST_REPORT_QUERY = gql`
   query PayrollCostReport($fromDate: String!, $toDate: String!, $companyId: ID, $departmentId: ID) {
-    payrollCostReport(fromDate: $fromDate, toDate: $toDate, companyId: $companyId, departmentId: $departmentId) {
+    payrollCostReport(
+      fromDate: $fromDate
+      toDate: $toDate
+      companyId: $companyId
+      departmentId: $departmentId
+    ) {
       rows {
         companyName
         costCenter
@@ -124,8 +176,18 @@ export const PAYROLL_COST_REPORT_QUERY = gql`
       totalNet
       totalEmployerCost
       avgCostPerEmployee
-      byCurrency { currency amount fxRate iqdEquivalent }
-      monthlyTrend { month yakam factory watanyia }
+      byCurrency {
+        currency
+        amount
+        fxRate
+        iqdEquivalent
+      }
+      monthlyTrend {
+        month
+        yakam
+        factory
+        watanyia
+      }
     }
   }
 `
@@ -166,7 +228,11 @@ export const INVENTORY_VALUATION_QUERY = gql`
       totalProducts
       totalLocations
       lowStockItems
-      byLocation { locationName locationType totalValue }
+      byLocation {
+        locationName
+        locationType
+        totalValue
+      }
     }
   }
 `

@@ -9,16 +9,37 @@ const companies = [
 ]
 
 const rows = [
-  { accountType: 'Revenue', accountCode: '4000', accountName: 'Sales Revenue', companies: { yakam: 500000, factory: 300000 }, consolidated: 800000, eliminated: 0 },
-  { accountType: 'Revenue', accountCode: '4100', accountName: 'Service Revenue', companies: { yakam: 100000, factory: 50000 }, consolidated: 150000, eliminated: 0 },
-  { accountType: 'Expense', accountCode: '5000', accountName: 'Cost of Sales', companies: { yakam: 300000, factory: 200000 }, consolidated: 500000, eliminated: 0 },
+  {
+    accountType: 'Revenue',
+    accountCode: '4000',
+    accountName: 'Sales Revenue',
+    companies: { yakam: 500000, factory: 300000 },
+    consolidated: 800000,
+    eliminated: 0,
+  },
+  {
+    accountType: 'Revenue',
+    accountCode: '4100',
+    accountName: 'Service Revenue',
+    companies: { yakam: 100000, factory: 50000 },
+    consolidated: 150000,
+    eliminated: 0,
+  },
+  {
+    accountType: 'Expense',
+    accountCode: '5000',
+    accountName: 'Cost of Sales',
+    companies: { yakam: 300000, factory: 200000 },
+    consolidated: 500000,
+    eliminated: 0,
+  },
 ]
 
 function wrap(props: React.ComponentProps<typeof ConsolidatedFinancialTable>) {
   return render(
     <ThemeProvider>
       <ConsolidatedFinancialTable {...props} />
-    </ThemeProvider>
+    </ThemeProvider>,
   )
 }
 

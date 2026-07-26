@@ -112,7 +112,11 @@ function statusVariant(status: string): 'success' | 'warning' | 'danger' | 'info
 }
 
 function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 export default function DashboardPage() {
@@ -144,19 +148,38 @@ export default function DashboardPage() {
       fallback={
         <div style={{ padding: '24px' }}>
           <Card padding="md">
-            <EmptyState title="Failed to load dashboard" message="Could not fetch data from the server.">
-              <Button variant="secondary" size="sm" onClick={() => refetch()}>Retry</Button>
+            <EmptyState
+              title="Failed to load dashboard"
+              message="Could not fetch data from the server."
+            >
+              <Button variant="secondary" size="sm" onClick={() => refetch()}>
+                Retry
+              </Button>
             </EmptyState>
           </Card>
         </div>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', ...pagePadding, paddingBottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 80px)' : undefined }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          ...pagePadding,
+          paddingBottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 80px)' : undefined,
+        }}
+      >
         <PageHeader
           title="Dashboard"
           subtitle={subtitle}
           actions={
-            <Button variant="primary" size="md" onClick={() => navigate('/reporting/executive')}>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => {
+                navigate('/reporting/executive')
+              }}
+            >
               New report
             </Button>
           }
@@ -167,26 +190,55 @@ export default function DashboardPage() {
           <KPICard
             label="Revenue"
             value={loading ? '—' : formatCurrency(data?.dashboardKPIs.revenue ?? 0, currency)}
-            delta={data ? { value: `${data.dashboardKPIs.revenueDelta > 0 ? '+' : ''}${data.dashboardKPIs.revenueDelta}%`, direction: data.dashboardKPIs.revenueDelta >= 0 ? 'up' : 'down' } : undefined}
+            delta={
+              data
+                ? {
+                    value: `${data.dashboardKPIs.revenueDelta > 0 ? '+' : ''}${data.dashboardKPIs.revenueDelta}%`,
+                    direction: data.dashboardKPIs.revenueDelta >= 0 ? 'up' : 'down',
+                  }
+                : undefined
+            }
             loading={loading}
             iconColor="success"
             icon={
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <line x1="12" y1="1" x2="12" y2="23"/>
-                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <line x1="12" y1="1" x2="12" y2="23" />
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
               </svg>
             }
           />
           <KPICard
             label="Open POs"
             value={loading ? '—' : String(data?.dashboardKPIs.openPOs ?? 0)}
-            delta={data ? { value: `${data.dashboardKPIs.openPOsDelta > 0 ? '+' : ''}${data.dashboardKPIs.openPOsDelta}`, direction: data.dashboardKPIs.openPOsDelta > 0 ? 'up' : 'neutral' } : undefined}
+            delta={
+              data
+                ? {
+                    value: `${data.dashboardKPIs.openPOsDelta > 0 ? '+' : ''}${data.dashboardKPIs.openPOsDelta}`,
+                    direction: data.dashboardKPIs.openPOsDelta > 0 ? 'up' : 'neutral',
+                  }
+                : undefined
+            }
             loading={loading}
             iconColor="warning"
             icon={
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <circle cx="9" cy="21" r="1" />
+                <circle cx="20" cy="21" r="1" />
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
               </svg>
             }
           />
@@ -196,8 +248,15 @@ export default function DashboardPage() {
             loading={loading}
             iconColor="info"
             icon={
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               </svg>
             }
           />
@@ -207,10 +266,18 @@ export default function DashboardPage() {
             loading={loading}
             iconColor="accent"
             icon={
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             }
           />
@@ -219,7 +286,14 @@ export default function DashboardPage() {
         {/* Charts row */}
         <Grid cols={2} tabletCols={1} phoneCols={1} gap={14}>
           <Card padding="md" rimHighlight>
-            <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '16px' }}>
+            <p
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: theme.textPrimary,
+                marginBottom: '16px',
+              }}
+            >
               Revenue
             </p>
             {loading ? (
@@ -228,9 +302,7 @@ export default function DashboardPage() {
               <BarChart
                 data={data?.revenueVsTarget ?? []}
                 xKey="month"
-                bars={[
-                  { key: 'revenue', label: 'Revenue' },
-                ]}
+                bars={[{ key: 'revenue', label: 'Revenue' }]}
                 height={chartHeight}
               />
             ) : (
@@ -239,14 +311,24 @@ export default function DashboardPage() {
           </Card>
 
           <Card padding="md" rimHighlight>
-            <p style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '16px' }}>
+            <p
+              style={{
+                fontSize: '13px',
+                fontWeight: 600,
+                color: theme.textPrimary,
+                marginBottom: '16px',
+              }}
+            >
               Spend by category
             </p>
             {loading ? (
               <div className="skeleton" style={{ height: '260px', borderRadius: '8px' }} />
             ) : (data?.spendByCategory?.length ?? 0) > 0 ? (
               <HorizontalBarChart
-                data={(data?.spendByCategory ?? []).map((d) => ({ label: d.category, value: d.amount }))}
+                data={(data?.spendByCategory ?? []).map((d) => ({
+                  label: d.category,
+                  value: d.amount,
+                }))}
                 height={chartHeight}
                 formatValue={(v) => formatCurrency(v, currency)}
               />
@@ -266,19 +348,39 @@ export default function DashboardPage() {
             </div>
             <Table<Record<string, unknown>>
               columns={[
-                { key: 'number', header: 'PO #', mobilePrimary: true, render: (row) => <span style={{ color: theme.accent, fontWeight: 500 }}>{String((row as Record<string, unknown>)['number'] ?? '')}</span> },
+                {
+                  key: 'number',
+                  header: 'PO #',
+                  mobilePrimary: true,
+                  render: (row) => (
+                    <span style={{ color: theme.accent, fontWeight: 500 }}>
+                      {String(row.number ?? '')}
+                    </span>
+                  ),
+                },
                 { key: 'vendor', header: 'Vendor', mobileSecondary: true },
-                { key: 'amount', header: 'Amount', render: (row) => formatCurrency(Number((row as Record<string, unknown>)['amount']), String((row as Record<string, unknown>)['currency'] ?? currency)) },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  render: (row) =>
+                    formatCurrency(Number(row.amount), String(row.currency ?? currency)),
+                },
                 {
                   key: 'status',
                   header: 'Status',
                   mobileAction: true,
                   render: (row) => (
-                    <Badge variant={statusVariant(String((row as Record<string, unknown>)['status'] ?? ''))} size="sm">{String((row as Record<string, unknown>)['status'] ?? '')}</Badge>
+                    <Badge variant={statusVariant(String(row.status ?? ''))} size="sm">
+                      {String(row.status ?? '')}
+                    </Badge>
                   ),
                 },
               ]}
-              data={loading ? [] : (data?.recentPurchaseOrders as unknown as Record<string, unknown>[] ?? [])}
+              data={
+                loading
+                  ? []
+                  : ((data?.recentPurchaseOrders as unknown as Record<string, unknown>[]) ?? [])
+              }
               loading={loading}
               emptyMessage="No purchase orders"
             />
@@ -293,7 +395,11 @@ export default function DashboardPage() {
             {loading ? (
               <div style={{ padding: '16px' }}>
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="skeleton" style={{ height: '36px', marginBottom: '8px', borderRadius: '6px' }} />
+                  <div
+                    key={i}
+                    className="skeleton"
+                    style={{ height: '36px', marginBottom: '8px', borderRadius: '6px' }}
+                  />
                 ))}
               </div>
             ) : (data?.activityFeed?.length ?? 0) === 0 ? (
@@ -311,20 +417,34 @@ export default function DashboardPage() {
                       alignItems: 'flex-start',
                     }}
                   >
-                    <div style={{
-                      width: '6px', height: '6px',
-                      borderRadius: '50%',
-                      background: theme.accent,
-                      marginTop: '6px',
-                      flexShrink: 0,
-                    }} />
+                    <div
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: theme.accent,
+                        marginTop: '6px',
+                        flexShrink: 0,
+                      }}
+                    />
                     <div>
                       <p style={{ fontSize: '12px', color: theme.textSecondary, margin: 0 }}>
-                        <span style={{ fontWeight: 500, color: theme.textPrimary }}>{event.user}</span>
-                        {' '}<span style={{ color: theme.accent }}>{event.action.replace(/_/g, ' ')}</span>
-                        {event.entity && event.entity !== 'null' ? <>{' '}{event.entity}</> : null}
+                        <span style={{ fontWeight: 500, color: theme.textPrimary }}>
+                          {event.user}
+                        </span>{' '}
+                        <span style={{ color: theme.accent }}>
+                          {event.action.replace(/_/g, ' ')}
+                        </span>
+                        {event.entity && event.entity !== 'null' ? <> {event.entity}</> : null}
                       </p>
-                      <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0, marginTop: '2px' }}>
+                      <p
+                        style={{
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          margin: 0,
+                          marginTop: '2px',
+                        }}
+                      >
                         {new Date(event.timestamp).toLocaleString()}
                       </p>
                     </div>

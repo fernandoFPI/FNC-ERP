@@ -21,9 +21,9 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 
 const BILLING_METHODS: { value: string; label: string }[] = [
   { value: 'fixed_lump_sum', label: 'Fixed Lump Sum' },
-  { value: 'milestone',      label: 'Milestone' },
-  { value: 'cost_plus',      label: 'Cost Plus (Time & Material)' },
-  { value: 'progress',       label: 'Progress (Percentage)' },
+  { value: 'milestone', label: 'Milestone' },
+  { value: 'cost_plus', label: 'Cost Plus (Time & Material)' },
+  { value: 'progress', label: 'Progress (Percentage)' },
 ]
 
 const CURRENCIES = [
@@ -76,10 +76,13 @@ export default function ContractForm() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (projectRef.current && !projectRef.current.contains(e.target as Node)) setProjectOpen(false)
+      if (projectRef.current && !projectRef.current.contains(e.target as Node))
+        setProjectOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
@@ -87,7 +90,8 @@ export default function ContractForm() {
     skip: isEdit || !!urlProjectId,
     fetchPolicy: 'cache-and-network',
   })
-  const projectOptions: Array<{ id: string; name: string; code: string }> = projectsData?.projects?.data ?? []
+  const projectOptions: { id: string; name: string; code: string }[] =
+    projectsData?.projects?.data ?? []
 
   const [form, setForm] = useState({
     contractName: '',
@@ -100,7 +104,11 @@ export default function ContractForm() {
     status: 'draft',
   })
 
-  const { data, refetch } = useQuery(PROJECT_CONTRACT_QUERY, { variables: { id }, skip: !isEdit, fetchPolicy: 'cache-and-network' })
+  const { data, refetch } = useQuery(PROJECT_CONTRACT_QUERY, {
+    variables: { id },
+    skip: !isEdit,
+    fetchPolicy: 'cache-and-network',
+  })
   const [createContract, { loading: creating }] = useMutation(CREATE_PROJECT_CONTRACT)
   const [updateContract, { loading: updating }] = useMutation(UPDATE_PROJECT_CONTRACT)
   const [createMilestone] = useMutation(CREATE_CONTRACT_MILESTONE)
@@ -121,12 +129,12 @@ export default function ContractForm() {
         status: c.status ?? 'draft',
       })
       const loaded: MilestoneRow[] = (c.milestones ?? []).map((m: Record<string, unknown>) => ({
-        id: String(m['id']),
-        name: String(m['name'] ?? ''),
-        sequence: String(m['sequence'] ?? '0'),
-        billableAmount: String(m['billableAmount'] ?? '0'),
-        currencyCode: String(m['currencyCode'] ?? 'IQD'),
-        status: String(m['status'] ?? 'pending'),
+        id: String(m.id),
+        name: String(m.name ?? ''),
+        sequence: String(m.sequence ?? '0'),
+        billableAmount: String(m.billableAmount ?? '0'),
+        currencyCode: String(m.currencyCode ?? 'IQD'),
+        status: String(m.status ?? 'pending'),
       }))
       setMilestones(loaded)
     }
@@ -252,14 +260,24 @@ export default function ContractForm() {
 
   const statusBadge = (status: string) => {
     const colors: Record<string, { bg: string; text: string }> = {
-      pending:   { bg: `${theme.accent}20`, text: theme.accent },
-      reached:   { bg: '#10b98120',         text: '#10b981' },
-      invoiced:  { bg: '#0ea5e920',         text: '#0ea5e9' },
-      cancelled: { bg: '#ef444420',         text: '#ef4444' },
+      pending: { bg: `${theme.accent}20`, text: theme.accent },
+      reached: { bg: '#10b98120', text: '#10b981' },
+      invoiced: { bg: '#0ea5e920', text: '#0ea5e9' },
+      cancelled: { bg: '#ef444420', text: '#ef4444' },
     }
-    const c = colors[status] ?? colors['pending']
+    const c = colors[status] ?? colors.pending
     return (
-      <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', background: c.bg, color: c.text, textTransform: 'capitalize' }}>
+      <span
+        style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          padding: '2px 8px',
+          borderRadius: '4px',
+          background: c.bg,
+          color: c.text,
+          textTransform: 'capitalize',
+        }}
+      >
         {status}
       </span>
     )
@@ -270,52 +288,160 @@ export default function ContractForm() {
       <PageHeader title={isEdit ? 'Edit Contract' : 'New Contract'} subtitle="Project contract" />
 
       <Card style={{ marginTop: '20px' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}
+        >
           {!isEdit && !urlProjectId && (
             <div ref={projectRef}>
-              <label style={{ display: 'block', fontSize: '12px', color: projectError ? '#ef4444' : theme.textSecondary, marginBottom: '4px', fontWeight: 500 }}>
-                Project *{projectError && <span style={{ marginLeft: '6px', fontWeight: 400 }}>{projectError}</span>}
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: projectError ? '#ef4444' : theme.textSecondary,
+                  marginBottom: '4px',
+                  fontWeight: 500,
+                }}
+              >
+                Project *
+                {projectError && (
+                  <span style={{ marginLeft: '6px', fontWeight: 400 }}>{projectError}</span>
+                )}
               </label>
               <div style={{ position: 'relative' }}>
                 <input
-                  value={selectedProjectId
-                    ? (() => { const p = projectOptions.find(o => o.id === selectedProjectId); return p ? `${p.code} — ${p.name}` : '' })()
-                    : projectSearch}
+                  value={
+                    selectedProjectId
+                      ? (() => {
+                          const p = projectOptions.find((o) => o.id === selectedProjectId)
+                          return p ? `${p.code} — ${p.name}` : ''
+                        })()
+                      : projectSearch
+                  }
                   placeholder="Search projects…"
-                  onFocus={() => setProjectOpen(true)}
-                  onChange={e => { setProjectSearch(e.target.value); setSelectedProjectId(''); setProjectOpen(true); setProjectError('') }}
-                  onClick={() => setProjectOpen(true)}
-                  style={{ ...selectStyle, cursor: 'text', paddingRight: '28px', borderColor: projectError ? '#ef4444' : undefined }}
+                  onFocus={() => {
+                    setProjectOpen(true)
+                  }}
+                  onChange={(e) => {
+                    setProjectSearch(e.target.value)
+                    setSelectedProjectId('')
+                    setProjectOpen(true)
+                    setProjectError('')
+                  }}
+                  onClick={() => {
+                    setProjectOpen(true)
+                  }}
+                  style={{
+                    ...selectStyle,
+                    cursor: 'text',
+                    paddingRight: '28px',
+                    borderColor: projectError ? '#ef4444' : undefined,
+                  }}
                 />
-                <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: theme.textMuted, fontSize: '11px' }}>▾</span>
+                <span
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    pointerEvents: 'none',
+                    color: theme.textMuted,
+                    fontSize: '11px',
+                  }}
+                >
+                  ▾
+                </span>
                 {projectOpen && (
-                  <div style={{ position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0, background: theme.bgSurface, border: `1px solid ${theme.border}`, borderRadius: '6px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)', zIndex: 100, maxHeight: '260px', overflowY: 'auto' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 2px)',
+                      left: 0,
+                      right: 0,
+                      background: theme.bgSurface,
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                      zIndex: 100,
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                    }}
+                  >
                     <div style={{ padding: '8px' }}>
                       <input
                         autoFocus
                         value={projectSearch}
-                        onChange={e => { setProjectSearch(e.target.value); setSelectedProjectId('') }}
+                        onChange={(e) => {
+                          setProjectSearch(e.target.value)
+                          setSelectedProjectId('')
+                        }}
                         placeholder="Type to search…"
-                        style={{ width: '100%', padding: '6px 10px', borderRadius: '5px', border: `1px solid ${theme.border}`, background: theme.bgCanvas, color: theme.textPrimary, fontSize: '13px', boxSizing: 'border-box' }}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: '5px',
+                          border: `1px solid ${theme.border}`,
+                          background: theme.bgCanvas,
+                          color: theme.textPrimary,
+                          fontSize: '13px',
+                          boxSizing: 'border-box',
+                        }}
                       />
                     </div>
                     {projectOptions
-                      .filter(p => !projectSearch || `${p.code} ${p.name}`.toLowerCase().includes(projectSearch.toLowerCase()))
-                      .map(p => (
+                      .filter(
+                        (p) =>
+                          !projectSearch ||
+                          `${p.code} ${p.name}`.toLowerCase().includes(projectSearch.toLowerCase()),
+                      )
+                      .map((p) => (
                         <div
                           key={p.id}
-                          onMouseDown={() => { setSelectedProjectId(p.id); setProjectSearch(''); setProjectOpen(false); setProjectError('') }}
-                          style={{ padding: '8px 14px', cursor: 'pointer', fontSize: '13px', color: p.id === selectedProjectId ? theme.accent : theme.textPrimary, background: p.id === selectedProjectId ? `${theme.accent}15` : 'transparent' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = `${theme.accent}10`)}
-                          onMouseLeave={e => (e.currentTarget.style.background = p.id === selectedProjectId ? `${theme.accent}15` : 'transparent')}
+                          onMouseDown={() => {
+                            setSelectedProjectId(p.id)
+                            setProjectSearch('')
+                            setProjectOpen(false)
+                            setProjectError('')
+                          }}
+                          style={{
+                            padding: '8px 14px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            color: p.id === selectedProjectId ? theme.accent : theme.textPrimary,
+                            background:
+                              p.id === selectedProjectId ? `${theme.accent}15` : 'transparent',
+                          }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.background = `${theme.accent}10`)
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.background =
+                              p.id === selectedProjectId ? `${theme.accent}15` : 'transparent')
+                          }
                         >
-                          <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted, marginRight: '8px' }}>{p.code}</span>
+                          <span
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: '12px',
+                              color: theme.textMuted,
+                              marginRight: '8px',
+                            }}
+                          >
+                            {p.code}
+                          </span>
                           {p.name}
                         </div>
-                      ))
-                    }
-                    {projectOptions.filter(p => !projectSearch || `${p.code} ${p.name}`.toLowerCase().includes(projectSearch.toLowerCase())).length === 0 && (
-                      <div style={{ padding: '12px 14px', fontSize: '13px', color: theme.textMuted }}>No projects found</div>
+                      ))}
+                    {projectOptions.filter(
+                      (p) =>
+                        !projectSearch ||
+                        `${p.code} ${p.name}`.toLowerCase().includes(projectSearch.toLowerCase()),
+                    ).length === 0 && (
+                      <div
+                        style={{ padding: '12px 14px', fontSize: '13px', color: theme.textMuted }}
+                      >
+                        No projects found
+                      </div>
                     )}
                   </div>
                 )}
@@ -323,16 +449,41 @@ export default function ContractForm() {
             </div>
           )}
 
-          <Input label="Contract Name" value={form.contractName} onChange={(e) => setForm(f => ({ ...f, contractName: e.target.value }))} required />
-          <Input label="Client Name" value={form.clientName} onChange={(e) => setForm(f => ({ ...f, clientName: e.target.value }))} required />
+          <Input
+            label="Contract Name"
+            value={form.contractName}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, contractName: e.target.value }))
+            }}
+            required
+          />
+          <Input
+            label="Client Name"
+            value={form.clientName}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, clientName: e.target.value }))
+            }}
+            required
+          />
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-            <Input label="Contract Value" type="number" step="0.01" value={form.contractValue} onChange={(e) => setForm(f => ({ ...f, contractValue: e.target.value }))} required />
+            <Input
+              label="Contract Value"
+              type="number"
+              step="0.01"
+              value={form.contractValue}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, contractValue: e.target.value }))
+              }}
+              required
+            />
             <div>
               <SearchableSelect
                 label="Currency"
                 value={form.currencyCode}
-                onChange={(v) => setForm(f => ({ ...f, currencyCode: v }))}
+                onChange={(v) => {
+                  setForm((f) => ({ ...f, currencyCode: v }))
+                }}
                 options={CURRENCIES}
               />
             </div>
@@ -342,19 +493,53 @@ export default function ContractForm() {
             <SearchableSelect
               label="Default Billing Method"
               value={form.defaultBillingMethod}
-              onChange={(v) => setForm(f => ({ ...f, defaultBillingMethod: v }))}
+              onChange={(v) => {
+                setForm((f) => ({ ...f, defaultBillingMethod: v }))
+              }}
               options={BILLING_METHODS}
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-            <Input label="Default Margin %" type="number" step="0.1" value={form.defaultMarginPct} onChange={(e) => setForm(f => ({ ...f, defaultMarginPct: e.target.value }))} />
-            <Input label="Retention %" type="number" step="0.1" value={form.retentionPct} onChange={(e) => setForm(f => ({ ...f, retentionPct: e.target.value }))} />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
+            }}
+          >
+            <Input
+              label="Default Margin %"
+              type="number"
+              step="0.1"
+              value={form.defaultMarginPct}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, defaultMarginPct: e.target.value }))
+              }}
+            />
+            <Input
+              label="Retention %"
+              type="number"
+              step="0.1"
+              value={form.retentionPct}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, retentionPct: e.target.value }))
+              }}
+            />
           </div>
 
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <Button variant="ghost" type="button" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button variant="primary" type="submit" loading={creating || updating}>{isEdit ? 'Save' : 'Create'}</Button>
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                navigate(-1)
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={creating || updating}>
+              {isEdit ? 'Save' : 'Create'}
+            </Button>
           </div>
         </form>
       </Card>
@@ -364,9 +549,14 @@ export default function ContractForm() {
         <Card style={{ marginTop: '20px' }}>
           <div style={{ padding: '20px 24px' }}>
             <div style={{ marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}>Milestones</h3>
+              <h3
+                style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: theme.textPrimary }}
+              >
+                Milestones
+              </h3>
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: theme.textMuted }}>
-                Define payment milestones for milestone-based billing. Only <strong>pending</strong> milestones can be edited or deleted.
+                Define payment milestones for milestone-based billing. Only <strong>pending</strong>{' '}
+                milestones can be edited or deleted.
               </p>
             </div>
 
@@ -394,18 +584,32 @@ export default function ContractForm() {
                               <input
                                 type="number"
                                 value={m.sequence}
-                                onChange={e => setMilestones(ms => ms.map((x, i) => i === idx ? { ...x, sequence: e.target.value } : x))}
+                                onChange={(e) => {
+                                  setMilestones((ms) =>
+                                    ms.map((x, i) =>
+                                      i === idx ? { ...x, sequence: e.target.value } : x,
+                                    ),
+                                  )
+                                }}
                                 style={{ ...selectStyle, width: '50px', padding: '4px 6px' }}
                               />
                             ) : (
-                              <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>{m.sequence}</span>
+                              <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
+                                {m.sequence}
+                              </span>
                             )}
                           </td>
                           <td style={tdStyle}>
                             {isPending ? (
                               <input
                                 value={m.name}
-                                onChange={e => setMilestones(ms => ms.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))}
+                                onChange={(e) => {
+                                  setMilestones((ms) =>
+                                    ms.map((x, i) =>
+                                      i === idx ? { ...x, name: e.target.value } : x,
+                                    ),
+                                  )
+                                }}
                                 style={{ ...selectStyle, padding: '4px 8px', width: '100%' }}
                               />
                             ) : (
@@ -418,21 +622,39 @@ export default function ContractForm() {
                                 type="number"
                                 step="0.01"
                                 value={m.billableAmount}
-                                onChange={e => setMilestones(ms => ms.map((x, i) => i === idx ? { ...x, billableAmount: e.target.value } : x))}
+                                onChange={(e) => {
+                                  setMilestones((ms) =>
+                                    ms.map((x, i) =>
+                                      i === idx ? { ...x, billableAmount: e.target.value } : x,
+                                    ),
+                                  )
+                                }}
                                 style={{ ...selectStyle, padding: '4px 8px', width: '100%' }}
                               />
                             ) : (
-                              <span style={{ fontFamily: 'monospace' }}>{parseFloat(m.billableAmount).toLocaleString()}</span>
+                              <span style={{ fontFamily: 'monospace' }}>
+                                {parseFloat(m.billableAmount).toLocaleString()}
+                              </span>
                             )}
                           </td>
                           <td style={tdStyle}>
                             {isPending ? (
                               <select
                                 value={m.currencyCode}
-                                onChange={e => setMilestones(ms => ms.map((x, i) => i === idx ? { ...x, currencyCode: e.target.value } : x))}
+                                onChange={(e) => {
+                                  setMilestones((ms) =>
+                                    ms.map((x, i) =>
+                                      i === idx ? { ...x, currencyCode: e.target.value } : x,
+                                    ),
+                                  )
+                                }}
                                 style={{ ...selectStyle, padding: '4px 8px' }}
                               >
-                                {CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                {CURRENCIES.map((c) => (
+                                  <option key={c.value} value={c.value}>
+                                    {c.label}
+                                  </option>
+                                ))}
                               </select>
                             ) : (
                               <span style={{ fontFamily: 'monospace' }}>{m.currencyCode}</span>
@@ -453,7 +675,9 @@ export default function ContractForm() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setConfirmDeleteMilestone(m.id!)}
+                                  onClick={() => {
+                                    setConfirmDeleteMilestone(m.id!)
+                                  }}
                                   style={{ color: '#ef4444' }}
                                 >
                                   Delete
@@ -470,49 +694,120 @@ export default function ContractForm() {
             )}
 
             {/* Add new milestone row */}
-            <div style={{ background: theme.bgCanvas, border: `1px solid ${theme.border}`, borderRadius: '8px', padding: '16px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textSecondary, marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <div
+              style={{
+                background: theme.bgCanvas,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                padding: '16px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: theme.textSecondary,
+                  marginBottom: '12px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
                 Add Milestone
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 150px 100px auto', gap: '10px', alignItems: 'flex-end' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '60px 1fr 150px 100px auto',
+                  gap: '10px',
+                  alignItems: 'flex-end',
+                }}
+              >
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Seq</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Seq
+                  </label>
                   <input
                     type="number"
                     placeholder="0"
                     value={newMilestone.sequence}
-                    onChange={e => setNewMilestone(m => ({ ...m, sequence: e.target.value }))}
+                    onChange={(e) => {
+                      setNewMilestone((m) => ({ ...m, sequence: e.target.value }))
+                    }}
                     style={{ ...selectStyle, padding: '7px 8px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Name *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Name *
+                  </label>
                   <input
                     placeholder="Milestone name"
                     value={newMilestone.name}
-                    onChange={e => setNewMilestone(m => ({ ...m, name: e.target.value }))}
+                    onChange={(e) => {
+                      setNewMilestone((m) => ({ ...m, name: e.target.value }))
+                    }}
                     style={{ ...selectStyle, padding: '7px 10px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Billable Amount *</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Billable Amount *
+                  </label>
                   <input
                     type="number"
                     step="0.01"
                     placeholder="0.00"
                     value={newMilestone.billableAmount}
-                    onChange={e => setNewMilestone(m => ({ ...m, billableAmount: e.target.value }))}
+                    onChange={(e) => {
+                      setNewMilestone((m) => ({ ...m, billableAmount: e.target.value }))
+                    }}
                     style={{ ...selectStyle, padding: '7px 8px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Currency</label>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      color: theme.textMuted,
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Currency
+                  </label>
                   <select
                     value={newMilestone.currencyCode}
-                    onChange={e => setNewMilestone(m => ({ ...m, currencyCode: e.target.value }))}
+                    onChange={(e) => {
+                      setNewMilestone((m) => ({ ...m, currencyCode: e.target.value }))
+                    }}
                     style={{ ...selectStyle, padding: '7px 8px' }}
                   >
-                    {CURRENCIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    {CURRENCIES.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -542,7 +837,9 @@ export default function ContractForm() {
           if (confirmDeleteMilestone) await handleDeleteMilestone(confirmDeleteMilestone)
           setConfirmDeleteMilestone(null)
         }}
-        onCancel={() => setConfirmDeleteMilestone(null)}
+        onCancel={() => {
+          setConfirmDeleteMilestone(null)
+        }}
       />
     </div>
   )

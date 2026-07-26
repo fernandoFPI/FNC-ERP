@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import { themes, ThemeKey, ThemeTokens } from './tokens'
+import type { ThemeKey, ThemeTokens } from './tokens'
+import { themes } from './tokens'
 
 interface ThemeContextValue {
   theme: ThemeTokens
@@ -58,8 +59,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const t = themes[themeKey]
-    document.documentElement.style.setProperty('transition',
-      'background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease')
+    document.documentElement.style.setProperty(
+      'transition',
+      'background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease',
+    )
     document.body.style.transition = 'background-color 0.25s ease, color 0.25s ease'
     applyTokens(t)
     document.body.className = themeKey

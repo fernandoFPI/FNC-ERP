@@ -36,15 +36,22 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   async function switchCompany(company: typeof activeCompany) {
-    if (!company || company.id === activeCompany?.id) { setOpen(false); return }
+    if (!company || company.id === activeCompany?.id) {
+      setOpen(false)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const res = await api.post<{ accessToken: string }>('/auth/company/switch', { companyId: company.id })
+      const res = await api.post<{ accessToken: string }>('/auth/company/switch', {
+        companyId: company.id,
+      })
       const newToken = res.data.accessToken
       setAccessToken(newToken)
       const decoded = decodeJWT(newToken)
@@ -54,9 +61,11 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       setOpen(false)
       navigate('/dashboard')
     } catch (e: unknown) {
-      const msg = e && typeof e === 'object' && 'response' in e
-        ? ((e as { response?: { data?: { message?: string } } }).response?.data?.message ?? 'Switch failed')
-        : 'Switch failed'
+      const msg =
+        e && typeof e === 'object' && 'response' in e
+          ? ((e as { response?: { data?: { message?: string } } }).response?.data?.message ??
+            'Switch failed')
+          : 'Switch failed'
       setError(msg)
     } finally {
       setLoading(false)
@@ -68,7 +77,10 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
   // ── Compact pill (phone) ─────────────────────────────────────────────────────
   const compactButton = (
     <button
-      onClick={() => { setError(null); setOpen((v) => !v) }}
+      onClick={() => {
+        setError(null)
+        setOpen((v) => !v)
+      }}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -88,19 +100,35 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       {loading ? (
         <Spinner size="sm" />
       ) : (
-        <span style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: color,
-          boxShadow: `0 0 5px ${color}`,
-          flexShrink: 0,
-        }} />
+        <span
+          style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            background: color,
+            boxShadow: `0 0 5px ${color}`,
+            flexShrink: 0,
+          }}
+        />
       )}
-      <span style={{ maxWidth: '56px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span
+        style={{
+          maxWidth: '56px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
         {(activeCompany?.name ?? 'Co').split(' ')[0]}
       </span>
-      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2">
+      <svg
+        width="8"
+        height="8"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={theme.textMuted}
+        strokeWidth="2"
+      >
         <polyline points="6 9 12 15 18 9" />
       </svg>
     </button>
@@ -109,7 +137,10 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
   // ── Full pill (tablet + desktop) ─────────────────────────────────────────────
   const fullButton = (
     <button
-      onClick={() => { setError(null); setOpen((v) => !v) }}
+      onClick={() => {
+        setError(null)
+        setOpen((v) => !v)
+      }}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -129,19 +160,35 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       {loading ? (
         <Spinner size="sm" />
       ) : (
-        <span style={{
-          width: '7px',
-          height: '7px',
-          borderRadius: '50%',
-          background: color,
-          boxShadow: `0 0 6px ${color}`,
-          flexShrink: 0,
-        }} />
+        <span
+          style={{
+            width: '7px',
+            height: '7px',
+            borderRadius: '50%',
+            background: color,
+            boxShadow: `0 0 6px ${color}`,
+            flexShrink: 0,
+          }}
+        />
       )}
-      <span style={{ maxWidth: '130px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span
+        style={{
+          maxWidth: '130px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
         {activeCompany?.name ?? 'Select company'}
       </span>
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="2">
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={theme.textMuted}
+        strokeWidth="2"
+      >
         <polyline points="6 9 12 15 18 9" />
       </svg>
     </button>
@@ -152,11 +199,23 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       {compact ? compactButton : fullButton}
 
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 500, minWidth: '220px' }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            zIndex: 500,
+            minWidth: '220px',
+          }}
+        >
           <Card padding="none" rimHighlight>
             <div style={{ padding: '4px' }}>
               {error && (
-                <p style={{ fontSize: '12px', color: theme.danger, padding: '6px 12px', margin: 0 }}>{error}</p>
+                <p
+                  style={{ fontSize: '12px', color: theme.danger, padding: '6px 12px', margin: 0 }}
+                >
+                  {error}
+                </p>
               )}
               {companies.map((company) => {
                 const isActive = company.id === activeCompany?.id
@@ -178,19 +237,33 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
                       textAlign: 'left',
                       fontFamily: 'inherit',
                     }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = theme.bgSurfaceHover }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = isActive ? theme.accentBg : 'none' }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) e.currentTarget.style.background = theme.bgSurfaceHover
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive)
+                        e.currentTarget.style.background = isActive ? theme.accentBg : 'none'
+                    }}
                   >
-                    <span style={{
-                      width: '8px',
-                      height: '8px',
-                      borderRadius: '50%',
-                      background: c,
-                      boxShadow: `0 0 6px ${c}`,
-                      flexShrink: 0,
-                    }} />
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: c,
+                        boxShadow: `0 0 6px ${c}`,
+                        flexShrink: 0,
+                      }}
+                    />
                     <div>
-                      <p style={{ fontSize: '13px', fontWeight: 500, color: isActive ? theme.accent : theme.textPrimary, margin: 0 }}>
+                      <p
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          color: isActive ? theme.accent : theme.textPrimary,
+                          margin: 0,
+                        }}
+                      >
                         {company.name}
                       </p>
                       <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
@@ -198,7 +271,15 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
                       </p>
                     </div>
                     {isActive && (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="2.5" style={{ marginLeft: 'auto' }}>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke={theme.accent}
+                        strokeWidth="2.5"
+                        style={{ marginLeft: 'auto' }}
+                      >
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}

@@ -23,16 +23,20 @@ export function StatBadge({ value, label, variant = 'default', size = 'md' }: St
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-      <span style={{ fontSize: valueFontSize, fontWeight: 700, color: valueColor, lineHeight: 1.2 }}>
+      <span
+        style={{ fontSize: valueFontSize, fontWeight: 700, color: valueColor, lineHeight: 1.2 }}
+      >
         {String(value)}
       </span>
-      <span style={{
-        fontSize: labelFontSize,
-        color: theme.textMuted,
-        fontWeight: 500,
-        textTransform: 'uppercase',
-        letterSpacing: '0.04em',
-      }}>
+      <span
+        style={{
+          fontSize: labelFontSize,
+          color: theme.textMuted,
+          fontWeight: 500,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+        }}
+      >
         {label}
       </span>
     </div>

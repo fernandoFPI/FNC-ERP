@@ -24,26 +24,43 @@ export interface POPrintData {
 
 function fmt(n: number, currency: string): string {
   return (
-    new Intl.NumberFormat('en-IQ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) +
-    ' ' + currency
+    new Intl.NumberFormat('en-IQ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+      n,
+    ) +
+    ' ' +
+    currency
   )
 }
 
 function fmtDate(d: string): string {
   try {
-    return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+    return new Date(d).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    })
   } catch {
     return d
   }
 }
 
-const PRIORITY_LABEL: Record<string, string> = { low: 'Standard', high: 'High Priority', emergency: 'EMERGENCY' }
-const PRIORITY_COLOR: Record<string, string> = { low: '#1a3c5e', high: '#d97706', emergency: '#dc2626' }
+const PRIORITY_LABEL: Record<string, string> = {
+  low: 'Standard',
+  high: 'High Priority',
+  emergency: 'EMERGENCY',
+}
+const PRIORITY_COLOR: Record<string, string> = {
+  low: '#1a3c5e',
+  high: '#d97706',
+  emergency: '#dc2626',
+}
 
 export function buildPurchaseOrderHTML(po: POPrintData): string {
   const cur = po.currency_code ?? 'IQD'
 
-  const lineRows = po.lines.map((l, i) => `
+  const lineRows = po.lines
+    .map(
+      (l, i) => `
     <tr>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">
@@ -54,7 +71,9 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">${fmt(l.unit_price, cur)}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">${fmt(l.total, cur)}</td>
     </tr>
-  `).join('')
+  `,
+    )
+    .join('')
 
   const priorityColor = PRIORITY_COLOR[po.priority] ?? PRIORITY_COLOR.low
   const priorityLabel = PRIORITY_LABEL[po.priority] ?? 'Standard'
@@ -87,10 +106,14 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
     <div style="text-align:right">
       <div style="font-size:24px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Purchase Order</div>
       <div style="font-size:15px;font-family:monospace;color:#1a3c5e;margin-top:4px;font-weight:600">${po.po_number}</div>
-      ${po.priority !== 'low' ? `
+      ${
+        po.priority !== 'low'
+          ? `
       <div style="margin-top:6px;display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;background:${priorityColor}18;color:${priorityColor};border:1px solid ${priorityColor}40">
         ${priorityLabel}
-      </div>` : ''}
+      </div>`
+          : ''
+      }
     </div>
   </div>
 
@@ -106,11 +129,15 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
           <td style="padding:4px 0;font-size:11px;color:#888">Issue date</td>
           <td style="padding:4px 0;font-size:12px;font-weight:600;text-align:right">${fmtDate(po.created_at)}</td>
         </tr>
-        ${po.expected_delivery_date ? `
+        ${
+          po.expected_delivery_date
+            ? `
         <tr>
           <td style="padding:4px 0;font-size:11px;color:#888">Expected delivery</td>
           <td style="padding:4px 0;font-size:12px;font-weight:600;text-align:right">${fmtDate(po.expected_delivery_date)}</td>
-        </tr>` : ''}
+        </tr>`
+            : ''
+        }
         <tr>
           <td style="padding:4px 0;font-size:11px;color:#888">Currency</td>
           <td style="padding:4px 0;font-size:12px;font-weight:600;text-align:right">${cur}</td>

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Card } from '../ui/Card'
 import { useTheme } from '../../theme/ThemeContext'
-import { ThemeKey, themes } from '../../theme/tokens'
+import type { ThemeKey } from '../../theme/tokens'
+import { themes } from '../../theme/tokens'
 
 interface ThemePreview {
   canvas: string
@@ -11,7 +12,7 @@ interface ThemePreview {
 
 const PREVIEWS: Record<ThemeKey, ThemePreview> = {
   'light-flat': { canvas: '#f4f6f8', surface: '#ffffff', accent: '#4a7a9b' },
-  'black': { canvas: '#141618', surface: '#1c1e21', accent: '#6ba8ca' },
+  black: { canvas: '#141618', surface: '#1c1e21', accent: '#6ba8ca' },
 }
 
 export function ThemeSwitcher() {
@@ -24,7 +25,9 @@ export function ThemeSwitcher() {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+    }
   }, [])
 
   const themeKeys: ThemeKey[] = ['light-flat', 'black']
@@ -32,7 +35,9 @@ export function ThemeSwitcher() {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v)
+        }}
         aria-label="Switch theme"
         style={{
           width: '34px',
@@ -49,11 +54,25 @@ export function ThemeSwitcher() {
         }}
       >
         {themeKey === 'black' ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          >
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
         ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          >
             <circle cx="12" cy="12" r="5" />
             <line x1="12" y1="1" x2="12" y2="3" />
             <line x1="12" y1="21" x2="12" y2="23" />
@@ -68,9 +87,26 @@ export function ThemeSwitcher() {
       </button>
 
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 500, width: '240px' }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            zIndex: 500,
+            width: '240px',
+          }}
+        >
           <Card padding="sm" rimHighlight>
-            <p style={{ fontSize: '11px', fontWeight: 600, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            <p
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: theme.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                marginBottom: '8px',
+              }}
+            >
               Theme
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -81,7 +117,10 @@ export function ThemeSwitcher() {
                 return (
                   <button
                     key={key}
-                    onClick={() => { setTheme(key); setOpen(false) }}
+                    onClick={() => {
+                      setTheme(key)
+                      setOpen(false)
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -97,44 +136,67 @@ export function ThemeSwitcher() {
                     }}
                   >
                     {/* Mini preview */}
-                    <div style={{
-                      width: '36px',
-                      height: '26px',
-                      borderRadius: '6px',
-                      background: prev.canvas,
-                      border: `1px solid ${theme.border}`,
-                      overflow: 'hidden',
-                      position: 'relative',
-                      flexShrink: 0,
-                    }}>
-                      <div style={{
-                        position: 'absolute',
-                        top: '4px',
-                        left: '4px',
-                        right: '4px',
-                        bottom: '4px',
-                        borderRadius: '3px',
-                        background: prev.surface,
-                        border: `0.5px solid ${prev.accent}44`,
-                      }} />
-                      <div style={{
-                        position: 'absolute',
-                        top: '6px',
-                        left: '6px',
-                        width: '12px',
-                        height: '3px',
-                        borderRadius: '2px',
-                        background: prev.accent,
-                      }} />
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '26px',
+                        borderRadius: '6px',
+                        background: prev.canvas,
+                        border: `1px solid ${theme.border}`,
+                        overflow: 'hidden',
+                        position: 'relative',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          left: '4px',
+                          right: '4px',
+                          bottom: '4px',
+                          borderRadius: '3px',
+                          background: prev.surface,
+                          border: `0.5px solid ${prev.accent}44`,
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '6px',
+                          left: '6px',
+                          width: '12px',
+                          height: '3px',
+                          borderRadius: '2px',
+                          background: prev.accent,
+                        }}
+                      />
                     </div>
                     <div>
-                      <p style={{ fontSize: '12px', fontWeight: 500, color: isActive ? theme.accent : theme.textPrimary, margin: 0 }}>
+                      <p
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 500,
+                          color: isActive ? theme.accent : theme.textPrimary,
+                          margin: 0,
+                        }}
+                      >
                         {t.label}
                       </p>
-                      <p style={{ fontSize: '10px', color: theme.textMuted, margin: 0 }}>{t.description}</p>
+                      <p style={{ fontSize: '10px', color: theme.textMuted, margin: 0 }}>
+                        {t.description}
+                      </p>
                     </div>
                     {isActive && (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="2.5" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke={theme.accent}
+                        strokeWidth="2.5"
+                        style={{ marginLeft: 'auto', flexShrink: 0 }}
+                      >
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}

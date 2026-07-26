@@ -20,11 +20,14 @@ interface Props {
 }
 
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-const LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+const LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 
 function loadLeaflet(): Promise<void> {
   return new Promise((resolve) => {
-    if (window.L) { resolve(); return }
+    if (window.L) {
+      resolve()
+      return
+    }
 
     if (!document.getElementById('leaflet-css')) {
       const link = document.createElement('link')
@@ -38,7 +41,9 @@ function loadLeaflet(): Promise<void> {
       const script = document.createElement('script')
       script.id = 'leaflet-js'
       script.src = LEAFLET_JS
-      script.onload = () => resolve()
+      script.onload = () => {
+        resolve()
+      }
       document.head.appendChild(script)
     } else {
       resolve()
@@ -54,15 +59,20 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markerRef = useRef<any>(null)
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(
-    initialLat != null && initialLng != null ? { lat: initialLat, lng: initialLng } : null
+    initialLat != null && initialLng != null ? { lat: initialLat, lng: initialLng } : null,
   )
   const [leafletReady, setLeafletReady] = useState(!!window.L)
 
   // Load Leaflet when the modal opens
   useEffect(() => {
     if (!open) return
-    if (window.L) { setLeafletReady(true); return }
-    loadLeaflet().then(() => setLeafletReady(true))
+    if (window.L) {
+      setLeafletReady(true)
+      return
+    }
+    loadLeaflet().then(() => {
+      setLeafletReady(true)
+    })
   }, [open])
 
   // Initialise / update the map whenever the modal is open and Leaflet is ready
@@ -73,7 +83,10 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
     if (!mapRef.current) {
       const defaultLat = initialLat ?? 33.3152
       const defaultLng = initialLng ?? 44.3661
-      const map = L.map(mapContainerRef.current, { zoomControl: true }).setView([defaultLat, defaultLng], 13)
+      const map = L.map(mapContainerRef.current, { zoomControl: true }).setView(
+        [defaultLat, defaultLng],
+        13,
+      )
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -123,7 +136,9 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
 
     // Invalidate size after modal animation settles
     const t = setTimeout(() => mapRef.current?.invalidateSize(), 150)
-    return () => clearTimeout(t)
+    return () => {
+      clearTimeout(t)
+    }
   }, [open, leafletReady, initialLat, initialLng])
 
   // Destroy map when modal closes
@@ -149,7 +164,9 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
       size="lg"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
           <Button variant="primary" onClick={handleConfirm} disabled={!pin}>
             {pin ? `Use (${pin.lat}, ${pin.lng})` : 'Click map to place pin'}
           </Button>
@@ -158,7 +175,9 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {!leafletReady && (
-          <div style={{ textAlign: 'center', color: theme.textMuted, padding: '20px' }}>Loading map…</div>
+          <div style={{ textAlign: 'center', color: theme.textMuted, padding: '20px' }}>
+            Loading map…
+          </div>
         )}
         {/* Map container — always rendered so the ref is stable */}
         <div
@@ -173,10 +192,21 @@ export function MapPinPicker({ open, onClose, onConfirm, initialLat, initialLng 
           }}
         />
         <div style={{ fontSize: '12px', color: theme.textMuted }}>
-          Click anywhere on the map to place a pin. Drag the pin to adjust. You can also use the search box built into OpenStreetMap tiles.
+          Click anywhere on the map to place a pin. Drag the pin to adjust. You can also use the
+          search box built into OpenStreetMap tiles.
         </div>
         {pin && (
-          <div style={{ fontSize: '12px', fontFamily: 'monospace', color: theme.textSecondary, background: theme.bgSurface, padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.border}` }}>
+          <div
+            style={{
+              fontSize: '12px',
+              fontFamily: 'monospace',
+              color: theme.textSecondary,
+              background: theme.bgSurface,
+              padding: '6px 10px',
+              borderRadius: '6px',
+              border: `1px solid ${theme.border}`,
+            }}
+          >
             Lat: {pin.lat} · Lng: {pin.lng}
           </div>
         )}

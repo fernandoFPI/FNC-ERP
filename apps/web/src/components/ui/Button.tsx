@@ -20,8 +20,8 @@ interface ButtonProps {
 }
 
 const desktopHeights = { sm: '28px', md: '34px', lg: '40px' }
-const fontSizes      = { sm: '12px', md: '13px', lg: '14px' }
-const desktopPads    = { sm: '0 10px', md: '0 14px', lg: '0 18px' }
+const fontSizes = { sm: '12px', md: '13px', lg: '14px' }
+const desktopPads = { sm: '0 10px', md: '0 14px', lg: '0 18px' }
 
 export function Button({
   variant = 'primary',
@@ -67,14 +67,16 @@ export function Button({
 
   const isDisabled = disabled || loading
 
-  const mobileOverrides: React.CSSProperties = isPhone ? {
-    minHeight: '44px',
-    height: 'auto',
-    fontSize: size === 'sm' ? '13px' : '15px',
-    padding: size === 'sm' ? '10px 14px' : '12px 20px',
-    width: fullWidthOnMobile ? '100%' : undefined,
-    borderRadius: '10px',
-  } : {}
+  const mobileOverrides: React.CSSProperties = isPhone
+    ? {
+        minHeight: '44px',
+        height: 'auto',
+        fontSize: size === 'sm' ? '13px' : '15px',
+        padding: size === 'sm' ? '10px 14px' : '12px 20px',
+        width: fullWidthOnMobile ? '100%' : undefined,
+        borderRadius: '10px',
+      }
+    : {}
 
   return (
     <button
@@ -133,20 +135,22 @@ export function StickyActionBar({ children }: StickyActionBarProps) {
   if (!isPhone) return <>{children}</>
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-      left: 0,
-      right: 0,
-      padding: '12px 16px',
-      background: theme.bgSurface,
-      borderTop: `0.5px solid ${theme.border}`,
-      display: 'flex',
-      gap: '10px',
-      zIndex: 30,
-      backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-      WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        left: 0,
+        right: 0,
+        padding: '12px 16px',
+        background: theme.bgSurface,
+        borderTop: `0.5px solid ${theme.border}`,
+        display: 'flex',
+        gap: '10px',
+        zIndex: 30,
+        backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+        WebkitBackdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+      }}
+    >
       {children}
     </div>
   )

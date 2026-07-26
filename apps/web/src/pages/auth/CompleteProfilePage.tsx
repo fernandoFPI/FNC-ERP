@@ -44,7 +44,6 @@ export default function CompleteProfilePage() {
   const [errors, setErrors] = useState<Partial<typeof form>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
-
   function validate() {
     const e: Partial<typeof form> = {}
     if (!form.firstName.trim()) e.firstName = 'First name is required'
@@ -94,81 +93,116 @@ export default function CompleteProfilePage() {
     if (file) setPreview(URL.createObjectURL(file))
   }
 
-  const field = (
-    key: keyof typeof form,
-    label: string,
-    placeholder: string,
-    type = 'text',
-  ) => (
+  const field = (key: keyof typeof form, label: string, placeholder: string, type = 'text') => (
     <Input
       key={key}
       label={label}
       type={type}
       value={form[key]}
-      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+      onChange={(e) => {
+        setForm((f) => ({ ...f, [key]: e.target.value }))
+      }}
       placeholder={placeholder}
       error={errors[key]}
     />
   )
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: theme.bgCanvas,
-      padding: '24px',
-    }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: theme.bgCanvas,
+        padding: '24px',
+      }}
+    >
       <div style={{ width: '100%', maxWidth: '520px' }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{
-            width: '48px', height: '48px', borderRadius: '12px',
-            background: theme.accentBg, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', margin: '0 auto 16px', fontSize: '24px',
-          }}>
+          <div
+            style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              background: theme.accentBg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+              fontSize: '24px',
+            }}
+          >
             👤
           </div>
-          <h1 style={{ fontSize: '22px', fontWeight: 700, color: theme.textPrimary, margin: '0 0 6px' }}>
+          <h1
+            style={{
+              fontSize: '22px',
+              fontWeight: 700,
+              color: theme.textPrimary,
+              margin: '0 0 6px',
+            }}
+          >
             Complete your profile
           </h1>
           <p style={{ fontSize: '13px', color: theme.textMuted, margin: 0 }}>
-            Logged in as <strong style={{ color: theme.textSecondary }}>{user?.email}</strong>.
-            Fill in your details to continue.
+            Logged in as <strong style={{ color: theme.textSecondary }}>{user?.email}</strong>. Fill
+            in your details to continue.
           </p>
         </div>
 
-        <div style={{
-          background: theme.bgSurface,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '12px',
-          padding: '28px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '18px',
-        }}>
+        <div
+          style={{
+            background: theme.bgSurface,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '12px',
+            padding: '28px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
+          }}
+        >
           {/* Avatar */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}
+          >
             <div
               onClick={() => fileRef.current?.click()}
               style={{
-                width: '88px', height: '88px', borderRadius: '50%',
+                width: '88px',
+                height: '88px',
+                borderRadius: '50%',
                 border: `2px dashed ${theme.border}`,
                 background: theme.bgCanvas,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', overflow: 'hidden', flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                overflow: 'hidden',
+                flexShrink: 0,
                 transition: 'border-color 0.15s',
               }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = theme.accent)}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = theme.border)}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = theme.accent)}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = theme.border)}
             >
-              {preview
-                ? <img src={preview} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <span style={{ fontSize: '32px' }}>📷</span>
-              }
+              {preview ? (
+                <img
+                  src={preview}
+                  alt="avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <span style={{ fontSize: '32px' }}>📷</span>
+              )}
             </div>
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={handleAvatarChange} />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              style={{ display: 'none' }}
+              onChange={handleAvatarChange}
+            />
             <span style={{ fontSize: '11px', color: theme.textMuted }}>
               {avatar ? avatar.name : 'Click to upload a profile photo (optional)'}
             </span>
@@ -184,15 +218,27 @@ export default function CompleteProfilePage() {
 
           {/* Email (read-only) */}
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: theme.textSecondary, marginBottom: '6px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: theme.textSecondary,
+                marginBottom: '6px',
+              }}
+            >
               Email
             </label>
-            <div style={{
-              padding: '9px 12px', borderRadius: '6px',
-              border: `1px solid ${theme.border}`,
-              background: theme.bgCanvas,
-              fontSize: '13px', color: theme.textMuted,
-            }}>
+            <div
+              style={{
+                padding: '9px 12px',
+                borderRadius: '6px',
+                border: `1px solid ${theme.border}`,
+                background: theme.bgCanvas,
+                fontSize: '13px',
+                color: theme.textMuted,
+              }}
+            >
               {user?.email}
             </div>
           </div>
@@ -203,7 +249,9 @@ export default function CompleteProfilePage() {
           <Button
             variant="primary"
             size="md"
-            onClick={() => { void handleSubmit() }}
+            onClick={() => {
+              void handleSubmit()
+            }}
             loading={saving}
             style={{ marginTop: '4px' }}
           >

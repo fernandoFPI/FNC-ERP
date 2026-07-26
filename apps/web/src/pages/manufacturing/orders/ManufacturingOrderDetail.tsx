@@ -2,8 +2,12 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
-  MANUFACTURING_ORDER_QUERY, MO_COST_ANALYSIS_QUERY,
-  CONFIRM_MO, START_MO, COMPLETE_MO, CANCEL_MO,
+  MANUFACTURING_ORDER_QUERY,
+  MO_COST_ANALYSIS_QUERY,
+  CONFIRM_MO,
+  START_MO,
+  COMPLETE_MO,
+  CANCEL_MO,
 } from '../../../graphql/manufacturing'
 import { MO_MISSING_COMPONENTS_QUERY } from '../../../graphql/procurement'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -21,7 +25,11 @@ import { MOCompletionForm } from './MOCompletionForm'
 import { MOCostAnalysis } from './MOCostAnalysis'
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
-  draft: 'neutral', confirmed: 'info', in_progress: 'warning', done: 'success', cancelled: 'danger',
+  draft: 'neutral',
+  confirmed: 'info',
+  in_progress: 'warning',
+  done: 'success',
+  cancelled: 'danger',
 }
 
 interface MOComponentStatus {
@@ -42,11 +50,14 @@ export default function ManufacturingOrderDetail() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const [showComplete, setShowComplete] = useState(false)
-  const [showCancel,   setShowCancel]   = useState(false)
-  const [cancelNotes,  setCancelNotes]  = useState('')
+  const [showCancel, setShowCancel] = useState(false)
+  const [cancelNotes, setCancelNotes] = useState('')
   const [tab, setTab] = useState('details')
 
-  const { data, loading, refetch } = useQuery(MANUFACTURING_ORDER_QUERY, { variables: { id }, skip: !id })
+  const { data, loading, refetch } = useQuery(MANUFACTURING_ORDER_QUERY, {
+    variables: { id },
+    skip: !id,
+  })
   const { data: costData } = useQuery(MO_COST_ANALYSIS_QUERY, {
     variables: { moId: id },
     skip: !id || data?.manufacturingOrder?.status !== 'done',
@@ -58,11 +69,11 @@ export default function ManufacturingOrderDetail() {
   })
   const missingComponents: MOComponentStatus[] = missingData?.moMissingComponents ?? []
   const [confirmMO, { loading: confirming }] = useMutation(CONFIRM_MO)
-  const [startMO,   { loading: starting   }] = useMutation(START_MO)
-  const [completeMO,{ loading: completing }] = useMutation(COMPLETE_MO)
-  const [cancelMO,  { loading: cancelling }] = useMutation(CANCEL_MO)
+  const [startMO, { loading: starting }] = useMutation(START_MO)
+  const [completeMO, { loading: completing }] = useMutation(COMPLETE_MO)
+  const [cancelMO, { loading: cancelling }] = useMutation(CANCEL_MO)
 
-  const mo           = data?.manufacturingOrder
+  const mo = data?.manufacturingOrder
   const costAnalysis = costData?.moCostAnalysis
 
   async function handleAction(fn: () => Promise<unknown>, successMsg: string) {
@@ -75,35 +86,59 @@ export default function ManufacturingOrderDetail() {
     }
   }
 
-  async function handleComplete(input: { qty_produced: number; actual_cost?: number; notes?: string; lines?: Array<{ component_product_id: string; qty_consumed: number; unit_cost?: number }> }) {
+  async function handleComplete(input: {
+    qty_produced: number
+    actual_cost?: number
+    notes?: string
+    lines?: { component_product_id: string; qty_consumed: number; unit_cost?: number }[]
+  }) {
     await handleAction(
-      () => completeMO({ variables: { id, input }, refetchQueries: [{ query: MANUFACTURING_ORDER_QUERY, variables: { id } }] }),
+      () =>
+        completeMO({
+          variables: { id, input },
+          refetchQueries: [{ query: MANUFACTURING_ORDER_QUERY, variables: { id } }],
+        }),
       'MO completed',
     )
     setShowComplete(false)
   }
 
   if (loading) return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
-  if (!mo) return (
-    <div style={{ padding: '24px' }}>
-      <PageHeader title="Manufacturing Order not found" actions={<Button variant="secondary" size="sm" onClick={() => navigate(-1)}>Back</Button>} />
-      <div style={{ color: theme.textMuted, fontSize: '13px', marginTop: '12px' }}>
-        This Manufacturing Order doesn't exist, or it belongs to a different company than the one you're currently viewing. Switch to that company to view it.
+  if (!mo)
+    return (
+      <div style={{ padding: '24px' }}>
+        <PageHeader
+          title="Manufacturing Order not found"
+          actions={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                navigate(-1)
+              }}
+            >
+              Back
+            </Button>
+          }
+        />
+        <div style={{ color: theme.textMuted, fontSize: '13px', marginTop: '12px' }}>
+          This Manufacturing Order doesn't exist, or it belongs to a different company than the one
+          you're currently viewing. Switch to that company to view it.
+        </div>
       </div>
-    </div>
-  )
+    )
 
-  const planned  = parseFloat(mo.planned_cost ?? '0')
-  const actual   = parseFloat(mo.actual_cost  ?? '0')
+  const planned = parseFloat(mo.planned_cost ?? '0')
+  const actual = parseFloat(mo.actual_cost ?? '0')
   const variance = actual - planned
-  const isDone   = mo.status === 'done'
+  const isDone = mo.status === 'done'
 
-  const shortfallCount = missingComponents.filter(c => c.qtyShortfall > 0).length
+  const shortfallCount = missingComponents.filter((c) => c.qtyShortfall > 0).length
 
   const TABS = [
-    { key: 'details',    label: 'Details' },
+    { key: 'details', label: 'Details' },
     { key: 'components', label: 'Components' },
-    { key: 'stock',      label: 'Components & Stock' },
+    { key: 'stock', label: 'Components & Stock' },
     ...(isDone ? [{ key: 'costs', label: 'Cost Analysis' }] : []),
   ]
 
@@ -114,37 +149,88 @@ export default function ManufacturingOrderDetail() {
         subtitle={`${mo.product_name ?? '—'} · ${mo.work_center_name ?? 'No work center'}`}
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <Badge variant={STATUS_VARIANT[mo.status] ?? 'neutral'}>{mo.status.replace('_', ' ')}</Badge>
+            <Badge variant={STATUS_VARIANT[mo.status] ?? 'neutral'}>
+              {mo.status.replace('_', ' ')}
+            </Badge>
             {mo.status === 'draft' && (
-              <Button variant="primary" size="sm" onClick={() => handleAction(() => confirmMO({ variables: { id } }), 'MO confirmed')} loading={confirming}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleAction(() => confirmMO({ variables: { id } }), 'MO confirmed')}
+                loading={confirming}
+              >
                 Confirm
               </Button>
             )}
             {mo.status === 'confirmed' && (
-              <Button variant="primary" size="sm" onClick={() => handleAction(() => startMO({ variables: { id } }), 'MO started')} loading={starting}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleAction(() => startMO({ variables: { id } }), 'MO started')}
+                loading={starting}
+              >
                 Start Production
               </Button>
             )}
             {mo.status === 'in_progress' && (
-              <Button variant="primary" size="sm" onClick={() => setShowComplete(true)}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowComplete(true)
+                }}
+              >
                 Mark Complete
               </Button>
             )}
             {['draft', 'confirmed'].includes(mo.status) && (
-              <Button variant="ghost" size="sm" onClick={() => setShowCancel(true)}>Cancel</Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowCancel(true)
+                }}
+              >
+                Cancel
+              </Button>
             )}
           </div>
         }
       />
 
       {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginTop: '20px' }}>
-        <KPICard title="Qty Planned"  value={parseFloat(mo.qty_planned).toLocaleString()}  subtitle="units" iconColor="info" />
-        <KPICard title="Qty Produced" value={parseFloat(mo.qty_produced).toLocaleString()} subtitle="units" iconColor="success" />
-        <KPICard title="Planned Cost" value={planned.toLocaleString()} subtitle="IQD" iconColor="info" />
-        <KPICard title="Actual Cost"  value={actual.toLocaleString()}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+          gap: '12px',
+          marginTop: '20px',
+        }}
+      >
+        <KPICard
+          title="Qty Planned"
+          value={parseFloat(mo.qty_planned).toLocaleString()}
+          subtitle="units"
+          iconColor="info"
+        />
+        <KPICard
+          title="Qty Produced"
+          value={parseFloat(mo.qty_produced).toLocaleString()}
+          subtitle="units"
+          iconColor="success"
+        />
+        <KPICard
+          title="Planned Cost"
+          value={planned.toLocaleString()}
+          subtitle="IQD"
+          iconColor="info"
+        />
+        <KPICard
+          title="Actual Cost"
+          value={actual.toLocaleString()}
           subtitle={`${variance >= 0 ? '+' : ''}${variance.toFixed(0)} IQD variance`}
-          iconColor={variance > 0 ? 'danger' : 'success'} />
+          iconColor={variance > 0 ? 'danger' : 'success'}
+        />
       </div>
 
       {/* Tabs */}
@@ -155,45 +241,129 @@ export default function ManufacturingOrderDetail() {
       <div style={{ marginTop: '16px' }}>
         {tab === 'details' && (
           <Card style={{ padding: '20px', maxWidth: '520px' }}>
-            <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px', marginBottom: '12px' }}>Details</div>
+            <div
+              style={{
+                fontWeight: 600,
+                color: theme.textPrimary,
+                fontSize: '14px',
+                marginBottom: '12px',
+              }}
+            >
+              Details
+            </div>
             {[
-              ['BOM',            `v${mo.bom_version ?? '—'}`],
-              ['Project',        mo.project_name ?? '—'],
-              ['Scheduled Start',mo.scheduled_start?.slice(0, 10) ?? '—'],
-              ['Scheduled End',  mo.scheduled_end?.slice(0, 10)   ?? '—'],
-              ['Actual Start',   mo.actual_start?.slice(0, 10)    ?? '—'],
-              ['Actual End',     mo.actual_end?.slice(0, 10)      ?? '—'],
+              ['BOM', `v${mo.bom_version ?? '—'}`],
+              ['Project', mo.project_name ?? '—'],
+              ['Scheduled Start', mo.scheduled_start?.slice(0, 10) ?? '—'],
+              ['Scheduled End', mo.scheduled_end?.slice(0, 10) ?? '—'],
+              ['Actual Start', mo.actual_start?.slice(0, 10) ?? '—'],
+              ['Actual End', mo.actual_end?.slice(0, 10) ?? '—'],
             ].map(([label, value]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${theme.border}`, fontSize: '13px' }}>
+              <div
+                key={label}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  padding: '6px 0',
+                  borderBottom: `1px solid ${theme.border}`,
+                  fontSize: '13px',
+                }}
+              >
                 <span style={{ color: theme.textMuted }}>{label}</span>
                 <span style={{ color: theme.textPrimary }}>{value}</span>
               </div>
             ))}
-            {mo.notes && <div style={{ marginTop: '12px', fontSize: '13px', color: theme.textSecondary }}>{mo.notes}</div>}
+            {mo.notes && (
+              <div style={{ marginTop: '12px', fontSize: '13px', color: theme.textSecondary }}>
+                {mo.notes}
+              </div>
+            )}
           </Card>
         )}
 
         {tab === 'components' && (
           <Card style={{ padding: '20px' }}>
-            <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px', marginBottom: '12px' }}>Components</div>
+            <div
+              style={{
+                fontWeight: 600,
+                color: theme.textPrimary,
+                fontSize: '14px',
+                marginBottom: '12px',
+              }}
+            >
+              Components
+            </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: theme.bgSurfaceHover }}>
-                  {['Component', 'Qty Planned', 'Qty Consumed', 'Unit Cost', 'Total Cost'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: theme.textMuted, fontWeight: 600, borderBottom: `1px solid ${theme.border}` }}>{h}</th>
-                  ))}
+                  {['Component', 'Qty Planned', 'Qty Consumed', 'Unit Cost', 'Total Cost'].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          fontWeight: 600,
+                          borderBottom: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody>
-                {(mo.lines ?? []).map((l: { id: string; component_name?: string; qty_planned: number; qty_consumed: number; unit_cost: number; total_cost: number }) => (
-                  <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '8px 12px', color: theme.textPrimary, fontSize: '13px', fontWeight: 500 }}>{l.component_name}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: theme.textSecondary }}>{l.qty_planned}</td>
-                    <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: l.qty_consumed >= l.qty_planned ? theme.success : theme.textPrimary }}>{l.qty_consumed}</td>
-                    <td style={{ padding: '8px 12px' }}><AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" /></td>
-                    <td style={{ padding: '8px 12px', fontWeight: 500 }}><AmountDisplay amount={l.total_cost} currency="IQD" size="sm" /></td>
-                  </tr>
-                ))}
+                {(mo.lines ?? []).map(
+                  (l: {
+                    id: string
+                    component_name?: string
+                    qty_planned: number
+                    qty_consumed: number
+                    unit_cost: number
+                    total_cost: number
+                  }) => (
+                    <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          color: theme.textPrimary,
+                          fontSize: '13px',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {l.component_name}
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          color: theme.textSecondary,
+                        }}
+                      >
+                        {l.qty_planned}
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          color:
+                            l.qty_consumed >= l.qty_planned ? theme.success : theme.textPrimary,
+                        }}
+                      >
+                        {l.qty_consumed}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" />
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 500 }}>
+                        <AmountDisplay amount={l.total_cost} currency="IQD" size="sm" />
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </Card>
@@ -201,8 +371,19 @@ export default function ManufacturingOrderDetail() {
 
         {tab === 'stock' && (
           <Card style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>Components & Stock</div>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px',
+                flexWrap: 'wrap',
+                gap: '8px',
+              }}
+            >
+              <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px' }}>
+                Components & Stock
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {shortfallCount === 0 ? (
                   <Badge variant="success">All components ready</Badge>
@@ -210,7 +391,9 @@ export default function ManufacturingOrderDetail() {
                   <Badge variant="warning">{shortfallCount} component(s) need procurement</Badge>
                 )}
                 {shortfallCount > 0 && (
-                  <Button variant="primary" size="sm"
+                  <Button
+                    variant="primary"
+                    size="sm"
                     onClick={() => {
                       const lines = missingComponents
                         .filter((c) => c.qtyShortfall > 0)
@@ -222,8 +405,11 @@ export default function ManufacturingOrderDetail() {
                           uom: c.uom ?? 'pc',
                         }))
                       sessionStorage.setItem('po_prefill_lines', JSON.stringify(lines))
-                      navigate(`/procurement/purchase-orders/new?moId=${mo.id}&purpose=manufacturing`)
-                    }}>
+                      navigate(
+                        `/procurement/purchase-orders/new?moId=${mo.id}&purpose=manufacturing`,
+                      )
+                    }}
+                  >
                     Create PO for missing items
                   </Button>
                 )}
@@ -232,29 +418,107 @@ export default function ManufacturingOrderDetail() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: theme.bgSurfaceHover }}>
-                  {['Product', 'Required', 'On Hand', 'Available', 'Shortfall'].map(h => (
-                    <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '11px', color: theme.textMuted, fontWeight: 600, borderBottom: `1px solid ${theme.border}` }}>{h}</th>
+                  {['Product', 'Required', 'On Hand', 'Available', 'Shortfall'].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '8px 12px',
+                        textAlign: 'left',
+                        fontSize: '11px',
+                        color: theme.textMuted,
+                        fontWeight: 600,
+                        borderBottom: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {missingComponents.map((c) => {
-                  const rowColor = c.hasSufficientStock ? '#16a34a' : c.qtyAvailable > 0 ? '#d97706' : '#dc2626'
+                  const rowColor = c.hasSufficientStock
+                    ? '#16a34a'
+                    : c.qtyAvailable > 0
+                      ? '#d97706'
+                      : '#dc2626'
                   return (
                     <tr key={c.bomLineId} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      <td style={{ padding: '8px 12px', color: theme.textPrimary, fontSize: '13px', fontWeight: 500 }}>
-                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: rowColor, marginRight: '8px' }} />
-                        {c.productName ?? '—'}{c.uom ? ` (${c.uom})` : ''}
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          color: theme.textPrimary,
+                          fontSize: '13px',
+                          fontWeight: 500,
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: rowColor,
+                            marginRight: '8px',
+                          }}
+                        />
+                        {c.productName ?? '—'}
+                        {c.uom ? ` (${c.uom})` : ''}
                       </td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: theme.textSecondary }}>{c.qtyRequired}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: theme.textSecondary }}>{c.qtyOnHand.toFixed(2)}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: theme.textSecondary }}>{c.qtyAvailable.toFixed(2)}</td>
-                      <td style={{ padding: '8px 12px', fontFamily: 'monospace', fontWeight: 600, color: c.qtyShortfall > 0 ? rowColor : theme.success }}>{c.qtyShortfall.toFixed(2)}</td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          color: theme.textSecondary,
+                        }}
+                      >
+                        {c.qtyRequired}
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          color: theme.textSecondary,
+                        }}
+                      >
+                        {c.qtyOnHand.toFixed(2)}
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          color: theme.textSecondary,
+                        }}
+                      >
+                        {c.qtyAvailable.toFixed(2)}
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          fontWeight: 600,
+                          color: c.qtyShortfall > 0 ? rowColor : theme.success,
+                        }}
+                      >
+                        {c.qtyShortfall.toFixed(2)}
+                      </td>
                     </tr>
                   )
                 })}
                 {missingComponents.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: '16px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>No BOM components found.</td></tr>
+                  <tr>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: '16px',
+                        textAlign: 'center',
+                        color: theme.textMuted,
+                        fontSize: '13px',
+                      }}
+                    >
+                      No BOM components found.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -277,7 +541,9 @@ export default function ManufacturingOrderDetail() {
       {/* Completion form */}
       <MOCompletionForm
         open={showComplete}
-        onClose={() => setShowComplete(false)}
+        onClose={() => {
+          setShowComplete(false)
+        }}
         mo={{
           id: id!,
           qty_planned: parseFloat(mo.qty_planned),
@@ -291,18 +557,44 @@ export default function ManufacturingOrderDetail() {
 
       {/* Cancel modal */}
       {showCancel && (
-        <Modal open={showCancel} onClose={() => setShowCancel(false)} title="Cancel Manufacturing Order">
+        <Modal
+          open={showCancel}
+          onClose={() => {
+            setShowCancel(false)
+          }}
+          title="Cancel Manufacturing Order"
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}>
             <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
               This will cancel the MO. Components will not be returned automatically.
             </div>
-            <Input label="Reason (optional)" value={cancelNotes} onChange={e => setCancelNotes(e.target.value)} />
+            <Input
+              label="Reason (optional)"
+              value={cancelNotes}
+              onChange={(e) => {
+                setCancelNotes(e.target.value)
+              }}
+            />
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <Button variant="ghost" onClick={() => setShowCancel(false)}>Back</Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setShowCancel(false)
+                }}
+              >
+                Back
+              </Button>
               <Button
                 variant="danger"
                 loading={cancelling}
-                onClick={() => handleAction(() => cancelMO({ variables: { id, notes: cancelNotes } }), 'MO cancelled').then(() => setShowCancel(false))}
+                onClick={() =>
+                  handleAction(
+                    () => cancelMO({ variables: { id, notes: cancelNotes } }),
+                    'MO cancelled',
+                  ).then(() => {
+                    setShowCancel(false)
+                  })
+                }
               >
                 Cancel MO
               </Button>

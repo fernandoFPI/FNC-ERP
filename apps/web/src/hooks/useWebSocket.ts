@@ -34,7 +34,10 @@ export function useWebSocket() {
     wsRef.current = ws
 
     ws.onopen = () => {
-      if (cancelledRef.current) { ws.close(); return }
+      if (cancelledRef.current) {
+        ws.close()
+        return
+      }
       setIsConnected(true)
       backoffMs = 1000
     }
@@ -61,7 +64,9 @@ export function useWebSocket() {
             data: msg.data,
           })
         }
-      } catch { /* ignore malformed */ }
+      } catch {
+        /* ignore malformed */
+      }
     }
 
     ws.onclose = () => {
@@ -75,7 +80,9 @@ export function useWebSocket() {
       }
     }
 
-    ws.onerror = () => ws.close()
+    ws.onerror = () => {
+      ws.close()
+    }
   }, [token, addNotification])
 
   useEffect(() => {

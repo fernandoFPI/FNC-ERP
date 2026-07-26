@@ -36,8 +36,16 @@ export default function WorkflowImportPage() {
   const [errorMsg, setErrorMsg] = useState('')
 
   async function handleImport() {
-    if (!file) { setErrorMsg('Please select a .sql file first.'); setStatus('error'); return }
-    if (!user?.companyId) { setErrorMsg('No company context — please log in again.'); setStatus('error'); return }
+    if (!file) {
+      setErrorMsg('Please select a .sql file first.')
+      setStatus('error')
+      return
+    }
+    if (!user?.companyId) {
+      setErrorMsg('No company context — please log in again.')
+      setStatus('error')
+      return
+    }
 
     const fd = new FormData()
     fd.append('file', file)
@@ -47,7 +55,9 @@ export default function WorkflowImportPage() {
     setErrorMsg('')
 
     try {
-      const { data } = await api.post<ImportStats>('/admin/workflow-import', fd, { timeout: 600_000 })
+      const { data } = await api.post<ImportStats>('/admin/workflow-import', fd, {
+        timeout: 600_000,
+      })
       setResult(data)
       setStatus('done')
     } catch (err) {
@@ -72,16 +82,34 @@ export default function WorkflowImportPage() {
   }
 
   const kpi = (label: string, value: number | string, color?: string) => (
-    <div key={label} style={{
-      background: theme.bgSurface,
-      border: `1px solid ${theme.border}`,
-      borderRadius: '8px',
-      padding: '12px 16px',
-    }}>
-      <div style={{ fontSize: '10px', color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>
+    <div
+      key={label}
+      style={{
+        background: theme.bgSurface,
+        border: `1px solid ${theme.border}`,
+        borderRadius: '8px',
+        padding: '12px 16px',
+      }}
+    >
+      <div
+        style={{
+          fontSize: '10px',
+          color: theme.textMuted,
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          marginBottom: '4px',
+        }}
+      >
         {label}
       </div>
-      <div style={{ fontSize: '22px', fontWeight: 700, color: color ?? theme.textPrimary, fontFamily: 'monospace' }}>
+      <div
+        style={{
+          fontSize: '22px',
+          fontWeight: 700,
+          color: color ?? theme.textPrimary,
+          fontFamily: 'monospace',
+        }}
+      >
         {typeof value === 'number' ? value.toLocaleString() : value}
       </div>
     </div>
@@ -97,7 +125,15 @@ export default function WorkflowImportPage() {
       <Card style={{ marginTop: '20px', padding: '24px' }}>
         {/* File picker */}
         <div style={{ marginBottom: '24px' }}>
-          <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: theme.textSecondary, marginBottom: '6px' }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: theme.textSecondary,
+              marginBottom: '6px',
+            }}
+          >
             SQL Dump File (.sql)
           </label>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -130,59 +166,74 @@ export default function WorkflowImportPage() {
               Choose File
             </button>
             <span style={{ fontSize: '13px', color: file ? theme.textPrimary : theme.textMuted }}>
-              {file ? `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)` : 'No file selected'}
+              {file
+                ? `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`
+                : 'No file selected'}
             </span>
           </div>
           <p style={{ marginTop: '6px', fontSize: '11px', color: theme.textMuted }}>
-            Expected: MySQL/MariaDB dump from workflow_fnc_v3.1 containing tables: projects, po, po_items, invoices, invoice_items
+            Expected: MySQL/MariaDB dump from workflow_fnc_v3.1 containing tables: projects, po,
+            po_items, invoices, invoice_items
           </p>
         </div>
 
         {/* Info box */}
-        <div style={{
-          padding: '12px 16px',
-          borderRadius: '8px',
-          background: `${theme.accent}14`,
-          border: `1px solid ${theme.accent}30`,
-          fontSize: '12px',
-          color: theme.textSecondary,
-          marginBottom: '24px',
-          lineHeight: '1.7',
-        }}>
-          <strong style={{ color: theme.textPrimary }}>What gets imported:</strong><br />
-          Projects → <code>projects</code> table &nbsp;·&nbsp;
-          POs + items → <code>purchase_orders</code> + <code>po_lines</code><br />
-          Invoices → <code>project_contracts</code> + <code>project_invoices</code> + <code>project_invoice_lines</code><br />
-          Existing records (same code / po_number / invoice_number) are skipped silently.
-          This import can be re-run safely.
+        <div
+          style={{
+            padding: '12px 16px',
+            borderRadius: '8px',
+            background: `${theme.accent}14`,
+            border: `1px solid ${theme.accent}30`,
+            fontSize: '12px',
+            color: theme.textSecondary,
+            marginBottom: '24px',
+            lineHeight: '1.7',
+          }}
+        >
+          <strong style={{ color: theme.textPrimary }}>What gets imported:</strong>
+          <br />
+          Projects → <code>projects</code> table &nbsp;·&nbsp; POs + items →{' '}
+          <code>purchase_orders</code> + <code>po_lines</code>
+          <br />
+          Invoices → <code>project_contracts</code> + <code>project_invoices</code> +{' '}
+          <code>project_invoice_lines</code>
+          <br />
+          Existing records (same code / po_number / invoice_number) are skipped silently. This
+          import can be re-run safely.
         </div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <Button
             variant="primary"
-            onClick={() => { void handleImport() }}
+            onClick={() => {
+              void handleImport()
+            }}
             loading={status === 'loading'}
             disabled={!file || status === 'loading'}
           >
             {status === 'loading' ? 'Importing… (may take a few minutes)' : 'Run Import'}
           </Button>
           {(status === 'done' || status === 'error') && (
-            <Button variant="ghost" onClick={reset}>Reset</Button>
+            <Button variant="ghost" onClick={reset}>
+              Reset
+            </Button>
           )}
         </div>
       </Card>
 
       {status === 'error' && errorMsg && (
-        <div style={{
-          marginTop: '16px',
-          padding: '14px 18px',
-          borderRadius: '8px',
-          background: '#fef2f2',
-          border: '1px solid #fca5a5',
-          fontSize: '13px',
-          color: '#991b1b',
-          fontWeight: 500,
-        }}>
+        <div
+          style={{
+            marginTop: '16px',
+            padding: '14px 18px',
+            borderRadius: '8px',
+            background: '#fef2f2',
+            border: '1px solid #fca5a5',
+            fontSize: '13px',
+            color: '#991b1b',
+            fontWeight: 500,
+          }}
+        >
           {errorMsg}
         </div>
       )}
@@ -190,24 +241,57 @@ export default function WorkflowImportPage() {
       {status === 'done' && result && (
         <div style={{ marginTop: '16px' }}>
           <Card style={{ padding: '20px' }}>
-            <div style={{ fontWeight: 700, fontSize: '15px', color: theme.textPrimary, marginBottom: '8px' }}>
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: '15px',
+                color: theme.textPrimary,
+                marginBottom: '8px',
+              }}
+            >
               Import Complete
             </div>
-            {result.projects === 0 && result.pos === 0 && result.poLines === 0 && result.parsed.projects > 0 && (
-              <div style={{
-                padding: '10px 14px', borderRadius: '6px', marginBottom: '16px',
-                background: `${theme.accent}14`, border: `1px solid ${theme.accent}40`,
-                fontSize: '12px', color: theme.textSecondary,
-              }}>
-                All records already exist from a previous run — no duplicates created. The database is up to date.
-              </div>
-            )}
+            {result.projects === 0 &&
+              result.pos === 0 &&
+              result.poLines === 0 &&
+              result.parsed.projects > 0 && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    marginBottom: '16px',
+                    background: `${theme.accent}14`,
+                    border: `1px solid ${theme.accent}40`,
+                    fontSize: '12px',
+                    color: theme.textSecondary,
+                  }}
+                >
+                  All records already exist from a previous run — no duplicates created. The
+                  database is up to date.
+                </div>
+              )}
 
             {/* Parsed (from file) */}
-            <div style={{ fontSize: '11px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: theme.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                marginBottom: '8px',
+              }}
+            >
               Parsed from file
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '20px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: '8px',
+                marginBottom: '20px',
+              }}
+            >
               {kpi('Projects', result.parsed.projects, theme.textSecondary)}
               {kpi('POs', result.parsed.pos, theme.textSecondary)}
               {kpi('PO Items', result.parsed.poItems, theme.textSecondary)}
@@ -216,10 +300,26 @@ export default function WorkflowImportPage() {
             </div>
 
             {/* Inserted */}
-            <div style={{ fontSize: '11px', fontWeight: 700, color: theme.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: theme.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                marginBottom: '8px',
+              }}
+            >
               Inserted into database
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginBottom: '20px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: '8px',
+                marginBottom: '20px',
+              }}
+            >
               {kpi('Projects', result.projects, theme.success)}
               {kpi('POs', result.pos, theme.success)}
               {kpi('PO Lines', result.poLines, theme.success)}
@@ -227,22 +327,35 @@ export default function WorkflowImportPage() {
               {kpi('Invoices', result.invoices, theme.accent)}
               {kpi('Inv Lines', result.invLines, theme.accent)}
               {kpi('Skipped', result.skipped, theme.textMuted)}
-              {kpi('Row Errors', result.errors.length, result.errors.length > 0 ? '#dc2626' : theme.textMuted)}
+              {kpi(
+                'Row Errors',
+                result.errors.length,
+                result.errors.length > 0 ? '#dc2626' : theme.textMuted,
+              )}
             </div>
 
             {/* Errors */}
             {result.errors.length > 0 && (
               <>
-                <div style={{ fontWeight: 600, fontSize: '12px', color: '#991b1b', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '12px',
+                    color: '#991b1b',
+                    marginBottom: '8px',
+                  }}
+                >
                   Batch / row errors ({result.errors.length})
                 </div>
-                <div style={{
-                  maxHeight: '240px',
-                  overflowY: 'auto',
-                  borderRadius: '6px',
-                  border: `1px solid ${theme.border}`,
-                  background: theme.bgSurface,
-                }}>
+                <div
+                  style={{
+                    maxHeight: '240px',
+                    overflowY: 'auto',
+                    borderRadius: '6px',
+                    border: `1px solid ${theme.border}`,
+                    background: theme.bgSurface,
+                  }}
+                >
                   {result.errors.map((e, i) => (
                     <div
                       key={i}
@@ -251,7 +364,8 @@ export default function WorkflowImportPage() {
                         fontSize: '11px',
                         color: '#dc2626',
                         fontFamily: 'monospace',
-                        borderBottom: i < result.errors.length - 1 ? `1px solid ${theme.border}` : undefined,
+                        borderBottom:
+                          i < result.errors.length - 1 ? `1px solid ${theme.border}` : undefined,
                       }}
                     >
                       {e}

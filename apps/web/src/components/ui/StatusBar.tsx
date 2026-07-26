@@ -32,7 +32,9 @@ export function StatusBar({
   // Resolve to common format
   const resolvedStatuses = statuses ?? steps?.map((s) => s.key) ?? []
   const resolvedLabels: Record<string, string> = {}
-  steps?.forEach((s) => { resolvedLabels[s.key] = s.label })
+  steps?.forEach((s) => {
+    resolvedLabels[s.key] = s.label
+  })
 
   const resolvedCurrent = current ?? currentStep ?? ''
   const isRejected = rejected || cancelled || rejectedSteps.includes(resolvedCurrent)
@@ -41,7 +43,15 @@ export function StatusBar({
   const isDanger = isRejected
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '0', overflowX: 'auto', padding: '4px 0' }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0',
+        overflowX: 'auto',
+        padding: '4px 0',
+      }}
+    >
       {resolvedStatuses.map((status, i) => {
         const isCompleted = i < currentIndex
         const isCurrent = i === currentIndex
@@ -49,43 +59,66 @@ export function StatusBar({
 
         let dotColor = theme.textMuted
         let labelColor = theme.textMuted
-        if (isCurrent && isDanger) { dotColor = theme.danger; labelColor = theme.danger }
-        else if (isCurrent) { dotColor = theme.accent; labelColor = theme.accent }
-        else if (isCompleted) { dotColor = theme.success; labelColor = theme.success }
+        if (isCurrent && isDanger) {
+          dotColor = theme.danger
+          labelColor = theme.danger
+        } else if (isCurrent) {
+          dotColor = theme.accent
+          labelColor = theme.accent
+        } else if (isCompleted) {
+          dotColor = theme.success
+          labelColor = theme.success
+        }
 
         const label = resolvedLabels[status] ?? status.replace(/_/g, ' ')
 
         return (
           <React.Fragment key={status}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: '72px' }}>
-              <div style={{
-                width: '10px', height: '10px', borderRadius: '50%',
-                background: isFuture ? 'transparent' : dotColor,
-                border: `2px solid ${dotColor}`,
-                boxShadow: isCurrent && !isDanger ? `0 0 8px ${dotColor}66` : 'none',
-                flexShrink: 0,
-                transition: 'all 0.2s',
-              }} />
-              <span style={{
-                fontSize: '10px',
-                fontWeight: isCurrent ? 600 : 400,
-                color: labelColor,
-                textAlign: 'center',
-                whiteSpace: 'nowrap',
-                textTransform: 'capitalize',
-              }}>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '4px',
+                minWidth: '72px',
+              }}
+            >
+              <div
+                style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '50%',
+                  background: isFuture ? 'transparent' : dotColor,
+                  border: `2px solid ${dotColor}`,
+                  boxShadow: isCurrent && !isDanger ? `0 0 8px ${dotColor}66` : 'none',
+                  flexShrink: 0,
+                  transition: 'all 0.2s',
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: isCurrent ? 600 : 400,
+                  color: labelColor,
+                  textAlign: 'center',
+                  whiteSpace: 'nowrap',
+                  textTransform: 'capitalize',
+                }}
+              >
                 {label}
               </span>
             </div>
             {i < resolvedStatuses.length - 1 && (
-              <div style={{
-                flex: 1,
-                height: '1px',
-                background: isCompleted ? theme.success : theme.border,
-                minWidth: '20px',
-                marginTop: '-16px',
-                transition: 'background 0.2s',
-              }} />
+              <div
+                style={{
+                  flex: 1,
+                  height: '1px',
+                  background: isCompleted ? theme.success : theme.border,
+                  minWidth: '20px',
+                  marginTop: '-16px',
+                  transition: 'background 0.2s',
+                }}
+              />
             )}
           </React.Fragment>
         )

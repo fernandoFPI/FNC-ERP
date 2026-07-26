@@ -4,7 +4,8 @@ import { PROJECT_CONTRACTS_QUERY } from '../../../graphql/projects'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
@@ -33,22 +34,74 @@ export default function ContractsPage() {
       key: 'contractNumber',
       header: 'Number',
       render: (c) => (
-        <button onClick={() => navigate(`/projects/contracts/${c.id}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.accent, fontFamily: 'monospace', fontSize: '13px' }}>
+        <button
+          onClick={() => {
+            navigate(`/projects/contracts/${c.id}`)
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.accent,
+            fontFamily: 'monospace',
+            fontSize: '13px',
+          }}
+        >
           {c.contractNumber}
         </button>
       ),
     },
-    { key: 'contractName', header: 'Name', render: (c) => <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>{c.contractName}</span> },
-    { key: 'clientName', header: 'Client', render: (c) => <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{c.clientName}</span> },
-    { key: 'contractValue', header: 'Value', render: (c) => <AmountDisplay amount={c.contractValue} currency={c.currencyCode} /> },
-    { key: 'totalInvoiced', header: 'Invoiced', render: (c) => <AmountDisplay amount={c.totalInvoiced} currency={c.currencyCode} /> },
-    { key: 'outstanding', header: 'Outstanding', render: (c) => <AmountDisplay amount={c.outstanding} currency={c.currencyCode} /> },
-    { key: 'status', header: 'Status', render: (c) => <Badge variant={c.status === 'active' ? 'success' : 'neutral'}>{c.status}</Badge> },
+    {
+      key: 'contractName',
+      header: 'Name',
+      render: (c) => (
+        <span style={{ color: theme.textPrimary, fontWeight: 500, fontSize: '13px' }}>
+          {c.contractName}
+        </span>
+      ),
+    },
+    {
+      key: 'clientName',
+      header: 'Client',
+      render: (c) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{c.clientName}</span>
+      ),
+    },
+    {
+      key: 'contractValue',
+      header: 'Value',
+      render: (c) => <AmountDisplay amount={c.contractValue} currency={c.currencyCode} />,
+    },
+    {
+      key: 'totalInvoiced',
+      header: 'Invoiced',
+      render: (c) => <AmountDisplay amount={c.totalInvoiced} currency={c.currencyCode} />,
+    },
+    {
+      key: 'outstanding',
+      header: 'Outstanding',
+      render: (c) => <AmountDisplay amount={c.outstanding} currency={c.currencyCode} />,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (c) => (
+        <Badge variant={c.status === 'active' ? 'success' : 'neutral'}>{c.status}</Badge>
+      ),
+    },
     {
       key: 'actions',
       header: '',
       render: (c) => (
-        <Button variant="ghost" size="sm" onClick={() => navigate(`/projects/contracts/${c.id}`)}>View</Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            navigate(`/projects/contracts/${c.id}`)
+          }}
+        >
+          View
+        </Button>
       ),
     },
   ]
@@ -58,7 +111,17 @@ export default function ContractsPage() {
       <PageHeader
         title="Project Contracts"
         subtitle={`${contracts.length} contracts`}
-        actions={<Button variant="primary" size="sm" onClick={() => navigate('/projects/contracts/new')}>New Contract</Button>}
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              navigate('/projects/contracts/new')
+            }}
+          >
+            New Contract
+          </Button>
+        }
       />
       <Card style={{ marginTop: '20px' }}>
         <Table columns={columns} data={contracts} loading={loading} rowKey="id" />

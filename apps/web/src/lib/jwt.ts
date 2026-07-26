@@ -1,7 +1,7 @@
 export interface JWTPayload {
-  sub: string        // userId
+  sub: string // userId
   sessionId: string
-  role: string       // system_admin | company_admin | module_admin | user
+  role: string // system_admin | company_admin | module_admin | user
   companyId: string
   module: string
   type: string

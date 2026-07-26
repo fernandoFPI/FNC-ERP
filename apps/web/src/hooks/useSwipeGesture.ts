@@ -8,21 +8,18 @@ interface SwipeOptions {
   edgeWidth?: number
 }
 
-export function useSwipeGesture(
-  ref: RefObject<HTMLElement>,
-  options: SwipeOptions,
-) {
+export function useSwipeGesture(ref: RefObject<HTMLElement>, options: SwipeOptions) {
   const startX = useRef<number | null>(null)
   const startY = useRef<number | null>(null)
 
-  const onSwipeLeftRef  = useRef(options.onSwipeLeft)
+  const onSwipeLeftRef = useRef(options.onSwipeLeft)
   const onSwipeRightRef = useRef(options.onSwipeRight)
-  onSwipeLeftRef.current  = options.onSwipeLeft
+  onSwipeLeftRef.current = options.onSwipeLeft
   onSwipeRightRef.current = options.onSwipeRight
 
-  const threshold  = options.threshold  ?? 50
-  const edgeOnly   = options.edgeOnly   ?? false
-  const edgeWidth  = options.edgeWidth  ?? 20
+  const threshold = options.threshold ?? 50
+  const edgeOnly = options.edgeOnly ?? false
+  const edgeWidth = options.edgeWidth ?? 20
 
   useEffect(() => {
     const el = ref.current
@@ -45,17 +42,17 @@ export function useSwipeGesture(
       startX.current = null
       startY.current = null
 
-      if (Math.abs(dy) > Math.abs(dx)) return  // vertical swipe — ignore
+      if (Math.abs(dy) > Math.abs(dx)) return // vertical swipe — ignore
 
       if (dx > threshold) onSwipeRightRef.current?.()
       else if (dx < -threshold) onSwipeLeftRef.current?.()
     }
 
     el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchend',   onTouchEnd,   { passive: true })
+    el.addEventListener('touchend', onTouchEnd, { passive: true })
     return () => {
       el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchend',   onTouchEnd)
+      el.removeEventListener('touchend', onTouchEnd)
     }
   }, [ref, threshold, edgeOnly, edgeWidth])
 }

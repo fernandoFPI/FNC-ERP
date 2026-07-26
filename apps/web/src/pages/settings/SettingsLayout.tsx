@@ -54,11 +54,11 @@ function buildNav(role: string | undefined): NavGroup[] {
     groups.push({
       group: 'FINANCE CONFIG',
       items: [
-        { label: 'Cost Centers',       path: '/finance/cost-centers' },
-        { label: 'Analytic Accounts',  path: '/finance/analytic-accounts' },
-        { label: 'FX Rates',           path: '/finance/fx-rates' },
+        { label: 'Cost Centers', path: '/finance/cost-centers' },
+        { label: 'Analytic Accounts', path: '/finance/analytic-accounts' },
+        { label: 'FX Rates', path: '/finance/fx-rates' },
         { label: 'Accounting Periods', path: '/finance/periods' },
-        { label: 'Payment Terms',      path: '/finance/payment-terms' },
+        { label: 'Payment Terms', path: '/finance/payment-terms' },
       ],
     })
   }
@@ -119,27 +119,35 @@ export default function SettingsLayout() {
   if (isMobile) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{
-          display: 'flex',
-          overflowX: 'auto',
-          borderBottom: `0.5px solid ${theme.border}`,
-          flexShrink: 0,
-          WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
-          scrollbarWidth: 'none' as React.CSSProperties['scrollbarWidth'],
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            overflowX: 'auto',
+            borderBottom: `0.5px solid ${theme.border}`,
+            flexShrink: 0,
+            WebkitOverflowScrolling: 'touch' as React.CSSProperties['WebkitOverflowScrolling'],
+            scrollbarWidth: 'none' as React.CSSProperties['scrollbarWidth'],
+          }}
+        >
           {allItems.map((item) => {
             const active = isItemActive(item, location.pathname)
             return (
-              <NavLink key={item.path + item.label} to={item.path} style={{ textDecoration: 'none', flexShrink: 0 }}>
-                <div style={{
-                  padding: '10px 14px',
-                  fontSize: '12px',
-                  color: active ? theme.accent : theme.textSecondary,
-                  fontWeight: active ? 500 : 400,
-                  borderBottom: active ? `2px solid ${theme.accent}` : '2px solid transparent',
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                }}>
+              <NavLink
+                key={item.path + item.label}
+                to={item.path}
+                style={{ textDecoration: 'none', flexShrink: 0 }}
+              >
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    fontSize: '12px',
+                    color: active ? theme.accent : theme.textSecondary,
+                    fontWeight: active ? 500 : 400,
+                    borderBottom: active ? `2px solid ${theme.accent}` : '2px solid transparent',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                  }}
+                >
                   {item.label}
                 </div>
               </NavLink>
@@ -156,31 +164,39 @@ export default function SettingsLayout() {
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* Left sub-nav */}
-      <div style={{
-        width: '200px',
-        minWidth: '200px',
-        borderRight: `0.5px solid ${theme.border}`,
-        overflowY: 'auto',
-        padding: '16px 0',
-        flexShrink: 0,
-        background: theme.bgSidebar,
-      }}>
+      <div
+        style={{
+          width: '200px',
+          minWidth: '200px',
+          borderRight: `0.5px solid ${theme.border}`,
+          overflowY: 'auto',
+          padding: '16px 0',
+          flexShrink: 0,
+          background: theme.bgSidebar,
+        }}
+      >
         {groups.map((group) => (
           <div key={group.group} style={{ marginBottom: '20px' }}>
-            <div style={{
-              padding: '4px 16px 6px',
-              fontSize: '10px',
-              fontWeight: 700,
-              color: theme.textMuted,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-            }}>
+            <div
+              style={{
+                padding: '4px 16px 6px',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: theme.textMuted,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+              }}
+            >
               {group.group}
             </div>
             {group.items.map((item) => {
               const active = isItemActive(item, location.pathname)
               return (
-                <NavLink key={item.path + item.label} to={item.path} style={{ textDecoration: 'none', display: 'block' }}>
+                <NavLink
+                  key={item.path + item.label}
+                  to={item.path}
+                  style={{ textDecoration: 'none', display: 'block' }}
+                >
                   <div
                     style={{
                       padding: '6px 16px',
@@ -193,8 +209,12 @@ export default function SettingsLayout() {
                       whiteSpace: 'nowrap',
                       transition: 'background 0.12s ease',
                     }}
-                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = theme.bgSurfaceHover }}
-                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent' }}
+                    onMouseEnter={(e) => {
+                      if (!active) e.currentTarget.style.background = theme.bgSurfaceHover
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) e.currentTarget.style.background = 'transparent'
+                    }}
                   >
                     {item.label}
                   </div>

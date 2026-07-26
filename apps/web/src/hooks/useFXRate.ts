@@ -13,15 +13,24 @@ export function useFXRate(fromCurrency: string, toCurrency: string, date?: strin
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) { setResult(null); return }
+    if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) {
+      setResult(null)
+      return
+    }
     setLoading(true)
     api
       .get<FXRateResult>('/finance/fx-rates/latest', {
         params: { from_currency: fromCurrency, to_currency: toCurrency, ...(date ? { date } : {}) },
       })
-      .then((r) => setResult(r.data as unknown as FXRateResult))
-      .catch(() => setResult(null))
-      .finally(() => setLoading(false))
+      .then((r) => {
+        setResult(r.data as unknown as FXRateResult)
+      })
+      .catch(() => {
+        setResult(null)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [fromCurrency, toCurrency, date])
 
   return { result, loading }

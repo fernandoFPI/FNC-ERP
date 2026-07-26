@@ -15,11 +15,18 @@ export function usePayrollStatus(runId: string | undefined) {
 
   useEffect(() => {
     if (status !== 'processing') {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
       return
     }
-    intervalRef.current = setInterval(() => { refetch().catch(() => undefined) }, 3_000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+    intervalRef.current = setInterval(() => {
+      refetch().catch(() => undefined)
+    }, 3_000)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
   }, [status, refetch])
 
   return status

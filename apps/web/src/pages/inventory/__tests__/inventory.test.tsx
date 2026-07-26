@@ -31,7 +31,7 @@ function wrap(ui: React.ReactNode, initialPath = '/') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>{ui}</ThemeProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   )
 }
 
@@ -45,18 +45,34 @@ beforeEach(() => {
 describe('StockBalancesPage', () => {
   const snapshotRows = [
     {
-      product_id: 'p1', sku: 'INK-001', product_name: 'Black Ink',
-      category: 'Ink', location_id: 'loc1', location_name: 'Main Warehouse',
+      product_id: 'p1',
+      sku: 'INK-001',
+      product_name: 'Black Ink',
+      category: 'Ink',
+      location_id: 'loc1',
+      location_name: 'Main Warehouse',
       location_type: 'warehouse',
-      qty_on_hand: '100', qty_reserved: '10', available: '90',
-      average_cost: '5000', total_value: '500000', is_low_stock: false,
+      qty_on_hand: '100',
+      qty_reserved: '10',
+      available: '90',
+      average_cost: '5000',
+      total_value: '500000',
+      is_low_stock: false,
     },
     {
-      product_id: 'p2', sku: 'PAP-001', product_name: 'A4 Paper',
-      category: 'Paper', location_id: 'loc1', location_name: 'Main Warehouse',
+      product_id: 'p2',
+      sku: 'PAP-001',
+      product_name: 'A4 Paper',
+      category: 'Paper',
+      location_id: 'loc1',
+      location_name: 'Main Warehouse',
       location_type: 'warehouse',
-      qty_on_hand: '5', qty_reserved: '0', available: '5',
-      average_cost: '2000', total_value: '10000', is_low_stock: true,
+      qty_on_hand: '5',
+      qty_reserved: '0',
+      available: '5',
+      average_cost: '2000',
+      total_value: '10000',
+      is_low_stock: true,
     },
   ]
 
@@ -126,7 +142,14 @@ describe('TransferForm', () => {
     { id: 'loc2', name: 'Site A', code: 'SITE-A', type: 'site', is_active: true },
   ]
   const products = [
-    { id: 'p1', sku: 'INK-001', name: 'Black Ink', uom: 'litre', is_active: true, qty_on_hand: '100' },
+    {
+      id: 'p1',
+      sku: 'INK-001',
+      name: 'Black Ink',
+      uom: 'litre',
+      is_active: true,
+      qty_on_hand: '100',
+    },
   ]
 
   beforeEach(() => {
@@ -181,8 +204,26 @@ describe('TransferForm', () => {
 // ── LotsPage ─────────────────────────────────────────────────────────────────
 describe('LotsPage', () => {
   const lots = [
-    { id: 'lot1', lot_number: 'LOT-2026-001', product_id: 'p1', product_name: 'Black Ink', expiry_date: '2027-01-01', created_at: '2026-01-15T10:00:00Z', current_qty: '50', current_location_name: 'Main Warehouse' },
-    { id: 'lot2', lot_number: 'LOT-2026-002', product_id: 'p2', product_name: 'A4 Paper', expiry_date: '2026-05-01', created_at: '2026-02-01T10:00:00Z', current_qty: '200', current_location_name: 'Site A' },
+    {
+      id: 'lot1',
+      lot_number: 'LOT-2026-001',
+      product_id: 'p1',
+      product_name: 'Black Ink',
+      expiry_date: '2027-01-01',
+      created_at: '2026-01-15T10:00:00Z',
+      current_qty: '50',
+      current_location_name: 'Main Warehouse',
+    },
+    {
+      id: 'lot2',
+      lot_number: 'LOT-2026-002',
+      product_id: 'p2',
+      product_name: 'A4 Paper',
+      expiry_date: '2026-05-01',
+      created_at: '2026-02-01T10:00:00Z',
+      current_qty: '200',
+      current_location_name: 'Site A',
+    },
   ]
 
   beforeEach(() => {
@@ -239,8 +280,28 @@ describe('LotTraceability', () => {
     current_qty: '50',
     current_location_name: 'Main Warehouse',
     moves: [
-      { id: 'm1', move_date: '2026-01-15T10:00:00Z', direction: 'in', from_location_name: null, to_location_name: 'Main Warehouse', qty: '100', source_type: 'po_receipt', reference: 'PO-001', moved_by_email: 'user@fnc.com' },
-      { id: 'm2', move_date: '2026-03-01T10:00:00Z', direction: 'out', from_location_name: 'Main Warehouse', to_location_name: 'Site A', qty: '50', source_type: 'manual', reference: null, moved_by_email: 'manager@fnc.com' },
+      {
+        id: 'm1',
+        move_date: '2026-01-15T10:00:00Z',
+        direction: 'in',
+        from_location_name: null,
+        to_location_name: 'Main Warehouse',
+        qty: '100',
+        source_type: 'po_receipt',
+        reference: 'PO-001',
+        moved_by_email: 'user@fnc.com',
+      },
+      {
+        id: 'm2',
+        move_date: '2026-03-01T10:00:00Z',
+        direction: 'out',
+        from_location_name: 'Main Warehouse',
+        to_location_name: 'Site A',
+        qty: '50',
+        source_type: 'manual',
+        reference: null,
+        moved_by_email: 'manager@fnc.com',
+      },
     ],
   }
 

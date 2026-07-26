@@ -15,16 +15,25 @@ export function useStockBalance(productId: string, locationId: string) {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!productId || !locationId) { setBalance(null); return }
+    if (!productId || !locationId) {
+      setBalance(null)
+      return
+    }
     setLoading(true)
     api
-      .get<StockBalance[]>('/inventory/balances', { params: { product_id: productId, location_id: locationId } })
+      .get<StockBalance[]>('/inventory/balances', {
+        params: { product_id: productId, location_id: locationId },
+      })
       .then((r) => {
         const rows = r.data as unknown as StockBalance[]
         setBalance(rows[0] ?? null)
       })
-      .catch(() => setBalance(null))
-      .finally(() => setLoading(false))
+      .catch(() => {
+        setBalance(null)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [productId, locationId])
 
   return { balance, loading }

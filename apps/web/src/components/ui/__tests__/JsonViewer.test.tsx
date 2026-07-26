@@ -7,7 +7,7 @@ function wrap(props: { data: unknown; title?: string; collapsed?: boolean }) {
   return render(
     <ThemeProvider>
       <JsonViewer {...props} />
-    </ThemeProvider>
+    </ThemeProvider>,
   )
 }
 

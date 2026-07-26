@@ -43,9 +43,13 @@ export function Modal({
   }, [open])
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     if (open) document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
+    return () => {
+      document.removeEventListener('keydown', handler)
+    }
   }, [open, onClose])
 
   // Body scroll lock
@@ -55,7 +59,9 @@ export function Modal({
     } else {
       document.body.style.overflow = ''
     }
-    return () => { document.body.style.overflow = '' }
+    return () => {
+      document.body.style.overflow = ''
+    }
   }, [open])
 
   if (!open) return null
@@ -63,14 +69,16 @@ export function Modal({
   // ── PHONE — Bottom sheet ─────────────────────────────────────────────────────
   if (useBottomSheet) {
     return createPortal(
-      <div style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'flex-end',
-      }}>
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'flex-end',
+        }}
+      >
         <div
           onClick={closeOnBackdrop ? onClose : undefined}
           style={{
@@ -100,21 +108,41 @@ export function Modal({
         >
           {/* Drag handle */}
           <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
-            <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: theme.border }} />
+            <div
+              style={{
+                width: '36px',
+                height: '4px',
+                borderRadius: '2px',
+                background: theme.border,
+              }}
+            />
           </div>
 
           {title && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 20px 12px',
-              borderBottom: `0.5px solid ${theme.border}`,
-            }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 20px 12px',
+                borderBottom: `0.5px solid ${theme.border}`,
+              }}
+            >
               <div>
-                <h2 style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>{title}</h2>
+                <h2
+                  style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}
+                >
+                  {title}
+                </h2>
                 {description && (
-                  <p style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px', margin: '4px 0 0' }}>
+                  <p
+                    style={{
+                      fontSize: '13px',
+                      color: theme.textSecondary,
+                      marginTop: '4px',
+                      margin: '4px 0 0',
+                    }}
+                  >
                     {description}
                   </p>
                 )}
@@ -122,9 +150,15 @@ export function Modal({
               <button
                 onClick={onClose}
                 style={{
-                  background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer',
-                  minWidth: '44px', minHeight: '44px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textMuted,
+                  cursor: 'pointer',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                   fontSize: '18px',
                 }}
               >
@@ -133,24 +167,28 @@ export function Modal({
             </div>
           )}
 
-          <div style={{
-            overflowY: 'auto',
-            flex: 1,
-            padding: noPadding ? 0 : '20px',
-            WebkitOverflowScrolling: 'touch',
-          }}>
+          <div
+            style={{
+              overflowY: 'auto',
+              flex: 1,
+              padding: noPadding ? 0 : '20px',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
             {children}
           </div>
 
           {footer && (
-            <div style={{
-              padding: '12px 20px',
-              borderTop: `0.5px solid ${theme.border}`,
-              background: theme.bgSurface,
-              display: 'flex',
-              gap: '8px',
-              justifyContent: 'flex-end',
-            }}>
+            <div
+              style={{
+                padding: '12px 20px',
+                borderTop: `0.5px solid ${theme.border}`,
+                background: theme.bgSurface,
+                display: 'flex',
+                gap: '8px',
+                justifyContent: 'flex-end',
+              }}
+            >
               {footer}
             </div>
           )}
@@ -176,7 +214,9 @@ export function Modal({
         animation: 'fadeIn 0.15s ease',
         padding: '20px',
       }}
-      onClick={(e) => { if (closeOnBackdrop && e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (closeOnBackdrop && e.target === e.currentTarget) onClose()
+      }}
     >
       <style>{`
         @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
@@ -202,19 +242,32 @@ export function Modal({
         }}
       >
         {title && (
-          <div style={{
-            padding: '20px 24px',
-            borderBottom: `1px solid ${theme.border}`,
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: '12px',
-            flexShrink: 0,
-          }}>
+          <div
+            style={{
+              padding: '20px 24px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexShrink: 0,
+            }}
+          >
             <div>
-              <h2 style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}>{title}</h2>
+              <h2
+                style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary, margin: 0 }}
+              >
+                {title}
+              </h2>
               {description && (
-                <p style={{ fontSize: '13px', color: theme.textSecondary, marginTop: '4px', margin: '4px 0 0' }}>
+                <p
+                  style={{
+                    fontSize: '13px',
+                    color: theme.textSecondary,
+                    marginTop: '4px',
+                    margin: '4px 0 0',
+                  }}
+                >
                   {description}
                 </p>
               )}
@@ -222,10 +275,18 @@ export function Modal({
             <button
               onClick={onClose}
               style={{
-                background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer',
-                padding: '4px', minWidth: '32px', minHeight: '32px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                borderRadius: '6px', flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                color: theme.textMuted,
+                cursor: 'pointer',
+                padding: '4px',
+                minWidth: '32px',
+                minHeight: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '6px',
+                flexShrink: 0,
               }}
             >
               ✕
@@ -236,14 +297,16 @@ export function Modal({
           {children}
         </div>
         {footer && (
-          <div style={{
-            padding: '16px 24px',
-            borderTop: `1px solid ${theme.border}`,
-            display: 'flex',
-            gap: '8px',
-            justifyContent: 'flex-end',
-            flexShrink: 0,
-          }}>
+          <div
+            style={{
+              padding: '16px 24px',
+              borderTop: `1px solid ${theme.border}`,
+              display: 'flex',
+              gap: '8px',
+              justifyContent: 'flex-end',
+              flexShrink: 0,
+            }}
+          >
             {footer}
           </div>
         )}

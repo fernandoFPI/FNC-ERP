@@ -39,21 +39,59 @@ export default function ProfitLoss() {
     else setQueried(true)
   }
 
-  const chartData = report ? [
-    { label: 'Revenue', value: parseFloat(report.totalRevenue) },
-    { label: 'Expenses', value: parseFloat(report.totalExpenses) },
-    { label: 'Net Profit', value: parseFloat(report.netProfit) },
-  ] : []
+  const chartData = report
+    ? [
+        { label: 'Revenue', value: parseFloat(report.totalRevenue) },
+        { label: 'Expenses', value: parseFloat(report.totalExpenses) },
+        { label: 'Net Profit', value: parseFloat(report.netProfit) },
+      ]
+    : []
 
-  function ReportSection({ title, lines, color }: { title: string; lines: PLLine[]; color: string }) {
+  function ReportSection({
+    title,
+    lines,
+    color,
+  }: {
+    title: string
+    lines: PLLine[]
+    color: string
+  }) {
     const total = lines.reduce((s, l) => s + parseFloat(l.amount || '0'), 0)
     return (
       <div>
-        <div style={{ fontWeight: 600, color: theme.textPrimary, fontSize: '14px', marginBottom: '8px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '6px' }}>{title}</div>
+        <div
+          style={{
+            fontWeight: 600,
+            color: theme.textPrimary,
+            fontSize: '14px',
+            marginBottom: '8px',
+            borderBottom: `1px solid ${theme.border}`,
+            paddingBottom: '6px',
+          }}
+        >
+          {title}
+        </div>
         {lines.map((l) => (
-          <div key={l.account_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${theme.border}` }}>
+          <div
+            key={l.account_id}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              padding: '6px 0',
+              borderBottom: `1px solid ${theme.border}`,
+            }}
+          >
             <div>
-              <span style={{ fontFamily: 'monospace', color: theme.textMuted, fontSize: '12px', marginRight: '8px' }}>{l.code}</span>
+              <span
+                style={{
+                  fontFamily: 'monospace',
+                  color: theme.textMuted,
+                  fontSize: '12px',
+                  marginRight: '8px',
+                }}
+              >
+                {l.code}
+              </span>
               <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.name}</span>
             </div>
             <span style={{ fontFamily: 'monospace', color, fontSize: '13px', fontWeight: 500 }}>
@@ -61,7 +99,14 @@ export default function ProfitLoss() {
             </span>
           </div>
         ))}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: 700 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            padding: '8px 0',
+            fontWeight: 700,
+          }}
+        >
           <span style={{ color: theme.textPrimary }}>Total {title}</span>
           <span style={{ fontFamily: 'monospace', color }}>{total.toLocaleString()}</span>
         </div>
@@ -75,9 +120,25 @@ export default function ProfitLoss() {
 
       <Card style={{ marginTop: '20px', marginBottom: '16px' }}>
         <div style={{ display: 'flex', gap: '12px', padding: '16px', alignItems: 'flex-end' }}>
-          <Input label="From Date" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          <Input label="To Date" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-          <Button variant="primary" onClick={run} loading={loading}>Run Report</Button>
+          <Input
+            label="From Date"
+            type="date"
+            value={fromDate}
+            onChange={(e) => {
+              setFromDate(e.target.value)
+            }}
+          />
+          <Input
+            label="To Date"
+            type="date"
+            value={toDate}
+            onChange={(e) => {
+              setToDate(e.target.value)
+            }}
+          />
+          <Button variant="primary" onClick={run} loading={loading}>
+            Run Report
+          </Button>
         </div>
       </Card>
 
@@ -99,10 +160,28 @@ export default function ProfitLoss() {
             <div style={{ marginTop: '20px' }}>
               <ReportSection title="Expenses" lines={expenses} color={theme.danger} />
             </div>
-            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: `2px solid ${theme.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 700 }}>
+            <div
+              style={{
+                marginTop: '20px',
+                paddingTop: '16px',
+                borderTop: `2px solid ${theme.border}`,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                }}
+              >
                 <span style={{ color: theme.textPrimary }}>Net Profit</span>
-                <span style={{ fontFamily: 'monospace', color: parseFloat(report.netProfit) >= 0 ? theme.success : theme.danger }}>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    color: parseFloat(report.netProfit) >= 0 ? theme.success : theme.danger,
+                  }}
+                >
                   {parseFloat(report.netProfit).toLocaleString()}
                 </span>
               </div>

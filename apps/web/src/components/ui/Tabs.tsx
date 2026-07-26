@@ -31,7 +31,9 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
         return (
           <button
             key={tab.key}
-            onClick={() => onChange(tab.key)}
+            onClick={() => {
+              onChange(tab.key)
+            }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -50,14 +52,16 @@ export function Tabs({ tabs, activeTab, onChange, className = '' }: TabsProps) {
           >
             {tab.label}
             {tab.badge !== undefined && (
-              <span style={{
-                padding: '1px 6px',
-                fontSize: '10px',
-                borderRadius: '10px',
-                background: theme.accentBg,
-                color: theme.accent,
-                border: `1px solid ${theme.accentBorder}`,
-              }}>
+              <span
+                style={{
+                  padding: '1px 6px',
+                  fontSize: '10px',
+                  borderRadius: '10px',
+                  background: theme.accentBg,
+                  color: theme.accent,
+                  border: `1px solid ${theme.accentBorder}`,
+                }}
+              >
                 {tab.badge}
               </span>
             )}

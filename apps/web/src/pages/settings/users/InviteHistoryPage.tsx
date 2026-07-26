@@ -34,14 +34,13 @@ export default function InviteHistoryPage() {
 
   return (
     <div style={{ padding: '24px' }}>
-      <PageHeader
-        title="Invite History"
-        subtitle="All user invitations sent from this platform"
-      />
+      <PageHeader title="Invite History" subtitle="All user invitations sent from this platform" />
 
       <Card padding="none">
         <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.border}` }}>
-          <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>Invitations</h3>
+          <h3 style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+            Invitations
+          </h3>
         </div>
 
         {loading ? (
@@ -80,17 +79,25 @@ export default function InviteHistoryPage() {
                   <tr
                     key={inv.id}
                     style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = theme.tableRowHover }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = theme.tableRowHover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                    }}
                   >
                     <td style={{ padding: '12px 14px', color: theme.textPrimary }}>{inv.email}</td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{inv.role ?? '—'}</td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
+                      {inv.role ?? '—'}
+                    </td>
                     <td style={{ padding: '12px 14px' }}>
                       <Badge variant={STATUS_BADGE[inv.status] ?? 'neutral'} size="sm">
                         {inv.status}
                       </Badge>
                     </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>{inv.invitedByEmail ?? '—'}</td>
+                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
+                      {inv.invitedByEmail ?? '—'}
+                    </td>
                     <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
                       {new Date(inv.createdAt).toLocaleDateString()}
                     </td>

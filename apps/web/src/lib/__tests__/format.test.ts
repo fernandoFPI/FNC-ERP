@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatNumber, formatCurrency, formatRelativeTime, formatUptime } from '../format'
+import {
+  formatDate,
+  formatNumber,
+  formatCurrency,
+  formatRelativeTime,
+  formatUptime,
+} from '../format'
 
 describe('formatDate', () => {
   it('formats in DD/MM/YYYY by default', () => {

@@ -19,7 +19,11 @@ describe('Badge', () => {
   })
 
   it('shows dot when dot=true', () => {
-    const { container } = wrap(<Badge variant="success" dot>Active</Badge>)
+    const { container } = wrap(
+      <Badge variant="success" dot>
+        Active
+      </Badge>,
+    )
     // dot is a child span inside the badge span
     const spans = container.querySelectorAll('span span')
     expect(spans.length).toBeGreaterThan(0)

@@ -13,7 +13,15 @@ function ThemeDisplay() {
 
 function ThemeChanger({ target }: { target: string }) {
   const { setTheme } = useTheme()
-  return <button onClick={() => setTheme(target as never)}>change</button>
+  return (
+    <button
+      onClick={() => {
+        setTheme(target as never)
+      }}
+    >
+      change
+    </button>
+  )
 }
 
 beforeEach(() => {
@@ -24,7 +32,11 @@ beforeEach(() => {
 
 describe('ThemeContext', () => {
   it('applies light-flat tokens to CSS custom properties on mount', () => {
-    render(<ThemeProvider><div /></ThemeProvider>)
+    render(
+      <ThemeProvider>
+        <div />
+      </ThemeProvider>,
+    )
     const bg = document.documentElement.style.getPropertyValue('--bg-canvas')
     expect(bg).toBe(themes['light-flat'].bgCanvas)
   })
@@ -34,21 +46,25 @@ describe('ThemeContext', () => {
       <ThemeProvider>
         <ThemeDisplay />
         <ThemeChanger target="black" />
-      </ThemeProvider>
+      </ThemeProvider>,
     )
-    act(() => getByText('change').click())
+    act(() => {
+      getByText('change').click()
+    })
     expect(getByTestId('key').textContent).toBe('black')
     const bg = document.documentElement.style.getPropertyValue('--bg-canvas')
-    expect(bg).toBe(themes['black'].bgCanvas)
+    expect(bg).toBe(themes.black.bgCanvas)
   })
 
   it('persists theme key to localStorage', () => {
     const { getByText } = render(
       <ThemeProvider>
         <ThemeChanger target="black" />
-      </ThemeProvider>
+      </ThemeProvider>,
     )
-    act(() => getByText('change').click())
+    act(() => {
+      getByText('change').click()
+    })
     expect(localStorage.getItem('fnc-theme')).toBe('black')
   })
 
@@ -57,7 +73,7 @@ describe('ThemeContext', () => {
     const { getByTestId } = render(
       <ThemeProvider>
         <ThemeDisplay />
-      </ThemeProvider>
+      </ThemeProvider>,
     )
     expect(getByTestId('key').textContent).toBe('black')
   })
@@ -67,7 +83,7 @@ describe('ThemeContext', () => {
     const { getByTestId } = render(
       <ThemeProvider>
         <ThemeDisplay />
-      </ThemeProvider>
+      </ThemeProvider>,
     )
     expect(getByTestId('key').textContent).toBe('light-flat')
   })

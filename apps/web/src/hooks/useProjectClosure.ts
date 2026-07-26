@@ -7,8 +7,14 @@ const PROJECT_CLOSURE_CHECK = gql`
       id
       openPOsCount
       openMOsCount
-      uninvoicedMilestones { id name }
-      pendingTasks { id title }
+      uninvoicedMilestones {
+        id
+        name
+      }
+      pendingTasks {
+        id
+        title
+      }
     }
   }
 `
@@ -31,16 +37,32 @@ export function useProjectClosure(projectId: string | null) {
 
   if (project) {
     if ((project.openPOsCount ?? 0) > 0) {
-      blockers.push({ type: 'open_pos', message: `${project.openPOsCount} open purchase order(s)`, count: project.openPOsCount })
+      blockers.push({
+        type: 'open_pos',
+        message: `${project.openPOsCount} open purchase order(s)`,
+        count: project.openPOsCount,
+      })
     }
     if ((project.openMOsCount ?? 0) > 0) {
-      blockers.push({ type: 'open_mos', message: `${project.openMOsCount} open manufacturing order(s)`, count: project.openMOsCount })
+      blockers.push({
+        type: 'open_mos',
+        message: `${project.openMOsCount} open manufacturing order(s)`,
+        count: project.openMOsCount,
+      })
     }
     if ((project.uninvoicedMilestones ?? []).length > 0) {
-      blockers.push({ type: 'uninvoiced_milestones', message: `${project.uninvoicedMilestones.length} uninvoiced milestone(s)`, count: project.uninvoicedMilestones.length })
+      blockers.push({
+        type: 'uninvoiced_milestones',
+        message: `${project.uninvoicedMilestones.length} uninvoiced milestone(s)`,
+        count: project.uninvoicedMilestones.length,
+      })
     }
     if ((project.pendingTasks ?? []).length > 0) {
-      blockers.push({ type: 'pending_tasks', message: `${project.pendingTasks.length} pending task(s)`, count: project.pendingTasks.length })
+      blockers.push({
+        type: 'pending_tasks',
+        message: `${project.pendingTasks.length} pending task(s)`,
+        count: project.pendingTasks.length,
+      })
     }
   }
 

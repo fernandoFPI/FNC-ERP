@@ -40,7 +40,7 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
   const { theme } = useTheme()
   const [rating, setRating] = useState<ConditionRating>(3)
   const [checklist, setChecklist] = useState<Record<string, boolean>>(
-    Object.fromEntries(DEFAULT_CHECKLIST.map(k => [k, true]))
+    Object.fromEntries(DEFAULT_CHECKLIST.map((k) => [k, true])),
   )
   const [notes, setNotes] = useState('')
   const [gpsLoading, setGpsLoading] = useState(false)
@@ -54,13 +54,24 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
     4: theme.info ?? theme.accent,
     5: theme.success,
   }
-  const RATING_LABELS: Record<number, string> = { 1: 'Poor', 2: 'Fair', 3: 'Average', 4: 'Good', 5: 'Excellent' }
+  const RATING_LABELS: Record<number, string> = {
+    1: 'Poor',
+    2: 'Fair',
+    3: 'Average',
+    4: 'Good',
+    5: 'Excellent',
+  }
 
   function captureGPS() {
     setGpsLoading(true)
     navigator.geolocation?.getCurrentPosition(
-      (pos) => { setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setGpsLoading(false) },
-      () => setGpsLoading(false),
+      (pos) => {
+        setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setGpsLoading(false)
+      },
+      () => {
+        setGpsLoading(false)
+      },
     )
   }
 
@@ -85,16 +96,37 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
 
   return (
     <Modal open={open} onClose={onClose} title={`Condition Report — ${assetName}`}>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          padding: '20px',
+          maxHeight: '70vh',
+          overflowY: 'auto',
+        }}
+      >
         {/* Rating */}
         <div>
-          <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '8px', fontWeight: 500 }}>Overall Condition</div>
+          <div
+            style={{
+              fontSize: '13px',
+              color: theme.textSecondary,
+              marginBottom: '8px',
+              fontWeight: 500,
+            }}
+          >
+            Overall Condition
+          </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {([1, 2, 3, 4, 5] as ConditionRating[]).map(r => (
+            {([1, 2, 3, 4, 5] as ConditionRating[]).map((r) => (
               <button
                 key={r}
                 type="button"
-                onClick={() => setRating(r)}
+                onClick={() => {
+                  setRating(r)
+                }}
                 style={{
                   width: '44px',
                   height: '44px',
@@ -112,19 +144,42 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
               </button>
             ))}
           </div>
-          <div style={{ marginTop: '4px', fontSize: '12px', color: RATING_COLORS[rating] }}>{RATING_LABELS[rating]}</div>
+          <div style={{ marginTop: '4px', fontSize: '12px', color: RATING_COLORS[rating] }}>
+            {RATING_LABELS[rating]}
+          </div>
         </div>
 
         {/* Checklist */}
         <div>
-          <div style={{ fontSize: '13px', color: theme.textSecondary, marginBottom: '8px', fontWeight: 500 }}>Inspection Checklist</div>
+          <div
+            style={{
+              fontSize: '13px',
+              color: theme.textSecondary,
+              marginBottom: '8px',
+              fontWeight: 500,
+            }}
+          >
+            Inspection Checklist
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {DEFAULT_CHECKLIST.map(item => (
-              <label key={item} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', color: theme.textPrimary }}>
+            {DEFAULT_CHECKLIST.map((item) => (
+              <label
+                key={item}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  color: theme.textPrimary,
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={checklist[item] ?? false}
-                  onChange={(e) => setChecklist(c => ({ ...c, [item]: e.target.checked }))}
+                  onChange={(e) => {
+                    setChecklist((c) => ({ ...c, [item]: e.target.checked }))
+                  }}
                   style={{ accentColor: theme.accent }}
                 />
                 {item}
@@ -145,11 +200,21 @@ export function ConditionReportForm({ open, assetId, assetName, onSubmit, onClos
           )}
         </div>
 
-        <Input label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <Input
+          label="Notes"
+          value={notes}
+          onChange={(e) => {
+            setNotes(e.target.value)
+          }}
+        />
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" type="submit" loading={loading}>Submit Report</Button>
+          <Button variant="ghost" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" loading={loading}>
+            Submit Report
+          </Button>
         </div>
       </form>
     </Modal>

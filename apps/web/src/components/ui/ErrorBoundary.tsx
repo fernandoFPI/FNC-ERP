@@ -26,12 +26,16 @@ export class ErrorBoundary extends React.Component<Props, State> {
       if (this.props.fallback) return this.props.fallback
       return (
         <Card padding="md" style={{ margin: '24px' }}>
-          <p style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: '8px' }}>Something went wrong</p>
+          <p style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: '8px' }}>
+            Something went wrong
+          </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
             {this.state.error?.message ?? 'An unexpected error occurred.'}
           </p>
           <button
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => {
+              this.setState({ hasError: false, error: null })
+            }}
             style={{
               marginTop: '12px',
               padding: '6px 14px',

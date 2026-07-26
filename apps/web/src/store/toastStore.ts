@@ -33,10 +33,11 @@ export const useToastStore = create<ToastState>((set) => ({
 
   addToast: ({ message, type, variant, actions }) => {
     const raw = variant ?? type ?? 'info'
-    const resolvedVariant: ToastVariant = raw === 'error' ? 'danger' : raw as ToastVariant
-    const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const resolvedVariant: ToastVariant = raw === 'error' ? 'danger' : raw
+    const id =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
     set((s) => ({ toasts: [...s.toasts, { id, message, variant: resolvedVariant, actions }] }))
     // Action toasts stay until the user clicks an action or dismisses manually
     if (!actions?.length) {
@@ -46,6 +47,7 @@ export const useToastStore = create<ToastState>((set) => ({
     }
   },
 
-  removeToast: (id) =>
-    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+  removeToast: (id) => {
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
+  },
 }))

@@ -12,7 +12,7 @@ function wrap() {
   return render(
     <ThemeProvider>
       <ThemeSwitcher />
-    </ThemeProvider>
+    </ThemeProvider>,
   )
 }
 

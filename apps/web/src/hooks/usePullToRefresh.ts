@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef, type RefObject } from 'react'
 import { useBreakpoint } from './useBreakpoint'
 
-export function usePullToRefresh(
-  ref: RefObject<HTMLElement>,
-  onRefresh: () => Promise<void>,
-) {
+export function usePullToRefresh(ref: RefObject<HTMLElement>, onRefresh: () => Promise<void>) {
   const [refreshing, setRefreshing] = useState(false)
   const startY = useRef<number | null>(null)
   const { isPhone } = useBreakpoint()

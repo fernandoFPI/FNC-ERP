@@ -26,18 +26,21 @@ export function Card({
 
   const paddingValues: Record<string, string> = {
     none: '0',
-    sm:   isPhone ? '10px' : '12px',
-    md:   isPhone ? '14px' : isTablet ? '16px' : '20px',
-    lg:   isPhone ? '16px' : isTablet ? '20px' : '28px',
+    sm: isPhone ? '10px' : '12px',
+    md: isPhone ? '14px' : isTablet ? '16px' : '20px',
+    lg: isPhone ? '16px' : isTablet ? '20px' : '28px',
   }
 
-  const mobileFullWidthStyles: React.CSSProperties = fullWidthOnMobile && isPhone ? {
-    borderRadius: 0,
-    marginLeft: '-12px',
-    marginRight: '-12px',
-    borderLeft: 'none',
-    borderRight: 'none',
-  } : {}
+  const mobileFullWidthStyles: React.CSSProperties =
+    fullWidthOnMobile && isPhone
+      ? {
+          borderRadius: 0,
+          marginLeft: '-12px',
+          marginRight: '-12px',
+          borderLeft: 'none',
+          borderRight: 'none',
+        }
+      : {}
 
   return (
     <div
@@ -62,7 +65,9 @@ export function Card({
         <div
           style={{
             position: 'absolute',
-            top: 0, left: 0, right: 0,
+            top: 0,
+            left: 0,
+            right: 0,
             height: '0.5px',
             background: theme.topRim,
           }}

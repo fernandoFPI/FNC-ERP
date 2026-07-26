@@ -6,7 +6,8 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
-import { Table, Column } from '../../../components/ui/Table'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 
@@ -59,7 +60,11 @@ export default function AccountsPage() {
     {
       key: 'code',
       header: 'Code',
-      render: (a) => <span style={{ fontFamily: 'monospace', color: theme.textPrimary, fontSize: '13px' }}>{a.code}</span>,
+      render: (a) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textPrimary, fontSize: '13px' }}>
+          {a.code}
+        </span>
+      ),
     },
     {
       key: 'name',
@@ -67,7 +72,9 @@ export default function AccountsPage() {
       render: (a) => (
         <div>
           <div style={{ color: theme.textPrimary, fontSize: '13px' }}>{a.name}</div>
-          {a.parent_name && <div style={{ color: theme.textMuted, fontSize: '11px' }}>{a.parent_name}</div>}
+          {a.parent_name && (
+            <div style={{ color: theme.textMuted, fontSize: '11px' }}>{a.parent_name}</div>
+          )}
         </div>
       ),
     },
@@ -75,7 +82,15 @@ export default function AccountsPage() {
       key: 'account_type',
       header: 'Type',
       render: (a) => (
-        <Badge variant={a.account_type === 'asset' || a.account_type === 'revenue' ? 'success' : a.account_type === 'expense' ? 'warning' : 'info'}>
+        <Badge
+          variant={
+            a.account_type === 'asset' || a.account_type === 'revenue'
+              ? 'success'
+              : a.account_type === 'expense'
+                ? 'warning'
+                : 'info'
+          }
+        >
           {TYPE_LABELS[a.account_type] ?? a.account_type}
         </Badge>
       ),
@@ -83,12 +98,18 @@ export default function AccountsPage() {
     {
       key: 'currency_code',
       header: 'Currency',
-      render: (a) => <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{a.currency_code}</span>,
+      render: (a) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{a.currency_code}</span>
+      ),
     },
     {
       key: 'is_active',
       header: 'Status',
-      render: (a) => <Badge variant={a.is_active ? 'success' : 'neutral'}>{a.is_active ? 'Active' : 'Inactive'}</Badge>,
+      render: (a) => (
+        <Badge variant={a.is_active ? 'success' : 'neutral'}>
+          {a.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
     },
   ]
 
@@ -98,7 +119,13 @@ export default function AccountsPage() {
         title="Chart of Accounts"
         subtitle={`${filtered.length} accounts`}
         actions={
-          <Button variant="primary" size="sm" onClick={() => navigate('/finance/accounts/new')}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              navigate('/finance/accounts/new')
+            }}
+          >
             New Account
           </Button>
         }
@@ -114,7 +141,9 @@ export default function AccountsPage() {
               label: 'Type',
               value: typeFilter,
               options: TYPE_OPTIONS,
-              onChange: (v) => setTypeFilter(v),
+              onChange: (v) => {
+                setTypeFilter(v)
+              },
             },
           ]}
           resultCount={filtered.length}
@@ -125,7 +154,9 @@ export default function AccountsPage() {
           data={filtered}
           loading={loading}
           rowKey="id"
-          onRowClick={(a) => navigate(`/finance/accounts/${a.id}/ledger`)}
+          onRowClick={(a) => {
+            navigate(`/finance/accounts/${a.id}/ledger`)
+          }}
         />
       </Card>
     </div>

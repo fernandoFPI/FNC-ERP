@@ -10,7 +10,14 @@ interface EmptyStateProps {
   className?: string
 }
 
-export function EmptyState({ title = 'Nothing here', message, action, children, icon, className = '' }: EmptyStateProps) {
+export function EmptyState({
+  title = 'Nothing here',
+  message,
+  action,
+  children,
+  icon,
+  className = '',
+}: EmptyStateProps) {
   const { theme } = useTheme()
 
   return (
@@ -26,18 +33,27 @@ export function EmptyState({ title = 'Nothing here', message, action, children, 
         gap: '12px',
       }}
     >
-      <div style={{
-        width: '48px',
-        height: '48px',
-        borderRadius: '12px',
-        background: theme.bgSurface,
-        border: `1px solid ${theme.border}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
+      <div
+        style={{
+          width: '48px',
+          height: '48px',
+          borderRadius: '12px',
+          background: theme.bgSurface,
+          border: `1px solid ${theme.border}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         {icon ?? (
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={theme.textMuted} strokeWidth="1.5">
+          <svg
+            width="22"
+            height="22"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={theme.textMuted}
+            strokeWidth="1.5"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -45,7 +61,16 @@ export function EmptyState({ title = 'Nothing here', message, action, children, 
         )}
       </div>
       <div>
-        <p style={{ fontSize: '14px', fontWeight: 600, color: theme.textSecondary, marginBottom: '4px' }}>{title}</p>
+        <p
+          style={{
+            fontSize: '14px',
+            fontWeight: 600,
+            color: theme.textSecondary,
+            marginBottom: '4px',
+          }}
+        >
+          {title}
+        </p>
         {message && <p style={{ fontSize: '13px', color: theme.textMuted }}>{message}</p>}
       </div>
       {action}
