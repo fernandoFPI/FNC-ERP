@@ -37,6 +37,10 @@ describe('GET /health', () => {
 
 describe('Products', () => {
   beforeEach(async () => {
+    await pool.query(
+      `DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id = $1 AND sku LIKE 'TEST-%')`,
+      [TEST_COMPANY_ID],
+    )
     await pool.query(`DELETE FROM products WHERE company_id = $1 AND sku LIKE 'TEST-%'`, [TEST_COMPANY_ID])
   })
 

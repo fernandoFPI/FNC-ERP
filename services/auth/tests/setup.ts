@@ -11,8 +11,8 @@ export const TEST_ADMIN_PASSWORD = 'ChangeMe123!'
 
 export async function cleanTestData() {
   await pool.query(`DELETE FROM sessions WHERE user_id IN (
-    SELECT id FROM users WHERE email LIKE '%fnc-erp.local'
-  )`)
+    SELECT id FROM users WHERE email = $1
+  )`, [TEST_USER_EMAIL])
   await pool.query(`DELETE FROM user_company_roles WHERE user_id IN (
     SELECT id FROM users WHERE email = $1
   )`, [TEST_USER_EMAIL])

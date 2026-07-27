@@ -27,6 +27,13 @@ function sendForbidden(res: Response, message: string): void {
   })
 }
 
+function sendInternalError(res: Response): void {
+  res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+    success: false,
+    error: { code: ERROR_CODES.INTERNAL_ERROR, message: 'Internal server error' },
+  })
+}
+
 export function requireAuth(): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const authHeader = req.headers.authorization
@@ -45,14 +52,20 @@ export function requireAuth(): RequestHandler {
     }
 
     // Verify session still exists in DB
-    const sessionResult = await query<{ id: string; expires_at: Date }>(
-      `SELECT id, expires_at FROM sessions
-       WHERE token_hash = encode(digest($1, 'sha256'), 'hex')
-       AND expires_at > NOW()`,
-      [token],
-    ).catch(() => null)
+    let sessionResult
+    try {
+      sessionResult = await query<{ id: string; expires_at: Date }>(
+        `SELECT id, expires_at FROM sessions
+         WHERE token_hash = encode(digest($1, 'sha256'), 'hex')
+         AND expires_at > NOW()`,
+        [token],
+      )
+    } catch {
+      sendInternalError(res)
+      return
+    }
 
-    if (!sessionResult || sessionResult.rowCount === 0) {
+    if (sessionResult.rowCount === 0) {
       sendUnauthorized(res, ERROR_CODES.TOKEN_EXPIRED, 'Session not found or expired')
       return
     }

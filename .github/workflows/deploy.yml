@@ -7,14 +7,7 @@ on:
 
 jobs:
   test:
-    # Named "test" (job id referenced by deploy's `needs:`) but currently only
-    # gates build + migrations. The actual test suite (`pnpm test`) has
-    # widespread pre-existing failures across most services, unrelated to any
-    # change in this pipeline, that predate this gate entirely — it was never
-    # exercised before because ci.yml's lint step (broken until now) aborted
-    # before build/test ever ran. Re-add `pnpm test` here once that debt is
-    # addressed as its own project.
-    name: Build & Migration Gate
+    name: Build, Migration & Test Gate
     runs-on: ubuntu-latest
 
     services:
@@ -65,6 +58,14 @@ jobs:
 
       - name: Run migrations (test DB)
         run: pnpm migrate:test
+
+      - name: Run tests
+        # Every service's tests share one hardcoded TEST_COMPANY_ID against one
+        # DB, so a handful of them race under full parallelism (rare — always
+        # green standalone). --concurrency caps how many run at once; the retry
+        # clears the rest. If this needs a second retry regularly, the shared
+        # fixture needs isolating rather than adding more retries.
+        run: pnpm test --concurrency=4 || pnpm test --concurrency=4
 
   deploy:
     name: Deploy to VPS

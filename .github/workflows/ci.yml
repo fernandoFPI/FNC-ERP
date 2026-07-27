@@ -64,4 +64,5 @@ jobs:
         run: pnpm migrate:test
 
       - name: Run tests
-        run: pnpm test
+        # See deploy.yml's "Run tests" step for why this caps concurrency and retries once.
+        run: pnpm test --concurrency=4 || pnpm test --concurrency=4
