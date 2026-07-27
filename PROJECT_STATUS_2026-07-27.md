@@ -487,12 +487,87 @@ function (not just reading it) that both target paths now pass and that
 adjacent sensitive paths (`/api/v1/auth/users`, `/api/v1/auth/users/invite`)
 correctly still don't.
 
-**Still needs a live confirmation from the user** — this fix hasn't been
-tested against a real invite end-to-end yet. If accepting still fails after
-this deploys, the next thing to check is the `POST /accept-invitation`
-handler itself (`services/auth/routes/user-management.ts:323`) for a
-similar unturned rock, or genuine token expiry/status if the user is
-clicking an old email rather than a fresh one.
+**Update: it did not work first try — three more bugs found in the same flow,
+one at a time, each confirmed live by the user before moving to the next.**
+This turned into the most heavily-stacked bug chain of the whole session —
+six real, independent bugs in one feature, each masking the next:
+
+- **Commit `2029ec4`** — accepting the invite crashed with React error #31
+  again, args `{code, message}`. Same bug shape as step 10:
+  `AcceptInvitationPage.tsx`'s submit handler typed `response.data.error` as
+  a plain string, but every service's `sendError()` helper
+  (`services/*/lib/errors.ts`) responds `{success:false, error:{code,
+  message,details}}` — an object. Fixed to read `.error.message`.
+- The now-visible real error was `PASSWORD_MISMATCH` despite the user typing
+  the same password twice. **Commit `d03e8c7`** — the POST body only ever
+  sent `{token, password}`; `confirmPassword` was validated client-side
+  (`passwordsMatch`) but never included in the actual request, so the
+  backend always compared the real password against `undefined`. This
+  endpoint had rejected every single submission, ever, regardless of input.
+- Along the way, investigating a hypothesis that turned out wrong
+  (`user_company_roles.module` being `NOT NULL`, checked directly against
+  live `information_schema` and found nullable — a later migration had
+  dropped the constraint the original migration file implies) surfaced a
+  **different real bug**: `packages/auth/src/middleware.ts`'s
+  `requireModule()` treats `module !== 'all'` as denied for everyone except
+  `system_admin`. Since the Invite User UI never collected a module value,
+  every invitation's module was `NULL` — meaning any invited non-admin user
+  who did make it through signup would've been silently locked out of every
+  module-gated endpoint afterward. **Commit `345d46f`** defaults module to
+  `'all'` (the sentinel used everywhere else in the codebase — seeds, test
+  fixtures) both when invitations are created and when they're accepted (so
+  already-pending invitations get the fix too, no resend needed).
+- After all of this, the invite finally completed successfully — **user
+  confirmed live**, first fully-completed invitation in this system's
+  history.
+
+### 12. Post-fix cleanup: role vocabulary bug, multi-company invites, Users-list stubs (commit `7dc49c7`)
+
+Three issues reported once the invite flow was finally working:
+
+- **Confirmed real bug, not cosmetic**: Invite User's role dropdown offered
+  `viewer`/`manager`/`company_admin`/`system_admin`; Add Role (existing
+  user) offered `system_admin`/`company_admin`/`module_admin`/`user`. The
+  entire permission system only recognizes the second vocabulary —
+  `packages/auth/src/middleware.ts`'s `requireRole()` hierarchy
+  (`{user:0, module_admin:1, company_admin:2, system_admin:3}`) has no entry
+  for `viewer`/`manager`, so `roleHierarchy[role] ?? -1` evaluated to **-1**
+  for both — below even the lowest real tier. Anyone invited as "Viewer" or
+  "Manager" would fail every `requireRole()` check, worse off than a plain
+  "User". Fixed both the Invite User and (separately, same bug) Create User
+  modals to use the real vocabulary. Confirmed via `requirePermission`
+  (`packages/permissions/src/middleware.ts:112`) that non-admin roles start
+  with zero permissions by design regardless — a freshly-created "User"
+  looking inert until permissions are explicitly granted is expected
+  behavior, not a bug.
+- **Multi-company invites** (explicit design decision via AskUserQuestion —
+  user picked "one invite, multiple companies" over "fire N separate
+  invites"): added migration `180_user_invitation_companies.sql`, a junction
+  table so one invitation token grants roles across several companies at
+  once. Rewrote `inviteUser` (input now `companies: [{companyId, role,
+  module}]`), `userInvitations`, and both `services/auth` accept-invitation
+  endpoints to read/write the junction table. `user_invitations.company_id/
+  role/module` (already nullable) are left in place but no longer written
+  to — no destructive migration needed. Frontend: `UsersPage`'s Invite modal
+  gets a checkbox multi-select for companies (one role applied to all
+  selected companies, not per-company roles — kept simple since that's what
+  was asked for); `AcceptInvitationPage`/`InviteHistoryPage` updated to show
+  a list of companies instead of one.
+- **Settings → Users "Sessions" always read 0** — and Companies/Roles in
+  that same list were also always empty, just not yet noticed. The `users`
+  query resolver (`services/gateway/src/graphql/resolvers.ts`) hardcoded
+  `activeSessions: 0, companies: [], roles: []` and never queried for them —
+  the exact same "stub never wired up" shape as several other bugs this
+  session. Added two batched queries (session counts + `user_company_roles`
+  join, both `WHERE user_id = ANY($1::uuid[])`) keyed by the page's user
+  ids, avoiding N+1 queries.
+
+Verified: full monorepo build clean; gateway/auth/web test suites green
+(279 tests total); migration applied to a live DB; the entire multi-company
+invite → validate → accept chain exercised end-to-end inside a rolled-back
+transaction against real data (2 companies, 2 different roles, correct
+`user_company_roles` rows produced). **Not yet confirmed live by the user** —
+this is the newest work in the doc.
 
 Swept for the same bug class immediately after: checked every route across
 all 7 files in `services/auth/src/routes/*.ts` for ones without
@@ -521,13 +596,17 @@ auth does, so the risk there is much lower).
   (`services/worker`+`services/hr` after step 8, `services/worker`+
   `services/gateway`+`services/auth` after step 9, `services/worker`+
   `services/gateway` after step 10 — all green).
-- Both `dev` and `production` branches are in sync at `19f5a8f`.
-- **The invitation-accept flow (steps 10 and 11 combined) is the single
-  biggest open unknown right now.** Three independent bugs stacked on top
-  of each other in that one flow (URL key mismatch, inviter-name field,
-  gateway auth-gating) — all fixed and shipped, none confirmed working
-  end-to-end by the user yet. Don't assume it's fully fixed until someone
-  actually completes an invite.
+- Both `dev` and `production` branches are in sync at `7dc49c7`.
+- **The invitation flow is now confirmed fully working end-to-end by the
+  user** (`d03e8c7` — first successful acceptance in this system's history),
+  after six stacked bugs (URL key mismatch, inviter-name field, gateway
+  auth-gating, error-rendering crash, missing confirmPassword field, and a
+  module='all' permission-lockout bug) were found and fixed one at a time.
+- Commit `7dc49c7` (multi-company invites, role vocabulary fix, Users-list
+  stub fix) is the newest work — build/test verified and one full
+  invite→accept cycle exercised against a live DB, but **not yet confirmed
+  live by the user**. Don't assume the multi-company path specifically
+  works in production until someone actually sends and accepts one.
 
 | Commit | What |
 |---|---|
@@ -553,6 +632,10 @@ auth does, so the risk there is much lower).
 | `fe7ff79` | Invitation email inviter-name change — **misread the request, reverted** |
 | `6d912c6` | Corrected: invitation email shows real inviter name; gateway's inviteUser now resolves a real name instead of raw email |
 | `19f5a8f` | Gateway was 401-blocking both accept-invitation endpoints — likely the reason invitations have never fully worked in production |
+| `2029ec4` | Accept-invitation submit crash (React error #31) — same error-shape mismatch as the Outbox Monitor |
+| `d03e8c7` | Accept-invitation always failed PASSWORD_MISMATCH — confirmPassword never sent to the backend. **First fully successful invite acceptance ever — CONFIRMED LIVE by user** |
+| `345d46f` | Invitations' module always NULL — silently locks out invited users at every module-gated endpoint; default to 'all' |
+| `7dc49c7` | Multi-company invites (migration 180); fixed viewer/manager phantom-role bug; fixed Users list Sessions/Companies/Roles always-empty stubs |
 
 ## Known open items (deliberately deferred, not forgotten)
 
