@@ -261,8 +261,20 @@ payrollRouter.post(
                WHERE id = ANY($2::uuid[])`,
                 [run.id, deductionIds],
               )
-              void payslipId
             }
+
+            await client.query(
+              `INSERT INTO service_outbox (service, event_type, payload)
+             VALUES ('reporting', 'PAYSLIP_GENERATION_REQUESTED', $1)`,
+              [
+                JSON.stringify({
+                  payroll_line_id: payslipId,
+                  payroll_run_id: run.id,
+                  employee_id: emp.id,
+                  company_id: companyId,
+                }),
+              ],
+            )
           }
 
           await client.query(
