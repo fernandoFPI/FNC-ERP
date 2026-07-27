@@ -683,17 +683,26 @@ fields present); `SERVICE_TOKEN` timing-safe comparison exercised against
 empty); pubsub `publish()` functions exercised directly with zero
 subscribers (the real steady state until a client connects); the
 `revokeAllUserSessions` SQL fix verified against a live DB inside a
-rolled-back transaction. **Could not do a full live WebSocket handshake
-test** — port 3000 was already occupied by something else in the
-sandboxed dev environment (left untouched rather than risk killing
-unknown state), and env-var overrides for an alternate port didn't take
-effect through the dotenvx loading layer. This is real residual risk:
-the wiring is verified as far as static analysis and isolated-module
-loading can go, but an actual browser → gateway WS handshake → subscribe →
-publish → receive round trip has **not** been observed. Test this for
-real before trusting it: log in from a second device/browser while
-watching a user's Sessions tab in the first, and confirm it updates
-without a manual refresh.
+rolled-back transaction.
+
+**Update: the full live round trip was subsequently verified**, once
+port 3000 freed up. Started the real built gateway (`node dist/index.js`)
+against the local Postgres/Redis, connected a real `graphql-ws` client
+over an actual WebSocket with a JWT signed for a real user (via
+`signAccessToken`, same as a real login produces), subscribed to
+`sessionsChanged`, then hit `POST /internal/events/sessions-changed` with
+the real `SERVICE_TOKEN` header — the exact call `createSession()` makes
+on every login. The subscriber received
+`{"data":{"sessionsChanged":{"userId":"..."}}}` back over the WebSocket.
+Confirmed via the gateway's own request logs too
+(`POST /internal/events/sessions-changed → 200`), and the server stayed
+healthy (`/health` kept returning 200) throughout with no crash or
+exception. This is now a genuinely confirmed, working round trip — WS
+auth handshake → subscribe → cross-process publish → delivery — not just
+static/isolated verification. What's still *not* been observed is the
+actual React UI reacting to it (Apollo's `useSubscription`/`onData` →
+`refetch()` on a real page in a real browser) — the server-side chain is
+proven, the client-side wiring is code-reviewed but not eyeballed running.
 
 ## Current confirmed state
 
@@ -722,11 +731,13 @@ without a manual refresh.
 - Commit `083597a` (permissions seeding + `users.role` fix) — user reported
   both errors live and both are fixed/verified, but the user has not yet
   confirmed a permission save actually succeeds end-to-end in the browser.
-- Commit `ab9a48f` (GraphQL subscriptions) is the newest and least-verified
-  work in this doc — **no live WebSocket handshake has been observed**,
-  only static analysis, isolated module loading, and build/test green (see
-  step 14 above for exactly what was and wasn't checked). Treat "sessions
-  update live" as unconfirmed until someone actually watches it happen.
+- Commit `ab9a48f` (GraphQL subscriptions) — the full server-side round
+  trip (WS handshake → auth → subscribe → cross-process publish via the
+  real `SERVICE_TOKEN` endpoint → delivery) was verified live against the
+  real running gateway, see step 14. What's *not* yet confirmed is the
+  React UI actually reacting to it in a browser — code-reviewed, not
+  eyeballed running. Reasonably high confidence, not yet "watched it
+  happen on screen."
 
 | Commit | What |
 |---|---|
@@ -854,15 +865,16 @@ without a manual refresh.
     codebase has never been exercised by real traffic before, and budget for
     more rounds like this, not fewer.
 
-11. **GraphQL subscriptions have not had a live WebSocket handshake
-    verified.** See step 14. Everything short of an actual browser → gateway
-    round trip checks out (build, tests, isolated schema/wiring load,
-    SERVICE_TOKEN comparison, pubsub publish calls, the one SQL fix touched
-    along the way) but that's not the same as watching it work. First
-    priority if picking this back up: log in from a second device while
-    watching a user's Sessions tab, confirm it updates without a refresh,
-    then check the browser console for WS connection/auth errors if it
-    doesn't.
+11. ~~GraphQL subscriptions have not had a live WebSocket handshake
+    verified.~~ **DONE — see step 14's update.** The server-side round trip
+    (real `graphql-ws` client, real JWT, real WS handshake, real
+    `SERVICE_TOKEN`-authenticated cross-process publish call) was verified
+    against the actual running gateway and confirmed via its own request
+    logs. What's still unverified: the React UI side (`useSubscription` →
+    `onData` → `refetch()`) reacting correctly in a real browser — code
+    looks right, hasn't been watched running. Cheap to confirm: log in from
+    a second device/browser while watching a user's Sessions tab in the
+    first, confirm it updates without a manual refresh.
 12. **Record/field locking (Google-Docs-style "someone else is editing
     this") is an agreed next task, not started.** User asked for it after
     the subscriptions work landed; explicitly deferred to its own pass

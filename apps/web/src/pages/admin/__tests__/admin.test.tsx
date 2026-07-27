@@ -11,6 +11,8 @@ import {
   AUDIT_LOG_QUERY,
   OUTBOX_EVENT_CONFIGS_QUERY,
   OUTBOX_DLQ_QUERY,
+  SESSIONS_CHANGED_SUBSCRIPTION,
+  OUTBOX_UPDATED_SUBSCRIPTION,
 } from '../../../graphql/admin'
 import UsersPage from '../users/UsersPage'
 import OutboxMonitorPage from '../outbox/OutboxMonitorPage'
@@ -115,6 +117,20 @@ const dlqMock = {
   result: { data: { outboxDLQ: { items: [], total: 0, page: 1, limit: 50 } } },
 }
 
+// Live-update subscriptions — UsersPage/OutboxMonitorPage subscribe
+// unconditionally on mount, so MockedProvider needs a matching mock or it
+// logs "no more mocked responses" even though the assertions below don't
+// depend on the subscription ever actually delivering data.
+const sessionsChangedMock = {
+  request: { query: SESSIONS_CHANGED_SUBSCRIPTION, variables: {} },
+  result: { data: { sessionsChanged: null } },
+}
+
+const outboxUpdatedMock = {
+  request: { query: OUTBOX_UPDATED_SUBSCRIPTION, variables: {} },
+  result: { data: { outboxUpdated: null } },
+}
+
 function wrap(component: React.ReactNode, mocks: unknown[] = []) {
   return render(
     <MockedProvider mocks={mocks as never} addTypename={false}>
@@ -162,7 +178,7 @@ describe('AdminLayout', () => {
       themePreference: null,
     })
     render(
-      <MockedProvider mocks={[usersMock]} addTypename={false}>
+      <MockedProvider mocks={[usersMock, sessionsChangedMock]} addTypename={false}>
         <MemoryRouter initialEntries={['/admin/users']}>
           <ThemeProvider>
             <Routes>
@@ -182,19 +198,19 @@ describe('AdminLayout', () => {
 
 describe('UsersPage', () => {
   it('renders page title', () => {
-    wrap(<UsersPage />, [usersMock])
+    wrap(<UsersPage />, [usersMock, sessionsChangedMock])
     expect(screen.getByText('Users')).toBeInTheDocument()
   })
 
   it('shows skeleton loading initially', () => {
-    const { container } = wrap(<UsersPage />, [usersMock])
+    const { container } = wrap(<UsersPage />, [usersMock, sessionsChangedMock])
     expect(container.querySelector('.skeleton')).toBeInTheDocument()
   })
 })
 
 describe('OutboxMonitorPage', () => {
   it('renders page title', () => {
-    wrap(<OutboxMonitorPage />, [outboxMock, eventsMock])
+    wrap(<OutboxMonitorPage />, [outboxMock, eventsMock, outboxUpdatedMock])
     expect(screen.getByText(/Outbox Monitor/i)).toBeInTheDocument()
   })
 })
