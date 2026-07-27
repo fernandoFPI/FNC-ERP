@@ -66,13 +66,13 @@ export class Project extends Model {
 
   get stages() {
     try {
-      return JSON.parse(this.stagesJson) as Array<{
+      return JSON.parse(this.stagesJson) as {
         id: string
         name: string
         sequence: number
         status: string
         completion_pct: number
-      }>
+      }[]
     } catch {
       return []
     }

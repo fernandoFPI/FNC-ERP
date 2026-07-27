@@ -24,18 +24,14 @@ interface IssueLine {
   qty: string
 }
 
-function ProductPicker({
-  onSelect,
-}: {
-  onSelect: (product: Product) => void
-}) {
+function ProductPicker({ onSelect }: { onSelect: (product: Product) => void }) {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<Product[]>([])
 
   useEffect(() => {
     void (async () => {
       const q = search.trim()
-      const items = (await database
+      const items = await database
         .get<Product>('products')
         .query(
           q
@@ -45,7 +41,7 @@ function ProductPicker({
               )
             : Q.where('name', Q.notEq('')),
         )
-        .fetch()) as Product[]
+        .fetch()
       setResults(items.slice(0, 20))
     })()
   }, [search])
@@ -65,16 +61,19 @@ function ProductPicker({
         keyExtractor={(p) => p.id}
         style={styles.pickerList}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.pickerRow} onPress={() => onSelect(item)}>
+          <TouchableOpacity
+            style={styles.pickerRow}
+            onPress={() => {
+              onSelect(item)
+            }}
+          >
             <Text style={styles.pickerName}>{item.name}</Text>
             <Text style={styles.pickerMeta}>
               {item.sku} · {item.uom}
             </Text>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={
-          <Text style={styles.pickerEmpty}>No products found</Text>
-        }
+        ListEmptyComponent={<Text style={styles.pickerEmpty}>No products found</Text>}
       />
     </View>
   )
@@ -87,9 +86,7 @@ export function MaterialIssueScreen() {
   }>()
   const router = useRouter()
 
-  const [issueDate, setIssueDate] = useState(
-    new Date().toISOString().slice(0, 10),
-  )
+  const [issueDate, setIssueDate] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<IssueLine[]>([])
   const [showPicker, setShowPicker] = useState(false)
@@ -117,9 +114,7 @@ export function MaterialIssueScreen() {
       return
     }
 
-    const invalidLine = lines.find(
-      (l) => isNaN(parseFloat(l.qty)) || parseFloat(l.qty) <= 0,
-    )
+    const invalidLine = lines.find((l) => isNaN(parseFloat(l.qty)) || parseFloat(l.qty) <= 0)
     if (invalidLine) {
       Alert.alert('Invalid quantity', `Check quantity for: ${invalidLine.product.name}`)
       return
@@ -139,11 +134,14 @@ export function MaterialIssueScreen() {
         })),
       })
 
-      Alert.alert(
-        'Queued',
-        'Material issue queued. It will be submitted when connected.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      )
+      Alert.alert('Queued', 'Material issue queued. It will be submitted when connected.', [
+        {
+          text: 'OK',
+          onPress: () => {
+            router.back()
+          },
+        },
+      ])
     } finally {
       setIsSubmitting(false)
     }
@@ -154,7 +152,11 @@ export function MaterialIssueScreen() {
       <View style={styles.container}>
         <View style={styles.pickerHeader}>
           <Text style={styles.pickerHeaderTitle}>Select Product</Text>
-          <TouchableOpacity onPress={() => setShowPicker(false)}>
+          <TouchableOpacity
+            onPress={() => {
+              setShowPicker(false)
+            }}
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -204,9 +206,7 @@ export function MaterialIssueScreen() {
         </View>
 
         {/* Lines */}
-        <Text style={styles.sectionTitle}>
-          Products ({lines.length})
-        </Text>
+        <Text style={styles.sectionTitle}>Products ({lines.length})</Text>
 
         {lines.map((line) => (
           <View key={line.key} style={styles.lineCard}>
@@ -214,7 +214,11 @@ export function MaterialIssueScreen() {
               <Text style={styles.lineName} numberOfLines={1}>
                 {line.product.name}
               </Text>
-              <TouchableOpacity onPress={() => removeLine(line.key)}>
+              <TouchableOpacity
+                onPress={() => {
+                  removeLine(line.key)
+                }}
+              >
                 <Text style={styles.removeText}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -226,7 +230,9 @@ export function MaterialIssueScreen() {
               <TextInput
                 style={styles.qtyInput}
                 value={line.qty}
-                onChangeText={(v) => updateQty(line.key, v)}
+                onChangeText={(v) => {
+                  updateQty(line.key, v)
+                }}
                 keyboardType="decimal-pad"
                 selectTextOnFocus
               />
@@ -237,7 +243,9 @@ export function MaterialIssueScreen() {
 
         <TouchableOpacity
           style={styles.addLineBtn}
-          onPress={() => setShowPicker(true)}
+          onPress={() => {
+            setShowPicker(true)
+          }}
         >
           <Text style={styles.addLineBtnText}>+ Add Product</Text>
         </TouchableOpacity>

@@ -47,7 +47,14 @@ export function UsageLogScreen() {
       Alert.alert(
         'Queued',
         `Usage log for ${assetName ?? assetId} queued. Will sync when connected.`,
-        [{ text: 'OK', onPress: () => router.back() }],
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.back()
+            },
+          },
+        ],
       )
     } finally {
       setIsSubmitting(false)
@@ -80,7 +87,9 @@ export function UsageLogScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Hours Operated <Text style={styles.required}>*</Text></Text>
+          <Text style={styles.label}>
+            Hours Operated <Text style={styles.required}>*</Text>
+          </Text>
           <TextInput
             style={styles.input}
             value={hoursOperated}

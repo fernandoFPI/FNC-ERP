@@ -29,7 +29,9 @@ interface StageRowProps {
 function StageRow({ name, pct }: StageRowProps) {
   return (
     <View style={styles.stageRow}>
-      <Text style={styles.stageName} numberOfLines={1}>{name}</Text>
+      <Text style={styles.stageName} numberOfLines={1}>
+        {name}
+      </Text>
       <View style={styles.stageBarBg}>
         <View style={[styles.stageBarFill, { width: `${Math.min(pct, 100)}%` }]} />
       </View>
@@ -65,7 +67,12 @@ function ProjectCard({ project }: { project: Project }) {
 
       {stages.length > 0 && (
         <>
-          <TouchableOpacity onPress={() => setExpanded((e) => !e)} style={styles.stagesToggle}>
+          <TouchableOpacity
+            onPress={() => {
+              setExpanded((e) => !e)
+            }}
+            style={styles.stagesToggle}
+          >
             <Text style={styles.stagesToggleText}>
               {expanded ? '▲' : '▼'} {stages.length} Stage{stages.length !== 1 ? 's' : ''}
             </Text>
@@ -83,7 +90,12 @@ function ProjectCard({ project }: { project: Project }) {
 
       <TouchableOpacity
         style={styles.issueBtn}
-        onPress={() => router.push({ pathname: '/material-issue', params: { projectId: project.serverId, projectName: project.name } })}
+        onPress={() => {
+          router.push({
+            pathname: '/material-issue',
+            params: { projectId: project.serverId, projectName: project.name },
+          })
+        }}
       >
         <Text style={styles.issueBtnText}>+ Material Issue</Text>
       </TouchableOpacity>
@@ -139,7 +151,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
   code: { fontSize: 12, color: '#6b7280', fontFamily: 'monospace' },
@@ -153,7 +170,13 @@ const styles = StyleSheet.create({
   stagesList: { marginTop: 8, gap: 6 },
   stageRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   stageName: { fontSize: 12, color: '#374151', flex: 1 },
-  stageBarBg: { flex: 2, height: 6, backgroundColor: '#e5e7eb', borderRadius: 3, overflow: 'hidden' },
+  stageBarBg: {
+    flex: 2,
+    height: 6,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
   stageBarFill: { height: '100%', backgroundColor: BLUE, borderRadius: 3 },
   stagePct: { fontSize: 11, color: '#6b7280', width: 32, textAlign: 'right' },
   issueBtn: {

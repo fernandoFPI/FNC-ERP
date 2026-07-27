@@ -35,9 +35,9 @@ const DEFAULT_CHECKLIST: CheckItem[] = [
 ]
 
 const CONDITION_COLOR: Record<Condition, string> = {
-  good:     '#065f46',
-  fair:     '#92400e',
-  poor:     '#d97706',
+  good: '#065f46',
+  fair: '#92400e',
+  poor: '#d97706',
   critical: '#dc2626',
 }
 
@@ -55,10 +55,14 @@ function CheckRow({
 
   return (
     <View style={checkStyles.row}>
-      <Text style={checkStyles.itemName} numberOfLines={1}>{item.item}</Text>
+      <Text style={checkStyles.itemName} numberOfLines={1}>
+        {item.item}
+      </Text>
       <TouchableOpacity
         style={[checkStyles.statusBtn, { borderColor: color }]}
-        onPress={() => onToggle(next)}
+        onPress={() => {
+          onToggle(next)
+        }}
       >
         <Text style={[checkStyles.statusText, { color }]}>{label}</Text>
       </TouchableOpacity>
@@ -67,7 +71,14 @@ function CheckRow({
 }
 
 const checkStyles = StyleSheet.create({
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
   itemName: { fontSize: 14, color: '#374151', flex: 1 },
   statusBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6, borderWidth: 1 },
   statusText: { fontSize: 12, fontWeight: '600' },
@@ -87,15 +98,16 @@ export function ConditionReportScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   function toggleCheckItem(index: number, status: CheckStatus) {
-    setChecklist((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, status } : item)),
-    )
+    setChecklist((prev) => prev.map((item, i) => (i === index ? { ...item, status } : item)))
   }
 
   async function handleSubmit() {
     const hasIssues = checklist.some((c) => c.status === 'issue')
     if ((condition === 'poor' || condition === 'critical') && !issues.trim()) {
-      Alert.alert('Issues required', 'Please describe the issues found for poor/critical condition.')
+      Alert.alert(
+        'Issues required',
+        'Please describe the issues found for poor/critical condition.',
+      )
       return
     }
 
@@ -129,7 +141,14 @@ export function ConditionReportScreen() {
       Alert.alert(
         'Report submitted',
         `Condition report for ${assetName ?? assetId} queued. Will sync when connected.`,
-        [{ text: 'OK', onPress: () => router.back() }],
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.back()
+            },
+          },
+        ],
       )
     } finally {
       setIsSubmitting(false)
@@ -159,15 +178,17 @@ export function ConditionReportScreen() {
               key={c}
               style={[
                 styles.conditionBtn,
-                condition === c && { backgroundColor: CONDITION_COLOR[c], borderColor: CONDITION_COLOR[c] },
+                condition === c && {
+                  backgroundColor: CONDITION_COLOR[c],
+                  borderColor: CONDITION_COLOR[c],
+                },
               ]}
-              onPress={() => setCondition(c)}
+              onPress={() => {
+                setCondition(c)
+              }}
             >
               <Text
-                style={[
-                  styles.conditionBtnText,
-                  condition === c && styles.conditionBtnTextActive,
-                ]}
+                style={[styles.conditionBtnText, condition === c && styles.conditionBtnTextActive]}
               >
                 {c.charAt(0).toUpperCase() + c.slice(1)}
               </Text>
@@ -182,7 +203,9 @@ export function ConditionReportScreen() {
             <CheckRow
               key={item.item}
               item={item}
-              onToggle={(status) => toggleCheckItem(i, status)}
+              onToggle={(status) => {
+                toggleCheckItem(i, status)
+              }}
             />
           ))}
         </View>
@@ -209,7 +232,11 @@ export function ConditionReportScreen() {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={[styles.submitBtn, { backgroundColor: CONDITION_COLOR[condition] }, isSubmitting && styles.disabled]}
+          style={[
+            styles.submitBtn,
+            { backgroundColor: CONDITION_COLOR[condition] },
+            isSubmitting && styles.disabled,
+          ]}
           onPress={() => void handleSubmit()}
           disabled={isSubmitting}
         >
@@ -230,7 +257,15 @@ const styles = StyleSheet.create({
   assetBanner: { backgroundColor: '#1a3c5e', borderRadius: 10, padding: 14, marginBottom: 20 },
   assetBannerLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
   assetBannerName: { fontSize: 16, fontWeight: '700', color: 'white' },
-  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10, marginTop: 4 },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+    marginTop: 4,
+  },
   conditionRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
   conditionBtn: {
     flex: 1,

@@ -32,11 +32,17 @@ function formatTime(ts: number): string {
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })
+  return new Date(ts).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+  })
 }
 
 export function AttendanceScreen() {
-  const [location, setLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(null)
+  const [location, setLocation] = useState<{ lat: number; lng: number; accuracy: number } | null>(
+    null,
+  )
   const [workLocation, setWorkLocation] = useState<WorkLocation | null>(null)
   const [todayPunches, setTodayPunches] = useState<PunchRecord[]>([])
   const [isOnline, setIsOnline] = useState(true)
@@ -57,10 +63,7 @@ export function AttendanceScreen() {
   }, [])
 
   async function loadWorkLocation() {
-    const locations = (await database
-      .get<WorkLocation>('work_locations')
-      .query()
-      .fetch()) as WorkLocation[]
+    const locations = await database.get<WorkLocation>('work_locations').query().fetch()
     if (locations[0]) setWorkLocation(locations[0])
   }
 
@@ -68,10 +71,10 @@ export function AttendanceScreen() {
     const startOfDay = new Date()
     startOfDay.setHours(0, 0, 0, 0)
 
-    const punches = (await database
+    const punches = await database
       .get<AttendanceLog>('attendance_logs')
       .query(Q.where('punched_at', Q.gte(startOfDay.getTime())))
-      .fetch()) as AttendanceLog[]
+      .fetch()
 
     setTodayPunches(
       punches
@@ -142,14 +145,14 @@ export function AttendanceScreen() {
       await database.write(async () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await database.get('attendance_logs').create((r: any) => {
-          r['server_id'] = `pending_${Date.now()}`
-          r['punch_type'] = nextAction
-          r['gps_lat'] = loc?.lat ?? null
-          r['gps_lng'] = loc?.lng ?? null
-          r['is_valid'] = true
-          r['punched_at'] = Date.now()
-          r['work_location_id'] = workLocation?.serverId ?? null
-          r['is_offline_submission'] = true
+          r.server_id = `pending_${Date.now()}`
+          r.punch_type = nextAction
+          r.gps_lat = loc?.lat ?? null
+          r.gps_lng = loc?.lng ?? null
+          r.is_valid = true
+          r.punched_at = Date.now()
+          r.work_location_id = workLocation?.serverId ?? null
+          r.is_offline_submission = true
         })
       })
 
@@ -157,7 +160,6 @@ export function AttendanceScreen() {
 
       // If online, trigger sync immediately
       if (isOnline) void syncEngine.syncAll()
-
     } finally {
       setIsSubmitting(false)
     }
@@ -183,9 +185,7 @@ export function AttendanceScreen() {
       {/* Connectivity banner */}
       {!isOnline && (
         <View style={styles.offlineBanner}>
-          <Text style={styles.offlineBannerText}>
-            ● Offline — punches will sync when connected
-          </Text>
+          <Text style={styles.offlineBannerText}>● Offline — punches will sync when connected</Text>
         </View>
       )}
 
@@ -238,7 +238,9 @@ export function AttendanceScreen() {
       ) : (
         todayPunches.map((punch) => (
           <View key={punch.id} style={styles.punchRow}>
-            <View style={[styles.punchDot, punch.punchType === 'in' ? styles.dotIn : styles.dotOut]} />
+            <View
+              style={[styles.punchDot, punch.punchType === 'in' ? styles.dotIn : styles.dotOut]}
+            />
             <View style={styles.punchInfo}>
               <Text style={styles.punchTime}>{formatTime(punch.punchedAt)}</Text>
               <Text style={styles.punchLabel}>
@@ -299,9 +301,20 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.6 },
   punchButtonLabel: { color: 'white', fontSize: 22, fontWeight: '700' },
   punchButtonSub: { color: 'rgba(255,255,255,0.8)', fontSize: 14, marginTop: 4 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#6b7280', marginHorizontal: 16, marginBottom: 8 },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#6b7280',
+    marginHorizontal: 16,
+    marginBottom: 8,
+  },
   emptyText: { color: '#9ca3af', textAlign: 'center', marginTop: 24, fontSize: 14 },
-  punchRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, paddingVertical: 10 },
+  punchRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
   punchDot: { width: 12, height: 12, borderRadius: 6, marginTop: 4, marginRight: 12 },
   dotIn: { backgroundColor: GREEN },
   dotOut: { backgroundColor: RED },

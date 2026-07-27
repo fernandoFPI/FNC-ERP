@@ -41,7 +41,9 @@ function ApprovalCard({ approval, onAction, isProcessing }: ApprovalCardProps) {
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <View style={[styles.typeBadge, { backgroundColor: typeColor[approval.approvalType] + '20' }]}>
+        <View
+          style={[styles.typeBadge, { backgroundColor: typeColor[approval.approvalType] + '20' }]}
+        >
           <Text style={[styles.typeBadgeText, { color: typeColor[approval.approvalType] }]}>
             {typeLabel[approval.approvalType] ?? approval.approvalType}
           </Text>
@@ -56,7 +58,12 @@ function ApprovalCard({ approval, onAction, isProcessing }: ApprovalCardProps) {
       <Text style={styles.title}>{approval.title}</Text>
       {approval.subtitle && <Text style={styles.subtitle}>{approval.subtitle}</Text>}
 
-      <TouchableOpacity onPress={() => setExpanded(!expanded)} style={styles.expandBtn}>
+      <TouchableOpacity
+        onPress={() => {
+          setExpanded(!expanded)
+        }}
+        style={styles.expandBtn}
+      >
         <Text style={styles.expandBtnText}>{expanded ? '▲ Less' : '▼ Details'}</Text>
       </TouchableOpacity>
 
@@ -76,14 +83,18 @@ function ApprovalCard({ approval, onAction, isProcessing }: ApprovalCardProps) {
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.rejectBtn, isProcessing && styles.disabled]}
-          onPress={() => onAction(approval, 'reject', notes)}
+          onPress={() => {
+            onAction(approval, 'reject', notes)
+          }}
           disabled={isProcessing}
         >
           <Text style={styles.rejectBtnText}>✗ Reject</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.approveBtn, isProcessing && styles.disabled]}
-          onPress={() => onAction(approval, 'approve', notes)}
+          onPress={() => {
+            onAction(approval, 'approve', notes)
+          }}
           disabled={isProcessing}
         >
           <Text style={styles.approveBtnText}>✓ Approve</Text>
@@ -111,9 +122,9 @@ function ApprovalsScreenBase({ approvals }: { approvals: PendingApproval[] }) {
         const payload: Record<string, unknown> = { review_notes: notes }
 
         if (approval.approvalType === 'overtime_request') {
-          payload['overtime_request_id'] = approval.serverId
+          payload.overtime_request_id = approval.serverId
         } else if (approval.approvalType === 'leave_request') {
-          payload['leave_request_id'] = approval.serverId
+          payload.leave_request_id = approval.serverId
         } else {
           Alert.alert('Not supported', 'PO approvals require connectivity.')
           return
@@ -131,7 +142,10 @@ function ApprovalsScreenBase({ approvals }: { approvals: PendingApproval[] }) {
         // Trigger sync if online
         void syncEngine.syncAll()
 
-        Alert.alert('Queued', `${action === 'approve' ? 'Approval' : 'Rejection'} queued. Will sync when connected.`)
+        Alert.alert(
+          'Queued',
+          `${action === 'approve' ? 'Approval' : 'Rejection'} queued. Will sync when connected.`,
+        )
       } finally {
         setProcessingId(null)
       }

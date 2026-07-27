@@ -1,12 +1,5 @@
 import React, { useState, useCallback } from 'react'
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  RefreshControl,
-} from 'react-native'
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native'
 import { useRouter } from 'expo-router'
 import withObservables from '@nozbe/with-observables'
 import { database } from '../db/database'
@@ -14,17 +7,17 @@ import type { EquipmentAsset } from '../db/models'
 import { syncEngine } from '../sync/SyncEngine'
 
 const MAINTENANCE_COLOR: Record<string, string> = {
-  ok:             '#065f46',
-  due_soon:       '#92400e',
-  overdue:        '#dc2626',
+  ok: '#065f46',
+  due_soon: '#92400e',
+  overdue: '#dc2626',
   in_maintenance: '#6b7280',
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  available:   '#065f46',
-  rented:      '#1e40af',
+  available: '#065f46',
+  rented: '#1e40af',
   maintenance: '#6b7280',
-  disposed:    '#dc2626',
+  disposed: '#dc2626',
 }
 
 function AssetCard({ asset }: { asset: EquipmentAsset }) {
@@ -75,7 +68,7 @@ function AssetCard({ asset }: { asset: EquipmentAsset }) {
           <Text style={styles.statValue}>
             {asset.nextMaintenanceDueHours != null
               ? `${asset.nextMaintenanceDueHours.toFixed(0)} h`
-              : asset.nextMaintenanceDueDate ?? '—'}
+              : (asset.nextMaintenanceDueDate ?? '—')}
           </Text>
           <Text style={styles.statLabel}>Next due</Text>
         </View>
@@ -84,15 +77,18 @@ function AssetCard({ asset }: { asset: EquipmentAsset }) {
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={styles.actionBtn}
-          onPress={() =>
-            router.push({ pathname: '/usage-log', params: { assetId: asset.serverId, assetName: asset.name } })
-          }
+          onPress={() => {
+            router.push({
+              pathname: '/usage-log',
+              params: { assetId: asset.serverId, assetName: asset.name },
+            })
+          }}
         >
           <Text style={styles.actionBtnText}>Log Usage</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.actionBtnSecondary]}
-          onPress={() =>
+          onPress={() => {
             router.push({
               pathname: '/condition-report',
               params: {
@@ -101,7 +97,7 @@ function AssetCard({ asset }: { asset: EquipmentAsset }) {
                 projectId: asset.projectId ?? '',
               },
             })
-          }
+          }}
         >
           <Text style={styles.actionBtnTextSecondary}>Report Condition</Text>
         </TouchableOpacity>
@@ -158,7 +154,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
   assetNumber: { fontSize: 12, color: '#6b7280', fontFamily: 'monospace' },
@@ -167,13 +168,25 @@ const styles = StyleSheet.create({
   locationRow: { flexDirection: 'row', gap: 8, marginBottom: 2 },
   locationLabel: { fontSize: 12, color: '#9ca3af', width: 60 },
   locationValue: { fontSize: 12, color: '#374151', flex: 1 },
-  statsRow: { flexDirection: 'row', marginTop: 12, borderTopWidth: 1, borderTopColor: '#f3f4f6', paddingTop: 12 },
+  statsRow: {
+    flexDirection: 'row',
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+    paddingTop: 12,
+  },
   stat: { flex: 1, alignItems: 'center' },
   statMiddle: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: '#f3f4f6' },
   statValue: { fontSize: 14, fontWeight: '700', color: '#111827' },
   statLabel: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  actionBtn: { flex: 1, backgroundColor: BLUE, borderRadius: 8, paddingVertical: 10, alignItems: 'center' },
+  actionBtn: {
+    flex: 1,
+    backgroundColor: BLUE,
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
   actionBtnText: { color: 'white', fontWeight: '600', fontSize: 13 },
   actionBtnSecondary: { backgroundColor: 'white', borderWidth: 1, borderColor: '#d1d5db' },
   actionBtnTextSecondary: { color: BLUE, fontWeight: '600', fontSize: 13 },

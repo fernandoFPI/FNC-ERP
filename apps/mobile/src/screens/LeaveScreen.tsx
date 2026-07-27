@@ -1,11 +1,5 @@
 import React, { useState, useCallback } from 'react'
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  RefreshControl,
-} from 'react-native'
+import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native'
 import withObservables from '@nozbe/with-observables'
 import { database } from '../db/database'
 import type { LeaveRequest } from '../db/models'
@@ -38,7 +32,9 @@ function LeaveCard({ leave }: { leave: LeaveRequest }) {
       </Text>
 
       {leave.reason ? (
-        <Text style={styles.reason} numberOfLines={2}>{leave.reason}</Text>
+        <Text style={styles.reason} numberOfLines={2}>
+          {leave.reason}
+        </Text>
       ) : null}
 
       {leave.reviewNotes ? (
@@ -94,10 +90,7 @@ function LeaveScreenBase({ leaves }: { leaves: LeaveRequest[] }) {
 }
 
 const enhance = withObservables([], () => ({
-  leaves: database
-    .get<LeaveRequest>('leave_requests')
-    .query()
-    .observe(),
+  leaves: database.get<LeaveRequest>('leave_requests').query().observe(),
 }))
 
 export const LeaveScreen = enhance(LeaveScreenBase)
@@ -124,7 +117,12 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 2,
   },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
   badgeText: { fontSize: 11, fontWeight: '700', textTransform: 'capitalize' },
   leaveType: { fontSize: 13, color: '#374151', fontWeight: '600' },

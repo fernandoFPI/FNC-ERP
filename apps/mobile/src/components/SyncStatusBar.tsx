@@ -20,9 +20,13 @@ export function SyncStatusBar() {
       .get<OfflineQueueItem>('offline_queue')
       .query(Q.where('status', Q.oneOf(['pending', 'failed', 'submitting'])))
       .observe()
-      .subscribe((items) => setQueueCount(items.length))
+      .subscribe((items) => {
+        setQueueCount(items.length)
+      })
 
-    const timer = setInterval(() => setIsSyncing(syncEngine.syncing), 500)
+    const timer = setInterval(() => {
+      setIsSyncing(syncEngine.syncing)
+    }, 500)
 
     return () => {
       unsubNet()
