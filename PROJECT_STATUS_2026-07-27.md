@@ -371,18 +371,163 @@ FK) end-to-end against the live DB inside a rolled-back transaction using a
 real project's `analytic_account_id` — not just a syntax check — before
 shipping.
 
+### 9. Outbound email replaced: SMTP/nodemailer → Microsoft Graph API OAuth2 (commit `728e102`) — CONFIRMED WORKING LIVE
+
+Not a bug fix — a deliberate architecture change, requested directly. Production
+mail had been failing with `535 5.7.139` ("basic authentication is disabled"):
+Microsoft has disabled SMTP AUTH with username/password across virtually all
+Exchange Online tenants. Rather than patch around it with SMTP+XOAUTH2 (still
+needs SMTP AUTH re-enabled per mailbox, plus a refresh token that has to be
+kept alive forever), replaced the entire sending path with Microsoft Graph's
+`POST /users/{sender}/sendMail` using app-only client-credentials auth
+(`@azure/msal-node`) — no SMTP protocol involved, no refresh token to rotate.
+
+`packages/email`'s public `sendEmail(message, config?)` signature was kept
+identical, so none of the ~15 call sites across `services/worker` and
+`services/gateway` needed to change — only `packages/email/src/{client,sender}.ts`
+internals and the config shape (`SmtpConfig{host,port,secure,user,password}`
+→ `EmailConfig{tenantId,clientId,clientSecret,senderAddress}`). Config keys
+renamed everywhere: `smtp.*` → `msgraph.{tenant_id,client_id,client_secret,
+sender_address}` (env vars, `system_config` DB layer, gateway admin
+`KNOWN_KEYS`, the Integrations page UI, `/test-smtp` renamed to `/test-email`).
+
+Verified before shipping: full monorepo build clean, full test suite green
+under `--concurrency=1`, and exercised the real MSAL client-credentials flow
+against `login.microsoftonline.com` with placeholder credentials — got back
+a genuine `AADSTS90002` (tenant not found) response, proving the request
+plumbing was correct even without real Azure credentials at the time.
+
+**The user has since completed Azure AD app registration and confirmed a
+real test email sent successfully in production ("IT WORKS!!!").** This is
+now the *only* fully user-confirmed-live piece of work in this entire doc —
+everything else in this table is "shipped, build/test verified" but not
+independently confirmed working in production by the user, per the
+discipline established below. Treat this one differently: it's proven.
+
+One gotcha hit and resolved along the way, worth remembering for any future
+Azure app credential rotation: Azure Portal's Certificates & secrets page
+shows both a **Secret ID** (a permanent, harmless-looking GUID) and a
+**Value** (the real credential, shown exactly once at creation and
+permanently masked after). Pasting the Secret ID instead of the Value
+produces `AADSTS7000215: Invalid client secret provided` — easy mistake,
+only fixable by generating a fresh secret if the Value wasn't saved.
+
+### 10. Two more live UI/data bugs surfaced once real data started flowing through the fixed paths (commits `e5bb675`, `c8b0745`, `6d912c6`)
+
+Both found by the user directly using the app after step 7/9 landed — not
+from logs this time, from clicking around.
+
+- **Outbox Monitor "Details" crashed with a minified React error #31**
+  ("Objects are not valid as a React child") the moment a real (non-null)
+  payload appeared. `apps/web`'s `OutboxMonitorPage.tsx` was written back
+  when `payload` was always `null` (step 7's bug) — its render code did
+  `JSON.parse(ev.payload)`, assuming a JSON-encoded *string*. The GraphQL
+  `JSON` scalar actually delivers `payload` as a real parsed *object*;
+  `JSON.parse(object)` throws, and the `catch` fallback returned the raw
+  object as a JSX child, which React refuses to render. Fixed to
+  `JSON.stringify` objects directly, only attempting `JSON.parse` first if
+  `payload` is genuinely a string. `DLQPage.tsx` has the identical
+  `payload: string` type but never actually renders the field anywhere —
+  checked, confirmed dead/unused, left alone.
+- **Invitation emails linked to the literal string `"undefined"`.** Two
+  separate code paths enqueue `USER_INVITATION_EMAIL` with *different*
+  payload key names: `services/auth/routes/user-management.ts` (a REST
+  endpoint, confirmed unused by `apps/web` or the mobile app — nothing
+  calls it) sends `invitationUrl` + `invitedBy` (a user id); the gateway's
+  `inviteUser` GraphQL mutation — the one `apps/web`'s Users page actually
+  calls — sends `inviteUrl` + `invitedByName` instead. The worker's email
+  handler only ever read `p['invitationUrl']`, so the real (gateway) path
+  always got `undefined`, and `String(undefined)` became the literal href.
+  Fixed the handler to accept both key names. While in there, also fixed
+  the gateway's `inviteUser` resolver: it was sending the inviter's raw
+  **email address** as `invitedByName` (`SELECT email FROM users...`, no
+  name lookup) rather than their actual name — now selects
+  `first_name`/`last_name` and only falls back to email if unset, matching
+  the pattern the worker's legacy fallback already used.
+  **Note on process**: the first attempt at the inviter-name fix (commit
+  `fe7ff79`) misread the request and did the *opposite* of what was asked
+  (hardcoded "An administrator" instead of showing the real name) — caught
+  immediately by the user and corrected in `6d912c6`. Recorded here as a
+  reminder to re-read ambiguously-phrased requests carefully before editing.
+
+Checked whether the "two enqueue sites, inconsistent payload shape" bug
+class (found above) exists anywhere else: `INTERCO_STOCK_TRANSFER_EXECUTE`
+is the only other event type with more than one enqueue site
+(`services/worker/src/jobs/interco-stock-transfer.ts` and
+`services/interco/src/routes/stock-transfers.ts`) — compared both payloads
+field-by-field, including the nested `lines[]` shape; they match exactly.
+No other event type has multiple producers. This was a manual one-off
+check, not added to any repeatable script — see open item 11 below.
+
+### 11. The invitation-accept flow was blocked at the gateway the entire time — a fourth, distinct bug layered under the other two (commit `19f5a8f`)
+
+After step 10's URL fix, the user clicked a real (non-"undefined") invitation
+link and got **"This invitation link is invalid or has expired"** — a
+generic error `AcceptInvitationPage.tsx` shows for *any* failed request
+(401, 404, 500, or an actually-bad token; its `.catch()` doesn't
+distinguish). That ambiguity is itself worth remembering — it means this
+exact user-visible message can point to several unrelated root causes.
+
+Root cause: `services/auth/routes/user-management.ts`'s two accept-invitation
+endpoints (`GET .../accept-invitation/validate`, `POST .../accept-invitation`)
+are correctly implemented as public — explicitly commented "no JWT
+required," since the invitee has no account yet. But
+`services/gateway/src/app.ts`'s `PUBLIC_PATHS` allowlist (the list of paths
+exempted from the gateway's blanket JWT-validation middleware) never
+included them. Every request hit `requireAuth()` and got a 401 before ever
+reaching the auth service — completely independent of, and layered
+underneath, the URL-mismatch bug fixed in step 10. **This means the
+invitation-accept flow has likely never worked in production**; the earlier
+"undefined" link bug just meant nobody ever got far enough to hit this one.
+
+Fixed by adding `/api/v1/auth/users/accept-invitation` to `PUBLIC_PATHS` —
+its existing `startsWith(p + '/')` prefix-matching logic also covers the
+`/validate` sub-route with that one entry. Verified with the actual matcher
+function (not just reading it) that both target paths now pass and that
+adjacent sensitive paths (`/api/v1/auth/users`, `/api/v1/auth/users/invite`)
+correctly still don't.
+
+**Still needs a live confirmation from the user** — this fix hasn't been
+tested against a real invite end-to-end yet. If accepting still fails after
+this deploys, the next thing to check is the `POST /accept-invitation`
+handler itself (`services/auth/routes/user-management.ts:323`) for a
+similar unturned rock, or genuine token expiry/status if the user is
+clicking an old email rather than a fresh one.
+
+Swept for the same bug class immediately after: checked every route across
+all 7 files in `services/auth/src/routes/*.ts` for ones without
+`requireAuth()`, and cross-referenced each against `PUBLIC_PATHS`. Confirmed
+8 total no-auth routes exist in the auth service (login, mfa/verify,
+refresh, forgot-password, reset-password + validate, and the two
+accept-invitation routes) — all 8 are now covered. This was the only gap.
+Scope note: this sweep only covered `services/auth`; the same "route is
+intentionally public but the gateway doesn't know it" pattern was not
+checked against any other service's routes (finance, procurement, etc. —
+though none of those have a plausible no-account-yet public flow the way
+auth does, so the risk there is much lower).
+
 ## Current confirmed state
 
 - Commits `278765d` through `faed027` are confirmed live on the VPS (real
-  deploy + real DLQ retry test). Everything from `db25853` onward
-  (notifications/outbox-monitor, PDF/routing, payload/uuid-cast fixes, the
-  full outbox-enqueue audit) was pushed after that confirmation — **check
+  deploy + real DLQ retry test). The Microsoft Graph email migration
+  (`728e102`) is **also independently confirmed live** — the user completed
+  Azure AD setup and a real test email sent successfully. Everything else
+  from `db25853` onward was pushed after `faed027`'s confirmation and has
+  only build/test verification, not a user-confirmed live check — **check
   the Actions tab / ask the user before assuming it's deployed**, don't take
   it on faith just because it's in this table.
 - Full `pnpm test --concurrency=1` passes 29/29 tasks locally from a cold
-  cache in ~50s; `services/worker` and `services/hr` re-verified individually
-  after step 8's changes (24/24 and 24/24 passing).
-- Both `dev` and `production` branches are in sync at `1e4d40c`.
+  cache in ~50s; re-verified individually after each subsequent change
+  (`services/worker`+`services/hr` after step 8, `services/worker`+
+  `services/gateway`+`services/auth` after step 9, `services/worker`+
+  `services/gateway` after step 10 — all green).
+- Both `dev` and `production` branches are in sync at `19f5a8f`.
+- **The invitation-accept flow (steps 10 and 11 combined) is the single
+  biggest open unknown right now.** Three independent bugs stacked on top
+  of each other in that one flow (URL key mismatch, inviter-name field,
+  gateway auth-gating) — all fixed and shipped, none confirmed working
+  end-to-end by the user yet. Don't assume it's fully fixed until someone
+  actually completes an invite.
 
 | Commit | What |
 |---|---|
@@ -402,6 +547,12 @@ shipping.
 | `b6359e8` | `companies.city`/`country` (PDF generation worker-wide), `PO_PDF_REQUESTED` mis-routing |
 | `3aff222` | Outbox Monitor payload always null; 5 journal-entry inserts crashing on uuid/text parameter reuse |
 | `1e4d40c` | Full service_outbox enqueue-site audit: 2 silently-dropped emails, 1 DLQing journal, 1 never-fired payslip PDF job |
+| `728e102` | **SMTP → Microsoft Graph API OAuth2 email migration — CONFIRMED LIVE by user** |
+| `e5bb675` | Outbox Monitor "Details" React crash on real (non-null) payloads |
+| `c8b0745` | Invitation emails linking to literal "undefined" — payload key mismatch across 2 enqueue sites |
+| `fe7ff79` | Invitation email inviter-name change — **misread the request, reverted** |
+| `6d912c6` | Corrected: invitation email shows real inviter name; gateway's inviteUser now resolves a real name instead of raw email |
+| `19f5a8f` | Gateway was 401-blocking both accept-invitation endpoints — likely the reason invitations have never fully worked in production |
 
 ## Known open items (deliberately deferred, not forgotten)
 
