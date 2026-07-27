@@ -6272,8 +6272,8 @@ export const resolvers = {
       if (i.country_code && (i.country_code as string).length > 2)
         throw new Error('country_code must be a 2-character ISO code (e.g. IQ, US)')
       const r = await query(
-        `INSERT INTO vendors (company_id,name,legal_name,tax_id,currency_code,payment_terms_days,country_code,city,address,contact_name,contact_email,contact_phone,withholding_tax_type,withholding_tax_rate,bank_name,is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+        `INSERT INTO vendors (company_id,name,legal_name,tax_id,currency_code,payment_terms_days,country_code,city,address,contact_name,contact_email,contact_phone,withholding_tax_rate,bank_name,is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
         [
           ctx.auth.companyId,
           i.name,
@@ -6287,8 +6287,7 @@ export const resolvers = {
           i.contact_name ?? null,
           i.contact_email ?? null,
           i.contact_phone ?? null,
-          i.withholding_tax_type ?? null,
-          i.withholding_tax_rate ?? null,
+          i.withholding_tax_rate ?? 0,
           i.bank_name ?? null,
           i.is_active ?? true,
         ],

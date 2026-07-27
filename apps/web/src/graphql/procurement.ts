@@ -31,7 +31,6 @@ export const VENDOR_QUERY = gql`
       contact_name
       contact_email
       contact_phone
-      withholding_tax_type
       withholding_tax_rate
       bank_name
       is_active

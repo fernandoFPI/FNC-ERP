@@ -1639,7 +1639,6 @@
     contact_name: String
     contact_email: String
     contact_phone: String
-    withholding_tax_type: String
     withholding_tax_rate: String
     bank_name: String
   }
@@ -1811,7 +1810,6 @@
     contact_name: String
     contact_email: String
     contact_phone: String
-    withholding_tax_type: String
     withholding_tax_rate: Float
     bank_name: String
     email: String
