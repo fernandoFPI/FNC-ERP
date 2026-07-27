@@ -73,11 +73,14 @@ jobs:
 
       - name: Run tests
         # Every service's tests share one hardcoded TEST_COMPANY_ID against one
-        # DB, so a handful of them race under full parallelism (rare — always
-        # green standalone). --concurrency caps how many run at once; the retry
-        # clears the rest. If this needs a second retry regularly, the shared
-        # fixture needs isolating rather than adding more retries.
-        run: pnpm test --concurrency=4 || pnpm test --concurrency=4
+        # DB. --concurrency=4 + one retry was not reliable enough in practice —
+        # two real deploys failed back to back on two different services, both
+        # passing standalone. --concurrency=1 serializes every test task so no
+        # two ever touch the DB at the same time, removing the race outright
+        # instead of just reducing its odds. Slower, but this is a deploy gate,
+        # not an interactive loop. Revisit only if this stops being enough too —
+        # at that point the shared fixture needs isolating, not more retries.
+        run: pnpm test --concurrency=1
 
   deploy:
     name: Deploy to VPS

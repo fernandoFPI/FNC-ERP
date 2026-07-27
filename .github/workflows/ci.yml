@@ -76,5 +76,5 @@ jobs:
         run: pnpm seed:test
 
       - name: Run tests
-        # See deploy.yml's "Run tests" step for why this caps concurrency and retries once.
-        run: pnpm test --concurrency=4 || pnpm test --concurrency=4
+        # See deploy.yml's "Run tests" step — full sequential run, no retry needed.
+        run: pnpm test --concurrency=1
