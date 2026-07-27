@@ -61,7 +61,7 @@ export default function AcceptInvitationPage() {
     setSubmitting(true)
     setSubmitError('')
     try {
-      await axios.post('/api/v1/auth/users/accept-invitation', { token, password })
+      await axios.post('/api/v1/auth/users/accept-invitation', { token, password, confirmPassword })
       navigate('/login?accepted=1')
     } catch (err: unknown) {
       const msg =
