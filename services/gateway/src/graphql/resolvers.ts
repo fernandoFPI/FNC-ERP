@@ -4962,9 +4962,11 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.userId !== args.userId)
         throw new Error('Forbidden')
-      const userRow = await query(`SELECT role FROM users WHERE id=$1`, [args.userId])
-      const role = (userRow.rows[0] as Record<string, string> | undefined)?.role ?? ''
-      const isAdmin = ['system_admin', 'company_admin'].includes(role)
+      const adminCheck = await query(
+        `SELECT 1 FROM user_company_roles WHERE user_id=$1 AND company_id=$2 AND role IN ('system_admin','company_admin') AND is_active=true LIMIT 1`,
+        [args.userId, args.companyId],
+      )
+      const isAdmin = adminCheck.rows.length > 0
       const permsRes = await query(
         `SELECT up.permission_key AS key, p.label, p.module, p.submodule, up.access_level AS "accessLevel"
        FROM user_permissions up
@@ -23685,9 +23687,11 @@ Object.assign(resolvers.Mutation, {
         [userId, companyId, key, level, ctx.auth.userId],
       )
     }
-    const userRow = await query(`SELECT role FROM users WHERE id=$1`, [userId])
-    const role = (userRow.rows[0] as Record<string, string> | undefined)?.role ?? ''
-    const isAdmin = ['system_admin', 'company_admin'].includes(role)
+    const adminCheck = await query(
+      `SELECT 1 FROM user_company_roles WHERE user_id=$1 AND company_id=$2 AND role IN ('system_admin','company_admin') AND is_active=true LIMIT 1`,
+      [userId, companyId],
+    )
+    const isAdmin = adminCheck.rows.length > 0
     const permsRes = await query(
       `SELECT up.permission_key AS key, p.label, p.module, p.submodule, up.access_level AS "accessLevel"
        FROM user_permissions up
