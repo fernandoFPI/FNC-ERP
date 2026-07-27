@@ -12,15 +12,21 @@ import {
 export const userPermissionsRouter: IRouter = Router()
 
 // ── GET /auth/users/:id/permissions ──────────────────────────────────────────
-// Returns the user's current permission map for their company.
+// Returns the user's current permission map for the given company (?company_id=).
 // system_admin and company_admin see full registry with current levels.
+// Self-view (loading your own permissions, e.g. to render the sidebar) is always
+// allowed; viewing someone else's requires admin.users.view.
 userPermissionsRouter.get(
   '/:id/permissions',
   requireAuth(),
-  requirePermission('admin.users.view', 'view'),
+  (req, res, next) => {
+    if (req.auth!.userId === req.params['id']) return next()
+    return requirePermission('admin.users.view', 'view')(req, res, next)
+  },
   async (req, res) => {
     try {
       const id = req.params['id'] ?? ''
+      const companyId = (req.query['company_id'] as string | undefined) ?? ''
 
       const isSelf = req.auth!.userId === id
       const isAdmin = req.auth!.role === 'system_admin' || req.auth!.role === 'company_admin'
@@ -29,8 +35,15 @@ userPermissionsRouter.get(
         return res.status(403).json({ success: false, error: { code: 'FORBIDDEN' } })
       }
 
+      if (!companyId) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'company_id is required' },
+        })
+      }
+
       const userResult = await query<Record<string, string>>(
-        `SELECT id, name, email, role, company_id FROM users WHERE id = $1`,
+        `SELECT id, email FROM users WHERE id = $1`,
         [id],
       )
 
@@ -38,10 +51,13 @@ userPermissionsRouter.get(
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } })
       }
 
-      const user = userResult.rows[0]!
-      const companyId = user['company_id'] ?? ''
-      const userRole = user['role'] ?? ''
-      const userId = user['id'] ?? ''
+      const userId = userResult.rows[0]!['id'] ?? ''
+
+      const ucrResult = await query<{ role: string }>(
+        `SELECT role FROM user_company_roles WHERE user_id = $1 AND company_id = $2`,
+        [id, companyId],
+      )
+      const userRole = ucrResult.rows[0]?.role ?? ''
 
       // system_admin / company_admin bypass — return all at 'admin' level
       if (userRole === 'system_admin' || userRole === 'company_admin') {
