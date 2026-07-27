@@ -4012,7 +4012,7 @@ export const resolvers = {
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
       values.push(lim, (page - 1) * lim)
       const result = await query(
-        `SELECT id, service, event_type, status, attempts, max_attempts, last_error, next_retry_at, created_at, processed_at, event_priority FROM service_outbox ${where} ORDER BY created_at DESC LIMIT $${p + 1} OFFSET $${p + 2}`,
+        `SELECT id, service, event_type, status, attempts, max_attempts, last_error, next_retry_at, created_at, processed_at, event_priority, payload FROM service_outbox ${where} ORDER BY created_at DESC LIMIT $${p + 1} OFFSET $${p + 2}`,
         values,
       )
       const cnt = await query(

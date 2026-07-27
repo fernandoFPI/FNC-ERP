@@ -808,7 +808,7 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
 
   const jeResult = await pool.query<{ id: string }>(
     `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'PAY-' || LEFT($2::text,8),'Invoice payment',$3,'posted','invoice_payment',$2,$4) RETURNING id`,
+     VALUES ($1,'PAY-' || LEFT($2::text,8),'Invoice payment',$3,'posted','invoice_payment',$2::uuid,$4) RETURNING id`,
     [p.company_id, p.invoice_id, p.payment_date, userId],
   )
   const jeId = jeResult.rows[0]!['id']
@@ -879,7 +879,7 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
 
   const jeResult = await pool.query<{ id: string }>(
     `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'APINV-'||LEFT($2::text,8),'Vendor invoice approved',$3,'posted','vendor_invoice',$2,$4) RETURNING id`,
+     VALUES ($1,'APINV-'||LEFT($2::text,8),'Vendor invoice approved',$3,'posted','vendor_invoice',$2::uuid,$4) RETURNING id`,
     [p.company_id, p.invoice_id, p.invoice_date, userId],
   )
   const jeId = jeResult.rows[0]!['id']
@@ -999,7 +999,7 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
   const jeResult = await pool.query<{ id: string }>(
     `INSERT INTO journal_entries
        (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'MO-'||LEFT($2::text,8),'Manufacturing order completion',CURRENT_DATE,'posted','manufacturing_order',$2,$3)
+     VALUES ($1,'MO-'||LEFT($2::text,8),'Manufacturing order completion',CURRENT_DATE,'posted','manufacturing_order',$2::uuid,$3)
      RETURNING id`,
     [p.company_id, p.mo_id, userId],
   )
@@ -1056,7 +1056,7 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
   const jeResult = await pool.query<{ id: string }>(
     `INSERT INTO journal_entries
        (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'RNT-'||LEFT($2::text,8),'Rental invoice',CURRENT_DATE,'posted','rental_invoice',$2,$3)
+     VALUES ($1,'RNT-'||LEFT($2::text,8),'Rental invoice',CURRENT_DATE,'posted','rental_invoice',$2::uuid,$3)
      RETURNING id`,
     [p.company_id, p.invoice_id, userId],
   )
@@ -1133,7 +1133,7 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
   const jeResult = await pool.query<{ id: string }>(
     `INSERT INTO journal_entries
        (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1, 'PAYR-' || LEFT($2::text, 8), $3, $4::date, 'posted', 'payroll_run', $2, $5)
+     VALUES ($1, 'PAYR-' || LEFT($2::text, 8), $3, $4::date, 'posted', 'payroll_run', $2::uuid, $5)
      RETURNING id`,
     [p.company_id, p.payroll_run_id, `Payroll expense — ${p.period_name}`, p.end_date, userId],
   )
