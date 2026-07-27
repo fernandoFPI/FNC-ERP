@@ -270,11 +270,9 @@ userManagementRouter.get(
 
     try {
       const result = await query(
-        `SELECT ui.email, ui.role, ui.expires_at,
-              c.name AS company_name,
+        `SELECT ui.id, ui.email, ui.expires_at,
               COALESCE(u.first_name || ' ' || u.last_name, u.email) AS invited_by_email
        FROM user_invitations ui
-       LEFT JOIN companies c ON c.id = ui.company_id
        LEFT JOIN users u ON u.id = ui.invited_by
        WHERE ui.token = $1 AND ui.status = 'pending' AND ui.expires_at > NOW()`,
         [token],
@@ -286,13 +284,24 @@ userManagementRouter.get(
       }
 
       const inv = result.rows[0]
+      const companiesResult = await query(
+        `SELECT c.name AS company_name, uic.role
+         FROM user_invitation_companies uic
+         JOIN companies c ON c.id = uic.company_id
+         WHERE uic.invitation_id = $1
+         ORDER BY c.name`,
+        [inv['id']],
+      )
+
       res.json({
         success: true,
         data: {
           email: inv['email'] as string,
-          companyName: (inv['company_name'] as string | null) ?? 'FNC ERP',
           invitedByName: (inv['invited_by_email'] as string | null) ?? 'an administrator',
-          role: inv['role'] as string | null,
+          companies: companiesResult.rows.map((row) => ({
+            companyName: row['company_name'] as string,
+            role: row['role'] as string,
+          })),
           expiresAt: inv['expires_at'] as string,
         },
       })
@@ -354,9 +363,6 @@ userManagementRouter.post(
 
       const inv = invResult.rows[0]
       const invEmail = inv['email'] as string
-      const invCompanyId = inv['company_id'] as string | null
-      const invRole = inv['role'] as string | null
-      const invModule = inv['module'] as string | null
       const invId = inv['id'] as string
 
       const existing = await query(`SELECT id FROM users WHERE email = $1`, [invEmail])
@@ -370,6 +376,11 @@ userManagementRouter.post(
         return
       }
 
+      const invCompanies = await query(
+        `SELECT company_id, role, module FROM user_invitation_companies WHERE invitation_id = $1`,
+        [invId],
+      )
+
       const passwordHash = await hashPassword(password)
 
       await withSystemTransaction(async (client) => {
@@ -381,11 +392,11 @@ userManagementRouter.post(
         )
         const userId: string = user.rows[0]?.id
 
-        if (invCompanyId && invRole) {
+        for (const c of invCompanies.rows) {
           await client.query(
             `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active)
            VALUES ($1, $2, $3, $4, true)`,
-            [userId, invCompanyId, invRole, invModule ?? 'all'],
+            [userId, c['company_id'], c['role'], (c['module'] as string | null) ?? 'all'],
           )
         }
 

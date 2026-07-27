@@ -19190,15 +19190,17 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    let sql = `SELECT ui.*, u.email as invited_by_email, c.name as company_name
+    let sql = `SELECT ui.*, u.email as invited_by_email
                FROM user_invitations ui
                LEFT JOIN users u ON u.id = ui.invited_by
-               LEFT JOIN companies c ON c.id = ui.company_id
                WHERE 1=1`
     const params: unknown[] = []
     let idx = 1
     if (args.companyId) {
-      sql += ` AND ui.company_id=$${idx++}`
+      sql += ` AND EXISTS (
+        SELECT 1 FROM user_invitation_companies uic
+        WHERE uic.invitation_id = ui.id AND uic.company_id = $${idx++}
+      )`
       params.push(args.companyId)
     }
     if (args.status) {
@@ -19207,14 +19209,35 @@ const phase5QueryResolvers = {
     }
     sql += ' ORDER BY ui.created_at DESC'
     const r = await query(sql, params)
+
+    const invitationIds = r.rows.map((row: Record<string, unknown>) => row.id as string)
+    const companiesR = invitationIds.length
+      ? await query(
+          `SELECT uic.invitation_id, uic.company_id, c.name AS company_name, uic.role, uic.module
+           FROM user_invitation_companies uic
+           JOIN companies c ON c.id = uic.company_id
+           WHERE uic.invitation_id = ANY($1::uuid[])
+           ORDER BY c.name`,
+          [invitationIds],
+        )
+      : { rows: [] as Record<string, unknown>[] }
+    const companiesByInvitation = new Map<string, Record<string, unknown>[]>()
+    for (const c of companiesR.rows as Record<string, unknown>[]) {
+      const key = String(c.invitation_id)
+      if (!companiesByInvitation.has(key)) companiesByInvitation.set(key, [])
+      companiesByInvitation.get(key)!.push({
+        companyId: c.company_id,
+        companyName: c.company_name,
+        role: c.role,
+        module: c.module,
+      })
+    }
+
     return r.rows.map((row: Record<string, unknown>) => ({
       id: row.id,
       email: row.email,
       invitedByEmail: row.invited_by_email,
-      companyId: row.company_id,
-      companyName: row.company_name,
-      role: row.role,
-      module: row.module,
+      companies: companiesByInvitation.get(String(row.id)) ?? [],
       status: row.status,
       expiresAt: row.expires_at,
       acceptedAt: row.accepted_at,
@@ -19276,17 +19299,64 @@ const phase5QueryResolvers = {
     params.push(lim, offset)
     const r = await query(sql, params)
     const cnt = await query(`SELECT COUNT(*) FROM users`, [])
-    return {
-      items: r.rows.map((row: Record<string, unknown>) => ({
+
+    const userIds = r.rows.map((row: Record<string, unknown>) => row.id as string)
+    const [sessionCountsR, rolesR] = userIds.length
+      ? await Promise.all([
+          query(
+            `SELECT user_id, COUNT(*) AS cnt FROM sessions
+             WHERE user_id = ANY($1::uuid[]) AND expires_at > NOW()
+             GROUP BY user_id`,
+            [userIds],
+          ),
+          query(
+            `SELECT ucr.id, ucr.user_id, ucr.company_id, c.name AS company_name, ucr.module, ucr.role, ucr.is_active
+             FROM user_company_roles ucr
+             JOIN companies c ON c.id = ucr.company_id
+             WHERE ucr.user_id = ANY($1::uuid[])
+             ORDER BY c.name`,
+            [userIds],
+          ),
+        ])
+      : [{ rows: [] as Record<string, unknown>[] }, { rows: [] as Record<string, unknown>[] }]
+
+    const sessionCountByUser = new Map<string, number>(
+      (sessionCountsR.rows as Record<string, unknown>[]).map((row) => [
+        String(row.user_id),
+        parseInt(String(row.cnt)),
+      ]),
+    )
+    const rolesByUser = new Map<string, Record<string, unknown>[]>()
+    const companyNamesByUser = new Map<string, Set<string>>()
+    for (const row of rolesR.rows as Record<string, unknown>[]) {
+      const uid = String(row.user_id)
+      if (!rolesByUser.has(uid)) rolesByUser.set(uid, [])
+      rolesByUser.get(uid)!.push({
         id: row.id,
-        email: row.email,
+        companyId: row.company_id,
+        companyName: row.company_name ?? '',
+        module: row.module ?? '',
+        role: row.role,
         isActive: row.is_active,
-        mfaEnabled: row.mfa_enabled,
-        lastLogin: row.last_login,
-        activeSessions: 0,
-        companies: [],
-        roles: [],
-      })),
+      })
+      if (!companyNamesByUser.has(uid)) companyNamesByUser.set(uid, new Set())
+      companyNamesByUser.get(uid)!.add(String(row.company_name))
+    }
+
+    return {
+      items: r.rows.map((row: Record<string, unknown>) => {
+        const uid = String(row.id)
+        return {
+          id: row.id,
+          email: row.email,
+          isActive: row.is_active,
+          mfaEnabled: row.mfa_enabled,
+          lastLogin: row.last_login,
+          activeSessions: sessionCountByUser.get(uid) ?? 0,
+          companies: Array.from(companyNamesByUser.get(uid) ?? []),
+          roles: rolesByUser.get(uid) ?? [],
+        }
+      }),
       total: parseInt(String(cnt.rows[0]?.count ?? '0')),
       page,
       limit: lim,
@@ -23184,7 +23254,7 @@ const phase5MutationResolvers = {
     if (i.company_id && i.role) {
       await query(
         `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active) VALUES ($1,$2,$3,$4,true)`,
-        [row.id, i.company_id, i.role, i.module ?? null],
+        [row.id, i.company_id, i.role, i.module ?? 'all'],
       )
     }
     return {
@@ -23203,45 +23273,69 @@ const phase5MutationResolvers = {
   inviteUser: async (_: unknown, args: { input: Record<string, unknown> }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const i = args.input
+    const companiesInput = (i.companies ?? []) as Array<{
+      companyId: string
+      role: string
+      module?: string
+    }>
+    if (companiesInput.length === 0) throw new Error('At least one company is required')
+
     const token = `inv_${crypto.randomUUID().replace(/-/g, '')}`
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    const r = await query(
-      `INSERT INTO user_invitations (email, invited_by, company_id, role, module, token, expires_at, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING *`,
-      [
-        String(i.email).toLowerCase(),
-        ctx.auth.userId,
-        i.company_id ?? null,
-        i.role ?? null,
-        i.module ?? 'all',
-        token,
-        expiresAt,
-      ],
-    )
-    const row = r.rows[0] as Record<string, unknown>
+    const email = String(i.email).toLowerCase()
 
-    // Look up inviter name and company name for the email body
-    const [inviterR, companyR] = await Promise.all([
+    const client = await pool.connect()
+    let row: Record<string, unknown>
+    try {
+      await client.query('BEGIN')
+      const r = await client.query(
+        `INSERT INTO user_invitations (email, invited_by, token, expires_at, status)
+         VALUES ($1,$2,$3,$4,'pending') RETURNING *`,
+        [email, ctx.auth.userId, token, expiresAt],
+      )
+      row = r.rows[0] as Record<string, unknown>
+      for (const c of companiesInput) {
+        await client.query(
+          `INSERT INTO user_invitation_companies (invitation_id, company_id, role, module)
+           VALUES ($1,$2,$3,$4)`,
+          [row.id, c.companyId, c.role, c.module ?? 'all'],
+        )
+      }
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    // Look up inviter name and every company's name for the email body
+    const [inviterR, companiesR] = await Promise.all([
       query(`SELECT first_name, last_name, email FROM users WHERE id=$1`, [ctx.auth.userId]),
-      i.company_id
-        ? query(`SELECT name FROM companies WHERE id=$1`, [i.company_id])
-        : Promise.resolve({ rows: [] }),
+      query(`SELECT id, name FROM companies WHERE id = ANY($1::uuid[])`, [
+        companiesInput.map((c) => c.companyId),
+      ]),
     ])
     const inviterRow = inviterR.rows[0] as Record<string, unknown>
     const inviterName =
       inviterRow.first_name && inviterRow.last_name
         ? `${String(inviterRow.first_name)} ${String(inviterRow.last_name)}`
         : String(inviterRow.email ?? '')
-    const companyName = String((companyR.rows[0] as Record<string, unknown>).name ?? 'FNC ERP')
+    const companyNameMap = new Map(
+      (companiesR.rows as Record<string, unknown>[]).map((r) => [String(r.id), String(r.name)]),
+    )
+    const companySummary = companiesInput
+      .map((c) => companyNameMap.get(c.companyId) ?? 'Unknown company')
+      .join(', ')
 
     await query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','USER_INVITATION_EMAIL',$1::jsonb)`,
       [
         JSON.stringify({
-          email: String(i.email).toLowerCase(),
+          email,
           inviteUrl: `${env.FRONTEND_URL}/accept-invitation?token=${token}`,
           invitedByName: inviterName,
-          companyName,
+          companyName: companySummary,
         }),
       ],
     )
@@ -23250,10 +23344,6 @@ const phase5MutationResolvers = {
       id: row.id,
       email: row.email,
       invitedByEmail: ctx.auth.userId,
-      companyId: row.company_id,
-      companyName,
-      role: row.role,
-      module: row.module,
       status: row.status,
       expiresAt: row.expires_at,
       acceptedAt: null,

@@ -3324,14 +3324,18 @@
 
   # ─── Fix 2B: Admin Management ─────────────────────────────────────────────
 
+  type InvitationCompany {
+    companyId: ID!
+    companyName: String!
+    role: String!
+    module: String!
+  }
+
   type UserInvitation {
     id: ID!
     email: String!
     invitedByEmail: String
-    companyId: ID
-    companyName: String
-    role: String
-    module: String
+    companies: [InvitationCompany!]!
     status: String!
     expiresAt: String!
     acceptedAt: String
@@ -3407,11 +3411,15 @@
     module: String
   }
 
+  input InviteUserCompanyInput {
+    companyId: ID!
+    role: String!
+    module: String
+  }
+
   input InviteUserInput {
     email: String!
-    company_id: ID
-    role: String
-    module: String
+    companies: [InviteUserCompanyInput!]!
   }
 
   input CreateCompanyInput {

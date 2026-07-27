@@ -58,7 +58,7 @@ export default function UsersPage() {
     email: string
   } | null>(null)
 
-  const [inviteForm, setInviteForm] = useState({ email: '', companyId: '', role: '' })
+  const [inviteForm, setInviteForm] = useState({ email: '', companyIds: [] as string[], role: '' })
   const [createForm, setCreateForm] = useState({ email: '', password: '', companyId: '', role: '' })
 
   const { data, loading, refetch } = useQuery<UsersData>(USERS_QUERY, {
@@ -89,7 +89,7 @@ export default function UsersPage() {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Invitation sent' })
       setShowInviteModal(false)
-      setInviteForm({ email: '', companyId: '', role: '' })
+      setInviteForm({ email: '', companyIds: [], role: '' })
       void refetch()
     },
     onError: (e) => {
@@ -307,31 +307,77 @@ export default function UsersPage() {
               />
             </div>
             <div>
-              <SearchableSelect
-                label="Company *"
-                value={inviteForm.companyId}
-                onChange={(v) => {
-                  setInviteForm({ ...inviteForm, companyId: v })
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
                 }}
-                placeholder="Select company…"
-                options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              />
+              >
+                Companies * <span style={{ color: theme.textMuted }}>(select one or more)</span>
+              </label>
+              <div
+                style={{
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: '6px',
+                  maxHeight: '160px',
+                  overflowY: 'auto',
+                  background: theme.bgSurface,
+                }}
+              >
+                {companies.map((c) => {
+                  const checked = inviteForm.companyIds.includes(c.id)
+                  return (
+                    <label
+                      key={c.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 10px',
+                        fontSize: '13px',
+                        color: theme.textPrimary,
+                        cursor: 'pointer',
+                        borderBottom: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setInviteForm({
+                            ...inviteForm,
+                            companyIds: checked
+                              ? inviteForm.companyIds.filter((id) => id !== c.id)
+                              : [...inviteForm.companyIds, c.id],
+                          })
+                        }}
+                      />
+                      {c.name}
+                    </label>
+                  )
+                })}
+              </div>
             </div>
             <div>
               <SearchableSelect
-                label="Role"
+                label="Role *"
                 value={inviteForm.role}
                 onChange={(v) => {
                   setInviteForm({ ...inviteForm, role: v })
                 }}
-                placeholder="Select role (optional)…"
+                placeholder="Select role…"
                 options={[
-                  { value: 'viewer', label: 'Viewer — read-only access' },
-                  { value: 'manager', label: 'Manager — standard access' },
+                  { value: 'user', label: 'User — no default access, permissions granted individually' },
+                  { value: 'module_admin', label: 'Module Admin — full access to assigned modules' },
                   { value: 'company_admin', label: 'Company Admin — full company access' },
                   { value: 'system_admin', label: 'System Admin — bypasses all permission gates' },
                 ]}
               />
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                Applied to every selected company.
+              </div>
             </div>
             <div style={{ fontSize: '12px', color: theme.textMuted }}>
               An email will be sent to the address with a secure invitation link valid for 24 hours.
@@ -348,14 +394,16 @@ export default function UsersPage() {
               <Button
                 variant="primary"
                 loading={inviting}
-                disabled={!inviteForm.email || !inviteForm.companyId}
+                disabled={!inviteForm.email || inviteForm.companyIds.length === 0 || !inviteForm.role}
                 onClick={() =>
                   void inviteUser({
                     variables: {
                       input: {
                         email: inviteForm.email,
-                        company_id: inviteForm.companyId || undefined,
-                        role: inviteForm.role || undefined,
+                        companies: inviteForm.companyIds.map((companyId) => ({
+                          companyId,
+                          role: inviteForm.role,
+                        })),
                       },
                     },
                   })
@@ -456,8 +504,8 @@ export default function UsersPage() {
                 }}
                 placeholder="Select role (optional)…"
                 options={[
-                  { value: 'viewer', label: 'Viewer — read-only access' },
-                  { value: 'manager', label: 'Manager — standard access' },
+                  { value: 'user', label: 'User — no default access, permissions granted individually' },
+                  { value: 'module_admin', label: 'Module Admin — full access to assigned modules' },
                   { value: 'company_admin', label: 'Company Admin — full company access' },
                   { value: 'system_admin', label: 'System Admin — bypasses all permission gates' },
                 ]}

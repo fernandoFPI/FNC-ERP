@@ -4,11 +4,15 @@ import axios from 'axios'
 import { useTheme } from '../../theme/ThemeContext'
 import { Button } from '../../components/ui/Button'
 
+interface InvitationCompany {
+  companyName: string
+  role: string
+}
+
 interface TokenInfo {
   email: string
-  companyName: string
   invitedByName: string
-  role?: string
+  companies: InvitationCompany[]
 }
 
 const passwordRequirements = [
@@ -113,18 +117,18 @@ export default function AcceptInvitationPage() {
           )}
           {tokenInfo && !validating && (
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
-              You were invited to{' '}
-              <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
-                {tokenInfo.companyName}
-              </span>{' '}
-              by {tokenInfo.invitedByName} as{' '}
-              {tokenInfo.role ? (
-                <span style={{ color: theme.accent }}>{tokenInfo.role}</span>
-              ) : (
-                'a team member'
-              )}
-              .
-              <div style={{ marginTop: '4px' }}>
+              You were invited by {tokenInfo.invitedByName} to join:
+              <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
+                {tokenInfo.companies.map((c) => (
+                  <li key={c.companyName}>
+                    <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
+                      {c.companyName}
+                    </span>{' '}
+                    as <span style={{ color: theme.accent }}>{c.role}</span>
+                  </li>
+                ))}
+              </ul>
+              <div style={{ marginTop: '8px' }}>
                 Accepting as: <span style={{ color: theme.textPrimary }}>{tokenInfo.email}</span>
               </div>
             </div>

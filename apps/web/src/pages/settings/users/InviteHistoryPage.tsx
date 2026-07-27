@@ -6,10 +6,17 @@ import { Badge } from '../../../components/ui/Badge'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { USER_INVITATIONS_QUERY } from '../../../graphql/admin'
 
+interface InvitationCompany {
+  companyId: string
+  companyName: string
+  role: string
+  module: string
+}
+
 interface InviteRecord {
   id: string
   email: string
-  role: string | null
+  companies: InvitationCompany[]
   status: string
   invitedByEmail: string | null
   createdAt: string
@@ -54,7 +61,7 @@ export default function InviteHistoryPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
               <thead>
                 <tr style={{ background: theme.bgSurface }}>
-                  {['Email', 'Role', 'Status', 'Invited By', 'Sent', 'Accepted'].map((h) => (
+                  {['Email', 'Companies', 'Status', 'Invited By', 'Sent', 'Accepted'].map((h) => (
                     <th
                       key={h}
                       style={{
@@ -88,7 +95,17 @@ export default function InviteHistoryPage() {
                   >
                     <td style={{ padding: '12px 14px', color: theme.textPrimary }}>{inv.email}</td>
                     <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                      {inv.role ?? '—'}
+                      {inv.companies.length === 0 ? (
+                        '—'
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          {inv.companies.map((c) => (
+                            <span key={c.companyId}>
+                              {c.companyName} <span style={{ color: theme.textMuted }}>({c.role})</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: '12px 14px' }}>
                       <Badge variant={STATUS_BADGE[inv.status] ?? 'neutral'} size="sm">

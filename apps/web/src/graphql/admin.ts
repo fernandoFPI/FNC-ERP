@@ -69,10 +69,12 @@ export const USER_INVITATIONS_QUERY = gql`
       id
       email
       invitedByEmail
-      companyId
-      companyName
-      role
-      module
+      companies {
+        companyId
+        companyName
+        role
+        module
+      }
       status
       expiresAt
       acceptedAt
