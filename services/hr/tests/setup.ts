@@ -50,6 +50,11 @@ export async function createTestEmployee(userId: string): Promise<string> {
 export async function cleanHRData(employeeId: string): Promise<void> {
   await pool.query(`DELETE FROM sessions WHERE refresh_token_hash = 'test-refresh-hash-hr'`)
   await pool.query(`DELETE FROM payslips WHERE employee_id = $1`, [employeeId])
+  await pool.query(
+    `DELETE FROM payslips WHERE payroll_run_id IN (SELECT id FROM payroll_runs WHERE company_id = $1 AND period_name LIKE 'TEST-%')`,
+    [TEST_COMPANY_ID],
+  )
+  await pool.query(`UPDATE salary_deduction_requests SET applied_payroll_run_id = NULL WHERE company_id = $1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM payroll_runs WHERE company_id = $1 AND period_name LIKE 'TEST-%'`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM overtime_logs WHERE employee_id = $1`, [employeeId])
   await pool.query(`DELETE FROM attendance_logs WHERE employee_id = $1`, [employeeId])
