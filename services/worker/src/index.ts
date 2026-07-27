@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { checkConnection, pool, startJobRun, finishJobRun, failJobRun, recordCompletedJobRun } from '@fnc-erp/db'
 import { createServiceLogger } from '@fnc-erp/logger'
+import { env } from '@fnc-erp/config'
 import { processOutbox } from './jobs/outbox-processor.js'
 import { sendPayrollReminders } from './jobs/payroll-reminder.js'
 import { sendLowStockAlerts } from './jobs/low-stock-alert.js'
@@ -14,6 +15,19 @@ import './jobs/maintenance-alerts.js'
 import './jobs/eng-doc-reminders.js'
 
 const log = createServiceLogger('worker')
+
+// Fire-and-forget: tells the gateway's GraphQL subscription layer the
+// outbox state changed, so an open Outbox Monitor screen updates live
+// instead of needing a manual refresh. Never allowed to affect the
+// processing loop itself.
+function notifyOutboxUpdated(): void {
+  fetch(`${env.GATEWAY_URL}/internal/events/outbox-updated`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-service-token': env.SERVICE_TOKEN },
+  }).catch(() => {
+    /* best-effort */
+  })
+}
 
 function wrapCron(jobName: string, fn: () => Promise<void>): () => void {
   return () => {
@@ -47,6 +61,7 @@ async function start() {
       .then(async (processed) => {
         if (processed > 0) {
           await recordCompletedJobRun('outbox-processor', 'success', Date.now() - t0, { processed })
+          notifyOutboxUpdated()
         }
       })
       .catch(async (err: unknown) => {

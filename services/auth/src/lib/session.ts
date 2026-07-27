@@ -65,7 +65,22 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
     ],
   )
 
+  notifySessionsChanged(params.userId)
+
   return { accessToken, refreshToken, sessionId }
+}
+
+// Fire-and-forget: tells the gateway's GraphQL subscription layer a session
+// changed for this user, so any open "Sessions" screen updates live instead
+// of needing a manual refresh. Never allowed to affect login itself.
+function notifySessionsChanged(userId: string): void {
+  fetch(`${env.GATEWAY_URL}/internal/events/sessions-changed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-service-token': env.SERVICE_TOKEN },
+    body: JSON.stringify({ userId }),
+  }).catch(() => {
+    /* best-effort — a missed live-update signal isn't worth failing login over */
+  })
 }
 
 function parseExpiry(expiry: string): number {

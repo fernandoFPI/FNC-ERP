@@ -4932,4 +4932,23 @@
     markNotificationRead(id: ID!): Notification!
     markAllNotificationsRead: Int!
   }
+
+  # ── Live updates ─────────────────────────────────────────────────────────
+  # Signal-only: payloads carry just enough to identify what changed. Clients
+  # refetch the relevant query on receipt rather than relying on the
+  # subscription payload to fully replace cached data.
+  type SessionsChangedEvent {
+    userId: ID!
+  }
+
+  type OutboxUpdatedEvent {
+    updatedAt: String!
+  }
+
+  type Subscription {
+    "Fires when a session is created or revoked. Pass userId to scope to one user; omit to hear about all users (e.g. an admin list view)."
+    sessionsChanged(userId: ID): SessionsChangedEvent!
+    "Fires whenever the worker finishes an outbox processing cycle that changed something, or an admin retries/dismisses/resets an event."
+    outboxUpdated: OutboxUpdatedEvent!
+  }
 `

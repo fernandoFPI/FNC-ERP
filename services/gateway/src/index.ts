@@ -3,6 +3,7 @@ import { env } from '@fnc-erp/config'
 import { pool } from '@fnc-erp/db'
 import { createServiceLogger } from '@fnc-erp/logger'
 import { handleWsUpgrade } from './routes/websocket.js'
+import { handleGraphQLWsUpgrade } from './routes/graphql-ws-server.js'
 
 const log = createServiceLogger('gateway')
 
@@ -23,7 +24,9 @@ async function start() {
 
   server.on('upgrade', (req, socket, head) => {
     const url = req.url ?? ''
-    if (url.startsWith('/api/v1/ws')) {
+    if (url.startsWith('/api/v1/graphql-ws')) {
+      handleGraphQLWsUpgrade(req, socket as import('net').Socket, head)
+    } else if (url.startsWith('/api/v1/ws')) {
       handleWsUpgrade(req, socket as import('net').Socket, head)
     } else {
       socket.destroy()

@@ -18,6 +18,13 @@ import { resolveTransferPrice } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
 import { generateUploadUrl, generateDownloadUrl, validateFile } from '@fnc-erp/storage'
 import { projectStateMachine, poStateMachine } from '@fnc-erp/workflow'
+import {
+  pubsub,
+  CHANNELS,
+  sessionsChangedChannel,
+  publishSessionsChanged,
+  publishOutboxUpdated,
+} from './pubsub.js'
 import type { POStatus, POAction } from '@fnc-erp/workflow'
 import { logAudit } from '@fnc-erp/audit'
 import {
@@ -5580,6 +5587,7 @@ export const resolvers = {
         `UPDATE service_outbox SET status='pending', attempts=0, last_error=NULL, error_history='[]'::jsonb, next_retry_at=NOW(), processed_at=NULL WHERE id=$1`,
         [args.eventId],
       )
+      await publishOutboxUpdated()
       return true
     },
 
@@ -5610,6 +5618,7 @@ export const resolvers = {
           )
         },
       )
+      await publishOutboxUpdated()
       return true
     },
 
@@ -5626,6 +5635,7 @@ export const resolvers = {
         [ctx.auth.userId, args.notes, args.dlqId],
       )
       if (result.rows.length === 0) throw new Error('DLQ entry not found or already processed')
+      await publishOutboxUpdated()
       return true
     },
 
@@ -5634,6 +5644,7 @@ export const resolvers = {
       const result = await query(
         `UPDATE service_outbox SET status='pending', next_retry_at=NOW(), attempts=GREATEST(0, attempts-1) WHERE status='processing' AND first_attempted_at < NOW() - INTERVAL '5 minutes' RETURNING id`,
       )
+      if (result.rows.length > 0) await publishOutboxUpdated()
       return result.rows.length
     },
 
@@ -22830,16 +22841,23 @@ const phase5MutationResolvers = {
 
   revokeUserSession: async (_: unknown, args: { sessionId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM sessions WHERE id=$1`, [args.sessionId])
+    const result = await query(`DELETE FROM sessions WHERE id=$1 RETURNING user_id`, [
+      args.sessionId,
+    ])
+    const revokedUserId = (result.rows[0] as Record<string, unknown> | undefined)?.user_id as
+      | string
+      | undefined
+    if (revokedUserId) await publishSessionsChanged(revokedUserId)
     return true
   },
 
   revokeAllUserSessions: async (_: unknown, args: { userId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM sessions WHERE user_id=$1 AND session_id != $2`, [
+    await query(`DELETE FROM sessions WHERE user_id=$1 AND id != $2`, [
       args.userId,
       ctx.auth.sessionId,
     ])
+    await publishSessionsChanged(args.userId)
     return true
   },
 
@@ -23378,6 +23396,23 @@ const phase5MutationResolvers = {
 // Merge phase5 resolvers into main resolvers object
 Object.assign(resolvers.Query, phase5QueryResolvers)
 Object.assign(resolvers.Mutation, phase5MutationResolvers)
+
+// ── Live updates (GraphQL subscriptions over graphql-ws) ─────────────────────
+Object.assign(resolvers, {
+  Subscription: {
+    sessionsChanged: {
+      subscribe: (_: unknown, args: { userId?: string }) =>
+        pubsub.asyncIterator(
+          args.userId ? sessionsChangedChannel(args.userId) : CHANNELS.SESSIONS_CHANGED_ANY,
+        ),
+      resolve: (payload: { userId: string }) => payload,
+    },
+    outboxUpdated: {
+      subscribe: () => pubsub.asyncIterator(CHANNELS.OUTBOX_UPDATED),
+      resolve: (payload: { updatedAt: string }) => payload,
+    },
+  },
+})
 
 // ── Rental type resolvers (nested fields) ────────────────────────────────────
 Object.assign(resolvers, {

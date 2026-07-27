@@ -30,6 +30,7 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   GATEWAY_PORT: z.coerce.number().default(3000),
+  GATEWAY_URL: z.string().url().default('http://localhost:3000'),
   AUTH_SERVICE_PORT: z.coerce.number().default(3001),
   AUTH_SERVICE_URL: z.string().url().default('http://localhost:3001'),
   FINANCE_SERVICE_PORT: z.coerce.number().default(3002),

@@ -1,6 +1,6 @@
 ﻿import { useState, lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
-import { useQuery, useMutation } from '@apollo/client'
+import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
@@ -29,6 +29,7 @@ import {
   REVOKE_ALL_USER_SESSIONS,
   ADMIN_SET_USER_PASSWORD,
   COMPANIES_QUERY,
+  SESSIONS_CHANGED_SUBSCRIPTION,
 } from '../../../graphql/admin'
 
 const ROLE_OPTIONS = [
@@ -140,6 +141,17 @@ export default function UserDetail() {
   } = useQuery<UserSessionsData>(USER_SESSIONS_QUERY, {
     variables: { userId: id },
     skip: !id || activeTab !== 'sessions',
+  })
+
+  // Live-refetch when this user's sessions change elsewhere (login from
+  // another device, another admin revoking a session, etc.) instead of
+  // requiring a manual page refresh.
+  useSubscription(SESSIONS_CHANGED_SUBSCRIPTION, {
+    variables: { userId: id },
+    skip: !id || activeTab !== 'sessions',
+    onData: () => {
+      void refetchSessions()
+    },
   })
 
   const [unlockUser, { loading: unlocking }] = useMutation(UNLOCK_USER, {

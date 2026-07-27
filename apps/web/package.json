@@ -17,6 +17,7 @@
     "axios": "^1.7.2",
     "driver.js": "^1.6.0",
     "graphql": "^16.9.0",
+    "graphql-ws": "^5.16.0",
     "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "pdfjs-dist": "^6.0.227",

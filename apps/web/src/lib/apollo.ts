@@ -5,10 +5,13 @@ import {
   createHttpLink,
   from,
   fromPromise,
+  split,
 } from '@apollo/client'
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions'
 import { getMainDefinition } from '@apollo/client/utilities'
 import { setContext } from '@apollo/client/link/context'
 import { onError } from '@apollo/client/link/error'
+import { createClient } from 'graphql-ws'
 import { useAuthStore } from '../store/authStore'
 import { useCompanyStore } from '../store/companyStore'
 import { useToastStore } from '../store/toastStore'
@@ -18,6 +21,30 @@ import { decodeJWT } from './jwt'
 const httpLink = createHttpLink({
   uri: `${import.meta.env.VITE_API_URL}/api/v1/graphql`,
 })
+
+// Subscriptions get their own WebSocket connection (graphql-ws protocol) —
+// separate from the ad hoc notification socket in hooks/useWebSocket.ts.
+// The token is re-read fresh on every (re)connect via `connectionParams`
+// being a function, so a token refresh doesn't leave subscriptions stuck
+// authenticated as the old one.
+const wsLink = new GraphQLWsLink(
+  createClient({
+    url: `${import.meta.env.VITE_API_URL.replace(/^http/, 'ws')}/api/v1/graphql-ws`,
+    connectionParams: () => {
+      const token = useAuthStore.getState().accessToken
+      return { authorization: token ? `Bearer ${token}` : '' }
+    },
+  }),
+)
+
+const splitLink = split(
+  ({ query }) => {
+    const def = getMainDefinition(query)
+    return def.kind === 'OperationDefinition' && def.operation === 'subscription'
+  },
+  wsLink,
+  httpLink,
+)
 
 const authLink = setContext((_, { headers }: { headers?: Record<string, string> }) => {
   const token = useAuthStore.getState().accessToken
@@ -132,7 +159,7 @@ const tourLink = new ApolloLink((operation, forward) => {
 })
 
 export const apolloClient = new ApolloClient({
-  link: from([tourLink, errorLink, authLink, httpLink]),
+  link: from([tourLink, errorLink, authLink, splitLink]),
   cache: new InMemoryCache({
     typePolicies: {
       ProjectInvoice: {

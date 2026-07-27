@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react'
-import { useQuery, useMutation } from '@apollo/client'
+import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -17,6 +17,7 @@ import {
   CREATE_USER,
   INVITE_USER,
   COMPANIES_QUERY,
+  SESSIONS_CHANGED_SUBSCRIPTION,
 } from '../../../graphql/admin'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 
@@ -67,6 +68,14 @@ export default function UsersPage() {
       isActive: isActive === '' ? undefined : isActive === 'true',
       page,
       limit: 50,
+    },
+  })
+
+  // Live-refetch the list when any user's sessions change — e.g. the
+  // Sessions column updating without a manual page refresh.
+  useSubscription(SESSIONS_CHANGED_SUBSCRIPTION, {
+    onData: () => {
+      void refetch()
     },
   })
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from 'react'
-import { useQuery, useMutation } from '@apollo/client'
+import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
@@ -15,6 +15,7 @@ import {
   OUTBOX_EVENTS_QUERY,
   RETRY_OUTBOX_EVENT,
   RESET_STUCK_EVENTS,
+  OUTBOX_UPDATED_SUBSCRIPTION,
 } from '../../../graphql/admin'
 
 interface OutboxCounts {
@@ -100,6 +101,16 @@ export default function OutboxMonitorPage() {
       limit: 50,
     },
     pollInterval: autoRefresh ? 30000 : 0,
+  })
+
+  // Live-refetch on top of the 30s poll above — near-instant instead of up
+  // to 30s stale when the worker processes a batch or an admin retries/
+  // dismisses/resets an event.
+  useSubscription(OUTBOX_UPDATED_SUBSCRIPTION, {
+    onData: () => {
+      void refetchMonitor()
+      void refetchEvents()
+    },
   })
 
   useEffect(() => {

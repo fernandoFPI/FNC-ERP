@@ -27,6 +27,7 @@ import { documentSequencesRouter } from './routes/document-sequences.js'
 import { notificationRoutingRouter } from './routes/notification-routing.js'
 import { searchRouter } from './routes/search.js'
 import { jobRunsRouter } from './routes/job-runs.js'
+import { internalEventsRouter } from './routes/internal-events.js'
 
 const PUBLIC_PATHS = [
   '/api/v1/auth/login',
@@ -93,6 +94,9 @@ export async function createApp(): Promise<express.Application> {
     const health = await buildHealthStatus('gateway')
     res.status(health.status === 'down' ? 503 : 200).json(health)
   })
+
+  // ── 6b. Internal service-to-service events (SERVICE_TOKEN, not JWT) ──
+  app.use('/internal/events', internalEventsRouter)
 
   // ── 7. Auth rate limit on sensitive endpoints ───────────────
   const authLimitedPaths = [

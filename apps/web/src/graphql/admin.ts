@@ -63,6 +63,25 @@ export const USER_SESSIONS_QUERY = gql`
   }
 `
 
+// Live updates — see services/gateway/src/graphql/schema.ts's `type Subscription`.
+// Signal-only: on receipt, refetch the relevant query rather than trusting the
+// subscription payload to already contain everything the screen needs.
+export const SESSIONS_CHANGED_SUBSCRIPTION = gql`
+  subscription SessionsChanged($userId: ID) {
+    sessionsChanged(userId: $userId) {
+      userId
+    }
+  }
+`
+
+export const OUTBOX_UPDATED_SUBSCRIPTION = gql`
+  subscription OutboxUpdated {
+    outboxUpdated {
+      updatedAt
+    }
+  }
+`
+
 export const USER_INVITATIONS_QUERY = gql`
   query UserInvitations($companyId: ID, $status: String) {
     userInvitations(companyId: $companyId, status: $status) {
