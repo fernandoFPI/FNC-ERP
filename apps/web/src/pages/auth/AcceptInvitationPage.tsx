@@ -65,8 +65,8 @@ export default function AcceptInvitationPage() {
       navigate('/login?accepted=1')
     } catch (err: unknown) {
       const msg =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
-        'Failed to accept invitation.'
+        (err as { response?: { data?: { error?: { message?: string } } } })?.response?.data?.error
+          ?.message ?? 'Failed to accept invitation.'
       setSubmitError(msg)
     } finally {
       setSubmitting(false)
