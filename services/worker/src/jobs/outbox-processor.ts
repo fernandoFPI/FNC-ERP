@@ -307,8 +307,8 @@ async function alertSystemAdminsOfDLQEntry(
   config: EventConfig,
 ): Promise<void> {
   try {
-    const admins = await pool.query<{ id: string; email: string }>(
-      `SELECT DISTINCT u.id, u.email
+    const admins = await pool.query<{ id: string; email: string; company_id: string }>(
+      `SELECT DISTINCT u.id, u.email, ucr.company_id
        FROM users u
        JOIN user_company_roles ucr ON ucr.user_id = u.id
        WHERE ucr.role = 'system_admin'
@@ -324,10 +324,11 @@ async function alertSystemAdminsOfDLQEntry(
       await pool
         .query(
           `INSERT INTO notifications
-             (user_id, type, title, body, data, push_sent)
-           VALUES ($1,'OUTBOX_DLQ_ALERT',$2,$3,$4::jsonb,false)`,
+             (user_id, company_id, type, title, body, data, push_sent)
+           VALUES ($1,$2,'OUTBOX_DLQ_ALERT',$3,$4,$5::jsonb,false)`,
           [
             admin.id,
+            admin.company_id,
             `${priorityLabel}: Outbox event failed`,
             `Event: ${event.event_type}\nAttempts: ${event.attempts}\nError: ${String(event.last_error ?? '').substring(0, 200)}`,
             JSON.stringify({

@@ -3926,7 +3926,7 @@ export const resolvers = {
           `SELECT id, event_type, service, priority, status, total_attempts, last_error, error_history, last_attempted_at AS created_at, reviewed_by, review_notes, retry_outbox_id FROM outbox_dead_letters WHERE status='pending' ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 END, last_attempted_at DESC LIMIT 20`,
         ),
         query(
-          `SELECT id, service, event_type, status, attempts, max_attempts, last_error, next_retry_at, created_at, processed_at, event_priority FROM service_outbox WHERE status='processing' AND updated_at < NOW() - INTERVAL '5 minutes'`,
+          `SELECT id, service, event_type, status, attempts, max_attempts, last_error, next_retry_at, created_at, processed_at, event_priority FROM service_outbox WHERE status='processing' AND first_attempted_at < NOW() - INTERVAL '5 minutes'`,
         ),
       ])
       const pendingCount = Number(
@@ -5630,7 +5630,7 @@ export const resolvers = {
     resetStuckEvents: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth || ctx.auth.role !== 'system_admin') throw new Error('Forbidden')
       const result = await query(
-        `UPDATE service_outbox SET status='pending', next_retry_at=NOW(), attempts=GREATEST(0, attempts-1) WHERE status='processing' AND updated_at < NOW() - INTERVAL '5 minutes' RETURNING id`,
+        `UPDATE service_outbox SET status='pending', next_retry_at=NOW(), attempts=GREATEST(0, attempts-1) WHERE status='processing' AND first_attempted_at < NOW() - INTERVAL '5 minutes' RETURNING id`,
       )
       return result.rows.length
     },
