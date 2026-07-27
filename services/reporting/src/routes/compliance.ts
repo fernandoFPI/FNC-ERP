@@ -17,7 +17,7 @@ complianceRouter.get('/withholding-tax', requirePermission('reporting.compliance
     if (from_date) { dateClause += ` AND vi.invoice_date >= $${idx++}`; params.push(from_date) }
     if (to_date) { dateClause += ` AND vi.invoice_date <= $${idx++}`; params.push(to_date) }
     const result = await query(
-      `SELECT v.name AS vendor_name, v.withholding_tax_type, v.withholding_tax_rate,
+      `SELECT v.name AS vendor_name, v.withholding_tax_rate,
               vi.invoice_number, vi.total_amount, vi.currency_code, vi.wht_amount,
               vi.invoice_date AS transaction_date
        FROM vendor_invoices vi
