@@ -29,7 +29,7 @@ const httpLink = createHttpLink({
 // authenticated as the old one.
 const wsLink = new GraphQLWsLink(
   createClient({
-    url: `${import.meta.env.VITE_API_URL.replace(/^http/, 'ws')}/api/v1/graphql-ws`,
+    url: `${(import.meta.env.VITE_API_URL ?? 'http://localhost:3000').replace(/^http/, 'ws')}/api/v1/graphql-ws`,
     connectionParams: () => {
       const token = useAuthStore.getState().accessToken
       return { authorization: token ? `Bearer ${token}` : '' }
