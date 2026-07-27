@@ -1689,9 +1689,14 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
     }
 
     case 'USER_INVITATION_EMAIL': {
-      // Look up the inviter's display name
-      let inviterName = 'An administrator'
-      if (p['invitedBy']) {
+      // Two enqueue sites send this event with different payload shapes:
+      // services/auth/routes/user-management.ts sends invitationUrl + invitedBy
+      // (a user id needing a lookup); services/gateway's inviteUser mutation —
+      // the one apps/web actually calls — sends inviteUrl + invitedByName
+      // (already resolved). Accept both.
+      const invitationUrl = String(p['invitationUrl'] ?? p['inviteUrl'] ?? '')
+      let inviterName = p['invitedByName'] ? String(p['invitedByName']) : 'An administrator'
+      if (!p['invitedByName'] && p['invitedBy']) {
         const inviterRes = await pool.query<{ first_name: string | null; last_name: string | null; email: string }>(
           `SELECT first_name, last_name, email FROM users WHERE id=$1`, [String(p['invitedBy'])]
         )
@@ -1718,7 +1723,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
               This link expires in <strong>7 days</strong>.
             </p>
             <div style="text-align:center;margin:32px 0">
-              <a href="${String(p['invitationUrl'])}"
+              <a href="${invitationUrl}"
                  style="background:#1e3a5f;color:white;padding:12px 28px;
                         border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">
                 Accept Invitation
