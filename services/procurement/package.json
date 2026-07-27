@@ -11,7 +11,8 @@
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:perf": "PERF_TESTS=1 vitest run"
   },
   "dependencies": {
     "@fnc-erp/audit": "workspace:*",

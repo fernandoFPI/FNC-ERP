@@ -9,7 +9,7 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 15_000,
     hookTimeout: 15_000,
-    include: ['tests/**/*.test.ts', 'tests/**/*.perf.ts'],
+    include: process.env.PERF_TESTS ? ['tests/**/*.perf.ts'] : ['tests/**/*.test.ts'],
     fileParallelism: false,
     pool: 'forks',
     poolOptions: {

@@ -10,7 +10,8 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "clean": "rm -rf dist",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:perf": "PERF_TESTS=1 vitest run"
   },
   "dependencies": {
     "@fnc-erp/audit": "workspace:*",
