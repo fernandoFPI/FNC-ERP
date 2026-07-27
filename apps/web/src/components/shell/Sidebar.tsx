@@ -981,7 +981,7 @@ export function Sidebar({
     return localStorage.getItem('fnc-sidebar-collapsed') === 'true'
   })
   const [expandedItems, setExpandedItems] = useState<Set<string>>(() => {
-    const path = window.location.pathname
+    const path = location.pathname
     const expanded = new Set<string>()
     NAV_SECTIONS.forEach((sec) => {
       sec.items.forEach((item) => {

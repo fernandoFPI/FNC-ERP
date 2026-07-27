@@ -109,11 +109,8 @@ describe('Sidebar Phase 5 — Group section', () => {
     expect(screen.getByText('Help')).toBeInTheDocument()
   })
 
-  it('Reporting item can be clicked to expand sub-items', () => {
+  it('auto-expands Reporting when navigating to one of its sub-routes', () => {
     wrap('/reporting/executive')
-    // On /reporting path — click Reporting to expand
-    const reportingItem = screen.getByText('Reporting')
-    fireEvent.click(reportingItem)
     expect(screen.getByText('Compliance')).toBeInTheDocument()
   })
 })

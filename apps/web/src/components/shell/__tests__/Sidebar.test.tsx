@@ -54,7 +54,9 @@ describe('Sidebar', () => {
   })
 
   it('renders all nav items', () => {
-    wrap()
+    // Chart of Accounts lives inside the collapsible "Journals & Accounts" group,
+    // which only auto-expands when the current route matches one of its children.
+    wrap('/finance/accounts')
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
     expect(screen.getByText('Chart of Accounts')).toBeInTheDocument()
     expect(screen.getByText('Purchase Orders')).toBeInTheDocument()

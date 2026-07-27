@@ -15,9 +15,9 @@ export function formatNumber(value: number, format?: string): string {
   if (isNaN(n)) return '—'
   const fmt = format ?? 'standard'
   if (fmt === 'european') {
-    return n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+    return n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
-  return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 export function formatCurrency(amount: number | string, currency: string, format?: string): string {
