@@ -63,6 +63,9 @@ jobs:
       - name: Run migrations (test DB)
         run: pnpm migrate:test
 
+      - name: Seed test DB
+        run: pnpm seed:test
+
       - name: Run tests
         # See deploy.yml's "Run tests" step for why this caps concurrency and retries once.
         run: pnpm test --concurrency=4 || pnpm test --concurrency=4

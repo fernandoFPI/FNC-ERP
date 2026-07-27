@@ -59,6 +59,9 @@ jobs:
       - name: Run migrations (test DB)
         run: pnpm migrate:test
 
+      - name: Seed test DB
+        run: pnpm seed:test
+
       - name: Run tests
         # Every service's tests share one hardcoded TEST_COMPANY_ID against one
         # DB, so a handful of them race under full parallelism (rare — always
