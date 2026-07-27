@@ -959,7 +959,7 @@ ordersRouter.post(
         )
       }
       await query(
-        `INSERT INTO service_outbox (service, event_type, payload) VALUES ('worker','PO_PDF_REQUESTED',$1)`,
+        `INSERT INTO service_outbox (service, event_type, payload) VALUES ('reporting','PO_PDF_REQUESTED',$1)`,
         [JSON.stringify({ po_id: req.params['id']!, company_id: auth.companyId })],
       )
       sendOk(res, { message: 'PO approved' })
