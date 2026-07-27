@@ -17,6 +17,7 @@
     "migrate:test": "NODE_ENV=test pnpm --filter @fnc-erp/db migrate",
     "seed": "pnpm --filter @fnc-erp/db seed",
     "seed:test": "NODE_ENV=test pnpm --filter @fnc-erp/db seed",
+    "seed:permissions": "pnpm --filter @fnc-erp/db seed:permissions",
     "db:up": "docker compose up -d postgres redis",
     "db:down": "docker compose down"
   },

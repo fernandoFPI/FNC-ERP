@@ -75,6 +75,9 @@ jobs:
       - name: Seed test DB
         run: pnpm seed:test
 
+      - name: Seed permissions registry (test DB)
+        run: pnpm seed:permissions
+
       - name: Run tests
         # See deploy.yml's "Run tests" step — full sequential run, no retry needed.
         run: pnpm test --concurrency=1

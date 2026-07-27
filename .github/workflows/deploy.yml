@@ -71,6 +71,9 @@ jobs:
       - name: Seed test DB
         run: pnpm seed:test
 
+      - name: Seed permissions registry (test DB)
+        run: pnpm seed:permissions
+
       - name: Run tests
         # Every service's tests share one hardcoded TEST_COMPANY_ID against one
         # DB. --concurrency=4 + one retry was not reliable enough in practice —
@@ -114,6 +117,7 @@ jobs:
             source .env
             set +a
             pnpm migrate
+            pnpm seed:permissions
 
             pm2 reload ecosystem.config.cjs --env production --update-env
 
