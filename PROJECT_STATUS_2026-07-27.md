@@ -581,6 +581,120 @@ checked against any other service's routes (finance, procurement, etc. —
 though none of those have a plausible no-account-yet public flow the way
 auth does, so the risk there is much lower).
 
+### 13. The `permissions` table has never been seeded — every permission save has always failed (commit `083597a`)
+
+Reported live: saving a permission from the Permissions tab threw
+`insert or update on table "user_permissions" violates foreign key
+constraint "user_permissions_permission_key_fkey"`.
+`user_permissions.permission_key REFERENCES permissions(key)`, and
+`packages/db/seeds/seed-permissions.ts` is a **separate script** from the
+general seed (`run-seeds.ts` never calls it) — no deploy step has ever run
+it. Confirmed locally: the `permissions` table had exactly **0 rows**.
+Verified the two independently-maintained permission registries
+(`packages/permissions/src/registry.ts`, the seed source of truth, vs
+`apps/web/src/lib/permissionRegistry.ts`, what the UI renders) are actually
+in sync — 119/119 keys match — so this was purely an operational gap, not
+a registry drift bug. Added `seed:permissions` as a root script, wired it
+into `deploy.yml` right after `pnpm migrate` (idempotent upsert, safe every
+deploy — also means future permission registry additions get seeded
+automatically) and into `ci.yml`. **This fix backfills production as a
+side effect of the deploy itself** — no separate manual step needed.
+
+Then, same place, a second error: `column "role" does not exist`. Two
+resolvers (`userPermissions` query, `saveUserPermissions` mutation) ran
+`SELECT role FROM users WHERE id=$1` to compute `isAdmin` — but `role` has
+never lived on `users`; it's on `user_company_roles`, scoped per company
+(confirmed against live `information_schema`). Replaced with an existence
+check against `user_company_roles` scoped to the specific user+company
+being edited. Before fixing, audited the rest of the permissions feature
+(role template CRUD, PO positions, every related GraphQL shape, the
+frontend's apply-template flow) against the live schema — these two
+`users.role` references were the only phantom-column bugs in the whole
+feature. Verified end-to-end against a live DB: the admin-check query plus
+a full delete/insert/re-select `saveUserPermissions` cycle for
+`finance.accounts.view` at `view` level (the exact case that was failing),
+both inside a rolled-back transaction.
+
+### 14. GraphQL subscriptions — live updates for sessions and the Outbox Monitor (commit `ab9a48f`)
+
+User-requested feature, not a bug fix: "why do I have to refresh to see
+things update" (e.g. a session count not updating when logging in from
+another device). Built real GraphQL subscriptions (`graphql-ws` over a
+dedicated WebSocket path) rather than extending the ad hoc notification
+socket in `services/gateway/src/routes/websocket.ts` — which, worth
+noting, turned out to have **zero live callers of its own
+`broadcastToAll()`** despite the frontend already maintaining a connection
+to it (`apps/web/src/hooks/useWebSocket.ts`); that channel has been fully
+dormant plumbing this whole time. Not touched by this work.
+
+New pieces: `services/gateway/src/graphql/pubsub.ts` (in-memory `PubSub`,
+correct only as long as gateway stays single-instance — same constraint
+that already keeps it single-instance for `broadcastToAll`'s sake; would
+need `graphql-redis-subscriptions` if that ever changes),
+`routes/graphql-ws-server.ts` (builds an executable schema via
+`@graphql-tools/schema`, wires `useServer()` onto its own
+`WebSocketServer`, JWT-authenticated the same way as everything else via
+`connectionParams`), `routes/internal-events.ts` (lets `services/auth` and
+`services/worker` — separate processes — push a publish signal in via a
+new `SERVICE_TOKEN`-authenticated endpoint, mounted before the blanket JWT
+gate; new `GATEWAY_URL` env var, defaults to `http://localhost:3000` which
+should just work in production since every service runs on the same VPS —
+no manual config step expected). New `type Subscription { sessionsChanged,
+outboxUpdated }` — payloads are deliberately signal-only; the frontend
+refetches the real query on receipt rather than trying to make the
+subscription payload fully replace cached data (simpler, more robust for
+a first pass than chasing full Apollo cache-normalization).
+
+Publishing wired into: `services/auth/src/lib/session.ts`'s
+`createSession()` (the single shared choke point for login/MFA/company-
+switch), the worker's outbox poll loop (once per cycle, only when
+something was actually processed), and the gateway's own
+`revokeUserSession`/`revokeAllUserSessions`/outbox-retry-family mutations
+(same-process, no cross-service call needed). **Deliberate scope cut**:
+session-deletion call sites inside `services/auth` itself (logout,
+password-reset invalidation, MFA disable — ~10 scattered inline `DELETE`
+statements across several files) were left unhooked to keep the change
+reviewable; login (the actual reported case) and admin-UI revoke actions
+are covered.
+
+Found a second pre-existing bug while in `revokeAllUserSessions`:
+`DELETE FROM sessions WHERE user_id=$1 AND session_id != $2` — `sessions`'
+primary key is `id`, not `session_id`; this mutation has been broken since
+it was written. Fixed alongside adding the publish call.
+
+User also asked whether this helps toward Excel-Online/Google-Docs-style
+live co-editing. Answered directly: this is the right first layer (push
+transport + presence would reuse it cheaply), but real conflict-free
+concurrent-field editing (CRDT/OT) is a separate, much larger problem, and
+arguably the wrong pattern for structured ERP records anyway — most ERPs
+use record/field **locking** instead of live character merging. User liked
+the locking idea and asked to build it; agreed it's worth doing but
+deliberately deferred to its own pass (needs real design: which records
+are lockable, stale-lock recovery when a tab closes without releasing,
+block-vs-warn semantics) rather than bolting it onto this change. **Not
+started — a real, agreed-upon next task, not just a suggestion.**
+
+Verified: full monorepo build clean; full test suite green under
+`--concurrency=1` (29/29 tasks); direct module-load of
+`graphql-ws-server.ts` confirms `makeExecutableSchema` + `useServer()`
+wiring don't throw at setup (schema built successfully, subscription
+fields present); `SERVICE_TOKEN` timing-safe comparison exercised against
+6 cases (correct, wrong-same-length, wrong-shorter, wrong-longer, missing,
+empty); pubsub `publish()` functions exercised directly with zero
+subscribers (the real steady state until a client connects); the
+`revokeAllUserSessions` SQL fix verified against a live DB inside a
+rolled-back transaction. **Could not do a full live WebSocket handshake
+test** — port 3000 was already occupied by something else in the
+sandboxed dev environment (left untouched rather than risk killing
+unknown state), and env-var overrides for an alternate port didn't take
+effect through the dotenvx loading layer. This is real residual risk:
+the wiring is verified as far as static analysis and isolated-module
+loading can go, but an actual browser → gateway WS handshake → subscribe →
+publish → receive round trip has **not** been observed. Test this for
+real before trusting it: log in from a second device/browser while
+watching a user's Sessions tab in the first, and confirm it updates
+without a manual refresh.
+
 ## Current confirmed state
 
 - Commits `278765d` through `faed027` are confirmed live on the VPS (real
@@ -596,17 +710,23 @@ auth does, so the risk there is much lower).
   (`services/worker`+`services/hr` after step 8, `services/worker`+
   `services/gateway`+`services/auth` after step 9, `services/worker`+
   `services/gateway` after step 10 — all green).
-- Both `dev` and `production` branches are in sync at `7dc49c7`.
+- Both `dev` and `production` branches are in sync at `ab9a48f`.
 - **The invitation flow is now confirmed fully working end-to-end by the
   user** (`d03e8c7` — first successful acceptance in this system's history),
   after six stacked bugs (URL key mismatch, inviter-name field, gateway
   auth-gating, error-rendering crash, missing confirmPassword field, and a
   module='all' permission-lockout bug) were found and fixed one at a time.
 - Commit `7dc49c7` (multi-company invites, role vocabulary fix, Users-list
-  stub fix) is the newest work — build/test verified and one full
-  invite→accept cycle exercised against a live DB, but **not yet confirmed
-  live by the user**. Don't assume the multi-company path specifically
-  works in production until someone actually sends and accepts one.
+  stub fix) — build/test verified and one full invite→accept cycle
+  exercised against a live DB, but **not yet confirmed live by the user**.
+- Commit `083597a` (permissions seeding + `users.role` fix) — user reported
+  both errors live and both are fixed/verified, but the user has not yet
+  confirmed a permission save actually succeeds end-to-end in the browser.
+- Commit `ab9a48f` (GraphQL subscriptions) is the newest and least-verified
+  work in this doc — **no live WebSocket handshake has been observed**,
+  only static analysis, isolated module loading, and build/test green (see
+  step 14 above for exactly what was and wasn't checked). Treat "sessions
+  update live" as unconfirmed until someone actually watches it happen.
 
 | Commit | What |
 |---|---|
@@ -636,6 +756,9 @@ auth does, so the risk there is much lower).
 | `d03e8c7` | Accept-invitation always failed PASSWORD_MISMATCH — confirmPassword never sent to the backend. **First fully successful invite acceptance ever — CONFIRMED LIVE by user** |
 | `345d46f` | Invitations' module always NULL — silently locks out invited users at every module-gated endpoint; default to 'all' |
 | `7dc49c7` | Multi-company invites (migration 180); fixed viewer/manager phantom-role bug; fixed Users list Sessions/Companies/Roles always-empty stubs |
+| `083597a` | `permissions` table was never seeded (0 rows, ever) — every permission save failed; fixed + wired into deploy/CI so it self-heals |
+| `14db9e0` | `userPermissions`/`saveUserPermissions` selected `users.role`, which doesn't exist — role is per-company on `user_company_roles` |
+| `ab9a48f` | GraphQL subscriptions (graphql-ws): live session counts + Outbox Monitor updates. **No live WS handshake observed yet — see step 14** |
 
 ## Known open items (deliberately deferred, not forgotten)
 
@@ -730,6 +853,38 @@ auth does, so the risk there is much lower).
     evidence the surrounding code is now safe — treat it as evidence this
     codebase has never been exercised by real traffic before, and budget for
     more rounds like this, not fewer.
+
+11. **GraphQL subscriptions have not had a live WebSocket handshake
+    verified.** See step 14. Everything short of an actual browser → gateway
+    round trip checks out (build, tests, isolated schema/wiring load,
+    SERVICE_TOKEN comparison, pubsub publish calls, the one SQL fix touched
+    along the way) but that's not the same as watching it work. First
+    priority if picking this back up: log in from a second device while
+    watching a user's Sessions tab, confirm it updates without a refresh,
+    then check the browser console for WS connection/auth errors if it
+    doesn't.
+12. **Record/field locking (Google-Docs-style "someone else is editing
+    this") is an agreed next task, not started.** User asked for it after
+    the subscriptions work landed; explicitly deferred to its own pass
+    rather than bolted onto that change. Needs real design before writing
+    code: which records are lockable, stale-lock recovery when a browser
+    tab closes without releasing, and whether a lock blocks editing
+    outright or just warns. Would reuse the graphql-ws infrastructure from
+    step 14, not replace it.
+13. **Session-deletion call sites inside `services/auth` itself are not
+    wired to publish live-update signals.** ~10 scattered inline
+    `DELETE FROM sessions` statements across `auth.ts`, `user-management.ts`,
+    `roles.ts`, `password-reset.ts` (logout, password-reset invalidation,
+    MFA disable, admin deactivate, etc.) — deliberately left unhooked in
+    step 14 to keep that change reviewable. Login (`createSession()`, the
+    actual reported case) and the admin UI's own revoke mutations are
+    covered; these aren't. If "sessions" needs to feel live for every
+    scenario, not just login, this is the next place to look — likely
+    worth extracting a shared `revokeSessions()` helper in
+    `services/auth/src/lib/session.ts` (mirroring `createSession()`) that
+    all ~10 call sites switch to, both for the publish hook and because
+    right now they're all hand-written inline SQL with no single source of
+    truth.
 
 ## If you're picking this up
 
