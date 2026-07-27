@@ -385,7 +385,7 @@ userManagementRouter.post(
           await client.query(
             `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active)
            VALUES ($1, $2, $3, $4, true)`,
-            [userId, invCompanyId, invRole, invModule],
+            [userId, invCompanyId, invRole, invModule ?? 'all'],
           )
         }
 
@@ -738,7 +738,7 @@ async function dispatchInvitation(
           req.auth!.userId,
           company_id ?? null,
           role ?? null,
-          roleModule ?? null,
+          roleModule ?? 'all',
           token,
           expiresAt,
         ],

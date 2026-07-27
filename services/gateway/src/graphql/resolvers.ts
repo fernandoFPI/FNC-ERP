@@ -23213,7 +23213,7 @@ const phase5MutationResolvers = {
         ctx.auth.userId,
         i.company_id ?? null,
         i.role ?? null,
-        i.module ?? null,
+        i.module ?? 'all',
         token,
         expiresAt,
       ],
