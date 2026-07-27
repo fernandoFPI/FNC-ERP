@@ -402,9 +402,10 @@ journalsRouter.post(
         )
       }
       const links = await query(
-        `SELECT jpl.po_id, po.po_number, po.vendor_name, po.status, po.total_amount, po.currency_code
+        `SELECT jpl.po_id, po.po_number, v.name AS vendor_name, po.status, po.total_amount, po.currency_code
        FROM journal_po_links jpl
        JOIN purchase_orders po ON po.id=jpl.po_id
+       JOIN vendors v ON v.id=po.vendor_id
        WHERE jpl.journal_entry_id=$1`,
         [jeId],
       )
@@ -431,9 +432,10 @@ journalsRouter.get(
         return
       }
       const result = await query(
-        `SELECT jpl.po_id, po.po_number, po.vendor_name, po.status, po.total_amount, po.currency_code
+        `SELECT jpl.po_id, po.po_number, v.name AS vendor_name, po.status, po.total_amount, po.currency_code
        FROM journal_po_links jpl
        JOIN purchase_orders po ON po.id=jpl.po_id
+       JOIN vendors v ON v.id=po.vendor_id
        WHERE jpl.journal_entry_id=$1`,
         [req.params['id']],
       )

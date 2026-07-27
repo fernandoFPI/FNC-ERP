@@ -84,11 +84,12 @@ revaluationRouter.post(
          a.account_type,
          SUM(jl.debit - jl.credit) AS balance_fc
        FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.journal_entry_id
        JOIN chart_of_accounts a ON a.id = jl.account_id
-       WHERE jl.company_id  = $1
+       WHERE je.company_id  = $1
          AND jl.currency_code != $2
          AND a.account_type IN ('asset','liability')
-         AND TO_CHAR(jl.created_at, 'YYYY-MM') <= $3
+         AND TO_CHAR(je.entry_date, 'YYYY-MM') <= $3
        GROUP BY jl.account_id, jl.currency_code, a.code, a.name, a.account_type
        HAVING SUM(jl.debit - jl.credit) != 0`,
         [req.auth!.companyId, functional_currency, period],

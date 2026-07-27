@@ -303,10 +303,13 @@ budgetRouter.get(
          ), 0) AS actual_amount
        FROM gl_budget_lines bl
        JOIN chart_of_accounts a ON a.id = bl.account_id
-       LEFT JOIN journal_lines jl
-              ON jl.account_id = bl.account_id
-             AND jl.company_id = $1
-             AND TO_CHAR(jl.created_at, 'YYYY-MM') BETWEEN $3 AND $4
+       LEFT JOIN (
+         SELECT jl.account_id, jl.currency_code, jl.debit, jl.credit, je.entry_date
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE je.company_id = $1
+           AND TO_CHAR(je.entry_date, 'YYYY-MM') BETWEEN $3 AND $4
+       ) jl ON jl.account_id = bl.account_id
        LEFT JOIN fx_rates fr
               ON fr.from_currency = jl.currency_code
              AND fr.to_currency   = $5
@@ -314,7 +317,7 @@ budgetRouter.get(
                SELECT MAX(rate_date) FROM fx_rates
                WHERE from_currency = jl.currency_code
                  AND to_currency   = $5
-                 AND rate_date    <= DATE_TRUNC('month', jl.created_at) + INTERVAL '1 month - 1 day'
+                 AND rate_date    <= DATE_TRUNC('month', jl.entry_date) + INTERVAL '1 month - 1 day'
              )
        WHERE bl.budget_id = $2
          AND bl.period BETWEEN $3 AND $4

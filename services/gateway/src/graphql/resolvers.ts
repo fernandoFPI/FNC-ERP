@@ -916,9 +916,10 @@ async function momNotify(
   try {
     const recipients = await query(
       `SELECT DISTINCT u.id FROM users u
+       JOIN user_company_roles ucr ON ucr.user_id=u.id AND ucr.company_id=$2
        LEFT JOIN employees e ON e.user_id=u.id AND e.company_id=$2
        LEFT JOIN project_members pm ON pm.employee_id=e.id AND pm.project_id=$1
-       WHERE u.company_id=$2 AND (u.role='admin' OR pm.id IS NOT NULL) AND u.id!=$3`,
+       WHERE (ucr.role IN ('company_admin','system_admin') OR pm.id IS NOT NULL) AND u.id!=$3`,
       [projectId, companyId, actorId],
     )
     for (const row of recipients.rows as Record<string, unknown>[]) {
@@ -4925,9 +4926,12 @@ export const resolvers = {
       if (!ctx.auth) return null
       const [lot, moves] = await Promise.all([
         query(
-          `SELECT sl.*, p.name AS product_name, p.sku, loc.name AS current_location_name
+          `SELECT sl.*, p.name AS product_name, p.sku,
+                  (SELECT loc.name FROM stock_moves sm2
+                     JOIN stock_locations loc ON loc.id = sm2.to_location_id
+                    WHERE sm2.lot_id = sl.id
+                    ORDER BY sm2.moved_at DESC LIMIT 1) AS current_location_name
            FROM stock_lots sl JOIN products p ON p.id=sl.product_id
-           LEFT JOIN stock_locations loc ON loc.id=sl.current_location_id
            WHERE sl.id=$1 AND p.company_id=$2`,
           [args.id, ctx.auth.companyId],
         ),
@@ -18597,12 +18601,12 @@ const phase5QueryResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(
-      `SELECT p.name as product_name, p.sku, l.name as location_name, l.location_type,
-              sb.qty_on_hand, sb.avg_cost, (sb.qty_on_hand * sb.avg_cost) as total_value, 'IQD' as currency
+      `SELECT p.name as product_name, p.sku, l.name as location_name, l.type as location_type,
+              sb.qty_on_hand, sb.average_cost, (sb.qty_on_hand * sb.average_cost) as total_value, 'IQD' as currency
        FROM stock_balances sb
        JOIN products p ON p.id = sb.product_id
-       JOIN locations l ON l.id = sb.location_id
-       WHERE sb.company_id = $1 AND sb.qty_on_hand > 0 ORDER BY total_value DESC`,
+       JOIN stock_locations l ON l.id = sb.location_id
+       WHERE l.company_id = $1 AND sb.qty_on_hand > 0 ORDER BY total_value DESC`,
       [ctx.auth.companyId],
     )
     const totalValue = r.rows.reduce(
@@ -19087,7 +19091,11 @@ const phase5QueryResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(
-      `SELECT ipc.*, c.name as company_name FROM interco_pricing_configs ipc JOIN companies c ON c.id=ipc.company_id WHERE ipc.company_id=$1`,
+      `SELECT ipc.*, c.name as company_name, u.email as updated_by_email
+       FROM interco_pricing_configs ipc
+       JOIN companies c ON c.id=ipc.company_id
+       LEFT JOIN users u ON u.id=ipc.updated_by
+       WHERE ipc.company_id=$1`,
       [args.companyId],
     )
     if (!r.rows[0]) return null
@@ -19107,7 +19115,7 @@ const phase5QueryResolvers = {
   intercoPricingConfigHistory: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(
-      `SELECT * FROM interco_pricing_config_history WHERE company_id=$1 ORDER BY changed_at DESC LIMIT 20`,
+      `SELECT *, created_at AS changed_at FROM interco_pricing_config_log WHERE company_id=$1 ORDER BY created_at DESC LIMIT 20`,
       [args.companyId],
     )
     return r.rows.map((row: Record<string, unknown>) => ({
@@ -20782,9 +20790,9 @@ const phase5QueryResolvers = {
     if (!ctx.auth) return []
     const r = await query(
       `SELECT ptm.*, e.first_name||' '||e.last_name AS employee_name
-       FROM project_team_members ptm
+       FROM project_members ptm
        JOIN employees e ON e.id=ptm.employee_id
-       WHERE ptm.project_id=$1 AND ptm.company_id=$2`,
+       WHERE ptm.project_id=$1 AND e.company_id=$2`,
       [args.projectId, ctx.auth.companyId],
     )
     return r.rows
@@ -22617,14 +22625,37 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const prev = await query(
+      `SELECT method, cost_plus_markup_pct FROM interco_pricing_configs WHERE company_id=$1`,
+      [args.companyId],
+    )
+    const prevRow = prev.rows[0] as { method: string; cost_plus_markup_pct: string | null } | undefined
     await query(
       `INSERT INTO interco_pricing_configs (company_id, method, cost_plus_markup_pct, updated_at, updated_by)
        VALUES ($1,$2,$3,NOW(),$4)
        ON CONFLICT (company_id) DO UPDATE SET method=$2, cost_plus_markup_pct=$3, updated_at=NOW(), updated_by=$4`,
       [args.companyId, args.input.method, args.input.costPlusMarkupPct ?? null, ctx.auth.userId],
     )
+    await query(
+      `INSERT INTO interco_pricing_config_log
+         (company_id, changed_by, previous_method, new_method, previous_markup_pct, new_markup_pct, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        args.companyId,
+        ctx.auth.userId,
+        prevRow?.method ?? null,
+        args.input.method,
+        prevRow?.cost_plus_markup_pct ?? null,
+        args.input.costPlusMarkupPct ?? null,
+        args.input.notes ?? null,
+      ],
+    )
     const r = await query(
-      `SELECT ipc.*, c.name as company_name FROM interco_pricing_configs ipc JOIN companies c ON c.id=ipc.company_id WHERE ipc.company_id=$1`,
+      `SELECT ipc.*, c.name as company_name, u.email as updated_by_email
+       FROM interco_pricing_configs ipc
+       JOIN companies c ON c.id=ipc.company_id
+       LEFT JOIN users u ON u.id=ipc.updated_by
+       WHERE ipc.company_id=$1`,
       [args.companyId],
     )
     const row = r.rows[0] as Record<string, unknown>
@@ -22777,7 +22808,7 @@ const phase5MutationResolvers = {
   retryDLQEntry: async (_: unknown, args: { dlqId: string; notes?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await query(
-      `UPDATE outbox_dead_letter_queue SET status='retrying', reviewed_by=$2, review_notes=$3 WHERE id=$1`,
+      `UPDATE outbox_dead_letters SET status='retrying', reviewed_by=$2, review_notes=$3 WHERE id=$1`,
       [args.dlqId, ctx.auth.userId, args.notes ?? null],
     )
     return true
@@ -22786,7 +22817,7 @@ const phase5MutationResolvers = {
   dismissDLQEntry: async (_: unknown, args: { dlqId: string; notes: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await query(
-      `UPDATE outbox_dead_letter_queue SET status='dismissed', reviewed_by=$2, review_notes=$3 WHERE id=$1`,
+      `UPDATE outbox_dead_letters SET status='dismissed', reviewed_by=$2, review_notes=$3 WHERE id=$1`,
       [args.dlqId, ctx.auth.userId, args.notes],
     )
     return true

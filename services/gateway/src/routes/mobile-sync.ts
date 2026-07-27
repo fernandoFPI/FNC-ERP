@@ -108,13 +108,11 @@ async function fetchEntityDelta(
     case 'profile': {
       const result = await query(
         `SELECT e.id, e.employee_number, e.first_name, e.last_name,
-                e.job_title, e.contract_type, e.work_location_id,
-                e.department_id, e.hire_date, e.is_active, e.updated_at,
-                d.name AS department_name,
-                sc.base_amount, sc.pay_type, sc.currency_code AS salary_currency
+                e.job_title, e.employment_type AS contract_type, e.work_location_id,
+                e.updated_at,
+                d.name AS department_name
          FROM employees e
          LEFT JOIN departments d ON d.id = e.department_id
-         LEFT JOIN salary_configs sc ON sc.employee_id = e.id AND sc.effective_to IS NULL
          WHERE e.user_id=$1 AND e.company_id=$2
          LIMIT 1`,
         [userId, companyId],
@@ -145,8 +143,11 @@ async function fetchEntityDelta(
 
     case 'locations': {
       const result = await query(
-        `SELECT id, name, code, location_type,
-                geo_lat, geo_lng, geo_radius_meters, is_active, updated_at
+        // code/location_type have no server-side source column — work_locations
+        // was never given them despite the mobile client schema requiring both.
+        `SELECT id, name, NULL::text AS code, 'office'::text AS location_type,
+                latitude AS geo_lat, longitude AS geo_lng,
+                geofence_radius_m AS geo_radius_meters, is_active, updated_at
          FROM work_locations
          WHERE company_id=$1
            AND is_active=true
@@ -210,10 +211,10 @@ async function fetchEntityDelta(
         employeeId
           ? query(
               `SELECT otr.id, otr.work_date, otr.regular_hours, otr.overtime_hours,
-                      otr.overtime_multiplier, otr.status, otr.created_at,
+                      otr.status, otr.created_at,
                       e.first_name || ' ' || e.last_name AS employee_name,
                       'overtime_request' AS approval_type
-               FROM overtime_requests otr
+               FROM overtime_logs otr
                JOIN employees e ON e.id = otr.employee_id
                JOIN departments d ON d.id = e.department_id
                WHERE d.manager_id=$1
@@ -224,7 +225,7 @@ async function fetchEntityDelta(
           : Promise.resolve({ rows: [] }),
         employeeId
           ? query(
-              `SELECT lr.id, lr.start_date, lr.end_date, lr.days_requested,
+              `SELECT lr.id, lr.start_date, lr.end_date, lr.total_days AS days_requested,
                       lr.status, lr.reason, lr.created_at,
                       e.first_name || ' ' || e.last_name AS employee_name,
                       lt.name AS leave_type_name, 'leave_request' AS approval_type
@@ -273,7 +274,7 @@ async function fetchEntityDelta(
       if (!employeeId) return { updated: [], deleted: [] }
 
       const result = await query(
-        `SELECT lr.id, lr.start_date, lr.end_date, lr.days_requested,
+        `SELECT lr.id, lr.start_date, lr.end_date, lr.total_days AS days_requested,
                 lr.status, lr.reason, lr.review_notes, lr.updated_at,
                 lt.name AS leave_type_name
          FROM leave_requests lr
@@ -490,7 +491,7 @@ async function processOTAction(action: OfflineAction, auth: AuthContext): Promis
   const requestId = String(p.overtime_request_id)
 
   const otResult = await pool.query<{ id: string; status: string }>(
-    `SELECT id, status FROM overtime_requests WHERE id=$1`,
+    `SELECT id, status FROM overtime_logs WHERE id=$1`,
     [requestId],
   )
 
@@ -512,7 +513,7 @@ async function processOTAction(action: OfflineAction, auth: AuthContext): Promis
 
   const newStatus = action.action_type === 'approve_overtime' ? 'approved' : 'rejected'
   await pool.query(
-    `UPDATE overtime_requests
+    `UPDATE overtime_logs
      SET status=$1, reviewed_by=$2, reviewed_at=$3, review_notes=$4
      WHERE id=$5`,
     [newStatus, auth.userId, new Date(action.action_taken_at), p.review_notes ?? null, requestId],

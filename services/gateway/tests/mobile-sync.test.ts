@@ -292,7 +292,7 @@ describe('POST /mobile/actions', () => {
       if (sqlStr.includes('offline_action_log') && sqlStr.includes('SELECT')) {
         return { rows: [] } as never // dedup check
       }
-      if (sqlStr.includes('overtime_requests') && sqlStr.includes('SELECT')) {
+      if (sqlStr.includes('overtime_logs') && sqlStr.includes('SELECT')) {
         return { rows: [{ id: 'ot-id', status: 'pending' }] } as never
       }
       if (sqlStr.includes('leave_requests') && sqlStr.includes('SELECT')) {
