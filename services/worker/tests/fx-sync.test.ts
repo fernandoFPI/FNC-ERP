@@ -25,6 +25,11 @@ vi.mock('@fnc-erp/db', () => ({
   pool: { connect: vi.fn(), query: vi.fn() },
   withTransaction: vi.fn(),
   query: vi.fn(),
+  getSystemConfig: vi.fn().mockResolvedValue(null),
+  startJobRun: vi.fn().mockResolvedValue('job-run-id'),
+  finishJobRun: vi.fn().mockResolvedValue(undefined),
+  partialJobRun: vi.fn().mockResolvedValue(undefined),
+  failJobRun: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@fnc-erp/logger', () => ({
