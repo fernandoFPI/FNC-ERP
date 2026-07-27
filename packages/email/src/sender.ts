@@ -1,14 +1,15 @@
-import { getTransporter, createTransporterFromConfig, type SmtpConfig } from './client.js'
+import { getGraphAccessToken, type EmailConfig } from './client.js'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
 
 const log = logger.child({ module: 'email-sender' })
 
+const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0'
+
 export interface EmailMessage {
   to: string | string[]
   subject: string
   html: string
-  text?: string
   attachments?: {
     filename: string
     content: Buffer
@@ -17,50 +18,86 @@ export interface EmailMessage {
   replyTo?: string
 }
 
+function addressList(to: string | string[]): string[] {
+  const raw = Array.isArray(to) ? to : to.split(',')
+  return raw.map((a) => a.trim()).filter(Boolean)
+}
+
+function toEmailAddress(address: string) {
+  return { emailAddress: { address } }
+}
+
+function defaultConfigFromEnv(): EmailConfig | null {
+  if (!env.MSGRAPH_TENANT_ID || !env.MSGRAPH_CLIENT_ID || !env.MSGRAPH_CLIENT_SECRET || !env.MSGRAPH_SENDER_ADDRESS) {
+    return null
+  }
+  const config: EmailConfig = {
+    tenantId: env.MSGRAPH_TENANT_ID,
+    clientId: env.MSGRAPH_CLIENT_ID,
+    clientSecret: env.MSGRAPH_CLIENT_SECRET,
+    senderAddress: env.MSGRAPH_SENDER_ADDRESS,
+    fromName: env.EMAIL_FROM_NAME,
+  }
+  if (env.EMAIL_FROM_ADDRESS) config.fromAddress = env.EMAIL_FROM_ADDRESS
+  if (env.EMAIL_REPLY_TO) config.replyTo = env.EMAIL_REPLY_TO
+  return config
+}
+
 export async function sendEmail(
   message: EmailMessage,
-  smtpConfig?: SmtpConfig | null,
+  emailConfig?: EmailConfig | null,
 ): Promise<void> {
-  const host = smtpConfig?.host ?? env.SMTP_HOST
-  if (!host) {
+  const config = emailConfig ?? defaultConfigFromEnv()
+  if (!config) {
     log.info(
       { to: message.to, subject: message.subject },
-      '[email-stub] SMTP_HOST not configured — skipping send',
+      '[email-stub] Microsoft Graph not configured — skipping send',
     )
     return
   }
 
-  const transporter = smtpConfig ? createTransporterFromConfig(smtpConfig) : getTransporter()
-
-  const fromName = smtpConfig?.fromName ?? env.EMAIL_FROM_NAME
-  const fromAddress = smtpConfig?.fromAddress ?? env.EMAIL_FROM_ADDRESS
-  const replyTo = message.replyTo ?? smtpConfig?.replyTo ?? env.EMAIL_REPLY_TO
-
   try {
-    const info = await transporter.sendMail({
-      from: `"${fromName}" <${fromAddress}>`,
-      replyTo: replyTo || undefined,
-      to: Array.isArray(message.to) ? message.to.join(', ') : message.to,
+    const accessToken = await getGraphAccessToken(config)
+
+    const fromName = config.fromName ?? 'FNC ERP'
+    const fromAddress = config.fromAddress ?? config.senderAddress
+    const replyTo = message.replyTo ?? config.replyTo
+
+    const graphMessage: Record<string, unknown> = {
       subject: message.subject,
-      html: message.html,
-      text: message.text ?? stripHtml(message.html),
-      attachments: message.attachments,
+      body: { contentType: 'HTML', content: message.html },
+      toRecipients: addressList(message.to).map(toEmailAddress),
+      from: { emailAddress: { address: fromAddress, name: fromName } },
+    }
+    if (replyTo) graphMessage['replyTo'] = [toEmailAddress(replyTo)]
+    if (message.attachments?.length) {
+      graphMessage['attachments'] = message.attachments.map((a) => ({
+        '@odata.type': '#microsoft.graph.fileAttachment',
+        name: a.filename,
+        contentType: a.contentType,
+        contentBytes: a.content.toString('base64'),
+      }))
+    }
+
+    const url = `${GRAPH_BASE_URL}/users/${encodeURIComponent(config.senderAddress)}/sendMail`
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message: graphMessage, saveToSentItems: false }),
     })
 
-    log.info(
-      { messageId: info.messageId, to: message.to, subject: message.subject },
-      'email sent successfully',
-    )
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`Graph sendMail failed: ${String(res.status)} ${res.statusText} — ${body}`)
+    }
+
+    log.info({ to: message.to, subject: message.subject }, 'email sent successfully')
   } catch (err) {
     log.error({ err, to: message.to, subject: message.subject }, 'email send failed')
     throw err
   }
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
 }

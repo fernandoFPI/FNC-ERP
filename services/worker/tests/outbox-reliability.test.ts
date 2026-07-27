@@ -56,6 +56,8 @@ vi.mock('@fnc-erp/email', () => ({
   renderPasswordChangedEmail: vi.fn(),
   renderMFASetupEmail: vi.fn(),
   renderNewDeviceLoginEmail: vi.fn(),
+  renderClientDocumentEmail: vi.fn(),
+  renderEngineeringRevisionEmail: vi.fn(),
 }))
 
 vi.mock('@fnc-erp/storage', () => ({

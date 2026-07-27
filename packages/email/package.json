@@ -2,7 +2,7 @@
   "name": "@fnc-erp/email",
   "version": "1.1.0",
   "private": true,
-  "description": "Nodemailer SMTP client and HTML email templates for FNC ERP",
+  "description": "Microsoft Graph API email client and HTML email templates for FNC ERP",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -51,11 +51,10 @@
   "dependencies": {
     "@fnc-erp/config": "workspace:*",
     "@fnc-erp/logger": "workspace:*",
-    "nodemailer": "^6.10.1"
+    "@azure/msal-node": "^2.16.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/nodemailer": "^6.4.23",
     "typescript": "^5.4.5"
   }
 }

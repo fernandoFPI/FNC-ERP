@@ -1,67 +1,66 @@
-import nodemailer, { type Transporter } from 'nodemailer'
-import { env } from '@fnc-erp/config'
+import { ConfidentialClientApplication } from '@azure/msal-node'
 import { logger } from '@fnc-erp/logger'
 
 const log = logger.child({ module: 'email' })
 
-export interface SmtpConfig {
-  host: string
-  port: number
-  secure: boolean
-  user: string
-  password: string
+const GRAPH_SCOPE = 'https://graph.microsoft.com/.default'
+
+export interface EmailConfig {
+  tenantId: string
+  clientId: string
+  clientSecret: string
+  senderAddress: string
   fromName?: string
   fromAddress?: string
   replyTo?: string
 }
 
-let _cachedTransporter: Transporter | null = null
-
-export function getTransporter(): Transporter {
-  if (_cachedTransporter) return _cachedTransporter
-
-  _cachedTransporter = nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    auth: {
-      user: env.SMTP_USER,
-      pass: env.SMTP_PASSWORD,
-    },
-    pool: true,
-    maxConnections: 5,
-    maxMessages: 100,
-    connectionTimeout: 10_000,
-    greetingTimeout: 5_000,
-    socketTimeout: 30_000,
-  })
-
-  _cachedTransporter.verify((err) => {
-    if (err) {
-      log.error({ err }, 'SMTP connection verification failed')
-    } else {
-      log.info('SMTP connection verified successfully')
-    }
-  })
-
-  return _cachedTransporter
+interface CachedToken {
+  accessToken: string
+  expiresAt: number
+  key: string
 }
 
-export function createTransporterFromConfig(config: SmtpConfig): Transporter {
-  return nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
+let _cachedToken: CachedToken | null = null
+
+function configKey(config: EmailConfig): string {
+  return `${config.tenantId}:${config.clientId}:${config.senderAddress}`
+}
+
+function buildMsalClient(config: EmailConfig): ConfidentialClientApplication {
+  return new ConfidentialClientApplication({
     auth: {
-      user: config.user,
-      pass: config.password,
+      clientId: config.clientId,
+      authority: `https://login.microsoftonline.com/${config.tenantId}`,
+      clientSecret: config.clientSecret,
     },
-    connectionTimeout: 10_000,
-    greetingTimeout: 5_000,
-    socketTimeout: 30_000,
   })
 }
 
-export function invalidateTransporterCache(): void {
-  _cachedTransporter = null
+// Acquires an app-only Graph API access token via client-credentials flow,
+// caching it in memory until shortly before it expires (tokens are typically
+// valid ~60-90 minutes). Re-acquires immediately if the config (tenant/client/
+// sender) changes, e.g. after an admin updates system_config.
+export async function getGraphAccessToken(config: EmailConfig): Promise<string> {
+  const key = configKey(config)
+  const now = Date.now()
+  if (_cachedToken && _cachedToken.key === key && _cachedToken.expiresAt > now) {
+    return _cachedToken.accessToken
+  }
+
+  const msalClient = buildMsalClient(config)
+  const result = await msalClient.acquireTokenByClientCredential({ scopes: [GRAPH_SCOPE] })
+  if (!result?.accessToken) {
+    throw new Error('Failed to acquire Microsoft Graph access token — check tenant/client/secret')
+  }
+
+  // Refresh 5 minutes early to avoid racing against expiry mid-request.
+  const expiresAt = result.expiresOn ? result.expiresOn.getTime() - 5 * 60_000 : now + 55 * 60_000
+  _cachedToken = { accessToken: result.accessToken, expiresAt, key }
+  log.info({ senderAddress: config.senderAddress }, 'Microsoft Graph access token acquired')
+  return result.accessToken
+}
+
+export function invalidateTokenCache(): void {
+  _cachedToken = null
 }

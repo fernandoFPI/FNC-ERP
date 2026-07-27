@@ -5,7 +5,7 @@ import { createCipheriv, randomBytes } from 'crypto'
 import { requireAuth, requireRole } from '@fnc-erp/auth'
 import { pool, getSystemConfig } from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
-import { sendEmail, type SmtpConfig } from '@fnc-erp/email'
+import { sendEmail, type EmailConfig } from '@fnc-erp/email'
 
 export const systemConfigRouter: IRouter = Router()
 const log = logger.child({ module: 'system-config' })
@@ -34,34 +34,28 @@ interface ConfigKeyDef {
 
 const KNOWN_KEYS: ConfigKeyDef[] = [
   {
-    key: 'smtp.host',
-    description: 'SMTP server hostname',
+    key: 'msgraph.tenant_id',
+    description: 'Azure AD Tenant ID (Directory ID) from the app registration overview page',
     is_sensitive: false,
-    envKey: 'SMTP_HOST',
+    envKey: 'MSGRAPH_TENANT_ID',
   },
   {
-    key: 'smtp.port',
-    description: 'SMTP server port (e.g. 465, 587)',
+    key: 'msgraph.client_id',
+    description: 'Azure AD App Registration Client ID (Application ID)',
     is_sensitive: false,
-    envKey: 'SMTP_PORT',
+    envKey: 'MSGRAPH_CLIENT_ID',
   },
   {
-    key: 'smtp.secure',
-    description: 'Use TLS — true or false',
-    is_sensitive: false,
-    envKey: 'SMTP_SECURE',
-  },
-  {
-    key: 'smtp.user',
-    description: 'SMTP login username',
-    is_sensitive: false,
-    envKey: 'SMTP_USER',
-  },
-  {
-    key: 'smtp.password',
-    description: 'SMTP login password',
+    key: 'msgraph.client_secret',
+    description: 'Azure AD App Registration client secret value',
     is_sensitive: true,
-    envKey: 'SMTP_PASSWORD',
+    envKey: 'MSGRAPH_CLIENT_SECRET',
+  },
+  {
+    key: 'msgraph.sender_address',
+    description: 'Mailbox Graph sends as — must have Mail.Send app permission granted',
+    is_sensitive: false,
+    envKey: 'MSGRAPH_SENDER_ADDRESS',
   },
   {
     key: 'email.from_name',
@@ -248,8 +242,8 @@ systemConfigRouter.put('/', ...requireAdmin, async (req: Request, res: Response)
   }
 })
 
-// ── POST /api/v1/admin/system-config/test-smtp ────────────────
-systemConfigRouter.post('/test-smtp', ...requireAdmin, async (req: Request, res: Response) => {
+// ── POST /api/v1/admin/system-config/test-email ────────────────
+systemConfigRouter.post('/test-email', ...requireAdmin, async (req: Request, res: Response) => {
   try {
     // Get admin's email address to send the test to
     const userResult = await pool.query<{ email: string }>(
@@ -262,61 +256,54 @@ systemConfigRouter.post('/test-smtp', ...requireAdmin, async (req: Request, res:
       return
     }
 
-    // Read SMTP config: DB first, env fallback (getSystemConfig handles both)
-    const [host, portStr, secureStr, user, password, fromName, fromAddress] = await Promise.all([
-      getSystemConfig('smtp.host'),
-      getSystemConfig('smtp.port'),
-      getSystemConfig('smtp.secure'),
-      getSystemConfig('smtp.user'),
-      getSystemConfig('smtp.password'),
-      getSystemConfig('email.from_name'),
-      getSystemConfig('email.from_address'),
-    ])
+    // Read Graph config: DB first, env fallback (getSystemConfig handles both)
+    const [tenantId, clientId, clientSecret, senderAddress, fromName, fromAddress] =
+      await Promise.all([
+        getSystemConfig('msgraph.tenant_id'),
+        getSystemConfig('msgraph.client_id'),
+        getSystemConfig('msgraph.client_secret'),
+        getSystemConfig('msgraph.sender_address'),
+        getSystemConfig('email.from_name'),
+        getSystemConfig('email.from_address'),
+      ])
 
-    if (!host || !user || !password) {
+    if (!tenantId || !clientId || !clientSecret || !senderAddress) {
       res.status(400).json({
-        error: 'SMTP_NOT_CONFIGURED',
-        message: 'SMTP host, username and password are required',
+        error: 'MSGRAPH_NOT_CONFIGURED',
+        message: 'Tenant ID, Client ID, Client Secret and Sender Address are all required',
       })
       return
     }
 
-    const smtpConfig: SmtpConfig = {
-      host,
-      port: portStr ? parseInt(portStr, 10) : 465,
-      secure: secureStr ? secureStr.toLowerCase() === 'true' : true,
-      user,
-      password,
-    }
-    if (fromName) smtpConfig.fromName = fromName
-    if (fromAddress) smtpConfig.fromAddress = fromAddress
+    const emailConfig: EmailConfig = { tenantId, clientId, clientSecret, senderAddress }
+    if (fromName) emailConfig.fromName = fromName
+    if (fromAddress) emailConfig.fromAddress = fromAddress
 
     await sendEmail(
       {
         to: toEmail,
-        subject: 'FNC ERP — SMTP Test Email',
+        subject: 'FNC ERP — Email Test',
         html: `
           <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px">
-            <h2 style="color:#16a34a;margin-bottom:8px">✓ SMTP is working</h2>
+            <h2 style="color:#16a34a;margin-bottom:8px">✓ Email is working</h2>
             <p style="color:#374151;font-size:14px;margin:0">
-              This test email was sent from the FNC ERP System Configuration page.
-              If you received it, your SMTP settings are correct.
+              This test email was sent from the FNC ERP System Configuration page via
+              Microsoft Graph. If you received it, your settings are correct.
             </p>
             <div style="margin-top:20px;padding:12px 16px;background:#f9fafb;border-radius:8px;font-size:12px;color:#6b7280">
-              <strong>Host:</strong> ${host}:${smtpConfig.port} (${smtpConfig.secure ? 'TLS' : 'STARTTLS'})<br/>
-              <strong>User:</strong> ${user}
+              <strong>Sender mailbox:</strong> ${senderAddress}
             </div>
           </div>
         `,
       },
-      smtpConfig,
+      emailConfig,
     )
 
-    log.info({ userId: req.auth!.userId, toEmail }, 'SMTP test email sent')
+    log.info({ userId: req.auth!.userId, toEmail }, 'test email sent via Microsoft Graph')
     res.json({ ok: true, sentTo: toEmail })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    log.warn({ err }, 'SMTP test email failed')
-    res.status(400).json({ error: 'SMTP_ERROR', message })
+    log.warn({ err }, 'Graph test email failed')
+    res.status(400).json({ error: 'MSGRAPH_ERROR', message })
   }
 })

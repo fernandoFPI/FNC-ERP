@@ -1,6 +1,7 @@
 export { sendEmail } from './sender.js'
 export type { EmailMessage } from './sender.js'
-export type { SmtpConfig } from './client.js'
+export type { EmailConfig } from './client.js'
+export { getGraphAccessToken, invalidateTokenCache } from './client.js'
 export { renderPayslipEmail } from './templates/payslip.js'
 export { renderInvoiceEmail } from './templates/invoice.js'
 export { renderPOConfirmationEmail } from './templates/po-confirmation.js'

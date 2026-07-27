@@ -4,7 +4,7 @@ import { logger } from '@fnc-erp/logger'
 import QRCode from 'qrcode'
 import { renderHTMLToPDF, renderPayslip, renderInvoice, renderPurchaseOrder } from '@fnc-erp/pdf'
 import type { PayslipData, InvoiceData, POData } from '@fnc-erp/pdf'
-import type { SmtpConfig } from '@fnc-erp/email'
+import type { EmailConfig } from '@fnc-erp/email'
 import {
   sendEmail as _sendEmail,
   renderPayslipEmail,
@@ -25,54 +25,48 @@ import {
 
 const log = logger.child({ module: 'outbox-processor' })
 
-// ── SMTP CONFIG CACHE ─────────────────────────────────────────
-// Refreshed from system_config every 5 minutes so SMTP credential changes
+// ── EMAIL CONFIG CACHE ────────────────────────────────────────
+// Refreshed from system_config every 5 minutes so Graph credential changes
 // in the admin UI take effect without restarting the worker.
-let _smtpCache: SmtpConfig | null = null
-let _smtpCacheAt = 0
-const SMTP_TTL_MS = 300_000
+let _emailConfigCache: EmailConfig | null = null
+let _emailConfigCacheAt = 0
+const EMAIL_CONFIG_TTL_MS = 300_000
 
-async function getSmtpConfigForSend(): Promise<SmtpConfig | null> {
-  if (_smtpCache && Date.now() - _smtpCacheAt < SMTP_TTL_MS) return _smtpCache
+async function getEmailConfigForSend(): Promise<EmailConfig | null> {
+  if (_emailConfigCache && Date.now() - _emailConfigCacheAt < EMAIL_CONFIG_TTL_MS)
+    return _emailConfigCache
   try {
-    const [host, portStr, secureStr, user, password, fromName, fromAddress, replyTo] =
+    const [tenantId, clientId, clientSecret, senderAddress, fromName, fromAddress, replyTo] =
       await Promise.all([
-        getSystemConfig('smtp.host'),
-        getSystemConfig('smtp.port'),
-        getSystemConfig('smtp.secure'),
-        getSystemConfig('smtp.user'),
-        getSystemConfig('smtp.password'),
+        getSystemConfig('msgraph.tenant_id'),
+        getSystemConfig('msgraph.client_id'),
+        getSystemConfig('msgraph.client_secret'),
+        getSystemConfig('msgraph.sender_address'),
         getSystemConfig('email.from_name'),
         getSystemConfig('email.from_address'),
         getSystemConfig('email.reply_to'),
       ])
-    if (host && user && password) {
-      const config: SmtpConfig = {
-        host,
-        port: portStr ? parseInt(portStr, 10) : 465,
-        secure: secureStr ? secureStr.toLowerCase() === 'true' : true,
-        user,
-        password,
-      }
+    if (tenantId && clientId && clientSecret && senderAddress) {
+      const config: EmailConfig = { tenantId, clientId, clientSecret, senderAddress }
       if (fromName) config.fromName = fromName
       if (fromAddress) config.fromAddress = fromAddress
       if (replyTo) config.replyTo = replyTo
-      _smtpCache = config
-      _smtpCacheAt = Date.now()
-      return _smtpCache
+      _emailConfigCache = config
+      _emailConfigCacheAt = Date.now()
+      return _emailConfigCache
     }
   } catch (err) {
-    log.warn({ err }, 'failed to load SMTP config from DB — using env fallback')
+    log.warn({ err }, 'failed to load Microsoft Graph config from DB — using env fallback')
   }
-  _smtpCache = null
+  _emailConfigCache = null
   return null
 }
 
 async function sendEmail(
   ...args: Parameters<typeof _sendEmail>
 ): Promise<void> {
-  const smtpConfig = await getSmtpConfigForSend()
-  await _sendEmail(args[0], smtpConfig)
+  const emailConfig = await getEmailConfigForSend()
+  await _sendEmail(args[0], emailConfig)
 }
 
 // ── TYPES ─────────────────────────────────────────────────────

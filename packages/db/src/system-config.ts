@@ -16,11 +16,10 @@ function decryptValue(ciphertext: string): string {
 }
 
 const ENV_FALLBACKS: Record<string, string | undefined> = {
-  'smtp.host': process.env['SMTP_HOST'],
-  'smtp.port': process.env['SMTP_PORT'],
-  'smtp.secure': process.env['SMTP_SECURE'],
-  'smtp.user': process.env['SMTP_USER'],
-  'smtp.password': process.env['SMTP_PASSWORD'],
+  'msgraph.tenant_id': process.env['MSGRAPH_TENANT_ID'],
+  'msgraph.client_id': process.env['MSGRAPH_CLIENT_ID'],
+  'msgraph.client_secret': process.env['MSGRAPH_CLIENT_SECRET'],
+  'msgraph.sender_address': process.env['MSGRAPH_SENDER_ADDRESS'],
   'email.from_name': process.env['EMAIL_FROM_NAME'],
   'email.from_address': process.env['EMAIL_FROM_ADDRESS'],
   'email.reply_to': process.env['EMAIL_REPLY_TO'],

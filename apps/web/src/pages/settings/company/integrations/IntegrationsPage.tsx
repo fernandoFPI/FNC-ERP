@@ -172,7 +172,7 @@ export default function IntegrationsPage() {
   const [edits, setEdits] = useState<ConfigMap>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [testingSmtp, setTestingSmtp] = useState(false)
+  const [testingEmail, setTestingEmail] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -208,16 +208,16 @@ export default function IntegrationsPage() {
     })
   }
 
-  async function handleTestSmtp() {
-    setTestingSmtp(true)
+  async function handleTestEmail() {
+    setTestingEmail(true)
     try {
-      const res = await api.post<{ ok: boolean; sentTo: string }>('/admin/system-config/test-smtp')
+      const res = await api.post<{ ok: boolean; sentTo: string }>('/admin/system-config/test-email')
       addToast({ type: 'success', message: `Test email sent to ${res.data.sentTo}` })
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      addToast({ type: 'error', message: msg ?? 'SMTP test failed — check your settings' })
+      addToast({ type: 'error', message: msg ?? 'Email test failed — check your settings' })
     } finally {
-      setTestingSmtp(false)
+      setTestingEmail(false)
     }
   }
 
@@ -266,16 +266,32 @@ export default function IntegrationsPage() {
         </div>
       ) : (
         <div style={{ marginTop: '20px' }}>
-          {/* ── SMTP ─────────────────────────────────────────── */}
-          <Section title="Email Server (SMTP)">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px', gap: '12px' }}>
-              <ConfigField label="SMTP Host" {...fieldProps('smtp.host', 'mail.example.com')} />
-              <ConfigField label="Port" {...fieldProps('smtp.port', '465', 'number')} />
-              <ConfigField label="Secure (TLS)" {...fieldProps('smtp.secure', 'true or false')} />
+          {/* ── Email (Microsoft Graph API) ─────────────────────── */}
+          <Section title="Email (Microsoft Graph API)">
+            <p style={{ fontSize: '12px', color: theme.textMuted, margin: '-4px 0 4px' }}>
+              Requires an Azure AD app registration with an application-level{' '}
+              <code>Mail.Send</code> permission (admin-consented). The client secret and tenant ID
+              come from that app registration.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <ConfigField
+                label="Tenant ID"
+                {...fieldProps('msgraph.tenant_id', 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')}
+              />
+              <ConfigField
+                label="Client ID"
+                {...fieldProps('msgraph.client_id', 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')}
+              />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <ConfigField label="SMTP Username" {...fieldProps('smtp.user', 'user@example.com')} />
-              <ConfigField label="SMTP Password" {...fieldProps('smtp.password', '••••••••')} />
+              <ConfigField
+                label="Client Secret"
+                {...fieldProps('msgraph.client_secret', '••••••••')}
+              />
+              <ConfigField
+                label="Sender Mailbox"
+                {...fieldProps('msgraph.sender_address', 'noreply@example.com')}
+              />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
               <ConfigField label="From Name" {...fieldProps('email.from_name', 'FNC Group')} />
@@ -292,8 +308,8 @@ export default function IntegrationsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                loading={testingSmtp}
-                onClick={() => void handleTestSmtp()}
+                loading={testingEmail}
+                onClick={() => void handleTestEmail()}
               >
                 Send Test Email
               </Button>

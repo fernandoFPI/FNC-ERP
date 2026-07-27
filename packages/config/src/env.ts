@@ -88,14 +88,11 @@ const envSchema = z.object({
   // FX rate sync API keys (both optional — at least one recommended in production)
   EXCHANGE_RATE_API_KEY: z.string().optional(),
   OPEN_EXCHANGE_RATES_APP_ID: z.string().optional(),
-  // Email (SMTP)
-  SMTP_HOST: z.string().default(''),
-  SMTP_PORT: z.coerce.number().default(587),
-  SMTP_SECURE: z
-    .preprocess((v) => v === 'true' || v === true || v === 1, z.boolean())
-    .default(false),
-  SMTP_USER: z.string().default(''),
-  SMTP_PASSWORD: z.string().default(''),
+  // Email (Microsoft Graph API — app-only client-credentials auth)
+  MSGRAPH_TENANT_ID: z.string().default(''),
+  MSGRAPH_CLIENT_ID: z.string().default(''),
+  MSGRAPH_CLIENT_SECRET: z.string().default(''),
+  MSGRAPH_SENDER_ADDRESS: z.string().default(''),
   EMAIL_FROM_NAME: z.string().default('FNC ERP'),
   EMAIL_FROM_ADDRESS: z.string().default('noreply@fnc-group.com'),
   EMAIL_REPLY_TO: z.string().optional(),
