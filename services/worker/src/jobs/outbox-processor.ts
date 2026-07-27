@@ -1690,23 +1690,10 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
 
     case 'USER_INVITATION_EMAIL': {
       // Two enqueue sites send this event with different payload shapes:
-      // services/auth/routes/user-management.ts sends invitationUrl + invitedBy
-      // (a user id needing a lookup); services/gateway's inviteUser mutation —
-      // the one apps/web actually calls — sends inviteUrl + invitedByName
-      // (already resolved). Accept both.
+      // services/auth/routes/user-management.ts sends invitationUrl,
+      // services/gateway's inviteUser mutation — the one apps/web actually
+      // calls — sends inviteUrl instead. Accept both.
       const invitationUrl = String(p['invitationUrl'] ?? p['inviteUrl'] ?? '')
-      let inviterName = p['invitedByName'] ? String(p['invitedByName']) : 'An administrator'
-      if (!p['invitedByName'] && p['invitedBy']) {
-        const inviterRes = await pool.query<{ first_name: string | null; last_name: string | null; email: string }>(
-          `SELECT first_name, last_name, email FROM users WHERE id=$1`, [String(p['invitedBy'])]
-        )
-        const inviter = inviterRes.rows[0]
-        if (inviter) {
-          inviterName = (inviter.first_name && inviter.last_name)
-            ? `${inviter.first_name} ${inviter.last_name}`
-            : inviter.email
-        }
-      }
       const inviteHtml = `
         <div style="font-family:Arial;max-width:600px;margin:0 auto">
           <div style="background:#1e3a5f;color:white;padding:16px 24px">
@@ -1715,7 +1702,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
           <div style="padding:24px;background:white">
             <p style="font-size:14px;color:#374151">
               Hello,<br/><br/>
-              <strong>${inviterName}</strong> has invited you
+              An administrator has invited you
               to join <strong>${String(p['companyName'] ?? 'FNC ERP')}</strong>.
             </p>
             <p style="font-size:14px;color:#374151">
