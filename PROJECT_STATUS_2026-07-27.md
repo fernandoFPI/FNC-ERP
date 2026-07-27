@@ -201,13 +201,46 @@ or strictly better than the shadowed base versions (proper role checks via
 queries where the base had raw string interpolation). Harmless dead code,
 not a bug.
 
+### 5. Two more from the same phantom-column family (commit `db25853`)
+
+Found live, from the DLQ admin panel, immediately after the deploy above —
+confirmation the schema audit in step 3 was not exhaustive, exactly as
+predicted below.
+
+- **`notifications.push_sent`** has never existed in any migration, but
+  every notification insert in `services/worker` (~10 call sites across
+  `outbox-processor.ts` and `contract-expiry-alerts.ts` — PO approvals,
+  project status changes, MO/rental/HR/finance events, DLQ alerts) has
+  included it since those files were written. **Every notification the
+  worker has tried to create has been failing.** Added migration
+  `178_notifications_push_sent.sql` (`BOOLEAN NOT NULL DEFAULT false`;
+  nothing reads it yet — write-only scaffolding for a future push-dispatch
+  job). While in there: `alertSystemAdminsOfDLQEntry`'s in-app notification
+  insert was *also* missing `company_id` (a `NOT NULL` column) — silently
+  swallowed by a best-effort `.catch()`, which is presumably why it went
+  unnoticed. Fixed by selecting `ucr.company_id` alongside the admin query.
+- **`outboxMonitor` and `resetStuckEvents`** both filtered
+  `service_outbox.updated_at`, which doesn't exist (only `created_at` does).
+  The correct column for "how long has this been stuck processing" is
+  `first_attempted_at`, set via `COALESCE(first_attempted_at, NOW())`
+  exactly when an event first transitions to `'processing'`. Notably, this
+  bug survived the duplicate-resolver fix in step 4 (commit `faed027`)
+  because `resetStuckEvents`' *authorization* was what was broken there —
+  the query itself had this separate, unrelated bug the whole time, in both
+  the shadowed-and-buggy version **and** the "correct" base version I
+  restored. A reminder that "this resolver has the right auth check" and
+  "this resolver's query is correct" are independent things to verify.
+
 ## Current confirmed state
 
-- Commits `278765d` through `faed027` (see table below) are live on the VPS,
-  confirmed by the user via a real deploy + a real DLQ retry test.
+- Commits `278765d` through `faed027` are confirmed live on the VPS (real
+  deploy + real DLQ retry test). `db25853` (notifications/outbox-monitor
+  fixes) was pushed after that confirmation — **check the Actions tab / ask
+  the user before assuming it's deployed**, don't take it on faith just
+  because it's in this table.
 - Full `pnpm test --concurrency=1` passes 29/29 tasks locally from a cold
   cache in ~50s.
-- Both `dev` and `production` branches are in sync at `faed027`.
+- Both `dev` and `production` branches are in sync at `db25853`.
 
 | Commit | What |
 |---|---|
@@ -223,6 +256,7 @@ not a bug.
 | `fce0003` | Perf tests excluded from blocking gate |
 | `dcf7f71` | `--concurrency=1` |
 | `faed027` | 6 duplicate-resolver auth bugs |
+| `db25853` | `notifications.push_sent` (worker-wide), outbox stuck-event detection |
 
 ## Known open items (deliberately deferred, not forgotten)
 
@@ -263,6 +297,22 @@ not a bug.
    to table names), cross-check against the real schema, then manually
    verify each hit (there will be false positives from subqueries/CTEs the
    simple parser doesn't understand) before trusting or fixing anything.
+7. **The schema audit was confirmed non-exhaustive, not just theoretically
+   incomplete.** Within minutes of the audited fixes going live, two more
+   bugs from the exact same family turned up from normal use of the DLQ
+   admin panel (`notifications.push_sent`, `service_outbox.updated_at` — see
+   step 5 above) — one of them broke **every notification the worker has
+   ever tried to send**, for however long `push_sent` has been in those
+   INSERT statements. The original regex-based sweep likely missed these
+   because they either didn't match its `alias.column` pattern cleanly (bare
+   `INSERT INTO notifications (..., push_sent)` column lists, no table
+   alias) or were structurally outside what it walked (`services/worker`
+   wasn't necessarily covered the same way `services/gateway` and
+   `services/finance` were). **Do not assume the codebase is now clean of
+   this bug class.** If you have spare cycles, rerunning the audit with the
+   script extended to also catch bare `INSERT INTO table (col1, col2, ...)`
+   column lists (not just `alias.column` SELECT/WHERE references) would
+   likely find more.
 
 ## If you're picking this up
 
