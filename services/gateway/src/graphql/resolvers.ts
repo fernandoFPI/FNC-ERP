@@ -19047,8 +19047,8 @@ const phase5QueryResolvers = {
   intercoStockTransfer: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(
-      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name FROM interco_stock_transfers ist JOIN companies fc ON fc.id=ist.from_company_id JOIN companies tc ON tc.id=ist.to_company_id WHERE ist.id=$1`,
-      [args.id],
+      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name FROM interco_stock_transfers ist JOIN companies fc ON fc.id=ist.from_company_id JOIN companies tc ON tc.id=ist.to_company_id WHERE ist.id=$1 AND (ist.from_company_id=$2 OR ist.to_company_id=$2)`,
+      [args.id, ctx.auth.companyId],
     )
     if (!r.rows[0]) return null
     const lines = await query(
@@ -19340,7 +19340,7 @@ const phase5QueryResolvers = {
   },
 
   outboxEventConfigs: async (_: unknown, __: unknown, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
+    if (!ctx.auth || ctx.auth.role !== 'system_admin') throw new Error('Forbidden')
     const r = await query(`SELECT * FROM outbox_event_configs ORDER BY event_type`, [])
     return r.rows.map((row: Record<string, unknown>) => ({
       id: row.id,
@@ -22797,40 +22797,11 @@ const phase5MutationResolvers = {
     return true
   },
 
-  retryOutboxEvent: async (_: unknown, args: { eventId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`UPDATE service_outbox SET status='pending', next_retry_at=NOW() WHERE id=$1`, [
-      args.eventId,
-    ])
-    return true
-  },
-
-  retryDLQEntry: async (_: unknown, args: { dlqId: string; notes?: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(
-      `UPDATE outbox_dead_letters SET status='retrying', reviewed_by=$2, review_notes=$3 WHERE id=$1`,
-      [args.dlqId, ctx.auth.userId, args.notes ?? null],
-    )
-    return true
-  },
-
-  dismissDLQEntry: async (_: unknown, args: { dlqId: string; notes: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    await query(
-      `UPDATE outbox_dead_letters SET status='dismissed', reviewed_by=$2, review_notes=$3 WHERE id=$1`,
-      [args.dlqId, ctx.auth.userId, args.notes],
-    )
-    return true
-  },
-
-  resetStuckEvents: async (_: unknown, __: unknown, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const r = await query(
-      `UPDATE service_outbox SET status='pending' WHERE status='processing' AND updated_at < NOW() - INTERVAL '10 minutes' RETURNING id`,
-      [],
-    )
-    return r.rows.length
-  },
+  // retryOutboxEvent/retryDLQEntry/dismissDLQEntry/resetStuckEvents intentionally
+  // not duplicated here — the versions in the base Mutation object (above,
+  // ~line 5570) are the real implementations (system_admin-gated, correct
+  // status values, retryDLQEntry actually re-queues the event). This block
+  // used to shadow them with incomplete duplicates missing the role check.
 
   updateOutboxEventConfig: async (
     _: unknown,
