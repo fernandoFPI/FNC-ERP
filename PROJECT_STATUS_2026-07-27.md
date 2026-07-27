@@ -231,16 +231,46 @@ predicted below.
   restored. A reminder that "this resolver has the right auth check" and
   "this resolver's query is correct" are independent things to verify.
 
+### 6. PDF generation broken (invoices/payslips/POs), one event mis-routed (commit `b6359e8`)
+
+Found live, from worker logs, immediately after step 5 deployed — a second
+confirmation the audit wasn't exhaustive.
+
+- **`companies.city`/`companies.country`** have never existed, but
+  `fetchInvoiceData`/`fetchPayslipData`/`fetchPOData` (3 call sites in
+  `outbox-processor.ts`) all select them for the PDF letterhead —
+  `packages/pdf/src/templates/{base,invoice,purchase-order}.ts` all render
+  `company.city`/`company.country`. **Every invoice, payslip, and PO PDF
+  generation has been failing.** Added migration `179_companies_city_country.sql`.
+  `country` defaults to `'Iraq'`: every company row today has
+  `country_code='IQ'`, and `invoice.ts`/`purchase-order.ts` already hardcode
+  `", Iraq"` in their letterhead rather than using a dynamic value, so this
+  matches existing behavior for those two templates.
+- **`PO_PDF_REQUESTED`** was enqueued with `service='worker'`
+  (`services/procurement/src/routes/orders.ts`), but its handler
+  (`handlePOPDF`) lives in `deliverToReporting`, which only runs for
+  `service='reporting'` events — `deliverToWorker`'s switch only knows
+  `FX_SYNC_REQUESTED`. **A genuinely different bug class from everything
+  else in this doc**: not a phantom column, a routing mismatch (right
+  handler exists, wrong `service` value at the enqueue site). Confirmed no
+  other event uses `service='worker'` besides `FX_SYNC_REQUESTED` (correct),
+  so this was the only mis-routed one — but the check was manual
+  (grep every `INSERT INTO service_outbox` call site and cross-reference
+  its `service` value against where that event type is actually handled);
+  nothing in the schema-audit tooling catches this class of bug at all,
+  since there's no schema involved.
+
 ## Current confirmed state
 
 - Commits `278765d` through `faed027` are confirmed live on the VPS (real
-  deploy + real DLQ retry test). `db25853` (notifications/outbox-monitor
-  fixes) was pushed after that confirmation — **check the Actions tab / ask
-  the user before assuming it's deployed**, don't take it on faith just
+  deploy + real DLQ retry test). Everything from `db25853` onward
+  (notifications/outbox-monitor, PDF/routing fixes) was pushed after that
+  confirmation — **check the Actions tab / ask the user before assuming
+  it's deployed**, don't take it on faith just
   because it's in this table.
 - Full `pnpm test --concurrency=1` passes 29/29 tasks locally from a cold
   cache in ~50s.
-- Both `dev` and `production` branches are in sync at `db25853`.
+- Both `dev` and `production` branches are in sync at `b6359e8`.
 
 | Commit | What |
 |---|---|
@@ -257,6 +287,7 @@ predicted below.
 | `dcf7f71` | `--concurrency=1` |
 | `faed027` | 6 duplicate-resolver auth bugs |
 | `db25853` | `notifications.push_sent` (worker-wide), outbox stuck-event detection |
+| `b6359e8` | `companies.city`/`country` (PDF generation worker-wide), `PO_PDF_REQUESTED` mis-routing |
 
 ## Known open items (deliberately deferred, not forgotten)
 
@@ -312,7 +343,26 @@ predicted below.
    this bug class.** If you have spare cycles, rerunning the audit with the
    script extended to also catch bare `INSERT INTO table (col1, col2, ...)`
    column lists (not just `alias.column` SELECT/WHERE references) would
-   likely find more.
+   likely find more. `services/worker/src/jobs/outbox-processor.ts` in
+   particular (`companies.city`/`country`, step 6) suggests `services/worker`
+   specifically may not have been covered as thoroughly as `gateway`/
+   `finance` were — worth a dedicated pass over that one file alone.
+8. **A second, entirely different bug class exists that no schema audit will
+   ever catch: outbox event routing mismatches.** `PO_PDF_REQUESTED` (step 6)
+   was enqueued with the wrong `service` value — the handler existed and was
+   correct, it just never got dispatched to. This has nothing to do with
+   columns or tables, so the audit script is structurally blind to it. The
+   only way it was found was by manually cross-referencing every
+   `INSERT INTO service_outbox (service, event_type, ...)` call site's
+   `service` value against the `switch (event.service)` dispatch in
+   `services/worker/src/jobs/outbox-processor.ts` (~line 569) and each
+   sub-dispatcher's own `switch (event.event_type)`. This has only been done
+   once, reactively, for one event type. **Every other event type enqueued
+   anywhere in the codebase could have the same mismatch and nothing has
+   verified otherwise** — a full pass (grep every `INSERT INTO service_outbox`
+   call site, map `event_type` → intended handler → which `deliverToX`
+   function actually contains a matching `case`, confirm the enqueue's
+   `service` argument routes there) has not been done.
 
 ## If you're picking this up
 
