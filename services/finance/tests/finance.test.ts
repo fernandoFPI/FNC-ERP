@@ -4,6 +4,7 @@ import { createApp } from '../src/app.js'
 import { pool } from '@fnc-erp/db'
 import {
   TEST_COMPANY_ID, createTestUser, cleanFinanceData, createOpenPeriod, getAccountId,
+  clearJournalEntryReferences,
 } from './setup.js'
 
 const app = createApp()
@@ -132,6 +133,7 @@ describe('POST /finance/periods', () => {
 
 describe('Journal entries', () => {
   beforeEach(async () => {
+    await clearJournalEntryReferences()
     await pool.query(`DELETE FROM journal_lines WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)`, [TEST_COMPANY_ID])
     await pool.query(`DELETE FROM journal_entries WHERE company_id = $1`, [TEST_COMPANY_ID])
     await pool.query(`DELETE FROM accounting_periods WHERE company_id = $1`, [TEST_COMPANY_ID])

@@ -28,8 +28,48 @@ export async function createTestUser(): Promise<{ userId: string; token: string 
   return { userId, token }
 }
 
+// Tables with a nullable journal_entry_id FK (no ON DELETE CASCADE) must be
+// cleared before journal_entries itself, or the DELETE below violates their
+// FK constraint. journal_lines, journal_po_links, and any other CASCADE FK
+// don't need an entry here - Postgres handles those automatically.
+export async function clearJournalEntryReferences() {
+  await pool.query(`DELETE FROM vendor_payments WHERE company_id = $1`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM vendor_invoices WHERE company_id = $1`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM po_returns WHERE company_id = $1`, [TEST_COMPANY_ID])
+  await pool.query(`UPDATE maintenance_records SET purchase_order_id = NULL WHERE company_id = $1`, [TEST_COMPANY_ID])
+  await pool.query(
+    `DELETE FROM po_receipt_lines
+     WHERE receipt_id IN (SELECT id FROM po_receipts WHERE po_id IN (SELECT id FROM purchase_orders WHERE company_id = $1))`,
+    [TEST_COMPANY_ID],
+  )
+  await pool.query(`DELETE FROM purchase_orders WHERE company_id = $1`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM project_invoices WHERE company_id = $1 AND journal_entry_id IS NOT NULL`, [TEST_COMPANY_ID])
+  await pool.query(
+    `DELETE FROM project_invoice_payments
+     WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)`,
+    [TEST_COMPANY_ID],
+  )
+  await pool.query(
+    `DELETE FROM asset_depreciation_schedule
+     WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)`,
+    [TEST_COMPANY_ID],
+  )
+  await pool.query(
+    `DELETE FROM payment_voucher_journals
+     WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)`,
+    [TEST_COMPANY_ID],
+  )
+  await pool.query(
+    `DELETE FROM interco_transactions
+     WHERE from_journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)
+        OR to_journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)`,
+    [TEST_COMPANY_ID],
+  )
+}
+
 export async function cleanFinanceData() {
   await pool.query(`DELETE FROM sessions WHERE refresh_token_hash = 'test-refresh-hash-finance'`)
+  await clearJournalEntryReferences()
   await pool.query(`DELETE FROM journal_lines WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE company_id = $1)`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM journal_entries WHERE company_id = $1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM accounting_periods WHERE company_id = $1`, [TEST_COMPANY_ID])
