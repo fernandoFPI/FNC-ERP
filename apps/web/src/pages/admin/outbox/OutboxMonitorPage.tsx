@@ -40,7 +40,7 @@ interface OutboxEvent {
   lastError: string | null
   nextRetryAt: string | null
   createdAt: string
-  payload: string
+  payload: unknown
 }
 
 interface MonitorData {
@@ -463,11 +463,15 @@ export default function OutboxMonitorPage() {
                               }}
                             >
                               {(() => {
-                                try {
-                                  return JSON.stringify(JSON.parse(ev.payload), null, 2)
-                                } catch {
-                                  return ev.payload
+                                if (ev.payload == null) return 'null'
+                                if (typeof ev.payload === 'string') {
+                                  try {
+                                    return JSON.stringify(JSON.parse(ev.payload), null, 2)
+                                  } catch {
+                                    return ev.payload
+                                  }
                                 }
+                                return JSON.stringify(ev.payload, null, 2)
                               })()}
                             </pre>
                           </div>
