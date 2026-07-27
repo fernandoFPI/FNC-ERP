@@ -23220,14 +23220,18 @@ const phase5MutationResolvers = {
     )
     const row = r.rows[0] as Record<string, unknown>
 
-    // Look up inviter email and company name for the email body
+    // Look up inviter name and company name for the email body
     const [inviterR, companyR] = await Promise.all([
-      query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId]),
+      query(`SELECT first_name, last_name, email FROM users WHERE id=$1`, [ctx.auth.userId]),
       i.company_id
         ? query(`SELECT name FROM companies WHERE id=$1`, [i.company_id])
         : Promise.resolve({ rows: [] }),
     ])
-    const inviterEmail = String((inviterR.rows[0] as Record<string, unknown>).email ?? '')
+    const inviterRow = inviterR.rows[0] as Record<string, unknown>
+    const inviterName =
+      inviterRow.first_name && inviterRow.last_name
+        ? `${String(inviterRow.first_name)} ${String(inviterRow.last_name)}`
+        : String(inviterRow.email ?? '')
     const companyName = String((companyR.rows[0] as Record<string, unknown>).name ?? 'FNC ERP')
 
     await query(
@@ -23236,7 +23240,7 @@ const phase5MutationResolvers = {
         JSON.stringify({
           email: String(i.email).toLowerCase(),
           inviteUrl: `${env.FRONTEND_URL}/accept-invitation?token=${token}`,
-          invitedByName: inviterEmail,
+          invitedByName: inviterName,
           companyName,
         }),
       ],
