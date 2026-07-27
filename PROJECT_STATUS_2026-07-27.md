@@ -260,17 +260,60 @@ confirmation the audit wasn't exhaustive.
   nothing in the schema-audit tooling catches this class of bug at all,
   since there's no schema involved.
 
+### 7. Outbox Monitor payload always null; 5 more journal-entry inserts crashing on a parameter-type conflict (commit `3aff222`)
+
+Found live, from the Outbox Monitor UI itself (user expanded "Details" on a
+pending event and saw `Payload: null`) plus a fresh worker log
+(`INVOICE_PAYMENT_JOURNAL_REQUESTED` failing 5 attempts deep with
+`column "source_id" is of type uuid but expression is of type text"`) —
+a third round of live discovery after steps 5 and 6, each a genuinely
+different bug shape from the last.
+
+- **`outboxEvents` resolver never selected `payload`.** Its `SELECT`
+  explicitly listed columns (`id, service, event_type, status, attempts, ...`)
+  and simply never included `payload`, so `r.payload` was always `undefined`
+  → mapped to `null` in every API response, regardless of what's actually
+  stored in the row. This is a distinct bug shape from steps 3/5/6 (which
+  were all phantom columns that don't exist) — here the column exists and
+  has real data, the SELECT just never asked for it. Added `payload` to the
+  column list.
+- **Reused SQL parameter with conflicting inferred types**, in 5 of 6
+  journal-creation functions in `services/worker/src/jobs/outbox-processor.ts`
+  (`createPaymentJournal`, `createVendorInvoiceJournal`, `createMOJournal`,
+  `createRentalInvoiceJournal`, `createPayrollJournal` — `createVendorPaymentJournal`
+  was already unaffected, it happens to pass the id as two separate
+  parameters instead of reusing one). Each builds a `journal_entries` INSERT
+  like:
+  ```sql
+  VALUES ($1,'PAY-' || LEFT($2::text,8),'Invoice payment',$3,'posted','invoice_payment',$2,$4)
+  ```
+  `$2` is used twice: once explicitly cast `::text` (to truncate it into the
+  human-readable `reference` string), and again bare as the value for
+  `source_id`, a `UUID` column. Postgres infers one type per parameter
+  number for the whole statement — the explicit `::text` cast wins, so `$2`
+  becomes text-typed everywhere, and Postgres has no implicit or assignment
+  cast from `text` to `uuid`. Every one of these 5 event types
+  (`INVOICE_PAYMENT_JOURNAL_REQUESTED`, `VENDOR_INVOICE_JOURNAL_REQUESTED`,
+  `MO_JOURNAL_REQUESTED`, `RENTAL_INVOICE_JOURNAL_REQUESTED`,
+  `PAYROLL_JOURNAL_REQUESTED`) has been failing and retrying into the DLQ.
+  Fixed by adding an explicit `$2::uuid` cast at the `source_id` occurrence
+  in each. Reproduced the exact reported error against a live DB with the
+  original query first, then confirmed all 5 fixed queries succeed, before
+  shipping — see verification note in open items below for why this class
+  of bug also wasn't caught by the earlier schema audit (it's not a schema
+  problem at all — every column referenced is real).
+
 ## Current confirmed state
 
 - Commits `278765d` through `faed027` are confirmed live on the VPS (real
   deploy + real DLQ retry test). Everything from `db25853` onward
-  (notifications/outbox-monitor, PDF/routing fixes) was pushed after that
-  confirmation — **check the Actions tab / ask the user before assuming
-  it's deployed**, don't take it on faith just
-  because it's in this table.
+  (notifications/outbox-monitor, PDF/routing, payload/uuid-cast fixes) was
+  pushed after that confirmation — **check the Actions tab / ask the user
+  before assuming it's deployed**, don't take it on faith just because it's
+  in this table.
 - Full `pnpm test --concurrency=1` passes 29/29 tasks locally from a cold
   cache in ~50s.
-- Both `dev` and `production` branches are in sync at `b6359e8`.
+- Both `dev` and `production` branches are in sync at `3aff222`.
 
 | Commit | What |
 |---|---|
@@ -288,6 +331,7 @@ confirmation the audit wasn't exhaustive.
 | `faed027` | 6 duplicate-resolver auth bugs |
 | `db25853` | `notifications.push_sent` (worker-wide), outbox stuck-event detection |
 | `b6359e8` | `companies.city`/`country` (PDF generation worker-wide), `PO_PDF_REQUESTED` mis-routing |
+| `3aff222` | Outbox Monitor payload always null; 5 journal-entry inserts crashing on uuid/text parameter reuse |
 
 ## Known open items (deliberately deferred, not forgotten)
 
@@ -363,6 +407,31 @@ confirmation the audit wasn't exhaustive.
    call site, map `event_type` → intended handler → which `deliverToX`
    function actually contains a matching `case`, confirm the enqueue's
    `service` argument routes there) has not been done.
+
+9. **A third bug class exists that neither the schema audit nor the
+   outbox-routing check would ever catch: reused query parameters with
+   conflicting inferred types.** Step 7's `source_id` crashes weren't a
+   missing/renamed column (schema audit) or a misrouted event (open item 8)
+   — every column involved is real and correctly named; the bug is that one
+   `$N` placeholder was used both with an explicit `::text` cast and bare
+   against a `uuid` column in the same statement, and Postgres unifies a
+   parameter's type across the whole query. This was found by reading one
+   flagged function and then manually checking the other 5 sibling
+   `journal_entries` INSERTs in the same file for the same shape — it was
+   **not** a systematic search of the codebase for this pattern (e.g.
+   `grep`-ing for any `$N` that appears both with a cast and without one).
+   Whether this exact pattern recurs outside `outbox-processor.ts`'s journal
+   functions (other files reuse a UUID both in a derived string and as a
+   raw column value) has not been checked.
+10. **The three live-discovery rounds in steps 5–7 form a pattern worth
+    naming explicitly**: each deploy surfaced a *new class* of bug (phantom
+    columns → routing mismatch → under-selected column + parameter-type
+    conflict), not more instances of the same one. That strongly suggests
+    there are more classes still hiding, not just more instances of classes
+    already found. Don't treat "we fixed the thing the last log showed" as
+    evidence the surrounding code is now safe — treat it as evidence this
+    codebase has never been exercised by real traffic before, and budget for
+    more rounds like this, not fewer.
 
 ## If you're picking this up
 
