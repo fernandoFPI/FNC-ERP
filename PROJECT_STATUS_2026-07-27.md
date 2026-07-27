@@ -303,17 +303,86 @@ different bug shape from the last.
   of bug also wasn't caught by the earlier schema audit (it's not a schema
   problem at all — every column referenced is real).
 
+### 8. Full audit of every `service_outbox` enqueue site (commit `1e4d40c`)
+
+This is the full pass promised by open item 8 above, done in response to a
+direct request to complete it rather than reactively. Method: grepped every
+`INSERT INTO service_outbox` call site across the codebase (~45 static
+literals plus 4 dynamic-`event_type` helper functions in
+`services/procurement/src/lib/po-helpers.ts` and inline calls in
+`services/projects/src/routes/projects.ts`, whose actual `type:` values were
+traced back to every caller), then cross-referenced every `(service,
+event_type)` pair against `deliverEvent`'s `switch (event.service)` and each
+`deliverToX` function's `switch (event.event_type)` in
+`services/worker/src/jobs/outbox-processor.ts`. Found 3 more gaps, each a
+different shape:
+
+- **`CLIENT_DOCUMENT_EMAIL` / `ENGINEERING_REVISION_EMAIL`** (enqueued by
+  two gateway resolvers, on client-document upload and engineering-revision
+  issue) had no `case` in `deliverToNotifications` at all. Unlike the
+  finance/inventory/interco dispatchers (which `throw` on an unmatched
+  event_type, guaranteeing a DLQ entry), `deliverToNotifications`'s
+  `default` branch is `log.warn(...)` with **no throw** — meaning the event
+  is marked `processed` successfully and vanishes with only a log line
+  nobody was watching. **The single quietest failure mode found this
+  session**: no retry, no DLQ entry, no error surfaced anywhere in the
+  admin UI. The email templates (`renderClientDocumentEmail`,
+  `renderEngineeringRevisionEmail`) already existed in `@fnc-erp/email` and
+  matched the enqueued payload shape exactly — they were built and exported
+  but never imported into the worker. Wired up both cases.
+- **`PO_COMPLETION_JOURNAL_REQUESTED`** (enqueued by
+  `services/procurement/src/routes/orders.ts`'s REST `POST /:id/complete`)
+  had no case in `deliverToFinance` — falls to `default: throw`, so every
+  completion through this endpoint has been failing into the DLQ. Traced
+  down that `apps/web` actually completes POs via a **different**, GraphQL
+  `completePO` mutation in the gateway, which posts the same "project cost
+  from PO completion" journal **synchronously in-transaction** via a
+  `postPOCompletionJournal` helper — so the frontend path was never broken,
+  but the REST endpoint (exposed, permission-gated, presumably meant for a
+  future client or integration) silently never posts its journal entry.
+  Added `createPOCompletionJournal` to the worker, a faithful async port of
+  `postPOCompletionJournal`'s logic (same account-lookup, same guard against
+  non-project/non-analytic POs, same debit/credit lines), reading from the
+  outbox payload instead of a live transaction client.
+- **`PAYSLIP_GENERATION_REQUESTED`** has a fully-built handler
+  (`handlePayslipPDF`) and a seeded retry policy in migration 026, but
+  **nothing has ever enqueued it**. `services/hr/src/routes/payroll.ts`'s
+  payroll-processing loop computes a `payslipId` (from the `payslips`
+  INSERT) per employee, then — inside the one `if` branch that happened to
+  still reference it — explicitly discarded it with `void payslipId`. No
+  payslip PDF has ever been generated or emailed for any payroll run in
+  this system's history. Replaced the `void payslipId` with the missing
+  outbox enqueue (`payroll_line_id`, `payroll_run_id`, `employee_id`,
+  `company_id` — matching `handlePayslipPDF`'s exact parameter order,
+  confirmed by reading its call site in `deliverToReporting`).
+
+Two harmless, pre-existing dead `case`s were found and deliberately left
+alone: `MILESTONE_REACHED` (in `deliverToNotifications`'s case list, but
+`services/projects/src/routes/milestones.ts` writes directly to the
+`notifications` table, bypassing the outbox entirely — the case is simply
+unreachable, not broken) and `BACKUP_FAILED` (no enqueue site found
+anywhere in the codebase). Neither causes incorrect behavior, so neither was
+touched.
+
+Every enqueue site checked in this pass now has a live, correctly-routed
+handler. Verified `createPOCompletionJournal`'s full query chain (both
+`journal_entries` and `journal_lines` inserts, plus the `journal_po_links`
+FK) end-to-end against the live DB inside a rolled-back transaction using a
+real project's `analytic_account_id` — not just a syntax check — before
+shipping.
+
 ## Current confirmed state
 
 - Commits `278765d` through `faed027` are confirmed live on the VPS (real
   deploy + real DLQ retry test). Everything from `db25853` onward
-  (notifications/outbox-monitor, PDF/routing, payload/uuid-cast fixes) was
-  pushed after that confirmation — **check the Actions tab / ask the user
-  before assuming it's deployed**, don't take it on faith just because it's
-  in this table.
+  (notifications/outbox-monitor, PDF/routing, payload/uuid-cast fixes, the
+  full outbox-enqueue audit) was pushed after that confirmation — **check
+  the Actions tab / ask the user before assuming it's deployed**, don't take
+  it on faith just because it's in this table.
 - Full `pnpm test --concurrency=1` passes 29/29 tasks locally from a cold
-  cache in ~50s.
-- Both `dev` and `production` branches are in sync at `3aff222`.
+  cache in ~50s; `services/worker` and `services/hr` re-verified individually
+  after step 8's changes (24/24 and 24/24 passing).
+- Both `dev` and `production` branches are in sync at `1e4d40c`.
 
 | Commit | What |
 |---|---|
@@ -332,6 +401,7 @@ different bug shape from the last.
 | `db25853` | `notifications.push_sent` (worker-wide), outbox stuck-event detection |
 | `b6359e8` | `companies.city`/`country` (PDF generation worker-wide), `PO_PDF_REQUESTED` mis-routing |
 | `3aff222` | Outbox Monitor payload always null; 5 journal-entry inserts crashing on uuid/text parameter reuse |
+| `1e4d40c` | Full service_outbox enqueue-site audit: 2 silently-dropped emails, 1 DLQing journal, 1 never-fired payslip PDF job |
 
 ## Known open items (deliberately deferred, not forgotten)
 
@@ -391,22 +461,16 @@ different bug shape from the last.
    particular (`companies.city`/`country`, step 6) suggests `services/worker`
    specifically may not have been covered as thoroughly as `gateway`/
    `finance` were — worth a dedicated pass over that one file alone.
-8. **A second, entirely different bug class exists that no schema audit will
-   ever catch: outbox event routing mismatches.** `PO_PDF_REQUESTED` (step 6)
-   was enqueued with the wrong `service` value — the handler existed and was
-   correct, it just never got dispatched to. This has nothing to do with
-   columns or tables, so the audit script is structurally blind to it. The
-   only way it was found was by manually cross-referencing every
-   `INSERT INTO service_outbox (service, event_type, ...)` call site's
-   `service` value against the `switch (event.service)` dispatch in
-   `services/worker/src/jobs/outbox-processor.ts` (~line 569) and each
-   sub-dispatcher's own `switch (event.event_type)`. This has only been done
-   once, reactively, for one event type. **Every other event type enqueued
-   anywhere in the codebase could have the same mismatch and nothing has
-   verified otherwise** — a full pass (grep every `INSERT INTO service_outbox`
-   call site, map `event_type` → intended handler → which `deliverToX`
-   function actually contains a matching `case`, confirm the enqueue's
-   `service` argument routes there) has not been done.
+8. ~~A second, entirely different bug class exists that no schema audit will
+   ever catch: outbox event routing mismatches.~~ **DONE — see step 8 above
+   (commit `1e4d40c`).** The full pass was completed: every
+   `INSERT INTO service_outbox` call site (static and dynamic) was
+   cross-referenced against every `deliverToX` dispatcher's `switch`. Found
+   and fixed 3 more gaps (2 silently-swallowed emails, 1 DLQing journal, 1
+   handler that was never triggered at all). As of `1e4d40c`, every known
+   enqueue site has a live, correctly-routed handler — but see item 9 below:
+   this was a one-time pass, not a standing check, so any *new* event type
+   added later needs the same manual cross-reference repeated by hand.
 
 9. **A third bug class exists that neither the schema audit nor the
    outbox-routing check would ever catch: reused query parameters with
