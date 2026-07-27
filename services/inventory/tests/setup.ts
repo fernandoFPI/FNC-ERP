@@ -31,6 +31,9 @@ export async function cleanInventoryData() {
   await pool.query(`DELETE FROM stock_moves WHERE company_id = $1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id = $1)`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM stock_lots WHERE product_id IN (SELECT id FROM products WHERE company_id = $1)`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM interco_stock_transfer_lines WHERE product_id IN (SELECT id FROM products WHERE company_id = $1)`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM project_material_issue_lines WHERE product_id IN (SELECT id FROM products WHERE company_id = $1)`, [TEST_COMPANY_ID])
+  await pool.query(`UPDATE manufacturing_requests SET product_id = NULL WHERE product_id IN (SELECT id FROM products WHERE company_id = $1)`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM products WHERE company_id = $1`, [TEST_COMPANY_ID])
   await pool.query(`DELETE FROM users WHERE email = $1`, [TEST_USER_EMAIL])
 }
