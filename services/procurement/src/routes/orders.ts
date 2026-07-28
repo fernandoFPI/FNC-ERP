@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { query, pool } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { sendOk, sendError } from '../lib/errors.js'
-import { requirePermission } from '@fnc-erp/permissions'
+import { requirePermission, loadPermissions, meetsLevel } from '@fnc-erp/permissions'
 import {
   userHasPosition,
   userIsDeptHead,
@@ -53,6 +53,19 @@ function isAdmin(role: string): boolean {
   return role === 'system_admin' || role === 'company_admin' || role === 'module_admin'
 }
 
+// ── Helper: finance-audit capability ────────────────────────────────────────
+// Gates the finance_audit/invoiced stages (pass/fail audit, per-line audit
+// status, completion). This is a system-wide finance capability, not a
+// PO-specific position — 'finance' was never a real role in the
+// user/module_admin/company_admin/system_admin hierarchy, so this check was
+// previously unreachable by anyone but admins. finance.ap.approve is the
+// existing permission that already governs finalizing vendor-invoice/AP work.
+async function hasFinanceApproval(userId: string, companyId: string, role: string): Promise<boolean> {
+  if (isAdmin(role)) return true
+  const perms = await loadPermissions(userId, companyId)
+  return meetsLevel(perms['finance.ap.approve'], 'approve')
+}
+
 // ── Helper: handle transition errors ───────────────────────────────────────
 
 function handleError(res: import('express').Response, err: unknown): void {
@@ -79,6 +92,7 @@ ordersRouter.get(
       const employeeId: string | null = (empResult.rows[0]?.['id'] as string | null) ?? null
       const departmentId: string | null =
         (empResult.rows[0]?.['department_id'] as string | null) ?? null
+      const hasFinance = await hasFinanceApproval(auth.userId, auth.companyId, auth.role)
 
       const result = await query(
         `SELECT COUNT(DISTINCT po.id) AS total
@@ -92,10 +106,10 @@ ordersRouter.get(
            OR (po.status = 'market_pricing' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
            OR (po.status = 'price_verification' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
            OR (po.status = 'pending_approval' AND (EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4) OR po.assigned_approver_id=$3))
-           OR (po.status IN ('finance_audit','invoiced') AND $5 = 'finance')
+           OR (po.status IN ('finance_audit','invoiced') AND $6 = true)
            OR ($5 = 'system_admin' AND po.status IN ('inventory_check','store_pricing','market_pricing','price_verification','pending_approval','finance_audit','invoiced'))
          )`,
-        [auth.companyId, auth.userId, employeeId, departmentId, auth.role],
+        [auth.companyId, auth.userId, employeeId, departmentId, auth.role, hasFinance],
       )
       sendOk(res, { total: parseInt((result.rows[0] as Record<string, string>)['total'] ?? '0') })
     } catch (err) {
@@ -120,6 +134,7 @@ ordersRouter.get(
       const employeeId: string | null = (empResult.rows[0]?.['id'] as string | null) ?? null
       const departmentId: string | null =
         (empResult.rows[0]?.['department_id'] as string | null) ?? null
+      const hasFinance = await hasFinanceApproval(auth.userId, auth.companyId, auth.role)
 
       const result = await query(
         `SELECT DISTINCT po.*, v.name AS vendor_name
@@ -175,8 +190,8 @@ ordersRouter.get(
              OR po.assigned_approver_id = $3
            ))
            OR
-           -- Finance role: audit and invoice
-           ($5 = 'finance' AND po.status IN ('finance_audit','invoiced'))
+           -- Finance approval capability: audit and invoice
+           ($6 = true AND po.status IN ('finance_audit','invoiced'))
            OR
            -- System admin sees all in-flight
            ($5 = 'system_admin' AND po.status IN (
@@ -186,7 +201,7 @@ ordersRouter.get(
            ))
          )
        ORDER BY po.created_at DESC`,
-        [auth.companyId, auth.userId, employeeId, departmentId, auth.role],
+        [auth.companyId, auth.userId, employeeId, departmentId, auth.role, hasFinance],
       )
       sendOk(res, result.rows)
     } catch (err) {
@@ -1217,8 +1232,8 @@ ordersRouter.post(
   requirePermission('procurement.po.approve', 'approve'),
   async (req, res) => {
     const auth = req.auth!
-    if (!isAdmin(auth.role) && auth.role !== 'finance') {
-      sendError(res, 403, 'FORBIDDEN', 'Finance or admin role required to pass audit')
+    if (!(await hasFinanceApproval(auth.userId, auth.companyId, auth.role))) {
+      sendError(res, 403, 'FORBIDDEN', 'Finance approval permission required to pass audit')
       return
     }
 
@@ -1279,8 +1294,8 @@ ordersRouter.post(
   async (req, res) => {
     const auth = req.auth!
     const { notes } = req.body as { notes?: string }
-    if (!isAdmin(auth.role) && auth.role !== 'finance') {
-      sendError(res, 403, 'FORBIDDEN', 'Finance or admin role required to fail audit')
+    if (!(await hasFinanceApproval(auth.userId, auth.companyId, auth.role))) {
+      sendError(res, 403, 'FORBIDDEN', 'Finance approval permission required to fail audit')
       return
     }
 
@@ -1332,8 +1347,8 @@ ordersRouter.patch(
   requirePermission('procurement.po.approve', 'approve'),
   async (req, res) => {
     const auth = req.auth!
-    if (!isAdmin(auth.role) && auth.role !== 'finance') {
-      sendError(res, 403, 'FORBIDDEN', 'Finance or admin role required to audit PO lines')
+    if (!(await hasFinanceApproval(auth.userId, auth.companyId, auth.role))) {
+      sendError(res, 403, 'FORBIDDEN', 'Finance approval permission required to audit PO lines')
       return
     }
     const { id, lineId } = req.params
@@ -1381,8 +1396,8 @@ ordersRouter.post(
     const { receipt_notes } = req.body as { receipt_notes?: string }
 
     try {
-      if (!isAdmin(auth.role) && auth.role !== 'finance') {
-        sendError(res, 403, 'FORBIDDEN', 'Finance or admin role required to complete PO')
+      if (!(await hasFinanceApproval(auth.userId, auth.companyId, auth.role))) {
+        sendError(res, 403, 'FORBIDDEN', 'Finance approval permission required to complete PO')
         return
       }
 

@@ -213,6 +213,20 @@ async function getPOForReturn(poId: string): Promise<Record<string, unknown>> {
   return r.rows[0] as Record<string, unknown>
 }
 
+// True if the caller holds an active 'po_admin' position assignment in this
+// company. Company-wide by nature (managing PO positions isn't scoped to a
+// specific project/department), so no project/department matching needed.
+async function callerHasPOAdmin(userId: string, companyId: string): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM po_position_assignments ppa
+     JOIN employees e ON e.id = ppa.employee_id
+     WHERE e.user_id = $1 AND ppa.company_id = $2 AND ppa.position = 'po_admin' AND ppa.is_active = true
+     LIMIT 1`,
+    [userId, companyId],
+  )
+  return r.rows.length > 0
+}
+
 // Post a journal entry when a project-linked PO is completed so that the cost
 // flows into project_cost_actuals via trg_sync_project_costs.
 async function postPOCompletionJournal(
@@ -22163,7 +22177,11 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    if (ctx.auth.role !== 'system_admin') throw new Error('system_admin role required')
+    if (
+      ctx.auth.role !== 'system_admin' &&
+      !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
+    )
+      throw new Error('system_admin role or PO Admin position required')
     const { employeeId, position, projectId, departmentId } = args.input
     const r = await query(
       `INSERT INTO po_position_assignments (company_id, employee_id, position, project_id, department_id, assigned_by)
@@ -22204,7 +22222,11 @@ const phase5MutationResolvers = {
 
   removePOPosition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    if (ctx.auth.role !== 'system_admin') throw new Error('system_admin role required')
+    if (
+      ctx.auth.role !== 'system_admin' &&
+      !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
+    )
+      throw new Error('system_admin role or PO Admin position required')
     const r = await query(
       `UPDATE po_position_assignments SET is_active=false, updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING id`,
       [args.id, ctx.auth.companyId],
