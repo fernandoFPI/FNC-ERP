@@ -463,6 +463,121 @@ async function hasFinanceApprovalGW(userId: string, companyId: string, role: str
   return meetsLevel(perms['finance.ap.approve'], 'approve')
 }
 
+// ── PO notification helpers ──────────────────────────────────────────────────
+// Mirror services/procurement/src/lib/po-helpers.ts exactly — that copy is
+// unused by the frontend (which calls these GraphQL mutations, not the REST
+// routes it backs), so none of the live PO-transition mutations ever notified
+// anyone. All 4 just enqueue a service_outbox row for the notifications
+// service to actually send.
+
+interface POAuthGWNotification {
+  type: string
+  title: string
+  body: string
+}
+
+async function notifyPositionHoldersGW(
+  poId: string,
+  position: string,
+  notification: POAuthGWNotification,
+): Promise<void> {
+  const poResult = await query(
+    `SELECT po.project_id, ou.id AS organizer_user_id
+     FROM purchase_orders po
+     LEFT JOIN users ou ON ou.id = po.organizer_id
+     WHERE po.id = $1`,
+    [poId],
+  )
+  const po = poResult.rows[0]
+  if (!po) return
+
+  const deptResult = await query(`SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1`, [
+    po.organizer_user_id,
+  ])
+  const departmentId = (deptResult.rows[0]?.department_id as string | null) ?? null
+
+  const holders = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM po_position_assignments ppa
+     JOIN employees e ON e.id = ppa.employee_id
+     JOIN users u ON u.id = e.user_id
+     WHERE ppa.position = $1 AND ppa.is_active = true
+       AND (
+         ($2::uuid IS NOT NULL AND ppa.project_id = $2)
+         OR ($3::uuid IS NOT NULL AND ppa.department_id = $3)
+         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL)
+       )`,
+    [position, po.project_id ?? null, departmentId],
+  )
+  for (const holder of holders.rows) {
+    await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
+      notification.type,
+      JSON.stringify({ userId: holder.user_id, poId, ...notification }),
+    ])
+  }
+}
+
+async function notifyUserGW(
+  userId: string,
+  companyId: string,
+  notification: POAuthGWNotification & { poId?: string; poNumber?: string },
+): Promise<void> {
+  await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
+    notification.type,
+    JSON.stringify({ userId, companyId, ...notification }),
+  ])
+}
+
+async function notifyFinanceTeamGW(
+  companyId: string,
+  notification: POAuthGWNotification & { poId?: string; poNumber?: string },
+): Promise<void> {
+  const users = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM users u
+     JOIN user_company_roles ucr ON ucr.user_id = u.id
+     WHERE ucr.company_id = $1
+       AND (ucr.role IN ('company_admin', 'system_admin')
+            OR (ucr.module = 'finance' AND ucr.role IN ('module_admin', 'module_user')))
+       AND u.is_active = true`,
+    [companyId],
+  )
+  for (const user of users.rows) {
+    await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
+      notification.type,
+      JSON.stringify({ userId: user.user_id, companyId, ...notification }),
+    ])
+  }
+}
+
+async function notifyDeptHeadsAndAdminsGW(poId: string, notification: POAuthGWNotification): Promise<void> {
+  const poResult = await query(`SELECT po.organizer_id FROM purchase_orders po WHERE po.id = $1`, [poId])
+  const organizerId = poResult.rows[0]?.organizer_id as string | undefined
+  if (!organizerId) return
+
+  const deptHeads = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM departments d
+     JOIN employees mgr ON mgr.id = d.manager_id
+     JOIN users u ON u.id = mgr.user_id
+     WHERE d.id = (SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1)`,
+    [organizerId],
+  )
+  const admins = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM users u
+     JOIN user_company_roles ucr ON ucr.user_id = u.id
+     WHERE ucr.role = 'system_admin' AND u.is_active = true`,
+    [],
+  )
+  for (const r of [...deptHeads.rows, ...admins.rows]) {
+    await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
+      notification.type,
+      JSON.stringify({ userId: r.user_id, poId, ...notification }),
+    ])
+  }
+}
+
 async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string): Promise<void> {
   await client.query(
     `UPDATE purchase_orders SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1), total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1), updated_at=NOW() WHERE id=$1`,
@@ -2303,16 +2418,56 @@ export const resolvers = {
     myPOQueue: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) return []
       try {
-        const result = await query(
-          `SELECT po.*, v.name AS vendor_name
-           FROM purchase_orders po
-           JOIN vendors v ON v.id = po.vendor_id
-           JOIN employees e ON e.id = po.assigned_approver_id
-           JOIN users u ON u.id = e.user_id
-           WHERE u.id = $1 AND po.company_id = $2
-             AND po.status IN ('pending_review','approved_l1')
-           ORDER BY po.created_at DESC`,
+        const empResult = await query(
+          `SELECT id, department_id FROM employees WHERE user_id = $1 AND company_id = $2 LIMIT 1`,
           [ctx.auth.userId, ctx.auth.companyId],
+        )
+        const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
+        const departmentId: string | null =
+          (empResult.rows[0]?.department_id as string | null) ?? null
+        const hasFinance = await hasFinanceApprovalGW(ctx.auth.userId, ctx.auth.companyId, ctx.auth.role)
+
+        const result = await query(
+          `SELECT DISTINCT po.*, v.name AS vendor_name
+           FROM purchase_orders po
+           LEFT JOIN vendors v ON v.id = po.vendor_id
+           WHERE po.company_id = $1
+             AND po.status NOT IN ('deleted','completed','cancelled')
+             AND (
+               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected'))
+               OR (po.status = 'inventory_check' AND EXISTS (
+                 SELECT 1 FROM po_position_assignments ppa
+                 WHERE ppa.employee_id = $3 AND ppa.position = 'store_keeper' AND ppa.is_active = true
+                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
+               ))
+               OR (po.status = 'store_pricing' AND EXISTS (
+                 SELECT 1 FROM po_position_assignments ppa
+                 WHERE ppa.employee_id = $3 AND ppa.position = 'store_pricing' AND ppa.is_active = true
+                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
+               ))
+               OR (po.status = 'market_pricing' AND EXISTS (
+                 SELECT 1 FROM po_position_assignments ppa
+                 WHERE ppa.employee_id = $3 AND ppa.position = 'procurement_officer' AND ppa.is_active = true
+                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
+               ))
+               OR (po.status = 'price_verification' AND EXISTS (
+                 SELECT 1 FROM po_position_assignments ppa
+                 WHERE ppa.employee_id = $3 AND ppa.position = 'procurement_2nd' AND ppa.is_active = true
+                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
+               ))
+               OR (po.status = 'pending_approval' AND (
+                 EXISTS (SELECT 1 FROM departments d WHERE d.manager_id = $3 AND d.id = $4)
+                 OR po.assigned_approver_id = $3
+               ))
+               OR ($6 = true AND po.status IN ('finance_audit','invoiced'))
+               OR ($5 = 'system_admin' AND po.status IN (
+                 'inventory_check','store_pricing','market_pricing',
+                 'price_verification','pending_approval','goods_received',
+                 'finance_audit','invoiced'
+               ))
+             )
+           ORDER BY po.created_at DESC`,
+          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role, hasFinance],
         )
         return result.rows
       } catch {
@@ -15351,10 +15506,21 @@ export const resolvers = {
       const po = r.rows[0] as Record<string, unknown>
       if (po.assigned_receiver_id) {
         const emp = await query(
-          `SELECT COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name FROM employees WHERE id=$1`,
+          `SELECT COALESCE(NULLIF(TRIM(first_name || ' ' || last_name), ''), email) AS name, user_id FROM employees WHERE id=$1`,
           [po.assigned_receiver_id],
         )
         po.assigned_receiver_name = emp.rows[0]?.name ?? null
+        const receiverUserId = emp.rows[0]?.user_id as string | undefined
+        if (receiverUserId) {
+          const poNum = String(po.po_number ?? '')
+          void notifyUserGW(receiverUserId, ctx.auth.companyId, {
+            type: 'PO_RECEIVER_ASSIGNED',
+            title: `You are assigned to receive: ${poNum}`,
+            body: `You have been designated as the receiver for purchase order ${poNum}`,
+            poId: args.id,
+            poNumber: poNum,
+          })
+        }
       }
       return po
     },
@@ -21442,6 +21608,13 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    if (!isEmergency) {
+      void notifyPositionHoldersGW(args.id, 'store_keeper', {
+        type: 'PO_INVENTORY_CHECK_REQUIRED',
+        title: 'Inventory check required',
+        body: `PO ${args.id} requires an inventory check`,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -21461,6 +21634,7 @@ const phase5MutationResolvers = {
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
     if (!isAdmin && !hasPos) throw new Error('store_keeper position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    let needsPurchase = false
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -21478,7 +21652,7 @@ const phase5MutationResolvers = {
         `SELECT COUNT(*) FILTER (WHERE qty_from_stock < qty_ordered) AS needs_purchase FROM po_lines WHERE po_id=$1`,
         [args.id],
       )
-      const needsPurchase = parseInt(String(check.rows[0]?.needs_purchase ?? '1')) > 0
+      needsPurchase = parseInt(String(check.rows[0]?.needs_purchase ?? '1')) > 0
 
       if (needsPurchase) {
         await poTransition(
@@ -21513,6 +21687,13 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    if (needsPurchase) {
+      void notifyPositionHoldersGW(args.id, 'store_pricing', {
+        type: 'PO_STORE_PRICING_REQUIRED',
+        title: 'Store pricing required',
+        body: 'PO requires internal pricing',
+      })
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
@@ -21768,6 +21949,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyPositionHoldersGW(args.id, 'procurement_officer', {
+      type: 'PO_MARKET_PRICING_REQUIRED',
+      title: 'Market pricing required',
+      body: 'PO requires external vendor quotes',
+    })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -21832,6 +22018,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyPositionHoldersGW(args.id, 'procurement_2nd', {
+      type: 'PO_PRICE_VERIFICATION_REQUIRED',
+      title: 'Price verification required',
+      body: 'PO market prices require cross-checking',
+    })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -21882,6 +22073,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyDeptHeadsAndAdminsGW(args.id, {
+      type: 'PO_APPROVAL_REQUIRED',
+      title: 'PO approval required',
+      body: 'A purchase order is awaiting your approval',
+    })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -21922,6 +22118,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyPositionHoldersGW(args.id, 'procurement_officer', {
+      type: 'PO_PRICING_REJECTED',
+      title: 'PO pricing rejected',
+      body: `The organizer rejected pricing: ${args.reason}`,
+    })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -21933,7 +22134,9 @@ const phase5MutationResolvers = {
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to approve this PO')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(`SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`, [
+      args.id,
+    ])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'pending_approval')
       throw new Error(`Cannot approve PO in status '${poRow.rows[0].status as string}'`)
@@ -21948,6 +22151,22 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    if (poRow.rows[0].organizer_id) {
+      void query(
+        `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','PO_APPROVED_NOTIFICATION',$1)`,
+        [
+          JSON.stringify({
+            userId: poRow.rows[0].organizer_id,
+            poId: args.id,
+            poNumber: poRow.rows[0].po_number,
+          }),
+        ],
+      )
+    }
+    void query(
+      `INSERT INTO service_outbox (service, event_type, payload) VALUES ('reporting','PO_PDF_REQUESTED',$1)`,
+      [JSON.stringify({ po_id: args.id, company_id: auth.companyId })],
+    )
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -21960,7 +22179,7 @@ const phase5MutationResolvers = {
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(`SELECT status, organizer_id FROM purchase_orders WHERE id=$1`, [args.id])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'pending_approval')
       throw new Error(`Cannot reject PO in status '${poRow.rows[0].status as string}'`)
@@ -21982,6 +22201,12 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    if (poRow.rows[0].organizer_id) {
+      void query(
+        `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','PO_REJECTED_NOTIFICATION',$1)`,
+        [JSON.stringify({ userId: poRow.rows[0].organizer_id, poId: args.id, reason: args.reason })],
+      )
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
@@ -22020,7 +22245,10 @@ const phase5MutationResolvers = {
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can cancel a PO')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(
+      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     if (!poRow.rows[0]) throw new Error('PO not found')
     const fromStatus = poRow.rows[0].status as POStatus
     const cancellable = [
@@ -22049,6 +22277,17 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    const cancelOrgId = poRow.rows[0].organizer_id as string | null
+    if (cancelOrgId && cancelOrgId !== auth.userId) {
+      const poNum = String(poRow.rows[0].po_number ?? '')
+      void notifyUserGW(cancelOrgId, auth.companyId, {
+        type: 'PO_CANCELLED',
+        title: `PO Cancelled: ${poNum}`,
+        body: `Purchase order ${poNum} has been cancelled${args.reason ? ': ' + args.reason : ''}`,
+        poId: args.id,
+        poNumber: poNum,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -22060,7 +22299,7 @@ const phase5MutationResolvers = {
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can send a PO to finance audit')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(`SELECT status, po_number FROM purchase_orders WHERE id=$1`, [args.id])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'goods_received')
       throw new Error(`PO must be in goods_received status to send to audit`)
@@ -22080,6 +22319,13 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyFinanceTeamGW(auth.companyId, {
+      type: 'PO_SENT_TO_AUDIT',
+      title: `PO submitted for audit: ${String(poRow.rows[0].po_number ?? '')}`,
+      body: `Purchase order ${String(poRow.rows[0].po_number ?? '')} has been submitted for finance audit`,
+      poId: args.id,
+      poNumber: String(poRow.rows[0].po_number ?? ''),
+    })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -22089,7 +22335,10 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to pass audit')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(
+      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'finance_audit')
       throw new Error(`PO must be in finance_audit status to pass audit`)
@@ -22111,6 +22360,16 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    if (poRow.rows[0].organizer_id) {
+      const poNum = String(poRow.rows[0].po_number ?? '')
+      void notifyUserGW(poRow.rows[0].organizer_id as string, auth.companyId, {
+        type: 'PO_AUDIT_PASSED',
+        title: `Finance audit passed: ${poNum}`,
+        body: `Your purchase order ${poNum} has passed finance audit and is now invoiced`,
+        poId: args.id,
+        poNumber: poNum,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -22120,7 +22379,10 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to fail audit')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(
+      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'finance_audit')
       throw new Error(`PO must be in finance_audit status`)
@@ -22142,6 +22404,16 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    if (poRow.rows[0].organizer_id) {
+      const poNum = String(poRow.rows[0].po_number ?? '')
+      void notifyUserGW(poRow.rows[0].organizer_id as string, auth.companyId, {
+        type: 'PO_AUDIT_FAILED',
+        title: `Finance audit failed: ${poNum}`,
+        body: `Your purchase order ${poNum} has failed finance audit${args.notes ? ': ' + args.notes : ''}. Please review and resubmit.`,
+        poId: args.id,
+        poNumber: poNum,
+      })
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
@@ -22188,7 +22460,10 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to complete a PO')
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(
+      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'invoiced')
       throw new Error(
@@ -22213,6 +22488,16 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    if (poRow.rows[0].organizer_id) {
+      const poNum = String(poRow.rows[0].po_number ?? '')
+      void notifyUserGW(poRow.rows[0].organizer_id as string, auth.companyId, {
+        type: 'PO_COMPLETED',
+        title: `PO Completed: ${poNum}`,
+        body: `Purchase order ${poNum} has been successfully completed`,
+        poId: args.id,
+        poNumber: poNum,
+      })
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
