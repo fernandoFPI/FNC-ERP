@@ -4956,6 +4956,7 @@ export const resolvers = {
       const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
       const departmentId: string | null =
         (empResult.rows[0]?.department_id as string | null) ?? null
+      const hasFinance = await hasFinanceApprovalGW(ctx.auth.userId, ctx.auth.companyId, ctx.auth.role)
       return (
         await query(
           `SELECT DISTINCT po.*, v.name AS vendor_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS assigned_to_email,
@@ -4964,9 +4965,9 @@ export const resolvers = {
            LEFT JOIN vendors v ON v.id=po.vendor_id
            LEFT JOIN users u ON u.id=po.assigned_to
            WHERE po.company_id=$1
-             AND po.status NOT IN ('deleted','completed')
+             AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
-               (po.organizer_id=$2 AND po.status IN ('opening','review'))
+               (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected'))
                OR (po.status='inventory_check' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
@@ -4983,15 +4984,17 @@ export const resolvers = {
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
                        AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (po.status IN ('pending_approval','dept_assigned') AND (
+               OR (po.status='pending_approval' AND (
                      EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
                      OR po.assigned_approver_id=$3))
+               OR (po.status IN ('finance_audit','invoiced') AND $6=true)
                OR ($5='system_admin' AND po.status IN (
                      'inventory_check','store_pricing','market_pricing',
-                     'price_verification','pending_approval','dept_assigned'))
+                     'price_verification','pending_approval','goods_received',
+                     'finance_audit','invoiced'))
              )
            ORDER BY po.created_at DESC`,
-          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role],
+          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role, hasFinance],
         )
       ).rows
     },
