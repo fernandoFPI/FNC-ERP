@@ -5678,10 +5678,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
       const result = await query(
-        `UPDATE project_milestones SET status='reached', reached_at=NOW(), reached_by=$1, updated_at=NOW()
-         WHERE id=$2 AND contract_id=$3 AND status='pending' RETURNING *`,
-        [ctx.auth.userId, args.milestoneId, args.contractId],
+        `UPDATE project_milestones pm SET status='reached', reached_at=NOW(), reached_by=$1, updated_at=NOW()
+         FROM projects p
+         WHERE p.id=pm.project_id AND p.company_id=$4 AND pm.id=$2 AND pm.contract_id=$3 AND pm.status='pending'
+         RETURNING pm.*`,
+        [ctx.auth.userId, args.milestoneId, args.contractId, ctx.auth.companyId],
       )
       if (!result.rows[0]) throw new Error('Milestone not found or cannot be reached')
       const m = result.rows[0] as Record<string, unknown>
@@ -5711,9 +5714,12 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const contract = await query(`SELECT project_id FROM project_contracts WHERE id=$1`, [
-        args.contractId,
-      ])
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
+      const contract = await query(
+        `SELECT pc.project_id FROM project_contracts pc JOIN projects p ON p.id=pc.project_id
+         WHERE pc.id=$1 AND p.company_id=$2`,
+        [args.contractId, ctx.auth.companyId],
+      )
       if (!contract.rows[0]) throw new Error('Contract not found')
       const projectId = (contract.rows[0] as Record<string, unknown>).project_id
       const seq = args.input.sequence ?? 0
@@ -5758,9 +5764,12 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
       const result = await query(
-        `UPDATE project_milestones SET name=$1, sequence=$2, billable_amount=$3, currency_code=$4, description=$5, updated_at=NOW()
-         WHERE id=$6 AND status='pending' RETURNING *`,
+        `UPDATE project_milestones pm SET name=$1, sequence=$2, billable_amount=$3, currency_code=$4, description=$5, updated_at=NOW()
+         FROM projects p
+         WHERE p.id=pm.project_id AND p.company_id=$7 AND pm.id=$6 AND pm.status='pending'
+         RETURNING pm.*`,
         [
           args.input.name,
           args.input.sequence ?? 0,
@@ -5768,6 +5777,7 @@ export const resolvers = {
           args.input.currencyCode ?? 'IQD',
           args.input.description ?? null,
           args.id,
+          ctx.auth.companyId,
         ],
       )
       if (!result.rows[0]) throw new Error('Milestone not found or already reached')
@@ -5785,9 +5795,11 @@ export const resolvers = {
 
     deleteContractMilestone: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
       const result = await query(
-        `DELETE FROM project_milestones WHERE id=$1 AND status='pending' RETURNING id`,
-        [args.id],
+        `DELETE FROM project_milestones pm USING projects p
+         WHERE p.id=pm.project_id AND p.company_id=$2 AND pm.id=$1 AND pm.status='pending' RETURNING pm.id`,
+        [args.id, ctx.auth.companyId],
       )
       if (!result.rows[0]) throw new Error('Milestone not found or already reached — cannot delete')
       return true
@@ -12619,6 +12631,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -12656,6 +12669,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -12694,6 +12708,7 @@ export const resolvers = {
 
     deleteWBSNode: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(
         `DELETE FROM project_wbs w USING projects p WHERE p.id=w.project_id AND p.company_id=$1 AND w.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -12721,6 +12736,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -12782,6 +12798,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -12869,6 +12886,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const r = await query(
         `UPDATE project_activities a SET percent_complete=$1, actual_start=COALESCE($2::date,actual_start), actual_finish=COALESCE($3::date,actual_finish), updated_at=NOW() FROM projects p WHERE p.id=a.project_id AND p.company_id=$4 AND a.id=$5 RETURNING a.*`,
         [
@@ -12909,6 +12927,7 @@ export const resolvers = {
 
     deleteActivity: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(
         `DELETE FROM project_activities a USING projects p WHERE p.id=a.project_id AND p.company_id=$1 AND a.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -12943,6 +12962,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -13004,6 +13024,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       const r = await query(
         `INSERT INTO project_activity_dependencies (project_id,predecessor_id,successor_id,dependency_type,lag_days) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
         [
@@ -13034,18 +13061,37 @@ export const resolvers = {
 
     deleteDependency: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`DELETE FROM project_activity_dependencies WHERE id=$1`, [args.id])
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(
+        `DELETE FROM project_activity_dependencies pad
+         USING projects p WHERE p.id=pad.project_id AND p.company_id=$2 AND pad.id=$1`,
+        [args.id, ctx.auth.companyId],
+      )
       return true
     },
 
     recalculateCPM: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       await planCPM(args.projectId)
       return true
     },
 
     levelResources: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       await planCPM(args.projectId)
       const MAX_ITER = 200
       let iter = 0
@@ -13122,6 +13168,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       const acts = await query(`SELECT * FROM project_activities WHERE project_id=$1`, [
         args.projectId,
       ])
@@ -13169,6 +13222,7 @@ export const resolvers = {
 
     setActiveBaseline: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const blR = await query(
         `SELECT b.* FROM project_baselines b JOIN projects p ON p.id=b.project_id WHERE b.id=$1 AND p.company_id=$2`,
         [args.id, ctx.auth.companyId],
@@ -13195,6 +13249,7 @@ export const resolvers = {
 
     applyBaseline: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const blR = await query(
         `SELECT b.* FROM project_baselines b JOIN projects p ON p.id=b.project_id WHERE b.id=$1 AND p.company_id=$2`,
         [args.id, ctx.auth.companyId],
@@ -13215,6 +13270,7 @@ export const resolvers = {
 
     deleteBaseline: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(
         `DELETE FROM project_baselines b USING projects p WHERE p.id=b.project_id AND p.company_id=$1 AND b.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -13236,6 +13292,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       const r = await query(
         `INSERT INTO project_resources (project_id,name,resource_type,unit,max_units_per_day,cost_per_unit,currency_code) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
         [
@@ -13264,6 +13327,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -13298,6 +13362,7 @@ export const resolvers = {
 
     deleteResource: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       await query(
         `DELETE FROM project_resources res USING projects p WHERE p.id=res.project_id AND p.company_id=$1 AND res.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -13317,6 +13382,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      const resOwn = await query(
+        `SELECT res.id FROM project_resources res JOIN projects p ON p.id=res.project_id
+         WHERE res.id=$1 AND p.company_id=$2`,
+        [args.resourceId, ctx.auth.companyId],
+      )
+      if (!resOwn.rows[0]) throw new Error('Resource not found')
       const r = await query(
         `INSERT INTO project_resource_calendars (resource_id,work_date,available_units,is_holiday,note) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (resource_id,work_date) DO UPDATE SET available_units=EXCLUDED.available_units, is_holiday=EXCLUDED.is_holiday, note=EXCLUDED.note RETURNING *`,
         [args.resourceId, args.workDate, args.availableUnits, args.isHoliday, args.note || null],
@@ -13334,7 +13406,13 @@ export const resolvers = {
 
     deleteCalendarDay: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`DELETE FROM project_resource_calendars WHERE id=$1`, [args.id])
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(
+        `DELETE FROM project_resource_calendars prc
+         USING project_resources res, projects p
+         WHERE res.id=prc.resource_id AND p.id=res.project_id AND p.company_id=$2 AND prc.id=$1`,
+        [args.id, ctx.auth.companyId],
+      )
       return true
     },
 
@@ -13344,6 +13422,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      const actOwn = await query(
+        `SELECT pa.id FROM project_activities pa JOIN projects p ON p.id=pa.project_id
+         WHERE pa.id=$1 AND p.company_id=$2`,
+        [args.activityId, ctx.auth.companyId],
+      )
+      if (!actOwn.rows[0]) throw new Error('Activity not found')
       const r = await query(
         `INSERT INTO project_activity_resources (activity_id,resource_id,units_per_day,budgeted_cost) VALUES ($1,$2,$3,$4) ON CONFLICT (activity_id,resource_id) DO UPDATE SET units_per_day=EXCLUDED.units_per_day, budgeted_cost=EXCLUDED.budgeted_cost, updated_at=NOW() RETURNING *`,
         [args.activityId, args.resourceId, args.unitsPerDay, args.budgetedCost ?? null],
@@ -13379,6 +13464,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -13403,8 +13489,12 @@ export const resolvers = {
         vals.push(args.actualCost)
       }
       sets.push(`updated_at=NOW()`)
+      vals.push(ctx.auth.companyId)
       const r = await query(
-        `UPDATE project_activity_resources SET ${sets.join(',')} WHERE id=$${idx} RETURNING *`,
+        `UPDATE project_activity_resources par SET ${sets.join(',')}
+         FROM project_activities pa, projects p
+         WHERE pa.id=par.activity_id AND p.id=pa.project_id AND p.company_id=$${idx} AND par.id=$${idx + 1}
+         RETURNING par.*`,
         [...vals, args.id],
       )
       const res = await query(
@@ -13428,7 +13518,13 @@ export const resolvers = {
 
     removeResourceAssignment: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await query(`DELETE FROM project_activity_resources WHERE id=$1`, [args.id])
+      await requirePermGW(ctx.auth, 'projects.planning.edit', 'edit')
+      await query(
+        `DELETE FROM project_activity_resources par
+         USING project_activities pa, projects p
+         WHERE pa.id=par.activity_id AND p.id=pa.project_id AND p.company_id=$2 AND par.id=$1`,
+        [args.id, ctx.auth.companyId],
+      )
       return true
     },
 
