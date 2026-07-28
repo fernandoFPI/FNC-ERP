@@ -3332,6 +3332,13 @@ export const resolvers = {
 
     projectCompletionBlockers: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.view', 'view')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.id,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       const blockers: string[] = []
       const [openPOs, activeMOs, incompleteStages] = await Promise.all([
         query(
@@ -3700,6 +3707,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.contracts.view', 'view')
       let sql = `SELECT pc.*,
                         COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi WHERE pi.contract_id=pc.id AND pi.status!='cancelled'),0) AS total_invoiced,
                         COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip JOIN project_invoices pi2 ON pi2.id=pip.invoice_id WHERE pi2.contract_id=pc.id),0) AS total_paid
@@ -3770,6 +3778,7 @@ export const resolvers = {
 
     projectContract: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
+      await requirePermGW(ctx.auth, 'projects.contracts.view', 'view')
       const c = await query(
         `SELECT pc.*,
                 COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi WHERE pi.contract_id=pc.id AND pi.status!='cancelled'),0) AS total_invoiced,
@@ -3833,6 +3842,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.invoices.view', 'view')
       let sql = `SELECT pi.* FROM project_invoices pi WHERE pi.company_id=$1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
@@ -3873,6 +3883,7 @@ export const resolvers = {
 
     projectInvoice: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
+      await requirePermGW(ctx.auth, 'projects.invoices.view', 'view')
       const inv = await query(
         `SELECT pi.*,
                 p.code  AS project_code,  p.name  AS project_name,
@@ -3978,6 +3989,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
       const conditions: string[] = ['pmi.company_id=$1']
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
@@ -5369,22 +5381,24 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const conditions = [`project_id = $1`]
-      const params: unknown[] = [args.projectId]
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const conditions = [`pt.project_id = $1`, `p.company_id = $2`]
+      const params: unknown[] = [args.projectId, ctx.auth.companyId]
       if (args.status) {
-        conditions.push(`status = $${params.length + 1}`)
+        conditions.push(`pt.status = $${params.length + 1}`)
         params.push(args.status)
       }
       if (args.discipline) {
-        conditions.push(`discipline = $${params.length + 1}`)
+        conditions.push(`pt.discipline = $${params.length + 1}`)
         params.push(args.discipline)
       }
       if (args.priority) {
-        conditions.push(`priority = $${params.length + 1}`)
+        conditions.push(`pt.priority = $${params.length + 1}`)
         params.push(args.priority)
       }
       const res = await query(
-        `SELECT * FROM project_tqs WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`,
+        `SELECT pt.* FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
+         WHERE ${conditions.join(' AND ')} ORDER BY pt.created_at DESC`,
         params,
       )
       return res.rows.map(tqToGQL)
@@ -5392,7 +5406,12 @@ export const resolvers = {
 
     projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const res = await query(`SELECT * FROM project_tqs WHERE id = $1`, [args.id])
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const res = await query(
+        `SELECT pt.* FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
+         WHERE pt.id=$1 AND p.company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
       const r = res.rows[0] as Record<string, unknown> | undefined
       if (!r) throw new Error('TQ not found')
       return tqToGQL(r)
@@ -5412,26 +5431,28 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const conditions = [`project_id = $1`]
-      const params: unknown[] = [args.projectId]
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const conditions = [`ppi.project_id = $1`, `p.company_id = $2`]
+      const params: unknown[] = [args.projectId, ctx.auth.companyId]
       if (args.category) {
-        conditions.push(`category = $${params.length + 1}`)
+        conditions.push(`ppi.category = $${params.length + 1}`)
         params.push(args.category)
       }
       if (args.status) {
-        conditions.push(`status = $${params.length + 1}`)
+        conditions.push(`ppi.status = $${params.length + 1}`)
         params.push(args.status)
       }
       if (args.discipline) {
-        conditions.push(`discipline = $${params.length + 1}`)
+        conditions.push(`ppi.discipline = $${params.length + 1}`)
         params.push(args.discipline)
       }
       if (args.subcontractor) {
-        conditions.push(`subcontractor = $${params.length + 1}`)
+        conditions.push(`ppi.subcontractor = $${params.length + 1}`)
         params.push(args.subcontractor)
       }
       const res = await query(
-        `SELECT * FROM project_punch_items WHERE ${conditions.join(' AND ')} ORDER BY punch_no ASC`,
+        `SELECT ppi.* FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
+         WHERE ${conditions.join(' AND ')} ORDER BY ppi.punch_no ASC`,
         params,
       )
       return Promise.all(res.rows.map((r) => punchItemToGQL(r as Record<string, unknown>)))
@@ -5439,7 +5460,12 @@ export const resolvers = {
 
     projectPunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const res = await query(`SELECT * FROM project_punch_items WHERE id=$1`, [args.id])
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const res = await query(
+        `SELECT ppi.* FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
+         WHERE ppi.id=$1 AND p.company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
       const r = res.rows[0] as Record<string, unknown> | undefined
       if (!r) throw new Error('Punch item not found')
       return punchItemToGQL(r)
@@ -5453,8 +5479,9 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const conditions: string[] = ['r.project_id=$1']
-      const params: unknown[] = [args.projectId]
+      await requirePermGW(ctx.auth, 'projects.risk.view', 'view')
+      const conditions: string[] = ['r.project_id=$1', 'p.company_id=$2']
+      const params: unknown[] = [args.projectId, ctx.auth.companyId]
       if (args.category) {
         conditions.push(`r.category=$${params.length + 1}`)
         params.push(args.category)
@@ -5464,7 +5491,8 @@ export const resolvers = {
         params.push(args.status)
       }
       const res = await query(
-        `SELECT r.* FROM project_risks r WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`,
+        `SELECT r.* FROM project_risks r JOIN projects p ON p.id=r.project_id
+         WHERE ${conditions.join(' AND ')} ORDER BY r.created_at DESC`,
         params,
       )
       const rows = res.rows as Record<string, unknown>[]
@@ -5487,6 +5515,13 @@ export const resolvers = {
 
     projectRisk: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.risk.view', 'view')
+      const own = await query(
+        `SELECT r.id FROM project_risks r JOIN projects p ON p.id=r.project_id
+         WHERE r.id=$1 AND p.company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!own.rows[0]) throw new Error('Risk not found')
       return riskWithReviews(args.id)
     },
 
@@ -5496,9 +5531,11 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.handover.view', 'view')
       const cRes = await query(
-        `SELECT * FROM project_handover_certificates WHERE project_id=$1 ORDER BY created_at`,
-        [args.projectId],
+        `SELECT phc.* FROM project_handover_certificates phc JOIN projects p ON p.id=phc.project_id
+         WHERE phc.project_id=$1 AND p.company_id=$2 ORDER BY phc.created_at`,
+        [args.projectId, ctx.auth.companyId],
       )
       if (!cRes.rows.length) return []
       const ids = cRes.rows.map((r) => r.id)
@@ -21447,6 +21484,13 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
+    await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ]).then((r) => {
+      if (!r.rows[0]) throw new Error('Project not found')
+    })
     const resources = await query(`SELECT * FROM project_resources WHERE project_id=$1`, [
       args.projectId,
     ])
@@ -21525,6 +21569,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
