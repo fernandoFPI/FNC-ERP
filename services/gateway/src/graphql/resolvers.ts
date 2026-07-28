@@ -6657,6 +6657,11 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
+        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+      }
       const i = args.input
       return withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
