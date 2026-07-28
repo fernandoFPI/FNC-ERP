@@ -105,18 +105,16 @@ export const useAuthStore = create<AuthState>()(
           const { api } = await import('../lib/axios')
 
           const result = await api.get<{
-            data: {
-              permissions: {
-                submodules: {
-                  permissions: { key: string; accessLevel: string }[]
-                }[]
+            permissions: {
+              submodules: {
+                permissions: { key: string; accessLevel: string }[]
               }[]
-            }
+            }[]
           }>(`/auth/users/${user.id}/permissions`, { params: { company_id: companyId } })
 
           // Flatten nested registry structure into a key→level map
           const flat: Record<string, AccessLevel> = {}
-          for (const mod of result.data.data.permissions) {
+          for (const mod of result.data.permissions) {
             for (const sub of mod.submodules) {
               for (const perm of sub.permissions) {
                 if (perm.accessLevel !== 'none') {
