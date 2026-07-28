@@ -21216,6 +21216,7 @@ const phase5QueryResolvers = {
 
   projectVariationOrders: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.variations.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -21241,6 +21242,7 @@ const phase5QueryResolvers = {
 
   projectVariationOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.variations.view', 'view')
     const res = await query(
       `SELECT pvo.* FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`,
       [args.id, ctx.auth.companyId],
@@ -21261,6 +21263,7 @@ const phase5QueryResolvers = {
 
   projectMeetings: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.meetings.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -21290,6 +21293,7 @@ const phase5QueryResolvers = {
 
   projectMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.meetings.view', 'view')
     const res = await query(
       `SELECT pm.* FROM project_meetings pm JOIN projects p ON p.id=pm.project_id WHERE pm.id=$1 AND p.company_id=$2`,
       [args.id, ctx.auth.companyId],
@@ -21307,6 +21311,7 @@ const phase5QueryResolvers = {
 
   projectWBS: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -21336,6 +21341,7 @@ const phase5QueryResolvers = {
 
   projectActivities: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -21372,18 +21378,26 @@ const phase5QueryResolvers = {
 
   projectDependencies: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     const rows = await query(
-      `SELECT pad.*, p.activity_code AS pred_code, s.activity_code AS succ_code FROM project_activity_dependencies pad JOIN project_activities p ON p.id=pad.predecessor_id JOIN project_activities s ON s.id=pad.successor_id WHERE pad.project_id=$1`,
-      [args.projectId],
+      `SELECT pad.*, p.activity_code AS pred_code, s.activity_code AS succ_code
+       FROM project_activity_dependencies pad
+       JOIN project_activities p ON p.id=pad.predecessor_id
+       JOIN project_activities s ON s.id=pad.successor_id
+       JOIN projects proj ON proj.id=pad.project_id
+       WHERE pad.project_id=$1 AND proj.company_id=$2`,
+      [args.projectId, ctx.auth.companyId],
     )
     return rows.rows.map((r) => planMapDep(r as Record<string, unknown>))
   },
 
   projectBaselines: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     const rows = await query(
-      `SELECT * FROM project_baselines WHERE project_id=$1 ORDER BY created_at DESC`,
-      [args.projectId],
+      `SELECT pb.* FROM project_baselines pb JOIN projects p ON p.id=pb.project_id
+       WHERE pb.project_id=$1 AND p.company_id=$2 ORDER BY pb.created_at DESC`,
+      [args.projectId, ctx.auth.companyId],
     )
     return rows.rows.map((r: Record<string, unknown>) => ({
       id: r.id,
@@ -21398,18 +21412,24 @@ const phase5QueryResolvers = {
 
   projectResources: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     const rows = await query(
-      `SELECT * FROM project_resources WHERE project_id=$1 ORDER BY resource_type, name`,
-      [args.projectId],
+      `SELECT res.* FROM project_resources res JOIN projects p ON p.id=res.project_id
+       WHERE res.project_id=$1 AND p.company_id=$2 ORDER BY res.resource_type, res.name`,
+      [args.projectId, ctx.auth.companyId],
     )
     return rows.rows.map((r) => planMapResource(r as Record<string, unknown>))
   },
 
   projectResourceCalendar: async (_: unknown, args: { resourceId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.planning.view', 'view')
     const rows = await query(
-      `SELECT * FROM project_resource_calendars WHERE resource_id=$1 ORDER BY work_date`,
-      [args.resourceId],
+      `SELECT prc.* FROM project_resource_calendars prc
+       JOIN project_resources res ON res.id=prc.resource_id
+       JOIN projects p ON p.id=res.project_id
+       WHERE prc.resource_id=$1 AND p.company_id=$2 ORDER BY prc.work_date`,
+      [args.resourceId, ctx.auth.companyId],
     )
     return rows.rows.map((r: Record<string, unknown>) => ({
       id: r.id,
