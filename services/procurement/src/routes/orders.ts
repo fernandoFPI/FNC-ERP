@@ -60,8 +60,12 @@ function isAdmin(role: string): boolean {
 // user/module_admin/company_admin/system_admin hierarchy, so this check was
 // previously unreachable by anyone but admins. finance.ap.approve is the
 // existing permission that already governs finalizing vendor-invoice/AP work.
+// Only system_admin/company_admin bypass — matches requirePermission's rule
+// elsewhere; module_admin needs the permission explicitly granted like
+// anyone else. Deliberately not isAdmin() above, which also includes
+// module_admin and is for a different purpose (organizer/PO-authority checks).
 async function hasFinanceApproval(userId: string, companyId: string, role: string): Promise<boolean> {
-  if (isAdmin(role)) return true
+  if (role === 'system_admin' || role === 'company_admin') return true
   const perms = await loadPermissions(userId, companyId)
   return meetsLevel(perms['finance.ap.approve'], 'approve')
 }

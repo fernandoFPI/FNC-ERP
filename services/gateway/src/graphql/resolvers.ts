@@ -452,15 +452,40 @@ function isAdminGW(role: string): boolean {
   return ['system_admin', 'company_admin', 'module_admin'].includes(role)
 }
 
+// Only system_admin/company_admin auto-bypass granular permission checks —
+// module_admin needs permissions explicitly granted like anyone else. This
+// is the same rule packages/permissions/src/middleware.ts's requirePermission
+// enforces everywhere else; isAdminGW (which also includes module_admin) is
+// for a different purpose (organizer/PO-authority checks) and must not be
+// used here.
+function isPermissionBypassGW(role: string): boolean {
+  return role === 'system_admin' || role === 'company_admin'
+}
+
 // Gates the finance_audit/invoiced stages. System-wide finance capability,
 // not PO-specific — 'finance' was never part of the real role vocabulary
 // (user/module_admin/company_admin/system_admin), so this was previously
 // unreachable by anyone but admins. Mirrors hasFinanceApproval in
 // services/procurement/src/routes/orders.ts.
 async function hasFinanceApprovalGW(userId: string, companyId: string, role: string): Promise<boolean> {
-  if (isAdminGW(role)) return true
+  if (isPermissionBypassGW(role)) return true
   const perms = await loadPermissions(userId, companyId)
   return meetsLevel(perms['finance.ap.approve'], 'approve')
+}
+
+// Generic granular-permission check for GraphQL mutations, matching
+// requirePermission's semantics exactly (system_admin/company_admin bypass,
+// everyone else needs the key granted at minLevel). Throws on failure.
+async function requirePermGW(
+  auth: { userId: string; companyId: string; role: string },
+  permKey: string,
+  minLevel: 'view' | 'edit' | 'approve' | 'admin',
+): Promise<void> {
+  if (isPermissionBypassGW(auth.role)) return
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  if (!meetsLevel(perms[permKey], minLevel)) {
+    throw new Error(`Requires '${minLevel}' access to '${permKey}'`)
+  }
 }
 
 // ── PO notification helpers ──────────────────────────────────────────────────
@@ -5997,6 +6022,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.edit', 'edit')
       const { entry_date, description, source_type, lines } = args.input
       const totalDebit = lines.reduce((s, l) => s + l.debit, 0)
       const totalCredit = lines.reduce((s, l) => s + l.credit, 0)
@@ -6050,6 +6076,7 @@ export const resolvers = {
 
     postJournalEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.approve', 'approve')
       const jeCheck = await query(
         `SELECT * FROM journal_entries WHERE id=$1 AND company_id=$2 AND status='draft'`,
         [args.id, ctx.auth.companyId],
@@ -6075,6 +6102,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.approve', 'approve')
       const r = await query(
         `UPDATE journal_entries SET status='cancelled', cancel_reason=$3, updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status IN ('draft','posted') RETURNING *`,
         [args.id, ctx.auth.companyId, args.reason ?? null],
@@ -6098,6 +6126,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.fx_rates.edit', 'edit')
       const { from_currency, to_currency, rate, rate_date, source } = args.input
       const r = await query(
         `INSERT INTO fx_rates (from_currency,to_currency,rate,rate_date,source,created_by)
@@ -6316,6 +6345,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.ap.edit', 'edit')
       const i = args.input
       const voucherNumber =
         (i.voucher_number as string | undefined) ??
@@ -6384,6 +6414,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.ap.edit', 'edit')
       const pvCheck = await query(
         `SELECT id, status, voucher_number FROM payment_vouchers WHERE id=$1 AND company_id=$2`,
         [args.id, ctx.auth.companyId],
