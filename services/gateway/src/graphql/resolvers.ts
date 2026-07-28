@@ -14569,6 +14569,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -14622,6 +14623,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       if (args.voValue !== undefined || args.contractId !== undefined) {
         const cur = await query(
           `SELECT pvo.status FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE p.company_id=$1 AND pvo.id=$2`,
@@ -14718,6 +14720,7 @@ export const resolvers = {
 
     submitVariationOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       const r = await query(
         `UPDATE project_variation_orders pvo SET status='submitted', submitted_at=NOW(), updated_at=NOW() FROM projects p WHERE p.id=pvo.project_id AND p.company_id=$1 AND pvo.id=$2 AND pvo.status='draft' RETURNING pvo.*`,
         [ctx.auth.companyId, args.id],
@@ -14869,6 +14872,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(
         `SELECT pvo.id FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`,
         [args.voId, ctx.auth.companyId],
@@ -14906,6 +14910,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -14949,6 +14954,7 @@ export const resolvers = {
 
     deleteVOCostItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(
         `DELETE FROM project_vo_cost_items ci USING project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE ci.vo_id=pvo.id AND p.company_id=$1 AND ci.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -14969,6 +14975,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(
         `SELECT pvo.id FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`,
         [args.voId, ctx.auth.companyId],
@@ -14992,6 +14999,7 @@ export const resolvers = {
 
     deleteVOCorrespondence: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(
         `DELETE FROM project_vo_correspondence vc USING project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE vc.vo_id=pvo.id AND p.company_id=$1 AND vc.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -15011,6 +15019,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(
         `SELECT pvo.id FROM project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE pvo.id=$1 AND p.company_id=$2`,
         [args.voId, ctx.auth.companyId],
@@ -15032,6 +15041,7 @@ export const resolvers = {
 
     removeVODrawing: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.edit', 'edit')
       await query(
         `DELETE FROM project_vo_drawings vd USING project_variation_orders pvo JOIN projects p ON p.id=pvo.project_id WHERE vd.vo_id=pvo.id AND p.company_id=$1 AND vd.id=$2`,
         [ctx.auth.companyId, args.id],
