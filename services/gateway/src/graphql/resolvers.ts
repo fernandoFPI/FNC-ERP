@@ -4133,6 +4133,7 @@ export const resolvers = {
     // Reporting
     projectProfitability: async (_: unknown, args: { status?: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
       let sql = `SELECT * FROM v_project_profitability WHERE company_id=$1`
       const params: unknown[] = [ctx.auth.companyId]
       if (args.status) {
@@ -19188,6 +19189,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     const cid = args.companyId ?? ctx.auth.companyId
     const r = await query(
       `SELECT p.id, p.code, p.name, p.project_type, p.status, p.budget_amount AS budget,
@@ -21636,6 +21638,7 @@ const phase5QueryResolvers = {
 
   projectTeamMembers: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) return []
+    await requirePermGW(ctx.auth, 'projects.view', 'view')
     const r = await query(
       `SELECT ptm.*, e.first_name||' '||e.last_name AS employee_name
        FROM project_members ptm
