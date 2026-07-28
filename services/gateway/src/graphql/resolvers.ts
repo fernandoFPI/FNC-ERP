@@ -20260,11 +20260,13 @@ const phase5QueryResolvers = {
 
   lifecycleConfig: async (_: unknown, __: unknown, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.view', 'view')
     return fetchLifecycleConfig(ctx.auth.companyId)
   },
 
   rfqPhases: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.bidding.view', 'view')
     // Verify project belongs to this company
     const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
@@ -20357,6 +20359,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.client_documents.view', 'view')
     const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20438,6 +20441,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.engineering.view', 'view')
     const wheres = ['ed.project_id=$1', 'ed.company_id=$2', 'ed.is_current=true']
     const vals: unknown[] = [args.projectId, ctx.auth.companyId]
     let i = 3
@@ -20534,6 +20538,7 @@ const phase5QueryResolvers = {
 
   engineeringRevisions: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.engineering.view', 'view')
     const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20559,6 +20564,7 @@ const phase5QueryResolvers = {
 
   projectDrawings: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.engineering.view', 'view')
     const proj = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20629,6 +20635,7 @@ const phase5QueryResolvers = {
 
   bidDeliverables: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.bidding.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20696,6 +20703,7 @@ const phase5QueryResolvers = {
 
   bidPackageFiles: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.bidding.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20707,6 +20715,7 @@ const phase5QueryResolvers = {
 
   bidCostItems: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.bidding.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20736,6 +20745,7 @@ const phase5QueryResolvers = {
 
   bidSupplierQuotations: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.bidding.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20781,6 +20791,7 @@ const phase5QueryResolvers = {
 
   bidCommercialSummary: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.bidding.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20837,6 +20848,7 @@ const phase5QueryResolvers = {
 
   projectRFIs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20905,6 +20917,7 @@ const phase5QueryResolvers = {
 
   projectCostCodes: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -20954,6 +20967,7 @@ const phase5QueryResolvers = {
 
   projectCommittedCosts: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     const rows = await query(
       `SELECT cc.*, pcc.name AS cost_code_name FROM project_committed_costs cc LEFT JOIN project_cost_codes pcc ON pcc.id=cc.cost_code_id JOIN projects p ON p.id=cc.project_id WHERE cc.project_id=$1 AND p.company_id=$2 ORDER BY cc.commitment_date DESC NULLS LAST, cc.created_at DESC`,
       [args.projectId, ctx.auth.companyId],
@@ -20965,9 +20979,11 @@ const phase5QueryResolvers = {
 
   projectCashFlow: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     const rows = await query(
-      `SELECT * FROM project_cash_flow WHERE project_id=$1 ORDER BY period_year, period_month`,
-      [args.projectId],
+      `SELECT cf.* FROM project_cash_flow cf JOIN projects p ON p.id=cf.project_id
+       WHERE cf.project_id=$1 AND p.company_id=$2 ORDER BY cf.period_year, cf.period_month`,
+      [args.projectId, ctx.auth.companyId],
     )
     let cumPlan = 0,
       cumActual = 0,
@@ -20982,6 +20998,7 @@ const phase5QueryResolvers = {
 
   projectSubcontracts: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
     const rows = await query(
       `SELECT sc.* FROM project_subcontracts sc JOIN projects p ON p.id=sc.project_id WHERE sc.project_id=$1 AND p.company_id=$2 ORDER BY sc.created_at DESC`,
       [args.projectId, ctx.auth.companyId],
@@ -21006,6 +21023,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
     let sql = `SELECT le.* FROM project_labor_entries le JOIN projects p ON p.id=le.project_id WHERE le.project_id=$1 AND p.company_id=$2`
     const params: unknown[] = [args.projectId, ctx.auth.companyId]
     let idx = 3
@@ -21028,6 +21046,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
     let sql = `SELECT el.* FROM project_equipment_log el JOIN projects p ON p.id=el.project_id WHERE el.project_id=$1 AND p.company_id=$2`
     const params: unknown[] = [args.projectId, ctx.auth.companyId]
     let idx = 3
@@ -21046,6 +21065,7 @@ const phase5QueryResolvers = {
 
   projectCostForecast: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     const rows = await query(
       `SELECT cf.*, pcc.name AS cost_code_name FROM project_cost_forecast cf LEFT JOIN project_cost_codes pcc ON pcc.id=cf.cost_code_id JOIN projects p ON p.id=cf.project_id WHERE cf.project_id=$1 AND p.company_id=$2 ORDER BY cf.forecast_date DESC, cf.cost_code_id`,
       [args.projectId, ctx.auth.companyId],
@@ -21065,6 +21085,7 @@ const phase5QueryResolvers = {
 
   projectClientBillings: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     const rows = await query(
       `SELECT cb.* FROM project_client_billings cb JOIN projects p ON p.id=cb.project_id WHERE cb.project_id=$1 AND p.company_id=$2 ORDER BY cb.billing_date DESC`,
       [args.projectId, ctx.auth.companyId],
@@ -21074,6 +21095,7 @@ const phase5QueryResolvers = {
 
   projectCostSummary: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
