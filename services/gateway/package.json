@@ -25,6 +25,7 @@
     "@fnc-erp/db": "workspace:*",
     "@fnc-erp/fx": "workspace:*",
     "@fnc-erp/logger": "workspace:*",
+    "@fnc-erp/permissions": "workspace:*",
     "@fnc-erp/storage": "workspace:*",
     "@fnc-erp/types": "workspace:*",
     "@graphql-tools/schema": "^9.0.19",

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type RefObject } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { useSubscription } from '@apollo/client'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { BottomNav } from './BottomNav'
@@ -11,6 +12,13 @@ import { useTheme } from '../../theme/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 import { useSwipeGesture } from '../../hooks/useSwipeGesture'
+import { useAuthStore } from '../../store/authStore'
+import { useCompanyStore } from '../../store/companyStore'
+import { PERMISSIONS_CHANGED_SUBSCRIPTION } from '../../graphql/permissions'
+
+interface PermissionsChangedData {
+  permissionsChanged: { userId: string; companyId: string }
+}
 
 export function AppShell() {
   const { theme } = useTheme()
@@ -23,6 +31,24 @@ export function AppShell() {
   const [searchPrefill, setSearchPrefill] = useState('')
   const pageRef = useRef<HTMLDivElement>(null)
   useWebSocket()
+
+  // Live permission updates — when an admin changes this user's permissions for
+  // whatever company they're currently in, refresh the sidebar without needing
+  // a logout/login. Server scopes delivery to this user's own id; we scope
+  // further to the currently active company to avoid a pointless refetch when
+  // the change was for a company the user isn't even looking at right now.
+  const currentUserId = useAuthStore((s) => s.user?.id)
+  useSubscription<PermissionsChangedData>(PERMISSIONS_CHANGED_SUBSCRIPTION, {
+    variables: { userId: currentUserId ?? '' },
+    skip: !currentUserId,
+    onData: ({ data }) => {
+      const changed = data.data?.permissionsChanged
+      const company = useCompanyStore.getState().activeCompany
+      if (changed && company && changed.companyId === company.id) {
+        void useAuthStore.getState().loadPermissionsForCompany(company.id)
+      }
+    },
+  })
 
   // Close phone drawer on route change
   useEffect(() => {

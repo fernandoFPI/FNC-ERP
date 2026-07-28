@@ -24,7 +24,10 @@ import {
   sessionsChangedChannel,
   publishSessionsChanged,
   publishOutboxUpdated,
+  permissionsChangedChannel,
+  publishPermissionsChanged,
 } from './pubsub.js'
+import { invalidatePermissionCache } from '@fnc-erp/permissions'
 import type { POStatus, POAction } from '@fnc-erp/workflow'
 import { logAudit } from '@fnc-erp/audit'
 import {
@@ -23411,6 +23414,11 @@ Object.assign(resolvers, {
       subscribe: () => pubsub.asyncIterator(CHANNELS.OUTBOX_UPDATED),
       resolve: (payload: { updatedAt: string }) => payload,
     },
+    permissionsChanged: {
+      subscribe: (_: unknown, args: { userId: string }) =>
+        pubsub.asyncIterator(permissionsChangedChannel(args.userId)),
+      resolve: (payload: { userId: string; companyId: string }) => payload,
+    },
   },
 })
 
@@ -23722,6 +23730,8 @@ Object.assign(resolvers.Mutation, {
         [userId, companyId, key, level, ctx.auth.userId],
       )
     }
+    await invalidatePermissionCache(userId, companyId)
+    await publishPermissionsChanged(userId, companyId)
     const adminCheck = await query(
       `SELECT 1 FROM user_company_roles WHERE user_id=$1 AND company_id=$2 AND role IN ('system_admin','company_admin') AND is_active=true LIMIT 1`,
       [userId, companyId],

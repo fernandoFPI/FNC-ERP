@@ -625,6 +625,9 @@ importers:
       '@fnc-erp/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@fnc-erp/permissions':
+        specifier: workspace:*
+        version: link:../../packages/permissions
       '@fnc-erp/storage':
         specifier: workspace:*
         version: link:../../packages/storage

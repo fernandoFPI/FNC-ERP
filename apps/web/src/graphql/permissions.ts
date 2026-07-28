@@ -110,6 +110,15 @@ export const DELETE_ROLE_TEMPLATE = gql`
   }
 `
 
+export const PERMISSIONS_CHANGED_SUBSCRIPTION = gql`
+  subscription OnPermissionsChanged($userId: ID!) {
+    permissionsChanged(userId: $userId) {
+      userId
+      companyId
+    }
+  }
+`
+
 export const GET_USER_PO_POSITIONS = gql`
   query GetUserPOPositions($userId: ID!) {
     userPOPositions(userId: $userId) {

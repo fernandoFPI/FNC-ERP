@@ -4945,10 +4945,17 @@
     updatedAt: String!
   }
 
+  type PermissionsChangedEvent {
+    userId: ID!
+    companyId: ID!
+  }
+
   type Subscription {
     "Fires when a session is created or revoked. Pass userId to scope to one user; omit to hear about all users (e.g. an admin list view)."
     sessionsChanged(userId: ID): SessionsChangedEvent!
     "Fires whenever the worker finishes an outbox processing cycle that changed something, or an admin retries/dismisses/resets an event."
     outboxUpdated: OutboxUpdatedEvent!
+    "Fires when an admin saves a user's permissions for a company. Scoped to the affected user so their client can refresh without a logout/login."
+    permissionsChanged(userId: ID!): PermissionsChangedEvent!
   }
 `

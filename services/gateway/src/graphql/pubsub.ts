@@ -28,3 +28,11 @@ export async function publishSessionsChanged(userId: string): Promise<void> {
 export async function publishOutboxUpdated(): Promise<void> {
   await pubsub.publish(CHANNELS.OUTBOX_UPDATED, { updatedAt: new Date().toISOString() })
 }
+
+export function permissionsChangedChannel(userId: string): string {
+  return `PERMISSIONS_CHANGED:${userId}`
+}
+
+export async function publishPermissionsChanged(userId: string, companyId: string): Promise<void> {
+  await pubsub.publish(permissionsChangedChannel(userId), { userId, companyId })
+}
