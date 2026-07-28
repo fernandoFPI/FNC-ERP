@@ -169,6 +169,8 @@ export async function notifyPositionHolders(
          ($2::uuid IS NOT NULL AND ppa.project_id    = $2)
          OR
          ($3::uuid IS NOT NULL AND ppa.department_id = $3)
+         OR
+         (ppa.project_id IS NULL AND ppa.department_id IS NULL)
        )`,
     [position, (po['project_id'] as string | null) ?? null, departmentId],
   )

@@ -22165,8 +22165,6 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     if (ctx.auth.role !== 'system_admin') throw new Error('system_admin role required')
     const { employeeId, position, projectId, departmentId } = args.input
-    if (!projectId && !departmentId)
-      throw new Error('Either projectId or departmentId must be provided')
     const r = await query(
       `INSERT INTO po_position_assignments (company_id, employee_id, position, project_id, department_id, assigned_by)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,

@@ -87,10 +87,10 @@ ordersRouter.get(
          AND po.status NOT IN ('deleted','completed','cancelled')
          AND (
            (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected'))
-           OR (po.status = 'inventory_check' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
-           OR (po.status = 'store_pricing' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='store_pricing' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
-           OR (po.status = 'market_pricing' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
-           OR (po.status = 'price_verification' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
+           OR (po.status = 'inventory_check' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+           OR (po.status = 'store_pricing' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='store_pricing' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+           OR (po.status = 'market_pricing' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+           OR (po.status = 'price_verification' AND EXISTS (SELECT 1 FROM po_position_assignments ppa WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
            OR (po.status = 'pending_approval' AND (EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4) OR po.assigned_approver_id=$3))
            OR (po.status IN ('finance_audit','invoiced') AND $5 = 'finance')
            OR ($5 = 'system_admin' AND po.status IN ('inventory_check','store_pricing','market_pricing','price_verification','pending_approval','finance_audit','invoiced'))
@@ -137,7 +137,7 @@ ordersRouter.get(
              WHERE ppa.employee_id   = $3
                AND ppa.position      = 'store_keeper'
                AND ppa.is_active     = true
-               AND (ppa.project_id = po.project_id OR ppa.department_id = $4)
+               AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
            ))
            OR
            -- Store pricing
@@ -146,7 +146,7 @@ ordersRouter.get(
              WHERE ppa.employee_id   = $3
                AND ppa.position      = 'store_pricing'
                AND ppa.is_active     = true
-               AND (ppa.project_id = po.project_id OR ppa.department_id = $4)
+               AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
            ))
            OR
            -- Procurement officer
@@ -155,7 +155,7 @@ ordersRouter.get(
              WHERE ppa.employee_id   = $3
                AND ppa.position      = 'procurement_officer'
                AND ppa.is_active     = true
-               AND (ppa.project_id = po.project_id OR ppa.department_id = $4)
+               AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
            ))
            OR
            -- 2nd procurement
@@ -164,7 +164,7 @@ ordersRouter.get(
              WHERE ppa.employee_id   = $3
                AND ppa.position      = 'procurement_2nd'
                AND ppa.is_active     = true
-               AND (ppa.project_id = po.project_id OR ppa.department_id = $4)
+               AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
            ))
            OR
            -- Dept head / assigned approver (approval step)
@@ -422,10 +422,6 @@ ordersRouter.post(
 
     if (!employee_id || !position) {
       sendError(res, 400, 'VALIDATION_ERROR', 'employee_id and position are required')
-      return
-    }
-    if (!project_id && !department_id) {
-      sendError(res, 400, 'VALIDATION_ERROR', 'project_id or department_id is required')
       return
     }
 

@@ -54,6 +54,8 @@ export async function userHasPosition(ctx: POAuthContext, position: string): Pro
          ($4::uuid IS NOT NULL AND project_id    = $4)
          OR
          ($5::uuid IS NOT NULL AND department_id = $5)
+         OR
+         (project_id IS NULL AND department_id IS NULL)
        )
      LIMIT 1`,
     [employeeId, position, ctx.companyId, scope.project_id ?? null, scope.department_id ?? null],
