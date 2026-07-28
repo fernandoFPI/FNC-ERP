@@ -1,4 +1,4 @@
-import { pool, getSystemConfig, isEmailEnabled } from '@fnc-erp/db'
+import { pool, getSystemConfig, isEmailEnabled, withSystemTransaction } from '@fnc-erp/db'
 import { env } from '@fnc-erp/config'
 import { logger } from '@fnc-erp/logger'
 import QRCode from 'qrcode'
@@ -755,36 +755,40 @@ async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
   const createdBy = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = createdBy.rows[0]?.['id'] ?? ''
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,$2,'Project invoice',CURRENT_DATE,'posted','project_invoice',$3,$4) RETURNING id`,
-    [p.company_id, invoiceNumber, p.invoice_id, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
-
-  // DR: Accounts Receivable (no analytic tag — AR is not a project cost/revenue)
-  if (netPayable > 0) {
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$5,ROUND($3*$5,4))`,
-      [jeId, arAccount['id'], netPayable, p.currency_code, fxRate],
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1,$2,'Project invoice',CURRENT_DATE,'posted','project_invoice',$3,$4) RETURNING id`,
+      [p.company_id, invoiceNumber, p.invoice_id, userId],
     )
-  }
-  if (retentionAmount > 0 && retentionAccount) {
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$5,ROUND($3*$5,4))`,
-      [jeId, retentionAccount['id'], retentionAmount, p.currency_code, fxRate],
-    )
-  }
-  // CR: Revenue — tag with project analytic account so it shows up in project journal
-  await pool.query(
-    `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
-     VALUES ($1,$2,$3,0,$4,$5,$6,ROUND($4*$6,4))`,
-    [jeId, revenueAccount['id'], analyticAccountId, grossTotal, p.currency_code, fxRate],
-  )
+    const id = jeResult.rows[0]!['id']
 
-  await pool.query(`UPDATE project_invoices SET journal_entry_id=$1 WHERE id=$2`, [jeId, p.invoice_id])
+    // DR: Accounts Receivable (no analytic tag — AR is not a project cost/revenue)
+    if (netPayable > 0) {
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$5,ROUND($3::numeric*$5::numeric,4))`,
+        [id, arAccount['id'], netPayable, p.currency_code, fxRate],
+      )
+    }
+    if (retentionAmount > 0 && retentionAccount) {
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$5,ROUND($3::numeric*$5::numeric,4))`,
+        [id, retentionAccount['id'], retentionAmount, p.currency_code, fxRate],
+      )
+    }
+    // CR: Revenue — tag with project analytic account so it shows up in project journal
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
+       VALUES ($1,$2,$3,0,$4,$5,$6,ROUND($4::numeric*$6::numeric,4))`,
+      [id, revenueAccount['id'], analyticAccountId, grossTotal, p.currency_code, fxRate],
+    )
+
+    await client.query(`UPDATE project_invoices SET journal_entry_id=$1 WHERE id=$2`, [id, p.invoice_id])
+    return id
+  })
+
   log.info({ jeId, invoiceId: p.invoice_id }, 'invoice GL journal created')
 }
 
@@ -835,30 +839,33 @@ async function createPOCompletionJournal(p: POCompletionJournalPayload): Promise
   const createdBy = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = createdBy.rows[0]?.['id'] ?? ''
 
-  const je = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
-     VALUES ($1,$2,$3,CURRENT_DATE,'posted','po_completion',$4::uuid,$5,NOW(),$5) RETURNING id`,
-    [p.company_id, `PO-${poNumber}-COST`, `Project cost from PO ${poNumber}`, p.po_id, userId],
-  )
-  const jeId = je.rows[0]!.id
+  const jeId = await withSystemTransaction(async (client) => {
+    const je = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
+       VALUES ($1,$2,$3,CURRENT_DATE,'posted','po_completion',$4::uuid,$5,NOW(),$5) RETURNING id`,
+      [p.company_id, `PO-${poNumber}-COST`, `Project cost from PO ${poNumber}`, p.po_id, userId],
+    )
+    const id = je.rows[0]!.id
 
-  await pool.query(
-    `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-    [jeId, p.po_id],
-  )
+    await client.query(
+      `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+      [id, p.po_id],
+    )
 
-  // Dr. Project Expense (tagged with analytic account → triggers trg_sync_project_costs)
-  await pool.query(
-    `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
-     VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8)`,
-    [jeId, expAccountId, analyticAccountId, `Project expense from PO ${poNumber}`, totalAmount, currencyCode, fxRate, amountCompanyCurrency],
-  )
-  // Cr. Accounts Payable
-  await pool.query(
-    `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
-     VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
-    [jeId, apAccountId, `Payable for PO ${poNumber}`, totalAmount, currencyCode, fxRate, amountCompanyCurrency],
-  )
+    // Dr. Project Expense (tagged with analytic account → triggers trg_sync_project_costs)
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id,account_id,analytic_account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
+       VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8)`,
+      [id, expAccountId, analyticAccountId, `Project expense from PO ${poNumber}`, totalAmount, currencyCode, fxRate, amountCompanyCurrency],
+    )
+    // Cr. Accounts Payable
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,currency_code,fx_rate,amount_company_currency)
+       VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
+      [id, apAccountId, `Payable for PO ${poNumber}`, totalAmount, currencyCode, fxRate, amountCompanyCurrency],
+    )
+    return id
+  })
   log.info({ jeId, poId: p.po_id }, 'PO completion GL journal created')
 }
 
@@ -885,45 +892,48 @@ async function createPaymentJournal(p: PaymentJournalPayload): Promise<void> {
   const createdBy = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = createdBy.rows[0]?.['id'] ?? ''
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'PAY-' || LEFT($2::text,8),'Invoice payment',$3,'posted','invoice_payment',$2::uuid,$4) RETURNING id`,
-    [p.company_id, p.invoice_id, p.payment_date, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1,'PAY-' || LEFT($2::text,8),'Invoice payment',$3,'posted','invoice_payment',$2::uuid,$4) RETURNING id`,
+      [p.company_id, p.invoice_id, p.payment_date, userId],
+    )
+    const id = jeResult.rows[0]!['id']
 
-  if (!p.wht_applies || whtAmount === 0) {
-    // Simple: Dr Cash / Cr AR
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
-      [jeId, cashAccount['id'], cashAmount, p.currency_code, arAccount['id']],
-    )
-  } else if (p.wht_scenario === 'client_withholds' && whtRecoverable) {
-    // Scenario A: Dr Cash + Dr WHT Recoverable / Cr AR (full gross)
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$3), ($1,$5,$6,0,$4,$6), ($1,$7,0,$8,$4,$8)`,
-      [jeId, cashAccount['id'], cashAmount, p.currency_code,
-       whtRecoverable['id'], whtAmount, arAccount['id'], arCredit],
-    )
-  } else if (p.wht_scenario === 'fnc_pays' && whtPayable && whtExpense) {
-    // Scenario B: Dr Cash / Cr AR, AND Dr WHT Expense / Cr WHT Payable
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3),
-              ($1,$6,$7,0,$4,$7), ($1,$8,0,$7,$4,$7)`,
-      [jeId, cashAccount['id'], cashAmount, p.currency_code,
-       arAccount['id'], whtExpense['id'], whtAmount, whtPayable['id']],
-    )
-  } else {
-    // Fallback: simple Dr Cash / Cr AR (WHT accounts not seeded yet)
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
-      [jeId, cashAccount['id'], cashAmount, p.currency_code, arAccount['id']],
-    )
-  }
+    if (!p.wht_applies || whtAmount === 0) {
+      // Simple: Dr Cash / Cr AR
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
+        [id, cashAccount['id'], cashAmount, p.currency_code, arAccount['id']],
+      )
+    } else if (p.wht_scenario === 'client_withholds' && whtRecoverable) {
+      // Scenario A: Dr Cash + Dr WHT Recoverable / Cr AR (full gross)
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,$6,0,$4,$6), ($1,$7,0,$8,$4,$8)`,
+        [id, cashAccount['id'], cashAmount, p.currency_code,
+         whtRecoverable['id'], whtAmount, arAccount['id'], arCredit],
+      )
+    } else if (p.wht_scenario === 'fnc_pays' && whtPayable && whtExpense) {
+      // Scenario B: Dr Cash / Cr AR, AND Dr WHT Expense / Cr WHT Payable
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3),
+                ($1,$6,$7,0,$4,$7), ($1,$8,0,$7,$4,$7)`,
+        [id, cashAccount['id'], cashAmount, p.currency_code,
+         arAccount['id'], whtExpense['id'], whtAmount, whtPayable['id']],
+      )
+    } else {
+      // Fallback: simple Dr Cash / Cr AR (WHT accounts not seeded yet)
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
+        [id, cashAccount['id'], cashAmount, p.currency_code, arAccount['id']],
+      )
+    }
+    return id
+  })
 
   log.info({ jeId, invoiceId: p.invoice_id, whtScenario: p.wht_scenario }, 'AR payment GL journal created')
 }
@@ -956,19 +966,25 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
     fxRate = fxRes.rows[0] ? parseFloat(String(fxRes.rows[0]['rate'])) : 1.0
   }
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'APINV-'||LEFT($2::text,8),'Vendor invoice approved',$3,'posted','vendor_invoice',$2::uuid,$4) RETURNING id`,
-    [p.company_id, p.invoice_id, p.invoice_date, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
+  // Entry + lines must be atomic — a failure partway through (like the
+  // untyped-multiplication bug this was fixing) previously left an orphaned
+  // journal_entries row with zero lines, once per outbox retry attempt.
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1,'APINV-'||LEFT($2::text,8),'Vendor invoice approved',$3,'posted','vendor_invoice',$2::uuid,$4) RETURNING id`,
+      [p.company_id, p.invoice_id, p.invoice_date, userId],
+    )
+    const id = jeResult.rows[0]!['id']
 
-  // Dr Expense (cost) / Cr Accounts Payable
-  await pool.query(
-    `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
-     VALUES ($1,$2,$3,0,$4,$5,ROUND($3*$5,4)), ($1,$6,0,$3,$4,$5,ROUND($3*$5,4))`,
-    [jeId, expenseAccount['id'], totalAmount, p.currency_code, fxRate, apAccount['id']],
-  )
+    // Dr Expense (cost) / Cr Accounts Payable
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
+       VALUES ($1,$2,$3,0,$4,$5,ROUND($3::numeric*$5::numeric,4)), ($1,$6,0,$3,$4,$5,ROUND($3::numeric*$5::numeric,4))`,
+      [id, expenseAccount['id'], totalAmount, p.currency_code, fxRate, apAccount['id']],
+    )
+    return id
+  })
 
   log.info({ jeId, invoiceId: p.invoice_id }, 'vendor invoice AP journal created')
 }
@@ -1001,42 +1017,45 @@ async function createVendorPaymentJournal(p: VendorPaymentJournalPayload): Promi
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'APPAY-'||LEFT($2::text,8),'Vendor payment',$3,'draft','vendor_payment',$4,$5) RETURNING id`,
-    [p.companyId, p.paymentId, p.paymentDate, p.paymentId, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
-
-  if (!p.whtApplies || proportionalWht === 0 || !whtPayable) {
-    // Simple: Dr AP / Cr Cash
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
-      [jeId, apAccount['id'], paymentAmount, p.currencyCode, cashAccount['id']],
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1,'APPAY-'||LEFT($2::text,8),'Vendor payment',$3,'draft','vendor_payment',$4,$5) RETURNING id`,
+      [p.companyId, p.paymentId, p.paymentDate, p.paymentId, userId],
     )
-  } else {
-    // Proportional WHT: Dr AP (payment + proportional WHT) / Cr Cash (payment) / Cr WHT Payable (proportional WHT)
-    await pool.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$6,$4,$6), ($1,$7,0,$8,$4,$8)`,
-      [jeId, apAccount['id'], apDebit, p.currencyCode,
-       cashAccount['id'], paymentAmount, whtPayable['id'], proportionalWht],
-    )
-  }
+    const id = jeResult.rows[0]!['id']
 
-  // Track which journal owns this payment (enables combine + post flow)
-  await pool.query(`UPDATE vendor_payments SET journal_entry_id=$1 WHERE id=$2`, [jeId, p.paymentId])
-
-  // Link journal entry to all source POs
-  if (p.poIds && p.poIds.length > 0) {
-    for (const poId of p.poIds) {
-      await pool.query(
-        `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [jeId, poId],
+    if (!p.whtApplies || proportionalWht === 0 || !whtPayable) {
+      // Simple: Dr AP / Cr Cash
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$3,$4,$3)`,
+        [id, apAccount['id'], paymentAmount, p.currencyCode, cashAccount['id']],
+      )
+    } else {
+      // Proportional WHT: Dr AP (payment + proportional WHT) / Cr Cash (payment) / Cr WHT Payable (proportional WHT)
+      await client.query(
+        `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+         VALUES ($1,$2,$3,0,$4,$3), ($1,$5,0,$6,$4,$6), ($1,$7,0,$8,$4,$8)`,
+        [id, apAccount['id'], apDebit, p.currencyCode,
+         cashAccount['id'], paymentAmount, whtPayable['id'], proportionalWht],
       )
     }
-  }
+
+    // Track which journal owns this payment (enables combine + post flow)
+    await client.query(`UPDATE vendor_payments SET journal_entry_id=$1 WHERE id=$2`, [id, p.paymentId])
+
+    // Link journal entry to all source POs
+    if (p.poIds && p.poIds.length > 0) {
+      for (const poId of p.poIds) {
+        await client.query(
+          `INSERT INTO journal_po_links (journal_entry_id, po_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, poId],
+        )
+      }
+    }
+    return id
+  })
 
   log.info({ jeId, paymentId: p.paymentId, invoiceId: p.invoiceId }, 'vendor payment AP journal created')
 }
@@ -1075,26 +1094,29 @@ async function createMOJournal(p: MOJournalPayload): Promise<void> {
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries
-       (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'MO-'||LEFT($2::text,8),'Manufacturing order completion',CURRENT_DATE,'posted','manufacturing_order',$2::uuid,$3)
-     RETURNING id`,
-    [p.company_id, p.mo_id, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries
+         (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1,'MO-'||LEFT($2::text,8),'Manufacturing order completion',CURRENT_DATE,'posted','manufacturing_order',$2::uuid,$3)
+       RETURNING id`,
+      [p.company_id, p.mo_id, userId],
+    )
+    const id = jeResult.rows[0]!['id']
 
-  // Dr Inventory (finished goods in), Cr Production Cost (materials + labour consumed)
-  await pool.query(
-    `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-     VALUES ($1,$2,$3,0,'IQD',$3), ($1,$4,0,$3,'IQD',$3)`,
-    [jeId, inventoryAccount['id'], actualCost, costAccount['id']],
-  )
+    // Dr Inventory (finished goods in), Cr Production Cost (materials + labour consumed)
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+       VALUES ($1,$2,$3,0,'IQD',$3), ($1,$4,0,$3,'IQD',$3)`,
+      [id, inventoryAccount['id'], actualCost, costAccount['id']],
+    )
 
-  await pool.query(
-    `UPDATE manufacturing_orders SET journal_entry_id=$1 WHERE id=$2`,
-    [jeId, p.mo_id],
-  )
+    await client.query(
+      `UPDATE manufacturing_orders SET journal_entry_id=$1 WHERE id=$2`,
+      [id, p.mo_id],
+    )
+    return id
+  })
   log.info({ jeId, moId: p.mo_id }, 'MO GL journal created')
 }
 
@@ -1132,22 +1154,25 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries
-       (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1,'RNT-'||LEFT($2::text,8),'Rental invoice',CURRENT_DATE,'posted','rental_invoice',$2::uuid,$3)
-     RETURNING id`,
-    [p.company_id, p.invoice_id, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries
+         (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1,'RNT-'||LEFT($2::text,8),'Rental invoice',CURRENT_DATE,'posted','rental_invoice',$2::uuid,$3)
+       RETURNING id`,
+      [p.company_id, p.invoice_id, userId],
+    )
+    const id = jeResult.rows[0]!['id']
 
-  await pool.query(
-    `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-     VALUES ($1,$2,$3,0,'IQD',$3), ($1,$4,0,$3,'IQD',$3)`,
-    [jeId, arAccount['id'], amount, revenueAccount['id']],
-  )
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+       VALUES ($1,$2,$3,0,'IQD',$3), ($1,$4,0,$3,'IQD',$3)`,
+      [id, arAccount['id'], amount, revenueAccount['id']],
+    )
 
-  await pool.query(`UPDATE rental_invoices SET journal_entry_id=$1 WHERE id=$2`, [jeId, p.invoice_id])
+    await client.query(`UPDATE rental_invoices SET journal_entry_id=$1 WHERE id=$2`, [id, p.invoice_id])
+    return id
+  })
   log.info({ jeId, invoiceId: p.invoice_id }, 'rental invoice GL journal created')
 }
 
@@ -1209,36 +1234,39 @@ async function createPayrollJournal(p: PayrollJournalPayload): Promise<void> {
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
 
-  const jeResult = await pool.query<{ id: string }>(
-    `INSERT INTO journal_entries
-       (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
-     VALUES ($1, 'PAYR-' || LEFT($2::text, 8), $3, $4::date, 'posted', 'payroll_run', $2::uuid, $5)
-     RETURNING id`,
-    [p.company_id, p.payroll_run_id, `Payroll expense — ${p.period_name}`, p.end_date, userId],
-  )
-  const jeId = jeResult.rows[0]!['id']
+  const jeId = await withSystemTransaction(async (client) => {
+    const jeResult = await client.query<{ id: string }>(
+      `INSERT INTO journal_entries
+         (company_id, reference, description, entry_date, status, source_type, source_id, created_by)
+       VALUES ($1, 'PAYR-' || LEFT($2::text, 8), $3, $4::date, 'posted', 'payroll_run', $2::uuid, $5)
+       RETURNING id`,
+      [p.company_id, p.payroll_run_id, `Payroll expense — ${p.period_name}`, p.end_date, userId],
+    )
+    const id = jeResult.rows[0]!['id']
 
-  // Dr Salary & Wages Expense (gross)
-  // Cr Accrued Salaries Payable (net take-home)
-  // Cr Payroll Tax & SS Payable (income tax + social security withheld)
-  await pool.query(
-    `INSERT INTO journal_lines
-       (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-     VALUES ($1, $2, $3, 0,   'IQD', $3),
-            ($1, $4, 0,  $5,  'IQD', $5),
-            ($1, $6, 0,  $7,  'IQD', $7)`,
-    [jeId,
-     salaryExpense['id'],   totalGross,
-     salariesPayable['id'], totalNet,
-     taxSSPayable['id'],    totalDeductions],
-  )
+    // Dr Salary & Wages Expense (gross)
+    // Cr Accrued Salaries Payable (net take-home)
+    // Cr Payroll Tax & SS Payable (income tax + social security withheld)
+    await client.query(
+      `INSERT INTO journal_lines
+         (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
+       VALUES ($1, $2, $3, 0,   'IQD', $3),
+              ($1, $4, 0,  $5,  'IQD', $5),
+              ($1, $6, 0,  $7,  'IQD', $7)`,
+      [id,
+       salaryExpense['id'],   totalGross,
+       salariesPayable['id'], totalNet,
+       taxSSPayable['id'],    totalDeductions],
+    )
 
-  await pool.query(
-    `UPDATE payroll_runs
-     SET journal_entry_id = $1, status = 'posted', updated_at = NOW()
-     WHERE id = $2`,
-    [jeId, p.payroll_run_id],
-  )
+    await client.query(
+      `UPDATE payroll_runs
+       SET journal_entry_id = $1, status = 'posted', updated_at = NOW()
+       WHERE id = $2`,
+      [id, p.payroll_run_id],
+    )
+    return id
+  })
 
   log.info({ jeId, runId: p.payroll_run_id, period: p.period_name }, 'payroll GL journal created')
 }

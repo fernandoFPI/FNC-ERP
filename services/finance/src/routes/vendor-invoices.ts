@@ -602,35 +602,35 @@ vendorInvoicesRouter.post(
         return
       }
 
-      const invoice = await query(
-        `SELECT status, submitted_by, invoice_number FROM vendor_invoices WHERE id=$1 AND company_id=$2`,
-        [req.params['id'], req.auth!.companyId],
+      // Atomic: the UPDATE's own WHERE clause (not a prior SELECT-then-UPDATE)
+      // is what prevents a race — concurrent requests serialize on the row
+      // lock, and only the first to see status='submitted' can ever match.
+      // A separate SELECT check beforehand would let concurrent approvals all
+      // pass validation and each enqueue their own GL journal request.
+      const updated = await query(
+        `UPDATE vendor_invoices SET status='approved', approved_by=$1, approved_at=NOW(), updated_at=NOW()
+         WHERE id=$2 AND company_id=$3 AND status='submitted'
+         RETURNING *`,
+        [req.auth!.userId, req.params['id'], req.auth!.companyId],
       )
-      if (!invoice.rows[0]) {
-        sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
+      if (!updated.rows[0]) {
+        const exists = await query(`SELECT id FROM vendor_invoices WHERE id=$1 AND company_id=$2`, [
+          req.params['id'],
+          req.auth!.companyId,
+        ])
+        if (!exists.rows[0]) {
+          sendError(res, 404, 'NOT_FOUND', 'Vendor invoice not found')
+        } else {
+          sendError(res, 400, 'INVALID_STATUS', 'Only submitted invoices can be approved')
+        }
         return
       }
-      if (invoice.rows[0]['status'] !== 'submitted') {
-        sendError(res, 400, 'INVALID_STATUS', 'Only submitted invoices can be approved')
-        return
-      }
+      const apInv = updated.rows[0] as Record<string, unknown>
 
       await withTransaction(
         { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
         async (client) => {
-          await client.query(
-            `
-          UPDATE vendor_invoices SET status='approved', approved_by=$1, approved_at=NOW(), updated_at=NOW()
-          WHERE id=$2
-        `,
-            [req.auth!.userId, req.params['id']],
-          )
-
           // Queue AP journal entry: Dr Expense / Cr Accounts Payable
-          const invRow = await client.query(`SELECT * FROM vendor_invoices WHERE id=$1`, [
-            req.params['id'],
-          ])
-          const apInv = invRow.rows[0] as Record<string, unknown>
           await client.query(
             `INSERT INTO service_outbox (service, event_type, payload) VALUES ('finance','VENDOR_INVOICE_JOURNAL_REQUESTED',$1)`,
             [
@@ -645,7 +645,7 @@ vendorInvoicesRouter.post(
             ],
           )
 
-          if (invoice.rows[0]!['submitted_by']) {
+          if (apInv['submitted_by']) {
             await client.query(
               `
             INSERT INTO service_outbox (service, event_type, payload)
@@ -653,9 +653,9 @@ vendorInvoicesRouter.post(
           `,
               [
                 JSON.stringify({
-                  userId: invoice.rows[0]!['submitted_by'],
+                  userId: apInv['submitted_by'],
                   invoiceId: req.params['id'],
-                  invoiceNumber: invoice.rows[0]!['invoice_number'],
+                  invoiceNumber: apInv['invoice_number'],
                 }),
               ],
             )

@@ -6034,16 +6034,16 @@ export const resolvers = {
       const createdEntry = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
+          const reference = `JE-${crypto.randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`
           const je = await client.query(
-            `INSERT INTO journal_entries (company_id,entry_date,description,source_type,status,total_debit,total_credit,created_by)
-           VALUES ($1,$2,$3,$4,'draft',$5,$6,$7) RETURNING *`,
+            `INSERT INTO journal_entries (company_id,reference,entry_date,description,source_type,status,created_by)
+           VALUES ($1,$2,$3,$4,$5,'draft',$6) RETURNING *`,
             [
               ctx.auth!.companyId,
+              reference,
               entry_date,
               description ?? null,
               source_type ?? 'manual',
-              totalDebit,
-              totalCredit,
               ctx.auth!.userId,
             ],
           )
@@ -6087,7 +6087,7 @@ export const resolvers = {
       if (!jeCheck.rows[0]) throw new Error('Journal entry not found or not in draft status')
       const je = jeCheck.rows[0] as { id: string; source_type: string; source_id: string }
       const r = await query(
-        `UPDATE journal_entries SET status='posted', posted_at=NOW(), posted_by=$3, updated_at=NOW() WHERE id=$1 RETURNING *`,
+        `UPDATE journal_entries SET status='posted', posted_at=NOW(), posted_by=$3, updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING *`,
         [args.id, ctx.auth.companyId, ctx.auth.userId],
       )
       if (je.source_type === 'vendor_payment') {
