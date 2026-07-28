@@ -26,6 +26,8 @@ import {
   publishOutboxUpdated,
   permissionsChangedChannel,
   publishPermissionsChanged,
+  entityChangedChannel,
+  publishEntityChanged,
 } from './pubsub.js'
 import { invalidatePermissionCache, loadPermissions, meetsLevel } from '@fnc-erp/permissions'
 import type { POStatus, POAction } from '@fnc-erp/workflow'
@@ -2057,6 +2059,7 @@ async function projectTransition(
     `Status changed: ${fromStatus.replace(/_/g, ' ')} → ${toStatus.replace(/_/g, ' ')}` +
       (reason ? ` ("${reason}")` : ''),
   )
+  void publishEntityChanged(companyId, 'project', projectId, 'updated')
   return projectRowToGQL(updated.rows[0] as Record<string, unknown>)
 }
 
@@ -5844,7 +5847,7 @@ export const resolvers = {
       const totalCredit = lines.reduce((s, l) => s + l.credit, 0)
       if (Math.abs(totalDebit - totalCredit) > 0.001)
         throw new Error('Journal entry must be balanced')
-      return withTransaction(
+      const createdEntry = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           const je = await client.query(
@@ -5881,6 +5884,13 @@ export const resolvers = {
           return entry
         },
       )
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'journal_entry',
+        createdEntry.id as string,
+        'created',
+      )
+      return createdEntry
     },
 
     postJournalEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -5900,6 +5910,7 @@ export const resolvers = {
       } else if (je.source_type === 'combined') {
         await query(`UPDATE vendor_payments SET posted = true WHERE journal_entry_id = $1`, [je.id])
       }
+      void publishEntityChanged(ctx.auth.companyId, 'journal_entry', args.id, 'updated')
       return r.rows[0]
     },
 
@@ -5914,6 +5925,7 @@ export const resolvers = {
         [args.id, ctx.auth.companyId, args.reason ?? null],
       )
       if (!r.rows[0]) throw new Error('Journal entry not found or cannot be cancelled')
+      void publishEntityChanged(ctx.auth.companyId, 'journal_entry', args.id, 'updated')
       return r.rows[0]
     },
 
@@ -6207,6 +6219,7 @@ export const resolvers = {
           )
         }
       }
+      void publishEntityChanged(ctx.auth.companyId, 'payment_voucher', pv.id, 'created')
       return pv
     },
 
@@ -6337,6 +6350,7 @@ export const resolvers = {
           i.is_active ?? true,
         ],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'vendor', r.rows[0].id as string, 'created')
       return r.rows[0]
     },
 
@@ -6375,6 +6389,7 @@ export const resolvers = {
         ],
       )
       if (!r.rows[0]) throw new Error('Vendor not found')
+      void publishEntityChanged(ctx.auth.companyId, 'vendor', r.rows[0].id as string, 'updated')
       return r.rows[0]
     },
 
@@ -6423,7 +6438,7 @@ export const resolvers = {
           }
         }
       }
-      return withTransaction(
+      const createdPO = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           const poNum = await nextDocumentNumber(ctx.auth!.companyId, 'purchase_order', 'PO')
@@ -6473,6 +6488,13 @@ export const resolvers = {
           return poRow
         },
       )
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'purchase_order',
+        createdPO.id as string,
+        'created',
+      )
+      return createdPO
     },
 
     updatePurchaseOrder: async (
@@ -6501,6 +6523,7 @@ export const resolvers = {
           args.input.fx_rate ?? null,
         ],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'purchase_order', args.id, 'updated')
       return upd.rows[0]
     },
 
@@ -6843,6 +6866,7 @@ export const resolvers = {
           i.is_active ?? true,
         ],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'product', r.rows[0].id as string, 'created')
       return r.rows[0]
     },
 
@@ -6874,6 +6898,7 @@ export const resolvers = {
         ],
       )
       if (!r.rows[0]) throw new Error('Product not found')
+      void publishEntityChanged(ctx.auth.companyId, 'product', args.id, 'updated')
       return r.rows[0]
     },
 
@@ -7050,6 +7075,7 @@ export const resolvers = {
         }
 
         await client.query('COMMIT')
+        void publishEntityChanged(ctx.auth.companyId, 'stock_balance', i.product_id, 'updated')
 
         // Return a synthetic move-like object so the frontend mutation response works
         return {
@@ -7133,6 +7159,7 @@ export const resolvers = {
         `INSERT INTO project_status_history (project_id, from_status, to_status, changed_by) VALUES ($1, NULL, 'pending', $2)`,
         [r.rows[0].id, ctx.auth.userId],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'project', r.rows[0].id as string, 'created')
       return projectRowToGQL(r.rows[0] as Record<string, unknown>)
     },
 
@@ -7234,6 +7261,7 @@ export const resolvers = {
           `Updated: ${changed.join(', ')}`,
         )
       }
+      void publishEntityChanged(ctx.auth.companyId, 'project', args.id, 'updated')
       return projectRowToGQL(r.rows[0] as Record<string, unknown>)
     },
 
@@ -15807,7 +15835,7 @@ export const resolvers = {
       }
       const billingMethod = methodMap[String(i.billingMethod)] ?? 'fixed_lump_sum'
 
-      return withTransaction(
+      const createdInvoice = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           // Resolve project_id from contract (required NOT NULL column)
@@ -15916,6 +15944,13 @@ export const resolvers = {
           }
         },
       )
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'project_invoice',
+        createdInvoice.id as string,
+        'created',
+      )
+      return createdInvoice
     },
 
     updateProjectInvoice: async (
@@ -16332,7 +16367,7 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
-      return withTransaction(
+      const createdMO = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           const bomR = await client.query(`SELECT * FROM boms WHERE id=$1 AND company_id=$2`, [
@@ -16392,6 +16427,13 @@ export const resolvers = {
           return mo.rows[0]
         },
       )
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'manufacturing_order',
+        (createdMO as Record<string, unknown>).id as string,
+        'created',
+      )
+      return createdMO
     },
 
     confirmMO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -16401,6 +16443,7 @@ export const resolvers = {
         [args.id, ctx.auth.companyId],
       )
       if (!r.rows[0]) throw new Error('MO not found')
+      void publishEntityChanged(ctx.auth.companyId, 'manufacturing_order', args.id, 'updated')
       return r.rows[0]
     },
 
@@ -16411,6 +16454,7 @@ export const resolvers = {
         [args.id, ctx.auth.companyId],
       )
       if (!r.rows[0]) throw new Error('MO not found')
+      void publishEntityChanged(ctx.auth.companyId, 'manufacturing_order', args.id, 'updated')
       return r.rows[0]
     },
 
@@ -16996,6 +17040,7 @@ export const resolvers = {
         `SELECT e.*, d.name AS department_name FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.id=$1`,
         [id],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'employee', id, 'created')
       return emp.rows[0]
     },
 
@@ -17042,6 +17087,7 @@ export const resolvers = {
         `SELECT e.*, d.name AS department_name FROM employees e LEFT JOIN departments d ON d.id=e.department_id WHERE e.id=$1`,
         [args.id],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'employee', args.id, 'updated')
       return emp.rows[0] ?? null
     },
 
@@ -17353,6 +17399,7 @@ export const resolvers = {
         `SELECT first_name||' '||last_name AS name FROM employees WHERE id=$1`,
         [employeeId],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'leave_request', row.id as string, 'created')
       return {
         ...row,
         leave_type_name: lt.rows[0]?.name ?? null,
@@ -17476,6 +17523,7 @@ export const resolvers = {
          VALUES ($1,$2,$3,$4,'draft',0,0,0,$5) RETURNING *`,
         [ctx.auth.companyId, i.period_name, i.start_date, i.end_date, ctx.auth.userId],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'payroll_run', r.rows[0].id as string, 'created')
       return r.rows[0]
     },
 
@@ -17771,6 +17819,7 @@ export const resolvers = {
           i.status ?? 'available',
         ],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'equipment_asset', r.rows[0].id as string, 'created')
       return r.rows[0]
     },
 
@@ -17971,6 +18020,7 @@ export const resolvers = {
           ctx.auth.userId,
         ],
       )
+      void publishEntityChanged(ctx.auth.companyId, 'rental_contract', r.rows[0].id as string, 'created')
       return r.rows[0]
     },
 
@@ -21387,6 +21437,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21458,6 +21509,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21659,6 +21711,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21710,6 +21763,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21773,6 +21827,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21822,6 +21877,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21861,6 +21917,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21886,6 +21943,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21920,6 +21978,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21945,6 +22004,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -21984,6 +22044,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -22014,6 +22075,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -22044,6 +22106,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -22075,6 +22138,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -22145,6 +22209,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
 
@@ -22171,6 +22236,7 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'deleted')
     return getPOForReturn(args.id)
   },
 
@@ -22433,6 +22499,19 @@ const phase5MutationResolvers = {
         args.input.toAccountId ?? null,
         ctx.auth.userId,
       ],
+    )
+    // Interco transactions span two companies — both sides need to see it live.
+    void publishEntityChanged(
+      args.input.fromCompanyId as string,
+      'interco_transaction',
+      r.rows[0].id as string,
+      'created',
+    )
+    void publishEntityChanged(
+      args.input.toCompanyId as string,
+      'interco_transaction',
+      r.rows[0].id as string,
+      'created',
     )
     return r.rows[0]
   },
@@ -23445,6 +23524,17 @@ Object.assign(resolvers, {
       subscribe: (_: unknown, args: { userId: string }) =>
         pubsub.asyncIterator(permissionsChangedChannel(args.userId)),
       resolve: (payload: { userId: string; companyId: string }) => payload,
+    },
+    entityChanged: {
+      subscribe: (_: unknown, args: { companyId: string; entityType: string }) =>
+        pubsub.asyncIterator(entityChangedChannel(args.companyId, args.entityType)),
+      resolve: (payload: {
+        companyId: string
+        entityType: string
+        entityId: string
+        action: string
+        updatedAt: string
+      }) => payload,
     },
   },
 })

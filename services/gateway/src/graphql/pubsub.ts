@@ -36,3 +36,28 @@ export function permissionsChangedChannel(userId: string): string {
 export async function publishPermissionsChanged(userId: string, companyId: string): Promise<void> {
   await pubsub.publish(permissionsChangedChannel(userId), { userId, companyId })
 }
+
+// Generic "something in this company's data changed" signal. Rather than a
+// bespoke channel/type per entity (sessionsChanged, outboxUpdated, etc. were
+// each worth their own shape), most list/detail pages just need "refetch me
+// when X changes" — entityType is a free-form string the frontend agrees on
+// per page (e.g. 'purchase_order', 'project', 'vendor'), not a GraphQL enum,
+// so adding live updates to a new area never requires a schema change.
+export function entityChangedChannel(companyId: string, entityType: string): string {
+  return `ENTITY_CHANGED:${companyId}:${entityType}`
+}
+
+export async function publishEntityChanged(
+  companyId: string,
+  entityType: string,
+  entityId: string,
+  action: 'created' | 'updated' | 'deleted',
+): Promise<void> {
+  await pubsub.publish(entityChangedChannel(companyId, entityType), {
+    companyId,
+    entityType,
+    entityId,
+    action,
+    updatedAt: new Date().toISOString(),
+  })
+}

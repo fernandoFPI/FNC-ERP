@@ -11,6 +11,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 const FILTER_DEFAULTS = { search: '', status: '', type: '', fromDate: '', toDate: '' }
 import { Modal } from '../../../components/ui/Modal'
@@ -103,6 +104,7 @@ export default function IntercoTransactionsPage() {
       limit: 50,
     },
   })
+  useEntityChanged('interco_transaction', () => void refetch())
 
   const [createTx, { loading: creating }] = useMutation(CREATE_INTERCO_TRANSACTION, {
     onCompleted: () => {

@@ -8,6 +8,7 @@ import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 const FILTER_DEFAULTS = { search: '', dept: '', showInactive: 'false' }
 import type { Column } from '../../../components/ui/Table'
@@ -61,6 +62,7 @@ export default function EmployeesPage() {
     },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('employee', () => void refetch())
   const { data: deptData } = useQuery(DEPARTMENTS_QUERY)
 
   const employees: Employee[] = data?.employees ?? []

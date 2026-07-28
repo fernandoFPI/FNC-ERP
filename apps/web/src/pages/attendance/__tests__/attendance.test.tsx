@@ -11,6 +11,7 @@ vi.mock('@apollo/client', async (importOriginal) => {
     ...actual,
     useQuery: (...args: unknown[]) => mockUseQuery(...args),
     useMutation: vi.fn().mockReturnValue([vi.fn(), { loading: false }]),
+    useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
 })

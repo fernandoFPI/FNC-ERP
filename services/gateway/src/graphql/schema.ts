@@ -4950,6 +4950,14 @@
     companyId: ID!
   }
 
+  type EntityChangedEvent {
+    companyId: ID!
+    entityType: String!
+    entityId: ID!
+    action: String!
+    updatedAt: String!
+  }
+
   type Subscription {
     "Fires when a session is created or revoked. Pass userId to scope to one user; omit to hear about all users (e.g. an admin list view)."
     sessionsChanged(userId: ID): SessionsChangedEvent!
@@ -4957,5 +4965,7 @@
     outboxUpdated: OutboxUpdatedEvent!
     "Fires when an admin saves a user's permissions for a company. Scoped to the affected user so their client can refresh without a logout/login."
     permissionsChanged(userId: ID!): PermissionsChangedEvent!
+    "Generic live-update signal for a given company + entity type (e.g. 'purchase_order', 'project', 'vendor'). Payload is signal-only — clients refetch their own query on receipt."
+    entityChanged(companyId: ID!, entityType: String!): EntityChangedEvent!
   }
 `

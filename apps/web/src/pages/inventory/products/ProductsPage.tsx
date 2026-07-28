@@ -9,6 +9,7 @@ import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 const FILTER_DEFAULTS = {
   search: '',
@@ -84,6 +85,7 @@ export default function ProductsPage() {
     variables: { category: categoryFilter || undefined },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('product', () => void refetch())
 
   const { data: bomsData } = useQuery(BOMS_QUERY, { fetchPolicy: 'cache-and-network' })
 

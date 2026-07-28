@@ -7,6 +7,7 @@ import { usePermission } from '../../../hooks/usePermission'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { formatCurrency } from '../../../lib/format'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 
@@ -84,7 +85,7 @@ export default function ProjectsPage() {
   const [page, setPage] = useState(1)
   const limit = 20
 
-  const { data, loading } = useQuery(PROJECTS_QUERY, {
+  const { data, loading, refetch } = useQuery(PROJECTS_QUERY, {
     variables: {
       status: statuses.length > 0 ? statuses : undefined,
       projectType: projectType || undefined,
@@ -94,6 +95,7 @@ export default function ProjectsPage() {
     },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('project', () => void refetch())
 
   const projects: Project[] = data?.projects?.data ?? []
   const pagination = data?.projects?.pagination

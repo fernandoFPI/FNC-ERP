@@ -8,6 +8,7 @@ import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 const FILTER_DEFAULTS = { search: '', status: '', source: '', fromDate: '', toDate: '' }
 import { Badge } from '../../../components/ui/Badge'
@@ -67,6 +68,7 @@ export default function JournalsPage() {
     },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('journal_entry', () => void refetch())
 
   const [combineEntries, { loading: combining }] = useMutation(COMBINE_JOURNAL_ENTRIES)
 

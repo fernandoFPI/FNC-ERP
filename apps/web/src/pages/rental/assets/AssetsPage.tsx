@@ -9,6 +9,7 @@ import { Table } from '../../../components/ui/Table'
 import { Button } from '../../../components/ui/Button'
 import { AssetStatusBadge } from '../../../components/ui/AssetStatusBadge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 interface Asset {
   id: string
@@ -31,6 +32,7 @@ export default function AssetsPage() {
   const { data, loading, refetch } = useQuery(EQUIPMENT_ASSETS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('equipment_asset', () => void refetch())
   const assets: Asset[] = data?.equipmentAssets ?? []
 
   const columns: Column<Asset>[] = [

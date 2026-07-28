@@ -34,6 +34,7 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -349,6 +350,7 @@ export default function PurchaseOrderDetail() {
     variables: { id },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('purchase_order', () => void refetch())
   const po: PO | undefined = data?.purchaseOrder
 
   // Derived rejection reason — built from per-line flag notes when approving

@@ -15,6 +15,7 @@ import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/
 import { useToastStore } from '../../../store/toastStore'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '' }
 
@@ -76,6 +77,7 @@ export default function PurchaseOrdersPage() {
     variables: { status: statusFilter || undefined, projectId: projectIdFilter || undefined },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('purchase_order', () => void refetch())
 
   const [approvePOMutation] = useMutation(APPROVE_PO)
 

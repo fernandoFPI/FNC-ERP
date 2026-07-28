@@ -8,6 +8,7 @@ import { Card } from '../../../components/ui/Card'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 const FILTER_DEFAULTS = { search: '', status: '' }
 import type { Column } from '../../../components/ui/Table'
@@ -56,6 +57,7 @@ export default function ManufacturingOrdersPage() {
     variables: { status: statusFilter },
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('manufacturing_order', () => void refetch())
 
   const orders: MO[] = data?.manufacturingOrders ?? []
 

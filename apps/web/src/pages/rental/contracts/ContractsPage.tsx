@@ -9,6 +9,7 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 interface RentalContract {
   id: string
@@ -35,7 +36,10 @@ export default function RentalContractsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
 
-  const { data, loading } = useQuery(RENTAL_CONTRACTS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading, refetch } = useQuery(RENTAL_CONTRACTS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  })
+  useEntityChanged('rental_contract', () => void refetch())
   const contracts: RentalContract[] = data?.rentalContracts ?? []
 
   const columns: Column<RentalContract>[] = [

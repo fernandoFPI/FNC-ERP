@@ -10,6 +10,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 interface Vendor {
   id: string
@@ -32,6 +33,7 @@ export default function VendorsPage() {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
+  useEntityChanged('vendor', () => void refetch())
 
   const vendors: Vendor[] = data?.vendors ?? []
   const filtered = vendors.filter((v) => {

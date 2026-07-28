@@ -9,6 +9,7 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 interface POItem {
   id: string
@@ -30,6 +31,7 @@ export default function ApprovalQueue() {
     fetchPolicy: 'cache-and-network',
     pollInterval: 60_000,
   })
+  useEntityChanged('purchase_order', () => void refetch())
 
   const items: POItem[] = data?.myApprovalQueue ?? []
 

@@ -9,6 +9,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { getPOStatusVariant, getPOStatusLabel, PO_STATUS_ACTIONS } from '../../../lib/po-constants'
+import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
 interface QueueItem {
   id: string
@@ -34,10 +35,11 @@ export default function MyPOQueue() {
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
 
-  const { data, loading } = useQuery(MY_PO_QUEUE_QUERY, {
+  const { data, loading, refetch } = useQuery(MY_PO_QUEUE_QUERY, {
     fetchPolicy: 'cache-and-network',
     pollInterval: 60_000,
   })
+  useEntityChanged('purchase_order', () => void refetch())
 
   const items: QueueItem[] = data?.myPOQueue ?? []
 
