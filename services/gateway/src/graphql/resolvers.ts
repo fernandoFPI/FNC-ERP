@@ -15053,6 +15053,7 @@ export const resolvers = {
 
     createMeeting: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       const {
         projectId,
         meetingType,
@@ -15093,6 +15094,7 @@ export const resolvers = {
 
     updateMeeting: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       const {
         id,
         meetingType,
@@ -15171,6 +15173,7 @@ export const resolvers = {
 
     issueMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       const r = await query(
         `UPDATE project_meetings m SET status='issued', issued_at=NOW(), updated_at=NOW()
          FROM projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2 AND m.status='draft'
@@ -15242,6 +15245,7 @@ export const resolvers = {
 
     closeMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       const r = await query(
         `UPDATE project_meetings m SET status='closed', updated_at=NOW()
          FROM projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2
@@ -15298,6 +15302,7 @@ export const resolvers = {
 
     createMeetingAction: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       const { meetingId, description, responsiblePerson, dueDate, priority, carryOverFrom } =
         args as Record<string, string>
       const seqR = await query(
@@ -15326,6 +15331,7 @@ export const resolvers = {
 
     updateMeetingAction: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       const { id, description, responsiblePerson, dueDate, priority, status, remarks } =
         args as Record<string, string>
       const sets: string[] = []
@@ -15370,6 +15376,7 @@ export const resolvers = {
 
     deleteMeetingAction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       await query(
         `DELETE FROM project_meeting_actions ma USING project_meetings pm JOIN projects p ON p.id=pm.project_id WHERE ma.meeting_id=pm.id AND p.company_id=$1 AND ma.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -15588,6 +15595,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       const countR = await query(
         'SELECT COUNT(*) FROM project_material_issues WHERE company_id=$1',
         [ctx.auth.companyId],
@@ -15635,6 +15649,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
       const issueR = await query(
         'SELECT status, company_id FROM project_material_issues WHERE id=$1',
         [args.issueId],
@@ -15677,6 +15692,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
       const issueR = await query(
         'SELECT status, company_id FROM project_material_issues WHERE id=$1',
         [args.issueId],
@@ -15694,6 +15710,7 @@ export const resolvers = {
 
     issueMaterialIssue: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
       const issueR = await query(
         `SELECT pmi.*, pmi.project_id,
            COALESCE(SUM(pmil.total_cost), 0) AS total_cost
@@ -15770,6 +15787,7 @@ export const resolvers = {
 
     cancelMaterialIssue: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
       const issueR = await query(
         'SELECT status, company_id FROM project_material_issues WHERE id=$1',
         [args.id],
@@ -16171,6 +16189,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
+      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        args.projectId,
+        ctx.auth.companyId,
+      ]).then((r) => {
+        if (!r.rows[0]) throw new Error('Project not found')
+      })
       const i = args.input
       const num = await nextDocumentNumber(ctx.auth.companyId, 'project_contract', 'CTR')
       const billingMethodMap: Record<string, string> = {
@@ -16230,6 +16255,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
       const i = args.input
       const billingMethodMap: Record<string, string> = {
         fixed: 'fixed_lump_sum',
@@ -16298,6 +16324,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.contracts.edit', 'edit')
       // Load current contract (scoped to company)
       const cur = await query(`SELECT * FROM project_contracts WHERE id=$1 AND company_id=$2`, [
         args.id,
