@@ -3159,6 +3159,7 @@ export const resolvers = {
 
     project: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
+      await requirePermGW(ctx.auth, 'projects.view', 'view')
       const result = await query(
         `SELECT p.*,
           e.first_name || ' ' || e.last_name AS manager_name,
@@ -3306,7 +3307,7 @@ export const resolvers = {
       )
       if (!result.rows[0]) return null
       // Non-admins cannot see pending projects or unassigned projects
-      if (!isAdminGW(ctx.auth.role)) {
+      if (!isPermissionBypassGW(ctx.auth.role)) {
         const row0 = result.rows[0] as Record<string, unknown>
         if (row0.status === 'pending') return null
         const isAssigned = await query(
@@ -7293,8 +7294,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isAdminGW(ctx.auth.role))
-        throw new Error('Forbidden: only administrators can create projects')
+      await requirePermGW(ctx.auth, 'projects.edit', 'edit')
       const i = args.input
       const code =
         (i.code as string | undefined) ??
@@ -7363,6 +7363,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.edit', 'edit')
       const i = args.input
       const r = await query(
         `UPDATE projects SET
@@ -7535,8 +7536,7 @@ export const resolvers = {
 
     approveRFQ: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isAdminGW(ctx.auth.role))
-        throw new Error('Forbidden: only administrators can approve RFQs')
+      await requirePermGW(ctx.auth, 'projects.bidding.approve', 'approve')
       const proj = await query(
         `SELECT id, name, code, status, is_rfq, analytic_account_id FROM projects WHERE id=$1 AND company_id=$2`,
         [args.id, ctx.auth.companyId],
@@ -7597,8 +7597,7 @@ export const resolvers = {
 
     rejectRFQ: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isAdminGW(ctx.auth.role))
-        throw new Error('Forbidden: only administrators can reject RFQs')
+      await requirePermGW(ctx.auth, 'projects.bidding.approve', 'approve')
       return projectTransition(
         args.id,
         ctx.auth.companyId,
@@ -8944,7 +8943,7 @@ export const resolvers = {
       args: { key: string; label?: string; sequence?: number; optional?: boolean },
       ctx: GQLContext,
     ) => {
-      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      if (!ctx.auth || !isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden')
       const r = await query(
         `UPDATE lifecycle_phases SET
            label    = COALESCE($1, label),
@@ -8976,7 +8975,7 @@ export const resolvers = {
       args: { moduleKey: string; label?: string; minPhaseKey?: string },
       ctx: GQLContext,
     ) => {
-      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      if (!ctx.auth || !isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden')
       // If a target phase is being set, verify it exists for this company
       if (args.minPhaseKey) {
         const ph = await query(`SELECT 1 FROM lifecycle_phases WHERE company_id=$1 AND key=$2`, [
@@ -9004,7 +9003,7 @@ export const resolvers = {
     },
 
     updateBidSimpleMode: async (_: unknown, args: { enabled: boolean }, ctx: GQLContext) => {
-      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      if (!ctx.auth || !isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden')
       await query(
         `INSERT INTO system_configuration (company_id, bid_simple_mode_enabled) VALUES ($1,$2)
          ON CONFLICT (company_id) DO UPDATE SET bid_simple_mode_enabled=$2`,
@@ -9014,7 +9013,7 @@ export const resolvers = {
     },
 
     updateHideRiskRegister: async (_: unknown, args: { hidden: boolean }, ctx: GQLContext) => {
-      if (!ctx.auth || !isAdminGW(ctx.auth.role)) throw new Error('Forbidden')
+      if (!ctx.auth || !isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden')
       await query(
         `INSERT INTO system_configuration (company_id, hide_risk_register) VALUES ($1,$2)
          ON CONFLICT (company_id) DO UPDATE SET hide_risk_register=$2`,
@@ -10349,8 +10348,7 @@ export const resolvers = {
 
     approveBid: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')
-        throw new Error('Admin only')
+      await requirePermGW(ctx.auth, 'projects.bidding.approve', 'approve')
       const uploaderRow = await query(
         `SELECT e.first_name||' '||e.last_name AS full_name FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`,
         [ctx.auth.userId],
@@ -10414,8 +10412,7 @@ export const resolvers = {
 
     rejectBid: async (_: unknown, args: { projectId: string; reason: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin')
-        throw new Error('Admin only')
+      await requirePermGW(ctx.auth, 'projects.bidding.approve', 'approve')
       await query(
         `UPDATE bid_commercial_summary SET approval_status='rejected',rejection_reason=$1,updated_at=NOW() WHERE project_id=$2`,
         [args.reason, args.projectId],
@@ -14403,8 +14400,8 @@ export const resolvers = {
     },
 
     deleteVariationOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin'))
-        throw new Error('Admin required')
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.approve', 'approve')
       await query(
         `DELETE FROM project_variation_orders pvo USING projects p WHERE p.id=pvo.project_id AND p.company_id=$1 AND pvo.id=$2`,
         [ctx.auth.companyId, args.id],
@@ -14442,8 +14439,8 @@ export const resolvers = {
       args: { id: string; approvedValue: number; contractId?: string },
       ctx: GQLContext,
     ) => {
-      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin'))
-        throw new Error('Admin required')
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.approve', 'approve')
       await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
@@ -14479,8 +14476,8 @@ export const resolvers = {
       args: { id: string; reason: string },
       ctx: GQLContext,
     ) => {
-      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin'))
-        throw new Error('Admin required')
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.approve', 'approve')
       await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
@@ -14518,8 +14515,8 @@ export const resolvers = {
     },
 
     setVOStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
-      if (!ctx.auth || (ctx.auth.role !== 'company_admin' && ctx.auth.role !== 'system_admin'))
-        throw new Error('Admin required')
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.variations.approve', 'approve')
       await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
@@ -14847,9 +14844,7 @@ export const resolvers = {
 
     deleteMeeting: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const role = ctx.auth.role
-      if (role !== 'company_admin' && role !== 'system_admin')
-        throw new Error('Only admins can delete meetings')
+      await requirePermGW(ctx.auth, 'projects.meetings.edit', 'edit')
       await query(
         `DELETE FROM project_meetings m USING projects p WHERE m.project_id=p.id AND p.company_id=$1 AND m.id=$2 AND m.status='draft'`,
         [ctx.auth.companyId, args.id],
@@ -15069,6 +15064,7 @@ export const resolvers = {
 
     startProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(args.id, ctx.auth.companyId, ctx.auth.userId, 'start', 'ongoing', {
         lifecycle_phase: 'scope_review',
       })
@@ -15076,6 +15072,7 @@ export const resolvers = {
 
     holdProject: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(args.id, ctx.auth.companyId, ctx.auth.userId, 'hold', 'on_hold', {
         hold_reason: args.reason,
         reason: args.reason,
@@ -15084,11 +15081,13 @@ export const resolvers = {
 
     resumeProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(args.id, ctx.auth.companyId, ctx.auth.userId, 'resume', 'ongoing')
     },
 
     submitProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(
         args.id,
         ctx.auth.companyId,
@@ -15101,6 +15100,7 @@ export const resolvers = {
 
     approveProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(
         args.id,
         ctx.auth.companyId,
@@ -15117,6 +15117,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(
         args.id,
         ctx.auth.companyId,
@@ -15129,6 +15130,7 @@ export const resolvers = {
 
     completeProject: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       return projectTransition(
         args.id,
         ctx.auth.companyId,
@@ -15141,6 +15143,7 @@ export const resolvers = {
 
     cancelProject: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       await assertProjectCancellable(args.id)
       return projectTransition(
         args.id,
@@ -15158,6 +15161,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.approve', 'approve')
       await assertProjectCancellable(args.id)
       return projectTransition(
         args.id,
@@ -15175,7 +15179,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isAdminGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
+      if (!isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
       const phaseForStatus: Record<string, string> = {
         pending: 'enquiry',
         ongoing: 'scope_review',
@@ -15194,7 +15198,7 @@ export const resolvers = {
 
     adminSetPhase: async (_: unknown, args: { id: string; phase: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isAdminGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
+      if (!isPermissionBypassGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
       const VALID = [
         'enquiry',
         'scope_review',
@@ -15641,16 +15645,22 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
+      if (i.status === 'completed') {
+        await requirePermGW(ctx.auth, 'projects.stages.edit', 'approve')
+      } else {
+        await requirePermGW(ctx.auth, 'projects.stages.edit', 'edit')
+      }
       const assignedTo = 'assignedTo' in i ? i.assignedTo || null : undefined
       const r = await query(
-        `UPDATE project_stages SET
+        `UPDATE project_stages ps SET
           name=COALESCE($3,name), status=COALESCE($4,status), completion_pct=COALESCE($5,completion_pct),
           planned_start_date=COALESCE($6,planned_start_date), planned_end_date=COALESCE($7,planned_end_date),
           actual_start_date=COALESCE($8,actual_start_date), actual_end_date=COALESCE($9,actual_end_date),
           notes=COALESCE($10,notes),
           assigned_to=CASE WHEN $11::uuid IS NOT NULL THEN $11::uuid ELSE assigned_to END,
           updated_at=NOW()
-         WHERE id=$1 AND project_id=$2 RETURNING *`,
+         FROM projects p
+         WHERE p.id=ps.project_id AND p.company_id=$12 AND ps.id=$1 AND ps.project_id=$2 RETURNING ps.*`,
         [
           args.stageId,
           args.projectId,
@@ -15663,6 +15673,7 @@ export const resolvers = {
           i.actualEndDate ?? null,
           i.notes ?? null,
           assignedTo ?? null,
+          ctx.auth.companyId,
         ],
       )
       if (!r.rows[0]) throw new Error('Stage not found')
@@ -16026,6 +16037,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.invoices.edit', 'edit')
       const i = args.input
 
       // Billing method mapping: UI values → DB CHECK constraint values
@@ -16169,8 +16181,7 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const auth = ctx.auth as GWAuth
-      const isAdmin = isAdminGW(auth.role)
-      if (!isAdmin) throw new Error('Admin role required to edit invoices')
+      await requirePermGW(ctx.auth, 'projects.invoices.edit', 'edit')
       const invRow = await query(`SELECT * FROM project_invoices WHERE id=$1 AND company_id=$2`, [
         args.id,
         auth.companyId,
@@ -16405,6 +16416,16 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.invoices.edit', 'edit')
+      const existing = await query(
+        `SELECT status FROM project_invoices WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!existing.rows[0]) throw new Error('Invoice not found')
+      const curStatus = (existing.rows[0] as Record<string, unknown>).status
+      if (curStatus === 'issued' || curStatus === 'partial' || curStatus === 'paid') {
+        throw new Error('Issued or paid invoices cannot be voided — raise a credit note instead')
+      }
       const r = await query(
         `UPDATE project_invoices SET status='void', void_reason=$3, updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING *`,
         [args.id, ctx.auth.companyId, args.reason ?? null],
@@ -24308,6 +24329,11 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ])
+    if (!projOwn.rows[0]) throw new Error('Project not found')
     const ym = new Date().toISOString().slice(0, 7).replace('-', '')
     const countRes = await query(
       `SELECT COUNT(*) FROM project_tqs WHERE project_id=$1 AND tq_number LIKE $2`,
@@ -24360,17 +24386,22 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_tqs WHERE id=$1`, [args.id])
+    const existing = await query(
+      `SELECT pt.status FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
+       WHERE pt.id=$1 AND p.company_id=$2`,
+      [args.id, ctx.auth.companyId],
+    )
     const r0 = existing.rows[0] as Record<string, unknown> | undefined
     if (!r0) throw new Error('TQ not found')
     if (r0.status === 'closed') throw new Error('Cannot edit a closed TQ')
     const res = await query(
-      `UPDATE project_tqs SET
+      `UPDATE project_tqs pt SET
         discipline=$2, priority=COALESCE($3,priority), subject=COALESCE($4,subject),
         description=$5, raised_by=$6, raised_date=$7,
         document_id=$8, document_ref=$9, document_revision=$10, due_date=$11,
         updated_at=NOW()
-       WHERE id=$1 RETURNING *`,
+       FROM projects p
+       WHERE p.id=pt.project_id AND p.company_id=$12 AND pt.id=$1 RETURNING pt.*`,
       [
         args.id,
         args.discipline ?? null,
@@ -24383,6 +24414,7 @@ Object.assign(resolvers.Mutation, {
         args.documentRef ?? null,
         args.documentRevision ?? null,
         args.dueDate ?? null,
+        ctx.auth.companyId,
       ],
     )
     return tqToGQL(res.rows[0] as Record<string, unknown>)
@@ -24391,8 +24423,10 @@ Object.assign(resolvers.Mutation, {
   reviewTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const res = await query(
-      `UPDATE project_tqs SET status='under_review', updated_at=NOW() WHERE id=$1 AND status='open' RETURNING *`,
-      [args.id],
+      `UPDATE project_tqs pt SET status='under_review', updated_at=NOW()
+       FROM projects p
+       WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1 AND pt.status='open' RETURNING pt.*`,
+      [args.id, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('TQ not found or not in open status')
     return tqToGQL(res.rows[0] as Record<string, unknown>)
@@ -24405,10 +24439,11 @@ Object.assign(resolvers.Mutation, {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const res = await query(
-      `UPDATE project_tqs SET status='responded', response=$2, response_by=$3,
+      `UPDATE project_tqs pt SET status='responded', response=$2, response_by=$3,
         response_date=CURRENT_DATE, updated_at=NOW()
-       WHERE id=$1 AND status IN ('open','under_review') RETURNING *`,
-      [args.id, args.response, args.responseBy ?? null],
+       FROM projects p
+       WHERE p.id=pt.project_id AND p.company_id=$4 AND pt.id=$1 AND pt.status IN ('open','under_review') RETURNING pt.*`,
+      [args.id, args.response, args.responseBy ?? null, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('TQ not found or already responded/closed')
     return tqToGQL(res.rows[0] as Record<string, unknown>)
@@ -24417,9 +24452,10 @@ Object.assign(resolvers.Mutation, {
   closeTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const res = await query(
-      `UPDATE project_tqs SET status='closed', closed_at=NOW(), updated_at=NOW()
-       WHERE id=$1 AND status != 'closed' RETURNING *`,
-      [args.id],
+      `UPDATE project_tqs pt SET status='closed', closed_at=NOW(), updated_at=NOW()
+       FROM projects p
+       WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1 AND pt.status != 'closed' RETURNING pt.*`,
+      [args.id, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('TQ not found or already closed')
     return tqToGQL(res.rows[0] as Record<string, unknown>)
@@ -24427,11 +24463,18 @@ Object.assign(resolvers.Mutation, {
 
   deleteTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_tqs WHERE id=$1`, [args.id])
+    const existing = await query(
+      `SELECT pt.status FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
+       WHERE pt.id=$1 AND p.company_id=$2`,
+      [args.id, ctx.auth.companyId],
+    )
     const r = existing.rows[0] as Record<string, unknown> | undefined
     if (!r) throw new Error('TQ not found')
     if (r.status !== 'open') throw new Error('Only open TQs can be deleted')
-    await query(`DELETE FROM project_tqs WHERE id=$1`, [args.id])
+    await query(
+      `DELETE FROM project_tqs pt USING projects p WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1`,
+      [args.id, ctx.auth.companyId],
+    )
     return true
   },
 
@@ -24454,6 +24497,11 @@ Object.assign(resolvers.Mutation, {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     if (!['A', 'B', 'C'].includes(args.category)) throw new Error('Category must be A, B, or C')
+    const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ])
+    if (!projOwn.rows[0]) throw new Error('Project not found')
     // Count within category for numbering: PUNCH-A-NNN
     const countRes = await query(
       `SELECT COUNT(*) FROM project_punch_items WHERE project_id=$1 AND category=$2`,
@@ -24507,13 +24555,14 @@ Object.assign(resolvers.Mutation, {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const res = await query(
-      `UPDATE project_punch_items SET
+      `UPDATE project_punch_items ppi SET
         category=COALESCE($2,category), discipline=$3, area=$4,
         title=COALESCE($5,title), description=$6,
         subcontractor=$7, responsible=$8,
         raised_by=$9, raised_date=$10, target_date=$11,
         updated_at=NOW()
-       WHERE id=$1 RETURNING *`,
+       FROM projects p
+       WHERE p.id=ppi.project_id AND p.company_id=$12 AND ppi.id=$1 RETURNING ppi.*`,
       [
         args.id,
         args.category ?? null,
@@ -24526,6 +24575,7 @@ Object.assign(resolvers.Mutation, {
         args.raisedBy ?? null,
         args.raisedDate ?? null,
         args.targetDate ?? null,
+        ctx.auth.companyId,
       ],
     )
     if (!res.rows[0]) throw new Error('Punch item not found')
@@ -24537,8 +24587,10 @@ Object.assign(resolvers.Mutation, {
     const valid = ['open', 'in_progress', 'supervisor_signed', 'closed']
     if (!valid.includes(args.status)) throw new Error('Invalid punch status')
     const res = await query(
-      `UPDATE project_punch_items SET status=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,
-      [args.id, args.status],
+      `UPDATE project_punch_items ppi SET status=$2, updated_at=NOW()
+       FROM projects p
+       WHERE p.id=ppi.project_id AND p.company_id=$3 AND ppi.id=$1 RETURNING ppi.*`,
+      [args.id, args.status, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('Punch item not found')
     return punchItemToGQL(res.rows[0] as Record<string, unknown>)
@@ -24550,7 +24602,11 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_punch_items WHERE id=$1`, [args.id])
+    const existing = await query(
+      `SELECT ppi.status FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
+       WHERE ppi.id=$1 AND p.company_id=$2`,
+      [args.id, ctx.auth.companyId],
+    )
     const r0 = existing.rows[0] as Record<string, unknown> | undefined
     if (!r0) throw new Error('Punch item not found')
     if (!['open', 'in_progress'].includes(String(r0.status)))
@@ -24568,7 +24624,11 @@ Object.assign(resolvers.Mutation, {
 
   pmSignPunch: async (_: unknown, args: { id: string; signedBy?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const existing = await query(`SELECT status FROM project_punch_items WHERE id=$1`, [args.id])
+    const existing = await query(
+      `SELECT ppi.status FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
+       WHERE ppi.id=$1 AND p.company_id=$2`,
+      [args.id, ctx.auth.companyId],
+    )
     const r0 = existing.rows[0] as Record<string, unknown> | undefined
     if (!r0) throw new Error('Punch item not found')
     if (String(r0.status) !== 'supervisor_signed')
@@ -24587,13 +24647,14 @@ Object.assign(resolvers.Mutation, {
   reopenPunch: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const res = await query(
-      `UPDATE project_punch_items SET
+      `UPDATE project_punch_items ppi SET
         status='open',
         supervisor_signed_by=NULL, supervisor_signed_at=NULL,
         pm_signed_by=NULL, pm_signed_at=NULL,
         closed_at=NULL, updated_at=NOW()
-       WHERE id=$1 AND status != 'open' RETURNING *`,
-      [args.id],
+       FROM projects p
+       WHERE p.id=ppi.project_id AND p.company_id=$2 AND ppi.id=$1 AND ppi.status != 'open' RETURNING ppi.*`,
+      [args.id, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('Punch item not found or already open')
     return punchItemToGQL(res.rows[0] as Record<string, unknown>)
@@ -24601,7 +24662,10 @@ Object.assign(resolvers.Mutation, {
 
   deletePunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_punch_items WHERE id=$1`, [args.id])
+    await query(
+      `DELETE FROM project_punch_items ppi USING projects p WHERE p.id=ppi.project_id AND p.company_id=$2 AND ppi.id=$1`,
+      [args.id, ctx.auth.companyId],
+    )
     return true
   },
 
@@ -24611,6 +24675,12 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const owns = await query(
+      `SELECT ppi.id FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
+       WHERE ppi.id=$1 AND p.company_id=$2`,
+      [args.punchId, ctx.auth.companyId],
+    )
+    if (!owns.rows[0]) throw new Error('Punch item not found')
     const res = await query(
       `INSERT INTO project_punch_photos (punch_id,url,caption,uploaded_by) VALUES ($1,$2,$3,$4) RETURNING *`,
       [args.punchId, args.url ?? null, args.caption ?? null, args.uploadedBy ?? null],
@@ -24620,7 +24690,12 @@ Object.assign(resolvers.Mutation, {
 
   deletePunchPhoto: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_punch_photos WHERE id=$1`, [args.id])
+    await query(
+      `DELETE FROM project_punch_photos pp
+       USING project_punch_items ppi, projects p
+       WHERE ppi.id=pp.punch_id AND p.id=ppi.project_id AND p.company_id=$2 AND pp.id=$1`,
+      [args.id, ctx.auth.companyId],
+    )
     return true
   },
 
@@ -24649,6 +24724,12 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.risk.edit', 'edit')
+    const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ])
+    if (!projOwn.rows[0]) throw new Error('Project not found')
     const ym = new Date().toISOString().slice(0, 7).replace('-', '')
     const countRes = await query(
       `SELECT COUNT(*) FROM project_risks WHERE project_id=$1 AND risk_no LIKE $2`,
@@ -24714,6 +24795,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.risk.edit', 'edit')
     const sets: string[] = ['updated_at=NOW()']
     const params: unknown[] = []
     const add = (col: string, val: unknown) => {
@@ -24737,18 +24819,28 @@ Object.assign(resolvers.Mutation, {
     if (args.raisedDate !== undefined) add('raised_date', args.raisedDate)
     if (args.reviewDate !== undefined) add('review_date', args.reviewDate)
     params.push(args.id)
-    await query(`UPDATE project_risks SET ${sets.join(',')} WHERE id=$${params.length}`, params)
+    params.push(ctx.auth.companyId)
+    const r = await query(
+      `UPDATE project_risks pr SET ${sets.join(',')} FROM projects p
+       WHERE p.id=pr.project_id AND p.company_id=$${params.length} AND pr.id=$${params.length - 1}
+       RETURNING pr.id`,
+      params,
+    )
+    if (!r.rows[0]) throw new Error('Risk not found')
     return riskWithReviews(args.id)
   },
 
   updateRiskStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.risk.edit', 'edit')
     const valid = ['open', 'mitigating', 'accepted', 'closed', 'transferred']
     if (!valid.includes(args.status)) throw new Error(`Invalid status: ${args.status}`)
-    await query(`UPDATE project_risks SET status=$1, updated_at=NOW() WHERE id=$2`, [
-      args.status,
-      args.id,
-    ])
+    const r = await query(
+      `UPDATE project_risks pr SET status=$1, updated_at=NOW() FROM projects p
+       WHERE p.id=pr.project_id AND p.company_id=$3 AND pr.id=$2 RETURNING pr.id`,
+      [args.status, args.id, ctx.auth.companyId],
+    )
+    if (!r.rows[0]) throw new Error('Risk not found')
     return riskWithReviews(args.id)
   },
 
@@ -24764,6 +24856,13 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.risk.edit', 'edit')
+    const owns = await query(
+      `SELECT pr.id FROM project_risks pr JOIN projects p ON p.id=pr.project_id
+       WHERE pr.id=$1 AND p.company_id=$2`,
+      [args.riskId, ctx.auth.companyId],
+    )
+    if (!owns.rows[0]) throw new Error('Risk not found')
     await query(
       `INSERT INTO project_risk_reviews (risk_id,probability,impact,notes,reviewed_by)
        VALUES ($1,$2,$3,$4,$5)`,
@@ -24778,7 +24877,11 @@ Object.assign(resolvers.Mutation, {
 
   deleteRisk: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_risks WHERE id=$1`, [args.id])
+    await requirePermGW(ctx.auth, 'projects.risk.edit', 'edit')
+    await query(
+      `DELETE FROM project_risks pr USING projects p WHERE p.id=pr.project_id AND p.company_id=$2 AND pr.id=$1`,
+      [args.id, ctx.auth.companyId],
+    )
     return true
   },
 
@@ -24786,6 +24889,12 @@ Object.assign(resolvers.Mutation, {
 
   createHandoverCertificate: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
+    const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+      args.projectId,
+      ctx.auth.companyId,
+    ])
+    if (!projOwn.rows[0]) throw new Error('Project not found')
     const num = await nextDocumentNumber(ctx.auth.companyId, 'handover_certificate', 'HOC')
     const res = await query(
       `INSERT INTO project_handover_certificates
@@ -24811,6 +24920,7 @@ Object.assign(resolvers.Mutation, {
 
   updateHandoverCertificate: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
     const sets: string[] = ['updated_at=NOW()']
     const vals: unknown[] = []
     const add = (col: string, val: unknown) => {
@@ -24827,19 +24937,26 @@ Object.assign(resolvers.Mutation, {
     if (args.defectLiabilityEnd !== undefined) add('defect_liability_end', args.defectLiabilityEnd)
     if (args.notes !== undefined) add('notes', args.notes)
     vals.push(args.id)
-    await query(
-      `UPDATE project_handover_certificates SET ${sets.join(',')} WHERE id=$${vals.length}`,
+    vals.push(ctx.auth.companyId)
+    const r = await query(
+      `UPDATE project_handover_certificates phc SET ${sets.join(',')} FROM projects p
+       WHERE p.id=phc.project_id AND p.company_id=$${vals.length} AND phc.id=$${vals.length - 1}
+       RETURNING phc.id`,
       vals,
     )
+    if (!r.rows[0]) throw new Error('Handover certificate not found')
     return refetchHandoverCert(String(args.id))
   },
 
   issueHandoverCertificate: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(
-      `UPDATE project_handover_certificates SET status='issued', updated_at=NOW() WHERE id=$1`,
-      [args.id],
+    await requirePermGW(ctx.auth, 'projects.handover.approve', 'approve')
+    const r = await query(
+      `UPDATE project_handover_certificates phc SET status='issued', updated_at=NOW() FROM projects p
+       WHERE p.id=phc.project_id AND p.company_id=$2 AND phc.id=$1 RETURNING phc.id`,
+      [args.id, ctx.auth.companyId],
     )
+    if (!r.rows[0]) throw new Error('Handover certificate not found')
     return refetchHandoverCert(args.id)
   },
 
@@ -24849,10 +24966,14 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(
-      `UPDATE project_handover_certificates SET status='accepted', accepted_date=COALESCE($2,CURRENT_DATE), client_rep=COALESCE($3,client_rep), updated_at=NOW() WHERE id=$1`,
-      [args.id, args.acceptedDate ?? null, args.clientRep ?? null],
+    await requirePermGW(ctx.auth, 'projects.handover.approve', 'approve')
+    const r = await query(
+      `UPDATE project_handover_certificates phc SET status='accepted', accepted_date=COALESCE($2,CURRENT_DATE), client_rep=COALESCE($3,client_rep), updated_at=NOW()
+       FROM projects p
+       WHERE p.id=phc.project_id AND p.company_id=$4 AND phc.id=$1 RETURNING phc.id`,
+      [args.id, args.acceptedDate ?? null, args.clientRep ?? null, ctx.auth.companyId],
     )
+    if (!r.rows[0]) throw new Error('Handover certificate not found')
     return refetchHandoverCert(args.id)
   },
 
@@ -24862,21 +24983,36 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(
-      `UPDATE project_handover_certificates SET status='rejected', notes=COALESCE($2,notes), updated_at=NOW() WHERE id=$1`,
-      [args.id, args.notes ?? null],
+    await requirePermGW(ctx.auth, 'projects.handover.approve', 'approve')
+    const r = await query(
+      `UPDATE project_handover_certificates phc SET status='rejected', notes=COALESCE($2,notes), updated_at=NOW()
+       FROM projects p
+       WHERE p.id=phc.project_id AND p.company_id=$3 AND phc.id=$1 RETURNING phc.id`,
+      [args.id, args.notes ?? null, ctx.auth.companyId],
     )
+    if (!r.rows[0]) throw new Error('Handover certificate not found')
     return refetchHandoverCert(args.id)
   },
 
   deleteHandoverCertificate: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_handover_certificates WHERE id=$1`, [args.id])
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
+    await query(
+      `DELETE FROM project_handover_certificates phc USING projects p WHERE p.id=phc.project_id AND p.company_id=$2 AND phc.id=$1`,
+      [args.id, ctx.auth.companyId],
+    )
     return true
   },
 
   createHandoverItem: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
+    const owns = await query(
+      `SELECT phc.id FROM project_handover_certificates phc JOIN projects p ON p.id=phc.project_id
+       WHERE phc.id=$1 AND p.company_id=$2`,
+      [args.certificateId, ctx.auth.companyId],
+    )
+    if (!owns.rows[0]) throw new Error('Handover certificate not found')
     const res = await query(
       `INSERT INTO project_handover_items (certificate_id, category, description, sequence, notes)
        VALUES ($1,$2,$3,$4,$5) RETURNING *`,
@@ -24887,6 +25023,7 @@ Object.assign(resolvers.Mutation, {
 
   updateHandoverItem: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
     const sets: string[] = []
     const vals: unknown[] = []
     const add = (col: string, val: unknown) => {
@@ -24900,10 +25037,15 @@ Object.assign(resolvers.Mutation, {
     if (args.notes !== undefined) add('notes', args.notes)
     if (!sets.length) throw new Error('Nothing to update')
     vals.push(args.id)
+    vals.push(ctx.auth.companyId)
     const res = await query(
-      `UPDATE project_handover_items SET ${sets.join(',')} WHERE id=$${vals.length} RETURNING *`,
+      `UPDATE project_handover_items phi SET ${sets.join(',')}
+       FROM project_handover_certificates phc, projects p
+       WHERE phc.id=phi.certificate_id AND p.id=phc.project_id AND p.company_id=$${vals.length} AND phi.id=$${vals.length - 1}
+       RETURNING phi.*`,
       vals,
     )
+    if (!res.rows[0]) throw new Error('Handover item not found')
     return handoverItemToGQL(res.rows[0] as Record<string, unknown>)
   },
 
@@ -24913,16 +25055,27 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.approve', 'approve')
     const res = await query(
-      `UPDATE project_handover_items SET status='completed', verified_by=$2, verified_at=NOW() WHERE id=$1 RETURNING *`,
-      [args.id, args.verifiedBy],
+      `UPDATE project_handover_items phi SET status='completed', verified_by=$2, verified_at=NOW()
+       FROM project_handover_certificates phc, projects p
+       WHERE phc.id=phi.certificate_id AND p.id=phc.project_id AND p.company_id=$3 AND phi.id=$1
+       RETURNING phi.*`,
+      [args.id, args.verifiedBy, ctx.auth.companyId],
     )
+    if (!res.rows[0]) throw new Error('Handover item not found')
     return handoverItemToGQL(res.rows[0] as Record<string, unknown>)
   },
 
   deleteHandoverItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await query(`DELETE FROM project_handover_items WHERE id=$1`, [args.id])
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
+    await query(
+      `DELETE FROM project_handover_items phi
+       USING project_handover_certificates phc, projects p
+       WHERE phc.id=phi.certificate_id AND p.id=phc.project_id AND p.company_id=$2 AND phi.id=$1`,
+      [args.id, ctx.auth.companyId],
+    )
     return true
   },
 
