@@ -27,7 +27,7 @@ import {
   permissionsChangedChannel,
   publishPermissionsChanged,
 } from './pubsub.js'
-import { invalidatePermissionCache } from '@fnc-erp/permissions'
+import { invalidatePermissionCache, loadPermissions, meetsLevel } from '@fnc-erp/permissions'
 import type { POStatus, POAction } from '@fnc-erp/workflow'
 import { logAudit } from '@fnc-erp/audit'
 import {
@@ -390,7 +390,7 @@ async function userHasPositionGW(
   const empId = await getEmployeeIdGW(userId, companyId)
   if (!empId) return false
   const r = await query(
-    `SELECT id FROM po_position_assignments WHERE employee_id=$1 AND position=$2 AND is_active=true AND company_id=$3 AND (($4::uuid IS NOT NULL AND project_id=$4) OR ($5::uuid IS NOT NULL AND department_id=$5)) LIMIT 1`,
+    `SELECT id FROM po_position_assignments WHERE employee_id=$1 AND position=$2 AND is_active=true AND company_id=$3 AND (($4::uuid IS NOT NULL AND project_id=$4) OR ($5::uuid IS NOT NULL AND department_id=$5) OR (project_id IS NULL AND department_id IS NULL)) LIMIT 1`,
     [
       empId,
       position,
@@ -448,6 +448,17 @@ async function userIsAssignedApproverGW(userId: string, poId: string): Promise<b
 
 function isAdminGW(role: string): boolean {
   return ['system_admin', 'company_admin', 'module_admin'].includes(role)
+}
+
+// Gates the finance_audit/invoiced stages. System-wide finance capability,
+// not PO-specific — 'finance' was never part of the real role vocabulary
+// (user/module_admin/company_admin/system_admin), so this was previously
+// unreachable by anyone but admins. Mirrors hasFinanceApproval in
+// services/procurement/src/routes/orders.ts.
+async function hasFinanceApprovalGW(userId: string, companyId: string, role: string): Promise<boolean> {
+  if (isAdminGW(role)) return true
+  const perms = await loadPermissions(userId, companyId)
+  return meetsLevel(perms['finance.ap.approve'], 'approve')
 }
 
 async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string): Promise<void> {
@@ -4776,19 +4787,19 @@ export const resolvers = {
                OR (po.status='inventory_check' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
+                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (po.status='store_pricing' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_pricing' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
+                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (po.status='market_pricing' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
+                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (po.status='price_verification' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4)))
+                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (po.status IN ('pending_approval','dept_assigned') AND (
                      EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
                      OR po.assigned_approver_id=$3))
@@ -22009,9 +22020,8 @@ const phase5MutationResolvers = {
   passPOAudit: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
-    if (!isAdmin && auth.role !== 'finance')
-      throw new Error('Finance or admin role required to pass audit')
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error('Finance approval permission required to pass audit')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'finance_audit')
@@ -22040,9 +22050,8 @@ const phase5MutationResolvers = {
   failPOAudit: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
-    if (!isAdmin && auth.role !== 'finance')
-      throw new Error('Finance or admin role required to fail audit')
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error('Finance approval permission required to fail audit')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'finance_audit')
@@ -22076,9 +22085,8 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
-    if (!isAdmin && auth.role !== 'finance')
-      throw new Error('Finance or admin role required to audit PO lines')
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error('Finance approval permission required to audit PO lines')
     const valid = ['pending', 'ok', 'flagged']
     if (!valid.includes(args.auditStatus))
       throw new Error(`auditStatus must be one of: ${valid.join(', ')}`)
@@ -22109,9 +22117,8 @@ const phase5MutationResolvers = {
   completePO: async (_: unknown, args: { id: string; receiptNotes?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
-    if (!isAdmin && auth.role !== 'finance')
-      throw new Error('Finance or admin role required to complete a PO')
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error('Finance approval permission required to complete a PO')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'invoiced')
