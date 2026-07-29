@@ -19,6 +19,8 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { SystemConfigForm } from '../../settings/company/SystemConfigForm'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 
 type Tab = 'overview' | 'branches' | 'users' | 'configuration' | 'interco'
@@ -112,6 +114,50 @@ export default function CompanyDetail() {
   if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
   if (!company)
     return <div style={{ padding: '48px', color: theme.textMuted }}>Company not found.</div>
+
+  const userColumns: Column<CompanyUser>[] = [
+    {
+      key: 'email',
+      header: 'Email',
+      mobilePrimary: true,
+      render: (u) => <span style={{ color: theme.textPrimary }}>{u.email}</span>,
+    },
+    {
+      key: 'lastLoginAt',
+      header: 'Last login',
+      mobileSecondary: true,
+      render: (u) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {u.lastLoginAt?.slice(0, 10) ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'isActive',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (u) => (
+        <Badge variant={u.isActive ? 'success' : 'neutral'}>
+          {u.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'roles',
+      header: 'Roles',
+      mobilePriority: 2,
+      render: (u) => (
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          {u.roles.slice(0, 3).map((r) => (
+            <Badge key={r.id} variant={r.isActive ? 'info' : 'neutral'}>
+              {r.role}
+            </Badge>
+          ))}
+          {u.roles.length > 3 && <Badge variant="neutral">+{u.roles.length - 3}</Badge>}
+        </div>
+      ),
+    },
+  ]
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: 'Overview' },
@@ -909,77 +955,15 @@ export default function CompanyDetail() {
             </Button>
           </div>
           <Card>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {['Email', 'Status', 'Roles', 'Last login'].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '10px 12px',
-                        textAlign: 'left',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {users.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      style={{
-                        padding: '32px',
-                        textAlign: 'center',
-                        color: theme.textMuted,
-                        fontSize: '13px',
-                      }}
-                    >
-                      No users in this company.
-                    </td>
-                  </tr>
-                )}
-                {users.map((u) => (
-                  <tr
-                    key={u.id}
-                    style={{ borderBottom: `1px solid ${theme.border}22`, cursor: 'pointer' }}
-                    onClick={() => {
-                      navigate(`/admin/users/${u.id}`)
-                    }}
-                  >
-                    <td style={{ padding: '12px', fontSize: '13px', color: theme.textPrimary }}>
-                      {u.email}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <Badge variant={u.isActive ? 'success' : 'neutral'}>
-                        {u.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                        {u.roles.slice(0, 3).map((r) => (
-                          <Badge key={r.id} variant={r.isActive ? 'info' : 'neutral'}>
-                            {r.role}
-                          </Badge>
-                        ))}
-                        {u.roles.length > 3 && (
-                          <Badge variant="neutral">+{u.roles.length - 3}</Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
-                      {u.lastLoginAt?.slice(0, 10) ?? '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table
+              columns={userColumns}
+              data={users}
+              rowKey="id"
+              emptyMessage="No users in this company."
+              onRowClick={(u) => {
+                navigate(`/admin/users/${u.id}`)
+              }}
+            />
           </Card>
         </div>
       )}

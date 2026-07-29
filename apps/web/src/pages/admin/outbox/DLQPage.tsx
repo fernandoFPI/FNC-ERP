@@ -5,11 +5,12 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { Modal } from '../../../components/ui/Modal'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { Textarea } from '../../../components/ui/Textarea'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { OUTBOX_DLQ_QUERY, RETRY_DLQ_ENTRY, DISMISS_DLQ_ENTRY } from '../../../graphql/admin'
 
@@ -91,7 +92,7 @@ export default function DLQPage() {
 
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [detailItem, setDetailItem] = useState<DLQItem | null>(null)
   const [dismissTarget, setDismissTarget] = useState<DLQItem | null>(null)
   const [retryTarget, setRetryTarget] = useState<DLQItem | null>(null)
   const [notes, setNotes] = useState('')
@@ -209,17 +210,157 @@ export default function DLQPage() {
     }
   }
 
-  const thStyle: React.CSSProperties = {
-    padding: '10px 14px',
-    textAlign: 'left',
-    fontSize: '10px',
-    fontWeight: 600,
-    color: theme.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    borderBottom: `1px solid ${theme.border}`,
-    whiteSpace: 'nowrap',
-  }
+  const columns: Column<DLQItem>[] = [
+    {
+      key: 'select',
+      header: '',
+      width: '40px',
+      mobileAction: true,
+      renderHeader: () => (
+        <input
+          type="checkbox"
+          checked={allSelected}
+          onChange={toggleAll}
+          style={{ accentColor: theme.accent, cursor: 'pointer' }}
+        />
+      ),
+      render: (item) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(item.id)}
+          onClick={(ev) => {
+            ev.stopPropagation()
+          }}
+          onChange={() => {
+            toggleOne(item.id)
+          }}
+          style={{ accentColor: theme.accent, cursor: 'pointer' }}
+        />
+      ),
+    },
+    {
+      key: 'eventType',
+      header: 'Event Type',
+      mobilePrimary: true,
+      render: (item) => (
+        <span
+          style={{
+            color: theme.textPrimary,
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '12px',
+          }}
+        >
+          {item.eventType}
+        </span>
+      ),
+    },
+    {
+      key: 'service',
+      header: 'Service',
+      mobileSecondary: true,
+      render: (item) => (
+        <Badge variant="neutral" size="sm">
+          {item.service}
+        </Badge>
+      ),
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      mobilePriority: 1,
+      render: (item) =>
+        item.priority === 'critical' ? (
+          <span
+            style={{ animation: 'fnc-pulse 1.8s ease-in-out infinite', display: 'inline-flex' }}
+          >
+            <Badge variant="danger" size="sm">
+              critical
+            </Badge>
+          </span>
+        ) : (
+          <Badge variant={priorityVariant(item.priority)} size="sm">
+            {item.priority}
+          </Badge>
+        ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 2,
+      render: (item) => (
+        <Badge variant={statusVariant(item.status)} size="sm">
+          {item.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'totalAttempts',
+      header: 'Attempts',
+      mobilePriority: 3,
+      render: (item) => (
+        <span style={{ color: theme.danger, fontWeight: 500 }}>{item.totalAttempts}</span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      mobilePriority: 4,
+      render: (item) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {new Date(item.createdAt).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileLabel: 'Actions',
+      mobilePriority: 5,
+      render: (item) => (
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {item.status !== 'dismissed' && item.status !== 'resolved' && (
+            <>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setRetryTarget(item)
+                  setNotes('')
+                }}
+              >
+                Retry
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setDismissTarget(item)
+                  setNotes('')
+                }}
+              >
+                Dismiss
+              </Button>
+            </>
+          )}
+          <button
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: theme.accent,
+              fontSize: '12px',
+              fontFamily: 'inherit',
+            }}
+            onClick={() => {
+              setDetailItem(item)
+            }}
+          >
+            Details
+          </button>
+        </div>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -329,250 +470,111 @@ export default function DLQPage() {
       )}
 
       <Card padding="none">
-        {loading ? (
-          <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: '48px', borderRadius: '6px', marginBottom: '8px' }}
-              />
-            ))}
-          </div>
-        ) : sortedItems.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  <th style={{ ...thStyle, width: '36px', padding: '6px 8px 6px 14px' }}>
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleAll}
-                      style={{ accentColor: theme.accent, cursor: 'pointer' }}
-                    />
-                  </th>
-                  {['Event Type', 'Service', 'Priority', 'Status', 'Attempts', 'Created', ''].map(
-                    (h) => (
-                      <th key={h} style={thStyle}>
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedItems.map((item) => (
-                  <>
-                    <tr
-                      key={item.id}
-                      style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.bgSurfaceHover
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent'
-                      }}
-                    >
-                      <td style={{ padding: '8px 8px 8px 14px', verticalAlign: 'middle' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(item.id)}
-                          onChange={() => {
-                            toggleOne(item.id)
-                          }}
-                          style={{ accentColor: theme.accent, cursor: 'pointer' }}
-                        />
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          color: theme.textPrimary,
-                          fontFamily: 'ui-monospace, monospace',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {item.eventType}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant="neutral" size="sm">
-                          {item.service}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        {item.priority === 'critical' ? (
-                          <span
-                            style={{
-                              animation: 'fnc-pulse 1.8s ease-in-out infinite',
-                              display: 'inline-flex',
-                            }}
-                          >
-                            <Badge variant="danger" size="sm">
-                              critical
-                            </Badge>
-                          </span>
-                        ) : (
-                          <Badge variant={priorityVariant(item.priority)} size="sm">
-                            {item.priority}
-                          </Badge>
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant={statusVariant(item.status)} size="sm">
-                          {item.status}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '12px 14px', color: theme.danger, fontWeight: 500 }}>
-                        {item.totalAttempts}
-                      </td>
-                      <td
-                        style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}
-                      >
-                        {new Date(item.createdAt).toLocaleDateString()}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          {item.status !== 'dismissed' && item.status !== 'resolved' && (
-                            <>
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                  setRetryTarget(item)
-                                  setNotes('')
-                                }}
-                              >
-                                Retry
-                              </Button>
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={() => {
-                                  setDismissTarget(item)
-                                  setNotes('')
-                                }}
-                              >
-                                Dismiss
-                              </Button>
-                            </>
-                          )}
-                          <button
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: theme.accent,
-                              fontSize: '12px',
-                              fontFamily: 'inherit',
-                            }}
-                            onClick={() => {
-                              setExpandedId(expandedId === item.id ? null : item.id)
-                            }}
-                          >
-                            {expandedId === item.id ? 'Hide' : 'Details'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {expandedId === item.id && (
-                      <tr key={`${item.id}-exp`} style={{ background: theme.bgSurfaceHover }}>
-                        <td colSpan={8} style={{ padding: '16px 24px' }}>
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                              gap: '16px',
-                            }}
-                          >
-                            <div>
-                              <p
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  color: theme.danger,
-                                  marginBottom: '6px',
-                                }}
-                              >
-                                Last Error
-                              </p>
-                              <pre
-                                style={{
-                                  fontSize: '11px',
-                                  color: theme.textSecondary,
-                                  background: theme.bgSurface,
-                                  padding: '8px',
-                                  borderRadius: '6px',
-                                  overflow: 'auto',
-                                  margin: 0,
-                                  maxHeight: '120px',
-                                }}
-                              >
-                                {item.lastError}
-                              </pre>
-                            </div>
-                            <div>
-                              <p
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  color: theme.textMuted,
-                                  marginBottom: '6px',
-                                }}
-                              >
-                                Error History ({item.errorHistory.length} attempts)
-                              </p>
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  flexDirection: 'column',
-                                  gap: '4px',
-                                  maxHeight: '120px',
-                                  overflow: 'auto',
-                                }}
-                              >
-                                {item.errorHistory.map((eh) => (
-                                  <div
-                                    key={eh.attempt}
-                                    style={{ fontSize: '11px', color: theme.textMuted }}
-                                  >
-                                    <span style={{ color: theme.danger, marginRight: '6px' }}>
-                                      #{eh.attempt}
-                                    </span>
-                                    {new Date(eh.at).toLocaleString()} — {eh.error}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                          {item.reviewNotes && (
-                            <div style={{ marginTop: '12px' }}>
-                              <p
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  color: theme.textMuted,
-                                  marginBottom: '4px',
-                                }}
-                              >
-                                Review Notes
-                              </p>
-                              <p style={{ fontSize: '12px', color: theme.textSecondary }}>
-                                {item.reviewNotes} — {item.reviewedBy}
-                              </p>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState title="DLQ is clear" message="No events in the dead letter queue." />
-        )}
+        <Table
+          columns={columns}
+          data={sortedItems}
+          rowKey="id"
+          loading={loading && sortedItems.length === 0}
+          emptyMessage="No events in the dead letter queue."
+          getRowStyle={(item) =>
+            selectedIds.has(item.id) ? { background: `${theme.accent}22` } : {}
+          }
+        />
       </Card>
+
+      {/* Details Modal */}
+      <Modal
+        open={!!detailItem}
+        onClose={() => {
+          setDetailItem(null)
+        }}
+        title={`Details: ${detailItem?.eventType ?? ''}`}
+        size="lg"
+      >
+        {detailItem && (
+          <>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '16px',
+              }}
+            >
+              <div>
+                <p
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.danger,
+                    marginBottom: '6px',
+                  }}
+                >
+                  Last Error
+                </p>
+                <pre
+                  style={{
+                    fontSize: '11px',
+                    color: theme.textSecondary,
+                    background: theme.bgSurface,
+                    padding: '8px',
+                    borderRadius: '6px',
+                    overflow: 'auto',
+                    margin: 0,
+                    maxHeight: '120px',
+                  }}
+                >
+                  {detailItem.lastError}
+                </pre>
+              </div>
+              <div>
+                <p
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.textMuted,
+                    marginBottom: '6px',
+                  }}
+                >
+                  Error History ({detailItem.errorHistory.length} attempts)
+                </p>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    maxHeight: '120px',
+                    overflow: 'auto',
+                  }}
+                >
+                  {detailItem.errorHistory.map((eh) => (
+                    <div key={eh.attempt} style={{ fontSize: '11px', color: theme.textMuted }}>
+                      <span style={{ color: theme.danger, marginRight: '6px' }}>#{eh.attempt}</span>
+                      {new Date(eh.at).toLocaleString()} — {eh.error}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {detailItem.reviewNotes && (
+              <div style={{ marginTop: '12px' }}>
+                <p
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.textMuted,
+                    marginBottom: '4px',
+                  }}
+                >
+                  Review Notes
+                </p>
+                <p style={{ fontSize: '12px', color: theme.textSecondary }}>
+                  {detailItem.reviewNotes} — {detailItem.reviewedBy}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </Modal>
 
       {/* Retry Modal */}
       <Modal

@@ -6,7 +6,6 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { Modal } from '../../../components/ui/Modal'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -20,6 +19,8 @@ import {
   SESSIONS_CHANGED_SUBSCRIPTION,
 } from '../../../graphql/admin'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface UserRole {
   id: string
@@ -120,6 +121,90 @@ export default function UsersPage() {
 
   const users = data?.users.items ?? []
 
+  const columns: Column<UserItem>[] = [
+    {
+      key: 'email',
+      header: 'Email',
+      mobilePrimary: true,
+      render: (user) => (
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{user.email}</span>
+      ),
+    },
+    {
+      key: 'companies',
+      header: 'Companies',
+      mobileSecondary: true,
+      render: (user) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {user.companies.join(', ') || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'isActive',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (user) => (
+        <Badge variant={user.isActive ? 'success' : 'neutral'} size="sm">
+          {user.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'lastLogin',
+      header: 'Last Login',
+      mobilePriority: 2,
+      render: (user) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
+        </span>
+      ),
+    },
+    {
+      key: 'activeSessions',
+      header: 'Sessions',
+      mobilePriority: 3,
+      render: (user) => (
+        <span style={{ color: user.activeSessions > 0 ? theme.accent : theme.textMuted }}>
+          {user.activeSessions}
+        </span>
+      ),
+    },
+    {
+      key: 'mfaEnabled',
+      header: 'MFA',
+      mobilePriority: 4,
+      render: (user) => (
+        <Badge variant={user.mfaEnabled ? 'success' : 'warning'} size="sm">
+          {user.mfaEnabled ? 'On' : 'Off'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (user) =>
+        user.isActive ? (
+          <div
+            onClick={(ev) => {
+              ev.stopPropagation()
+            }}
+          >
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                setConfirmDeactivateUser({ id: user.id, email: user.email })
+              }}
+            >
+              Deactivate
+            </Button>
+          </div>
+        ) : null,
+    },
+  ]
+
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
@@ -169,111 +254,16 @@ export default function UsersPage() {
       </Card>
 
       <Card padding="none">
-        {loading ? (
-          <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: '48px', borderRadius: '6px', marginBottom: '8px' }}
-              />
-            ))}
-          </div>
-        ) : users.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {['Email', 'Status', 'MFA', 'Companies', 'Sessions', 'Last Login', ''].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '10px 14px',
-                          textAlign: 'left',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          borderBottom: `1px solid ${theme.border}`,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr
-                    key={user.id}
-                    style={{ borderBottom: `1px solid ${theme.border}22`, cursor: 'pointer' }}
-                    onClick={() => {
-                      navigate(`/admin/users/${user.id}`)
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = `${theme.accent}12`
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <td style={{ padding: '12px 14px', color: theme.textPrimary, fontWeight: 500 }}>
-                      {user.email}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant={user.isActive ? 'success' : 'neutral'} size="sm">
-                        {user.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant={user.mfaEnabled ? 'success' : 'warning'} size="sm">
-                        {user.mfaEnabled ? 'On' : 'Off'}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {user.companies.join(', ') || '—'}
-                    </td>
-                    <td
-                      style={{
-                        padding: '12px 14px',
-                        color: user.activeSessions > 0 ? theme.accent : theme.textMuted,
-                      }}
-                    >
-                      {user.activeSessions}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
-                    </td>
-                    <td
-                      style={{ padding: '12px 14px' }}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                      }}
-                    >
-                      {user.isActive && (
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => {
-                            setConfirmDeactivateUser({ id: user.id, email: user.email })
-                          }}
-                        >
-                          Deactivate
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState title="No users found" message="Adjust search criteria to find users." />
-        )}
+        <Table
+          columns={columns}
+          data={users}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No users found"
+          onRowClick={(user) => {
+            navigate(`/admin/users/${user.id}`)
+          }}
+        />
       </Card>
 
       {/* Invite user modal */}
@@ -378,8 +368,14 @@ export default function UsersPage() {
                 }}
                 placeholder="Select role…"
                 options={[
-                  { value: 'user', label: 'User — no default access, permissions granted individually' },
-                  { value: 'module_admin', label: 'Module Admin — full access to assigned modules' },
+                  {
+                    value: 'user',
+                    label: 'User — no default access, permissions granted individually',
+                  },
+                  {
+                    value: 'module_admin',
+                    label: 'Module Admin — full access to assigned modules',
+                  },
                   { value: 'company_admin', label: 'Company Admin — full company access' },
                   { value: 'system_admin', label: 'System Admin — bypasses all permission gates' },
                 ]}
@@ -403,7 +399,9 @@ export default function UsersPage() {
               <Button
                 variant="primary"
                 loading={inviting}
-                disabled={!inviteForm.email || inviteForm.companyIds.length === 0 || !inviteForm.role}
+                disabled={
+                  !inviteForm.email || inviteForm.companyIds.length === 0 || !inviteForm.role
+                }
                 onClick={() =>
                   void inviteUser({
                     variables: {
@@ -513,8 +511,14 @@ export default function UsersPage() {
                 }}
                 placeholder="Select role (optional)…"
                 options={[
-                  { value: 'user', label: 'User — no default access, permissions granted individually' },
-                  { value: 'module_admin', label: 'Module Admin — full access to assigned modules' },
+                  {
+                    value: 'user',
+                    label: 'User — no default access, permissions granted individually',
+                  },
+                  {
+                    value: 'module_admin',
+                    label: 'Module Admin — full access to assigned modules',
+                  },
                   { value: 'company_admin', label: 'Company Admin — full company access' },
                   { value: 'system_admin', label: 'System Admin — bypasses all permission gates' },
                 ]}

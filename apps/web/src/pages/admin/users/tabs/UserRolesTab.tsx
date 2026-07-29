@@ -9,6 +9,8 @@ import { Modal } from '../../../../components/ui/Modal'
 import { EmptyState } from '../../../../components/ui/EmptyState'
 import { PermissionTree } from '../../../../components/permissions/PermissionTree'
 import { SearchableSelect } from '../../../../components/ui/SearchableSelect'
+import type { Column } from '../../../../components/ui/Table'
+import { Table } from '../../../../components/ui/Table'
 import {
   GET_USER_PERMISSIONS,
   GET_USER_COMPANIES,
@@ -196,6 +198,57 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
 
   const isAdmin = permsData?.userPermissions?.isAdmin ?? false
 
+  const poColumns: Column<POPosition>[] = [
+    {
+      key: 'position',
+      header: 'Position',
+      mobilePrimary: true,
+      render: (pos) => (
+        <Badge variant="neutral" size="sm">
+          {PO_POSITION_OPTIONS.find((o) => o.value === pos.position)?.label ?? pos.position}
+        </Badge>
+      ),
+    },
+    {
+      key: 'scope',
+      header: 'Scope',
+      mobileSecondary: true,
+      render: (pos) => (
+        <span style={{ color: theme.textSecondary, fontSize: '12px' }}>
+          {pos.projectName
+            ? `Project: ${pos.projectName}`
+            : pos.departmentName
+              ? `Dept: ${pos.departmentName}`
+              : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'isActive',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (pos) => (
+        <Badge variant={pos.isActive ? 'success' : 'neutral'} size="sm">
+          {pos.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (pos) => (
+        <Button
+          variant="danger"
+          size="sm"
+          onClick={() => void removePosition({ variables: { id: pos.id } })}
+        >
+          Remove
+        </Button>
+      ),
+    },
+  ]
+
   if (loadingCompanies) {
     return <div style={{ padding: '20px', color: theme.textMuted }}>Loading companies…</div>
   }
@@ -350,70 +403,7 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                 No PO positions assigned to this user.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurface }}>
-                      {['Position', 'Scope', 'Status', ''].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '8px 14px',
-                            textAlign: 'left',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
-                            borderBottom: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {poPositions.map((pos) => (
-                      <tr key={pos.id} style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
-                        <td style={{ padding: '10px 14px' }}>
-                          <Badge variant="neutral" size="sm">
-                            {PO_POSITION_OPTIONS.find((o) => o.value === pos.position)?.label ??
-                              pos.position}
-                          </Badge>
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 14px',
-                            color: theme.textSecondary,
-                            fontSize: '12px',
-                          }}
-                        >
-                          {pos.projectName
-                            ? `Project: ${pos.projectName}`
-                            : pos.departmentName
-                              ? `Dept: ${pos.departmentName}`
-                              : '—'}
-                        </td>
-                        <td style={{ padding: '10px 14px' }}>
-                          <Badge variant={pos.isActive ? 'success' : 'neutral'} size="sm">
-                            {pos.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                        <td style={{ padding: '10px 14px' }}>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            onClick={() => void removePosition({ variables: { id: pos.id } })}
-                          >
-                            Remove
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table columns={poColumns} data={poPositions} rowKey="id" />
             )}
           </Card>
         </div>

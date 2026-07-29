@@ -1,13 +1,15 @@
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useSubscription } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import { Modal } from '../../../components/ui/Modal'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { formatRelativeTime } from '../../../lib/format'
 import {
@@ -76,7 +78,7 @@ export default function OutboxMonitorPage() {
 
   const [statusFilter, setStatusFilter] = useState('')
   const [serviceFilter, setServiceFilter] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [detailEvent, setDetailEvent] = useState<OutboxEvent | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
@@ -144,6 +146,110 @@ export default function OutboxMonitorPage() {
 
   const monitor = monitorData?.outboxMonitor
   const events = eventsData?.outboxEvents.items ?? []
+
+  const columns: Column<OutboxEvent>[] = [
+    {
+      key: 'service',
+      header: 'Service',
+      mobileSecondary: true,
+      render: (ev) => (
+        <Badge variant="neutral" size="sm">
+          {ev.service}
+        </Badge>
+      ),
+    },
+    {
+      key: 'eventType',
+      header: 'Event Type',
+      mobilePrimary: true,
+      render: (ev) => (
+        <span
+          style={{
+            color: theme.textPrimary,
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '12px',
+          }}
+        >
+          {ev.eventType}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (ev) => (
+        <Badge variant={statusVariant(ev.status)} size="sm">
+          {ev.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'attempts',
+      header: 'Attempts',
+      mobilePriority: 2,
+      render: (ev) => (
+        <span style={{ color: ev.attempts >= ev.maxAttempts ? theme.danger : theme.textSecondary }}>
+          {ev.attempts}/{ev.maxAttempts}
+        </span>
+      ),
+    },
+    {
+      key: 'nextRetryAt',
+      header: 'Next Retry',
+      mobilePriority: 3,
+      render: (ev) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {ev.nextRetryAt ? new Date(ev.nextRetryAt).toLocaleString() : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      mobilePriority: 4,
+      render: (ev) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {new Date(ev.createdAt).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileLabel: 'Actions',
+      mobilePriority: 5,
+      render: (ev) => (
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {(ev.status === 'failed' || ev.status === 'stuck') && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => retryEvent({ variables: { eventId: ev.id } })}
+              loading={retrying}
+            >
+              Retry
+            </Button>
+          )}
+          <button
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: theme.accent,
+              fontSize: '12px',
+              fontFamily: 'inherit',
+            }}
+            onClick={() => {
+              setDetailEvent(ev)
+            }}
+          >
+            Details
+          </button>
+        </div>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -303,201 +409,91 @@ export default function OutboxMonitorPage() {
       </Card>
 
       <Card padding="none">
-        {eventsLoading ? (
-          <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: '40px', borderRadius: '6px', marginBottom: '8px' }}
-              />
-            ))}
-          </div>
-        ) : events.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {['Service', 'Event Type', 'Status', 'Attempts', 'Next Retry', 'Created', ''].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '10px 14px',
-                          textAlign: 'left',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          borderBottom: `1px solid ${theme.border}`,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((ev) => (
-                  <Fragment key={ev.id}>
-                    <tr
-                      style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.bgSurfaceHover
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent'
-                      }}
-                    >
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant="neutral" size="sm">
-                          {ev.service}
-                        </Badge>
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          color: theme.textPrimary,
-                          fontFamily: 'ui-monospace, monospace',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {ev.eventType}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant={statusVariant(ev.status)} size="sm">
-                          {ev.status}
-                        </Badge>
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          color: ev.attempts >= ev.maxAttempts ? theme.danger : theme.textSecondary,
-                        }}
-                      >
-                        {ev.attempts}/{ev.maxAttempts}
-                      </td>
-                      <td
-                        style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}
-                      >
-                        {ev.nextRetryAt ? new Date(ev.nextRetryAt).toLocaleString() : '—'}
-                      </td>
-                      <td
-                        style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}
-                      >
-                        {new Date(ev.createdAt).toLocaleString()}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          {(ev.status === 'failed' || ev.status === 'stuck') && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => retryEvent({ variables: { eventId: ev.id } })}
-                              loading={retrying}
-                            >
-                              Retry
-                            </Button>
-                          )}
-                          <button
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: theme.accent,
-                              fontSize: '12px',
-                              fontFamily: 'inherit',
-                            }}
-                            onClick={() => {
-                              setExpandedId(expandedId === ev.id ? null : ev.id)
-                            }}
-                          >
-                            {expandedId === ev.id ? 'Hide' : 'Details'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {expandedId === ev.id && (
-                      <tr style={{ background: theme.bgSurfaceHover }}>
-                        <td colSpan={7} style={{ padding: '16px 24px' }}>
-                          {ev.lastError && (
-                            <div style={{ marginBottom: '12px' }}>
-                              <p
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 600,
-                                  color: theme.danger,
-                                  marginBottom: '4px',
-                                }}
-                              >
-                                Last Error
-                              </p>
-                              <pre
-                                style={{
-                                  fontSize: '11px',
-                                  color: theme.textSecondary,
-                                  background: theme.bgSurface,
-                                  padding: '8px',
-                                  borderRadius: '6px',
-                                  overflow: 'auto',
-                                  margin: 0,
-                                }}
-                              >
-                                {ev.lastError}
-                              </pre>
-                            </div>
-                          )}
-                          <div>
-                            <p
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                color: theme.textMuted,
-                                marginBottom: '4px',
-                              }}
-                            >
-                              Payload
-                            </p>
-                            <pre
-                              style={{
-                                fontSize: '11px',
-                                color: theme.textSecondary,
-                                background: theme.bgSurface,
-                                padding: '8px',
-                                borderRadius: '6px',
-                                overflow: 'auto',
-                                maxHeight: '200px',
-                                margin: 0,
-                              }}
-                            >
-                              {(() => {
-                                if (ev.payload == null) return 'null'
-                                if (typeof ev.payload === 'string') {
-                                  try {
-                                    return JSON.stringify(JSON.parse(ev.payload), null, 2)
-                                  } catch {
-                                    return ev.payload
-                                  }
-                                }
-                                return JSON.stringify(ev.payload, null, 2)
-                              })()}
-                            </pre>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState title="No events" message="No outbox events match the current filters." />
-        )}
+        <Table
+          columns={columns}
+          data={events}
+          rowKey="id"
+          loading={eventsLoading && events.length === 0}
+          emptyMessage="No outbox events match the current filters."
+        />
       </Card>
+
+      <Modal
+        open={!!detailEvent}
+        onClose={() => {
+          setDetailEvent(null)
+        }}
+        title={detailEvent?.eventType ?? 'Event Details'}
+        size="md"
+      >
+        {detailEvent && (
+          <>
+            {detailEvent.lastError && (
+              <div style={{ marginBottom: '12px' }}>
+                <p
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.danger,
+                    marginBottom: '4px',
+                  }}
+                >
+                  Last Error
+                </p>
+                <pre
+                  style={{
+                    fontSize: '11px',
+                    color: theme.textSecondary,
+                    background: theme.bgSurface,
+                    padding: '8px',
+                    borderRadius: '6px',
+                    overflow: 'auto',
+                    margin: 0,
+                  }}
+                >
+                  {detailEvent.lastError}
+                </pre>
+              </div>
+            )}
+            <div>
+              <p
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: theme.textMuted,
+                  marginBottom: '4px',
+                }}
+              >
+                Payload
+              </p>
+              <pre
+                style={{
+                  fontSize: '11px',
+                  color: theme.textSecondary,
+                  background: theme.bgSurface,
+                  padding: '8px',
+                  borderRadius: '6px',
+                  overflow: 'auto',
+                  maxHeight: '300px',
+                  margin: 0,
+                }}
+              >
+                {(() => {
+                  if (detailEvent.payload == null) return 'null'
+                  if (typeof detailEvent.payload === 'string') {
+                    try {
+                      return JSON.stringify(JSON.parse(detailEvent.payload), null, 2)
+                    } catch {
+                      return detailEvent.payload
+                    }
+                  }
+                  return JSON.stringify(detailEvent.payload, null, 2)
+                })()}
+              </pre>
+            </div>
+          </>
+        )}
+      </Modal>
 
       <ConfirmDialog
         open={confirmReset}

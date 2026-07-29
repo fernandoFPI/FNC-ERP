@@ -11,6 +11,8 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { Modal } from '../../../components/ui/Modal'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 
 const UserRolesTab = lazy(() => import('./tabs/UserRolesTab'))
@@ -280,6 +282,158 @@ export default function UserDetail() {
   const sessions = sessionsData?.userSessions ?? []
   const isLocked = !!user?.lockedUntil && new Date(user.lockedUntil) > new Date()
 
+  const roleColumns: Column<UserRole>[] = [
+    {
+      key: 'companyName',
+      header: 'Company',
+      mobilePrimary: true,
+      render: (role) => role.companyName,
+    },
+    {
+      key: 'module',
+      header: 'Module',
+      mobileSecondary: true,
+      render: (role) => (
+        <Badge variant="neutral" size="sm">
+          {role.module}
+        </Badge>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      mobilePriority: 1,
+      render: (role) => (
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{role.role}</span>
+      ),
+    },
+    {
+      key: 'isActive',
+      header: 'Status',
+      mobilePriority: 2,
+      render: (role) => (
+        <Badge variant={role.isActive ? 'success' : 'neutral'} size="sm">
+          {role.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileLabel: 'Actions',
+      mobilePriority: 3,
+      render: (role) => (
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              toggleRoleActive({
+                variables: {
+                  roleId: role.id,
+                  input: { isActive: !role.isActive },
+                },
+              })
+            }
+          >
+            {role.isActive ? 'Disable' : 'Enable'}
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              setRemoveRoleId(role.id)
+            }}
+          >
+            Remove
+          </Button>
+        </div>
+      ),
+    },
+  ]
+
+  const sessionColumns: Column<UserSession>[] = [
+    {
+      key: 'deviceName',
+      header: 'Device',
+      mobilePrimary: true,
+      render: (s) => (
+        <span style={{ color: theme.textPrimary }}>
+          {s.deviceName}
+          {s.isCurrent && (
+            <span style={{ marginLeft: '8px' }}>
+              <Badge variant="accent" size="sm">
+                Current
+              </Badge>
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: 'platform',
+      header: 'Platform',
+      mobileSecondary: true,
+      render: (s) => s.platform,
+    },
+    {
+      key: 'ipAddress',
+      header: 'IP',
+      mobilePriority: 1,
+      render: (s) => (
+        <span
+          style={{
+            color: theme.textMuted,
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '12px',
+          }}
+        >
+          {s.ipAddress === '::1' || s.ipAddress === '127.0.0.1'
+            ? 'localhost'
+            : (s.ipAddress ?? '—')}
+        </span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      mobilePriority: 2,
+      render: (s) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {new Date(s.createdAt).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      key: 'expiresAt',
+      header: 'Expires',
+      mobilePriority: 3,
+      render: (s) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {new Date(s.expiresAt).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (s) =>
+        !s.isCurrent ? (
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              setRevokeSessionId(s.id)
+            }}
+            loading={revokingSession && revokeSessionId === s.id}
+          >
+            Revoke
+          </Button>
+        ) : null,
+    },
+  ]
+
   if (userLoading) {
     return (
       <div style={{ padding: '24px' }}>
@@ -495,96 +649,7 @@ export default function UserDetail() {
               </Button>
             </div>
             {user.roles.length ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurface }}>
-                      {['Company', 'Module', 'Role', 'Status', ''].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '10px 14px',
-                            textAlign: 'left',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
-                            borderBottom: `1px solid ${theme.border}`,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {user.roles.map((role) => (
-                      <tr
-                        key={role.id}
-                        style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = theme.tableRowHover
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent'
-                        }}
-                      >
-                        <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                          {role.companyName}
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant="neutral" size="sm">
-                            {role.module}
-                          </Badge>
-                        </td>
-                        <td
-                          style={{
-                            padding: '12px 14px',
-                            color: theme.textPrimary,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {role.role}
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant={role.isActive ? 'success' : 'neutral'} size="sm">
-                            {role.isActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                toggleRoleActive({
-                                  variables: {
-                                    roleId: role.id,
-                                    input: { isActive: !role.isActive },
-                                  },
-                                })
-                              }
-                            >
-                              {role.isActive ? 'Disable' : 'Enable'}
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => {
-                                setRemoveRoleId(role.id)
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table columns={roleColumns} data={user.roles} rowKey="id" />
             ) : (
               <EmptyState title="No roles" message="This user has no assigned roles." />
             )}
@@ -633,96 +698,7 @@ export default function UserDetail() {
                 <div className="skeleton" style={{ height: '120px', borderRadius: '8px' }} />
               </div>
             ) : sessions.length ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurface }}>
-                      {['Device', 'Platform', 'IP', 'Created', 'Expires', ''].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '10px 14px',
-                            textAlign: 'left',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
-                            borderBottom: `1px solid ${theme.border}`,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessions.map((s) => (
-                      <tr
-                        key={s.id}
-                        style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = theme.tableRowHover
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent'
-                        }}
-                      >
-                        <td style={{ padding: '12px 14px', color: theme.textPrimary }}>
-                          {s.deviceName}
-                          {s.isCurrent && (
-                            <span style={{ marginLeft: '8px' }}>
-                              <Badge variant="accent" size="sm">
-                                Current
-                              </Badge>
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                          {s.platform}
-                        </td>
-                        <td
-                          style={{
-                            padding: '12px 14px',
-                            color: theme.textMuted,
-                            fontFamily: 'ui-monospace, monospace',
-                            fontSize: '12px',
-                          }}
-                        >
-                          {s.ipAddress === '::1' || s.ipAddress === '127.0.0.1'
-                            ? 'localhost'
-                            : (s.ipAddress ?? '—')}
-                        </td>
-                        <td
-                          style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}
-                        >
-                          {new Date(s.createdAt).toLocaleDateString()}
-                        </td>
-                        <td
-                          style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}
-                        >
-                          {new Date(s.expiresAt).toLocaleDateString()}
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          {!s.isCurrent && (
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={() => {
-                                setRevokeSessionId(s.id)
-                              }}
-                              loading={revokingSession && revokeSessionId === s.id}
-                            >
-                              Revoke
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table columns={sessionColumns} data={sessions} rowKey="id" />
             ) : (
               <EmptyState title="No sessions" message="This user has no active sessions." />
             )}
