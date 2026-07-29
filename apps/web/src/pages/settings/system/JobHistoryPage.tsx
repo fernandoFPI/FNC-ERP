@@ -3,6 +3,8 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
 
@@ -175,6 +177,68 @@ export default function JobHistoryPage() {
   ).sort()
 
   const totalPages = Math.ceil(total / LIMIT)
+
+  const columns: Column<JobRun>[] = [
+    {
+      key: 'job_name',
+      header: 'Job',
+      mobilePrimary: true,
+      render: (run) => (
+        <span style={{ color: theme.textPrimary, fontWeight: 500, whiteSpace: 'nowrap' }}>
+          {JOB_LABELS[run.job_name] ?? run.job_name}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobileSecondary: true,
+      render: (run) => <StatusBadge status={run.status} />,
+    },
+    {
+      key: 'started_at',
+      header: 'Started',
+      mobilePriority: 1,
+      render: (run) => (
+        <span style={{ color: theme.textMuted, whiteSpace: 'nowrap' }}>
+          <span title={fmtTime(run.started_at)}>{fmtRelative(run.started_at)}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'duration_ms',
+      header: 'Duration',
+      mobilePriority: 2,
+      render: (run) => (
+        <span
+          style={{
+            color: theme.textMuted,
+            fontVariantNumeric: 'tabular-nums',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {fmtDuration(run.duration_ms)}
+        </span>
+      ),
+    },
+    {
+      key: 'details',
+      header: 'Details',
+      mobilePriority: 3,
+      render: (run) =>
+        run.error_msg ? (
+          <span style={{ color: theme.danger, fontSize: '12px' }} title={run.error_msg}>
+            {run.error_msg.length > 80 ? run.error_msg.slice(0, 80) + '…' : run.error_msg}
+          </span>
+        ) : run.meta ? (
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+            {Object.entries(run.meta)
+              .map(([k, v]) => `${k}: ${String(v)}`)
+              .join(' · ')}
+          </span>
+        ) : null,
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', maxWidth: '1000px' }}>
@@ -371,120 +435,15 @@ export default function JobHistoryPage() {
         </div>
 
         {/* Table */}
-        <div
-          style={{ overflowX: 'auto', borderRadius: '10px', border: `1px solid ${theme.border}` }}
-        >
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr
-                style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}
-              >
-                {['Job', 'Status', 'Started', 'Duration', 'Details'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '10px 14px',
-                      textAlign: 'left',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      fontSize: '11px',
-                      whiteSpace: 'nowrap',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loadingRuns ? (
-                Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i}>
-                    <td colSpan={5} style={{ padding: '10px 14px' }}>
-                      <div className="skeleton" style={{ height: '18px', borderRadius: '4px' }} />
-                    </td>
-                  </tr>
-                ))
-              ) : runs.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={5}
-                    style={{
-                      padding: '32px',
-                      textAlign: 'center',
-                      color: theme.textMuted,
-                      fontSize: '13px',
-                    }}
-                  >
-                    No job runs found
-                  </td>
-                </tr>
-              ) : (
-                runs.map((run) => (
-                  <tr
-                    key={run.id}
-                    style={{ borderBottom: `1px solid ${theme.border}` }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.bgSurfaceHover
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: '10px 14px',
-                        color: theme.textPrimary,
-                        fontWeight: 500,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {JOB_LABELS[run.job_name] ?? run.job_name}
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <StatusBadge status={run.status} />
-                    </td>
-                    <td
-                      style={{ padding: '10px 14px', color: theme.textMuted, whiteSpace: 'nowrap' }}
-                    >
-                      <span title={fmtTime(run.started_at)}>{fmtRelative(run.started_at)}</span>
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px 14px',
-                        color: theme.textMuted,
-                        fontVariantNumeric: 'tabular-nums',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {fmtDuration(run.duration_ms)}
-                    </td>
-                    <td style={{ padding: '10px 14px', color: theme.textMuted, maxWidth: '320px' }}>
-                      {run.error_msg ? (
-                        <span
-                          style={{ color: theme.danger, fontSize: '12px' }}
-                          title={run.error_msg}
-                        >
-                          {run.error_msg.length > 80
-                            ? run.error_msg.slice(0, 80) + '…'
-                            : run.error_msg}
-                        </span>
-                      ) : run.meta ? (
-                        <span style={{ fontSize: '12px' }}>
-                          {Object.entries(run.meta)
-                            .map(([k, v]) => `${k}: ${String(v)}`)
-                            .join(' · ')}
-                        </span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Card padding="none">
+          <Table
+            columns={columns}
+            data={runs}
+            rowKey="id"
+            loading={loadingRuns}
+            emptyMessage="No job runs found"
+          />
+        </Card>
 
         {/* Pagination */}
         {totalPages > 1 && (

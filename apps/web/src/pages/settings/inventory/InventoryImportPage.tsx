@@ -9,6 +9,8 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface StockLocation {
   id: string
@@ -17,11 +19,17 @@ interface StockLocation {
   type: string
 }
 
+interface ImportRowError {
+  sku: string
+  name: string
+  message: string
+}
+
 interface ImportResult {
   created: number
   updated: number
   total: number
-  errors: { sku: string; name: string; message: string }[]
+  errors: ImportRowError[]
 }
 
 export default function InventoryImportPage() {
@@ -90,6 +98,27 @@ export default function InventoryImportPage() {
     setErrorMsg('')
     if (fileRef.current) fileRef.current.value = ''
   }
+
+  const errorColumns: Column<ImportRowError>[] = [
+    {
+      key: 'sku',
+      header: 'SKU',
+      mobilePrimary: true,
+      render: (e) => <span style={{ fontFamily: 'monospace', color: theme.accent }}>{e.sku}</span>,
+    },
+    {
+      key: 'name',
+      header: 'Name',
+      mobileSecondary: true,
+      render: (e) => <span style={{ color: theme.textPrimary }}>{e.name}</span>,
+    },
+    {
+      key: 'message',
+      header: 'Error',
+      mobilePriority: 1,
+      render: (e) => <span style={{ color: '#dc2626' }}>{e.message}</span>,
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', maxWidth: '860px', margin: '0 auto' }}>
@@ -286,48 +315,12 @@ export default function InventoryImportPage() {
               </div>
               <div
                 style={{
-                  overflowX: 'auto',
                   borderRadius: '6px',
                   border: `1px solid ${theme.border}`,
+                  overflow: 'hidden',
                 }}
               >
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurface }}>
-                      {['SKU', 'Name', 'Error'].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '8px 12px',
-                            textAlign: 'left',
-                            fontWeight: 600,
-                            color: theme.textSecondary,
-                            borderBottom: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.errors.map((e, i) => (
-                      <tr key={i} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td
-                          style={{
-                            padding: '7px 12px',
-                            fontFamily: 'monospace',
-                            color: theme.accent,
-                          }}
-                        >
-                          {e.sku}
-                        </td>
-                        <td style={{ padding: '7px 12px', color: theme.textPrimary }}>{e.name}</td>
-                        <td style={{ padding: '7px 12px', color: '#dc2626' }}>{e.message}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <Table columns={errorColumns} data={result.errors} emptyMessage="No failed rows" />
               </div>
             </>
           )}
