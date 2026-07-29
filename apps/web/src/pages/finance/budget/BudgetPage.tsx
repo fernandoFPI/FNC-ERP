@@ -6,7 +6,11 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { Grid } from '../../../components/ui/Grid'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { api } from '../../../lib/axios'
+import { usePagePadding } from '../../../hooks/usePagePadding'
 
 interface Budget {
   id: string
@@ -30,6 +34,7 @@ const currentYear = new Date().getFullYear()
 
 export default function BudgetPage() {
   const { theme } = useTheme()
+  const pagePadding = usePagePadding()
   const navigate = useNavigate()
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
@@ -94,8 +99,66 @@ export default function BudgetPage() {
   const activeBudgets = budgets.filter((b) => b.status === 'active')
   const totalActive = activeBudgets.reduce((s, b) => s + Number(b.total_budget), 0)
 
+  const columns: Column<Budget>[] = [
+    {
+      key: 'name',
+      header: 'Budget Name',
+      mobilePrimary: true,
+      render: (b) => <span style={{ fontWeight: 600, color: theme.textPrimary }}>{b.name}</span>,
+    },
+    {
+      key: 'fiscal_year',
+      header: 'Year',
+      mobileSecondary: true,
+      render: (b) => `FY ${b.fiscal_year}`,
+    },
+    {
+      key: 'currency_code',
+      header: 'Currency',
+      render: (b) => b.currency_code,
+    },
+    {
+      key: 'line_count',
+      header: 'Lines',
+      render: (b) => b.line_count,
+    },
+    {
+      key: 'total_budget',
+      header: 'Total Budget',
+      render: (b) => (
+        <AmountDisplay amount={Number(b.total_budget)} currency={b.currency_code} size="sm" />
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (b) => <Badge variant={STATUS_BADGE[b.status] ?? 'neutral'}>{b.status}</Badge>,
+    },
+    {
+      key: 'created_at',
+      header: 'Created',
+      render: (b) => new Date(b.created_at).toLocaleDateString(),
+    },
+    {
+      key: 'open',
+      header: '',
+      mobileAction: true,
+      render: (b) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            navigate(`/finance/budget/${b.id}`)
+          }}
+        >
+          Open
+        </Button>
+      ),
+    },
+  ]
+
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={pagePadding}>
       <PageHeader
         title="GL Budget Management"
         subtitle="Define annual budgets per account and track budget vs actual performance"
@@ -113,14 +176,7 @@ export default function BudgetPage() {
       />
 
       {/* KPI strip */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))',
-          gap: '12px',
-          marginBottom: '20px',
-        }}
-      >
+      <Grid cols={4} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
         <Card padding="sm">
           <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
             Total Budgets
@@ -149,117 +205,20 @@ export default function BudgetPage() {
           </p>
           <p style={{ fontSize: '24px', fontWeight: 700, color: theme.accent }}>{currentYear}</p>
         </Card>
-      </div>
+      </Grid>
 
       {/* Budget list */}
       <Card padding="none">
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
-              {[
-                'Budget Name',
-                'Year',
-                'Currency',
-                'Lines',
-                'Total Budget',
-                'Status',
-                'Created',
-                '',
-              ].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: '9px 12px',
-                    textAlign: 'left',
-                    color: theme.textMuted,
-                    fontWeight: 500,
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td
-                  colSpan={8}
-                  style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                >
-                  Loading...
-                </td>
-              </tr>
-            )}
-            {!loading && !budgets.length && (
-              <tr>
-                <td
-                  colSpan={8}
-                  style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                >
-                  No budgets yet. Click "+ New Budget" to create your first annual budget.
-                </td>
-              </tr>
-            )}
-            {budgets.map((b) => (
-              <tr
-                key={b.id}
-                style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}
-                onClick={() => {
-                  navigate(`/finance/budget/${b.id}`)
-                }}
-              >
-                <td style={{ padding: '9px 12px', fontWeight: 600, color: theme.textPrimary }}>
-                  {b.name}
-                </td>
-                <td
-                  style={{
-                    padding: '9px 12px',
-                    color: theme.textSecondary,
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  {b.fiscal_year}
-                </td>
-                <td style={{ padding: '9px 12px', color: theme.textSecondary }}>
-                  {b.currency_code}
-                </td>
-                <td style={{ padding: '9px 12px', color: theme.textSecondary, textAlign: 'right' }}>
-                  {b.line_count}
-                </td>
-                <td style={{ padding: '9px 12px' }}>
-                  <AmountDisplay
-                    amount={Number(b.total_budget)}
-                    currency={b.currency_code}
-                    size="sm"
-                  />
-                </td>
-                <td style={{ padding: '9px 12px' }}>
-                  <Badge variant={STATUS_BADGE[b.status] ?? 'neutral'}>{b.status}</Badge>
-                </td>
-                <td style={{ padding: '9px 12px', color: theme.textMuted, fontSize: '11px' }}>
-                  {new Date(b.created_at).toLocaleDateString()}
-                </td>
-                <td
-                  style={{ padding: '9px 12px' }}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                  }}
-                >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      navigate(`/finance/budget/${b.id}`)
-                    }}
-                  >
-                    Open
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Table
+          columns={columns}
+          data={budgets}
+          rowKey="id"
+          loading={loading}
+          emptyMessage='No budgets yet. Click "+ New Budget" to create your first annual budget.'
+          onRowClick={(b) => {
+            navigate(`/finance/budget/${b.id}`)
+          }}
+        />
       </Card>
 
       {/* New budget modal */}
