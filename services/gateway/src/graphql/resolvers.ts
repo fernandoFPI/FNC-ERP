@@ -488,6 +488,24 @@ async function requirePermGW(
   }
 }
 
+// A handful of report/lookup resolvers accept an optional companyId argument
+// that overrides the caller's own company (a convenience for admin-facing
+// screens). Without this guard any authenticated user could pass an
+// arbitrary companyId and read another company's financial/HR data.
+// Mirrors the existing userCompanies resolver's system_admin-only rule for
+// cross-company access — no separate multi-company grant concept exists
+// in this codebase today.
+function resolveReportCompanyIdGW(
+  auth: { companyId: string; role: string },
+  argsCompanyId: string | undefined | null,
+): string {
+  const cid = argsCompanyId ?? auth.companyId
+  if (cid !== auth.companyId && auth.role !== 'system_admin') {
+    throw new Error("Forbidden: cannot view another company's data")
+  }
+  return cid
+}
+
 // ── PO notification helpers ──────────────────────────────────────────────────
 // Mirror services/procurement/src/lib/po-helpers.ts exactly — that copy is
 // unused by the frontend (which calls these GraphQL mutations, not the REST
@@ -3084,7 +3102,18 @@ export const resolvers = {
       let idx = 2
 
       const isAdmin = isAdminGW(ctx.auth.role)
-      if (!isAdmin && !args.includeAll) {
+      // includeAll (used by PO/rental-contract picker dropdowns to populate
+      // the full company project list) requires projects.view — otherwise it
+      // silently falls back to the normal assigned-projects-only restriction
+      // rather than erroring the whole query out for a user with no grant.
+      const canIncludeAll =
+        !!args.includeAll &&
+        (isPermissionBypassGW(ctx.auth.role) ||
+          meetsLevel(
+            (await loadPermissions(ctx.auth.userId, ctx.auth.companyId))['projects.view'],
+            'view',
+          ))
+      if (!isAdmin && !canIncludeAll) {
         // Regular users: exclude pending projects and only see projects they're assigned to
         conditions.push(`p.status != 'pending'`)
         conditions.push(`(
@@ -5043,7 +5072,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      const cid = args.companyId ?? ctx.auth.companyId
+      const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
       let sql = `SELECT sl.*, p.name AS parent_name FROM stock_locations sl LEFT JOIN stock_locations p ON p.id=sl.parent_id WHERE sl.company_id=$1`
       const params: unknown[] = [cid]
       let idx = 2
@@ -5382,7 +5411,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
       const conditions = [`pt.project_id = $1`, `p.company_id = $2`]
       const params: unknown[] = [args.projectId, ctx.auth.companyId]
       if (args.status) {
@@ -5407,7 +5436,7 @@ export const resolvers = {
 
     projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
       const res = await query(
         `SELECT pt.* FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
          WHERE pt.id=$1 AND p.company_id=$2`,
@@ -5432,7 +5461,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
       const conditions = [`ppi.project_id = $1`, `p.company_id = $2`]
       const params: unknown[] = [args.projectId, ctx.auth.companyId]
       if (args.category) {
@@ -5461,7 +5490,7 @@ export const resolvers = {
 
     projectPunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
       const res = await query(
         `SELECT ppi.* FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
          WHERE ppi.id=$1 AND p.company_id=$2`,
@@ -10730,7 +10759,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -10798,7 +10827,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -10895,7 +10924,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const nameR = await query(
         `SELECT e.first_name||' '||e.last_name AS n FROM users u LEFT JOIN employees e ON e.user_id=u.id WHERE u.id=$1`,
         [ctx.auth.userId],
@@ -10942,7 +10971,7 @@ export const resolvers = {
 
     deleteProjectRFI: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const r = await query(
         `DELETE FROM project_rfis rfi USING projects p WHERE p.id=rfi.project_id AND p.company_id=$1 AND rfi.id=$2 RETURNING rfi.project_id, rfi.rfi_number`,
         [ctx.auth.companyId, args.id],
@@ -10964,7 +10993,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const rfiR = await query(
         `SELECT rfi.*, p.company_id FROM project_rfis rfi JOIN projects p ON p.id=rfi.project_id WHERE rfi.id=$1 AND p.company_id=$2`,
         [args.rfiId, ctx.auth.companyId],
@@ -11043,7 +11072,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(
         `DELETE FROM document_attachments da USING project_rfis rfi JOIN projects p ON p.id=rfi.project_id WHERE rfi.id=da.entity_id AND da.entity_type='rfi' AND p.company_id=$1 AND da.id=$2`,
         [ctx.auth.companyId, args.attachmentId],
@@ -11065,7 +11094,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -11126,7 +11155,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -11225,7 +11254,7 @@ export const resolvers = {
 
     deleteSiteInstruction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const r = await query(
         `DELETE FROM project_site_instructions si USING projects p WHERE p.id=si.project_id AND p.company_id=$1 AND si.id=$2 RETURNING si.project_id, si.si_number`,
         [ctx.auth.companyId, args.id],
@@ -11247,7 +11276,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const siR = await query(
         `SELECT si.*, p.company_id FROM project_site_instructions si JOIN projects p ON p.id=si.project_id WHERE si.id=$1 AND p.company_id=$2`,
         [args.siId, ctx.auth.companyId],
@@ -11324,7 +11353,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(
         `DELETE FROM document_attachments da USING project_site_instructions si JOIN projects p ON p.id=si.project_id WHERE si.id=da.entity_id AND da.entity_type='site_instruction' AND p.company_id=$1 AND da.id=$2`,
         [ctx.auth.companyId, args.attachmentId],
@@ -11338,7 +11367,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -11396,7 +11425,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -11462,7 +11491,7 @@ export const resolvers = {
 
     deleteProjectITP: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const r = await query(
         `DELETE FROM project_itps itp USING projects p WHERE p.id=itp.project_id AND p.company_id=$1 AND itp.id=$2 RETURNING itp.project_id, itp.title`,
         [ctx.auth.companyId, args.id],
@@ -11496,7 +11525,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const itpR = await query(
         `SELECT itp.*, p.company_id FROM project_itps itp JOIN projects p ON p.id=itp.project_id WHERE itp.id=$1 AND p.company_id=$2`,
         [args.itpId, ctx.auth.companyId],
@@ -11570,7 +11599,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const upd = await query(
         `UPDATE project_itp_items pii SET result=$1, inspector_name=$2, inspection_date=$3, remarks=$4
          FROM project_itps itp, projects p
@@ -11618,7 +11647,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -11687,7 +11716,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -11788,7 +11817,7 @@ export const resolvers = {
 
     deleteInspectionRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const r = await query(
         `DELETE FROM project_inspection_requests ir USING projects p WHERE p.id=ir.project_id AND p.company_id=$1 AND ir.id=$2 RETURNING ir.project_id, ir.ir_number`,
         [ctx.auth.companyId, args.id],
@@ -11810,7 +11839,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const irR = await query(
         `SELECT ir.*, p.company_id FROM project_inspection_requests ir JOIN projects p ON p.id=ir.project_id WHERE ir.id=$1 AND p.company_id=$2`,
         [args.irId, ctx.auth.companyId],
@@ -11889,7 +11918,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(
         `DELETE FROM document_attachments da USING project_inspection_requests ir JOIN projects p ON p.id=ir.project_id WHERE ir.id=da.entity_id AND da.entity_type='inspection_request' AND p.company_id=$1 AND da.id=$2`,
         [ctx.auth.companyId, args.attachmentId],
@@ -11912,7 +11941,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -11989,7 +12018,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -12109,7 +12138,7 @@ export const resolvers = {
 
     deleteProjectNCR: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const r = await query(
         `DELETE FROM project_ncrs n USING projects p WHERE p.id=n.project_id AND p.company_id=$1 AND n.id=$2 RETURNING n.project_id, n.ncr_number`,
         [ctx.auth.companyId, args.id],
@@ -12131,7 +12160,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const ncrR = await query(
         `SELECT n.*, p.company_id FROM project_ncrs n JOIN projects p ON p.id=n.project_id WHERE n.id=$1 AND p.company_id=$2`,
         [args.ncrId, ctx.auth.companyId],
@@ -12213,7 +12242,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(
         `DELETE FROM document_attachments da USING project_ncrs n JOIN projects p ON p.id=n.project_id WHERE n.id=da.entity_id AND da.entity_type='ncr' AND p.company_id=$1 AND da.id=$2`,
         [ctx.auth.companyId, args.attachmentId],
@@ -12246,7 +12275,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.projectId,
         ctx.auth.companyId,
@@ -12353,7 +12382,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const sets: string[] = []
       const vals: unknown[] = []
       let idx = 1
@@ -12526,7 +12555,7 @@ export const resolvers = {
 
     deleteHSERecord: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const r = await query(
         `DELETE FROM project_hse_records h USING projects p WHERE p.id=h.project_id AND p.company_id=$1 AND h.id=$2 RETURNING h.project_id, h.title`,
         [ctx.auth.companyId, args.id],
@@ -12548,7 +12577,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       const hseR = await query(
         `SELECT h.*, p.company_id FROM project_hse_records h JOIN projects p ON p.id=h.project_id WHERE h.id=$1 AND p.company_id=$2`,
         [args.hseId, ctx.auth.companyId],
@@ -12643,7 +12672,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
       await query(
         `DELETE FROM document_attachments da USING project_hse_records h JOIN projects p ON p.id=h.project_id WHERE h.id=da.entity_id AND da.entity_type='hse_record' AND p.company_id=$1 AND da.id=$2`,
         [ctx.auth.companyId, args.attachmentId],
@@ -19190,7 +19219,7 @@ const phase5QueryResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.cost_control.view', 'view')
-    const cid = args.companyId ?? ctx.auth.companyId
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT p.id, p.code, p.name, p.project_type, p.status, p.budget_amount AS budget,
               COALESCE(SUM(pca.amount),0) AS actual_cost,
@@ -19227,7 +19256,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = args.companyId ?? ctx.auth.companyId
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT d.name AS cost_center, pr.period_name AS period,
               COUNT(DISTINCT ps.employee_id) AS headcount,
@@ -19276,7 +19305,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = args.companyId ?? ctx.auth.companyId
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     // Derive from payslips which carry absent_days, leave_days, working_days, overtime_hours
     const r = await query(
       `SELECT (e.first_name || ' ' || e.last_name) AS employee_name,
@@ -19514,7 +19543,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = args.companyId ?? ctx.auth.companyId
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT v.name AS vendor_name, v.tax_id,
               'WHT' AS wht_type,
@@ -19556,7 +19585,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = args.companyId ?? ctx.auth.companyId
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     // Open AR (project_invoices) and AP (vendor_invoices) in non-IQD currencies
     const [arRes, apRes, fxRes] = await Promise.all([
       query(
@@ -19617,7 +19646,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const cid = args.companyId ?? ctx.auth.companyId
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT (e.first_name || ' ' || e.last_name) AS employee_name,
               e.employee_number,
@@ -20887,7 +20916,7 @@ const phase5QueryResolvers = {
 
   projectRFIs: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+    await requirePermGW(ctx.auth, 'projects.qaqc.view', 'view')
     await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -24793,6 +24822,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
       ctx.auth.companyId,
@@ -24850,6 +24880,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const existing = await query(
       `SELECT pt.status FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
        WHERE pt.id=$1 AND p.company_id=$2`,
@@ -24886,6 +24917,7 @@ Object.assign(resolvers.Mutation, {
 
   reviewTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const res = await query(
       `UPDATE project_tqs pt SET status='under_review', updated_at=NOW()
        FROM projects p
@@ -24902,6 +24934,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const res = await query(
       `UPDATE project_tqs pt SET status='responded', response=$2, response_by=$3,
         response_date=CURRENT_DATE, updated_at=NOW()
@@ -24915,6 +24948,7 @@ Object.assign(resolvers.Mutation, {
 
   closeTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const res = await query(
       `UPDATE project_tqs pt SET status='closed', closed_at=NOW(), updated_at=NOW()
        FROM projects p
@@ -24927,6 +24961,7 @@ Object.assign(resolvers.Mutation, {
 
   deleteTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const existing = await query(
       `SELECT pt.status FROM project_tqs pt JOIN projects p ON p.id=pt.project_id
        WHERE pt.id=$1 AND p.company_id=$2`,
@@ -24960,6 +24995,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     if (!['A', 'B', 'C'].includes(args.category)) throw new Error('Category must be A, B, or C')
     const projOwn = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
       args.projectId,
@@ -25018,6 +25054,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const res = await query(
       `UPDATE project_punch_items ppi SET
         category=COALESCE($2,category), discipline=$3, area=$4,
@@ -25048,6 +25085,7 @@ Object.assign(resolvers.Mutation, {
 
   updatePunchStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const valid = ['open', 'in_progress', 'supervisor_signed', 'closed']
     if (!valid.includes(args.status)) throw new Error('Invalid punch status')
     const res = await query(
@@ -25066,6 +25104,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.approve', 'approve')
     const existing = await query(
       `SELECT ppi.status FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
        WHERE ppi.id=$1 AND p.company_id=$2`,
@@ -25088,6 +25127,7 @@ Object.assign(resolvers.Mutation, {
 
   pmSignPunch: async (_: unknown, args: { id: string; signedBy?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.approve', 'approve')
     const existing = await query(
       `SELECT ppi.status FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
        WHERE ppi.id=$1 AND p.company_id=$2`,
@@ -25110,6 +25150,7 @@ Object.assign(resolvers.Mutation, {
 
   reopenPunch: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const res = await query(
       `UPDATE project_punch_items ppi SET
         status='open',
@@ -25126,6 +25167,7 @@ Object.assign(resolvers.Mutation, {
 
   deletePunchItem: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     await query(
       `DELETE FROM project_punch_items ppi USING projects p WHERE p.id=ppi.project_id AND p.company_id=$2 AND ppi.id=$1`,
       [args.id, ctx.auth.companyId],
@@ -25139,6 +25181,7 @@ Object.assign(resolvers.Mutation, {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     const owns = await query(
       `SELECT ppi.id FROM project_punch_items ppi JOIN projects p ON p.id=ppi.project_id
        WHERE ppi.id=$1 AND p.company_id=$2`,
@@ -25154,6 +25197,7 @@ Object.assign(resolvers.Mutation, {
 
   deletePunchPhoto: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
     await query(
       `DELETE FROM project_punch_photos pp
        USING project_punch_items ppi, projects p

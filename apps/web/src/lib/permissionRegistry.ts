@@ -292,6 +292,15 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           { key: 'projects.meetings.edit', label: 'Manage Meetings', sortOrder: 386 },
         ],
       },
+      {
+        key: 'qaqc',
+        label: 'Site QA/QC',
+        permissions: [
+          { key: 'projects.qaqc.view', label: 'View Site QA/QC Records', sortOrder: 390 },
+          { key: 'projects.qaqc.edit', label: 'Manage Site QA/QC Records', sortOrder: 391 },
+          { key: 'projects.qaqc.approve', label: 'Approve Site QA/QC Records', sortOrder: 392 },
+        ],
+      },
     ],
   },
   {

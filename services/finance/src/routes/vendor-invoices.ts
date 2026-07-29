@@ -597,11 +597,6 @@ vendorInvoicesRouter.post(
   requirePermission('finance.ap.approve', 'approve'),
   async (req, res) => {
     try {
-      if (req.auth!.role !== 'system_admin') {
-        sendError(res, 403, 'FORBIDDEN', 'System admin required to approve vendor invoices')
-        return
-      }
-
       // Atomic: the UPDATE's own WHERE clause (not a prior SELECT-then-UPDATE)
       // is what prevents a race — concurrent requests serialize on the row
       // lock, and only the first to see status='submitted' can ever match.
@@ -684,11 +679,6 @@ vendorInvoicesRouter.post(
   requirePermission('finance.ap.approve', 'approve'),
   async (req, res) => {
     try {
-      if (req.auth!.role !== 'system_admin') {
-        sendError(res, 403, 'FORBIDDEN', 'System admin required')
-        return
-      }
-
       const { reason } = req.body as { reason?: string }
       if (!reason?.trim()) {
         sendError(res, 400, 'REASON_REQUIRED', 'Rejection reason is required')
