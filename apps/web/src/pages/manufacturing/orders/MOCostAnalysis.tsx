@@ -1,5 +1,7 @@
 ﻿import { useTheme } from '../../../theme/ThemeContext'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface ComponentBreakdown {
   key: string
@@ -21,6 +23,16 @@ interface Props {
   qtyProduced: number
 }
 
+interface UnitCostRow {
+  key: string
+  label: string
+  plannedAmount: number
+  actualAmount: number
+  diffText: string
+  diffColor: string
+  rowBg?: string
+}
+
 export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
   const { theme } = useTheme()
 
@@ -31,6 +43,57 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
   const unitActual = qtyProduced > 0 ? actualCost / qtyProduced : 0
   const unitVariance = unitActual - unitPlanned
   const totalBreakdown = componentBreakdown.reduce((s, c) => s + c.amount, 0)
+
+  const unitCostRows: UnitCostRow[] = [
+    {
+      key: 'total',
+      label: 'Total Cost',
+      plannedAmount: plannedCost,
+      actualAmount: actualCost,
+      diffText: `${variance >= 0 ? '+' : ''}${variance.toLocaleString()} IQD`,
+      diffColor: overBudget ? theme.danger : theme.success,
+    },
+    {
+      key: 'unit',
+      label: 'Unit Cost',
+      plannedAmount: unitPlanned,
+      actualAmount: unitActual,
+      diffText: `${unitVariance >= 0 ? '+' : ''}${unitVariance.toFixed(2)} IQD`,
+      diffColor: unitVariance > 0 ? theme.danger : theme.success,
+      rowBg: theme.bgCanvas,
+    },
+  ]
+
+  const unitCostColumns: Column<UnitCostRow>[] = [
+    {
+      key: 'label',
+      header: '',
+      mobilePrimary: true,
+      render: (r) => <span style={{ color: theme.textMuted }}>{r.label}</span>,
+    },
+    {
+      key: 'planned',
+      header: 'Planned',
+      mobilePriority: 1,
+      render: (r) => <AmountDisplay amount={r.plannedAmount} currency="IQD" size="sm" />,
+    },
+    {
+      key: 'actual',
+      header: 'Actual',
+      mobilePriority: 2,
+      render: (r) => <AmountDisplay amount={r.actualAmount} currency="IQD" size="sm" />,
+    },
+    {
+      key: 'difference',
+      header: 'Difference',
+      mobilePriority: 3,
+      render: (r) => (
+        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: r.diffColor }}>
+          {r.diffText}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '700px' }}>
@@ -249,70 +312,12 @@ export function MOCostAnalysis({ analysis, qtyPlanned, qtyProduced }: Props) {
         >
           Unit Cost Detail
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-          <thead>
-            <tr>
-              {['', 'Planned', 'Actual', 'Difference'].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: '6px 12px',
-                    textAlign: 'left',
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    color: theme.textMuted,
-                    textTransform: 'uppercase',
-                    borderBottom: `1px solid ${theme.border}`,
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td style={{ padding: '10px 12px', color: theme.textMuted }}>Total Cost</td>
-              <td style={{ padding: '10px 12px' }}>
-                <AmountDisplay amount={plannedCost} currency="IQD" size="sm" />
-              </td>
-              <td style={{ padding: '10px 12px' }}>
-                <AmountDisplay amount={actualCost} currency="IQD" size="sm" />
-              </td>
-              <td
-                style={{
-                  padding: '10px 12px',
-                  fontFamily: 'monospace',
-                  fontWeight: 600,
-                  color: overBudget ? theme.danger : theme.success,
-                }}
-              >
-                {variance >= 0 ? '+' : ''}
-                {variance.toLocaleString()} IQD
-              </td>
-            </tr>
-            <tr style={{ background: theme.bgCanvas }}>
-              <td style={{ padding: '10px 12px', color: theme.textMuted }}>Unit Cost</td>
-              <td style={{ padding: '10px 12px' }}>
-                <AmountDisplay amount={unitPlanned} currency="IQD" size="sm" />
-              </td>
-              <td style={{ padding: '10px 12px' }}>
-                <AmountDisplay amount={unitActual} currency="IQD" size="sm" />
-              </td>
-              <td
-                style={{
-                  padding: '10px 12px',
-                  fontFamily: 'monospace',
-                  fontWeight: 600,
-                  color: unitVariance > 0 ? theme.danger : theme.success,
-                }}
-              >
-                {unitVariance >= 0 ? '+' : ''}
-                {unitVariance.toFixed(2)} IQD
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <Table
+          columns={unitCostColumns}
+          data={unitCostRows}
+          rowKey="key"
+          getRowStyle={(r) => (r.rowBg ? { background: r.rowBg } : {})}
+        />
       </div>
     </div>
   )

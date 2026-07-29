@@ -15,6 +15,8 @@ import type { ConditionReport } from '../../../components/ui/ConditionReportForm
 import { ConditionReportForm } from '../../../components/ui/ConditionReportForm'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Badge } from '../../../components/ui/Badge'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { MaintenanceRecordDetail } from '../maintenance/MaintenanceRecordDetail'
 
@@ -22,6 +24,15 @@ const TABS = ['Overview', 'Usage Logs', 'Maintenance', 'Condition Reports'].map(
   key: t,
   label: t,
 }))
+
+interface UsageLogRow {
+  id: string
+  usage_date: string
+  hours_used: number
+  mileage_km?: number
+  operator_name: string
+  notes?: string
+}
 
 export default function AssetDetail() {
   const { id } = useParams<{ id: string }>()
@@ -67,6 +78,51 @@ export default function AssetDetail() {
 
   if (loading || !asset)
     return <div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading…</div>
+
+  const usageLogColumns: Column<UsageLogRow>[] = [
+    {
+      key: 'usage_date',
+      header: 'Date',
+      mobilePrimary: true,
+      render: (l) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.usage_date}</span>
+      ),
+    },
+    {
+      key: 'operator_name',
+      header: 'Operator',
+      mobileSecondary: true,
+      render: (l) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{l.operator_name}</span>
+      ),
+    },
+    {
+      key: 'hours_used',
+      header: 'Hours',
+      mobilePriority: 1,
+      render: (l) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{l.hours_used}h</span>
+      ),
+    },
+    {
+      key: 'mileage_km',
+      header: 'Mileage',
+      mobilePriority: 2,
+      render: (l) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
+          {l.mileage_km ? `${l.mileage_km}km` : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'notes',
+      header: 'Notes',
+      mobilePriority: 3,
+      render: (l) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{l.notes ?? '—'}</span>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
@@ -284,96 +340,12 @@ export default function AssetDetail() {
                 Log Usage
               </Button>
             </div>
-            {(asset.usageLogs ?? []).length === 0 ? (
-              <div
-                style={{
-                  color: theme.textMuted,
-                  textAlign: 'center',
-                  padding: '24px',
-                  fontSize: '13px',
-                }}
-              >
-                No usage logs yet
-              </div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: theme.bgSurfaceHover }}>
-                    {['Date', 'Hours', 'Mileage', 'Operator', 'Notes'].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          fontSize: '11px',
-                          color: theme.textMuted,
-                          fontWeight: 600,
-                          borderBottom: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(asset.usageLogs ?? []).map(
-                    (l: {
-                      id: string
-                      usage_date: string
-                      hours_used: number
-                      mileage_km?: number
-                      operator_name: string
-                      notes?: string
-                    }) => (
-                      <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            color: theme.textSecondary,
-                            fontSize: '13px',
-                          }}
-                        >
-                          {l.usage_date}
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            fontFamily: 'monospace',
-                            color: theme.textPrimary,
-                          }}
-                        >
-                          {l.hours_used}h
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            fontFamily: 'monospace',
-                            color: theme.textMuted,
-                          }}
-                        >
-                          {l.mileage_km ? `${l.mileage_km}km` : '—'}
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            color: theme.textSecondary,
-                            fontSize: '13px',
-                          }}
-                        >
-                          {l.operator_name}
-                        </td>
-                        <td
-                          style={{ padding: '8px 12px', color: theme.textMuted, fontSize: '12px' }}
-                        >
-                          {l.notes ?? '—'}
-                        </td>
-                      </tr>
-                    ),
-                  )}
-                </tbody>
-              </table>
-            )}
+            <Table
+              columns={usageLogColumns}
+              data={(asset.usageLogs ?? []) as UsageLogRow[]}
+              rowKey="id"
+              emptyMessage="No usage logs yet"
+            />
           </Card>
         )}
 
