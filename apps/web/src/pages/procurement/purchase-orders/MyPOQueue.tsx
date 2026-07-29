@@ -8,6 +8,8 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { getPOStatusVariant, getPOStatusLabel, PO_STATUS_ACTIONS } from '../../../lib/po-constants'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
@@ -51,6 +53,65 @@ export default function MyPOQueue() {
     return acc
   }, {})
 
+  const columns: Column<QueueItem>[] = [
+    {
+      key: 'po_number',
+      header: 'PO Number',
+      mobilePrimary: true,
+      render: (item) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>
+          {item.po_number}
+        </span>
+      ),
+    },
+    {
+      key: 'vendor_name',
+      header: 'Vendor',
+      mobileSecondary: true,
+      render: (item) => <span style={{ color: theme.textPrimary }}>{item.vendor_name ?? '—'}</span>,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (item) => (
+        <Badge variant={getPOStatusVariant(item.status)}>{getPOStatusLabel(item.status)}</Badge>
+      ),
+    },
+    {
+      key: 'total_amount',
+      header: 'Total',
+      mobilePriority: 2,
+      render: (item) => (
+        <AmountDisplay amount={parseFloat(item.total_amount)} currency={item.currency_code} />
+      ),
+    },
+    {
+      key: 'updated_at',
+      header: 'Updated',
+      mobilePriority: 3,
+      render: (item) => (
+        <span style={{ color: theme.textMuted }}>{item.updated_at.slice(0, 10)}</span>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Your role',
+      mobileLabel: 'Role',
+      mobilePriority: 4,
+      render: (item) => {
+        const action = PO_STATUS_ACTIONS[item.status]
+        return (
+          <span style={{ color: theme.textMuted }}>
+            {(action?.requiredPosition?.replace(/_/g, ' ') ?? action?.isOrganizer)
+              ? 'Organizer'
+              : '—'}
+          </span>
+        )
+      },
+    },
+  ]
+
   return (
     <div
       style={{
@@ -92,165 +153,19 @@ export default function MyPOQueue() {
             {actionLabel} ({group.length})
           </div>
 
-          {isPhone ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {group.map((item) => {
-                const action = PO_STATUS_ACTIONS[item.status]
-                const days = daysWaiting(item.updated_at)
-                const isUrgent = days >= 3
-                return (
-                  <Card
-                    key={item.id}
-                    onClick={() => {
-                      navigate(`/procurement/purchase-orders/${item.id}`)
-                    }}
-                    style={{
-                      padding: '14px 16px',
-                      cursor: 'pointer',
-                      borderLeft: isUrgent ? `3px solid ${theme.danger}` : undefined,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        marginBottom: '6px',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: 'monospace',
-                          fontSize: '14px',
-                          fontWeight: 600,
-                          color: theme.accent,
-                        }}
-                      >
-                        {item.po_number}
-                      </span>
-                      <Badge variant={getPOStatusVariant(item.status)} size="sm">
-                        {getPOStatusLabel(item.status)}
-                      </Badge>
-                    </div>
-                    <div
-                      style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '4px' }}
-                    >
-                      {item.vendor_name ?? '—'}
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <AmountDisplay
-                        amount={parseFloat(item.total_amount)}
-                        currency={item.currency_code}
-                      />
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          color: isUrgent ? theme.danger : theme.textMuted,
-                          fontWeight: isUrgent ? 600 : 400,
-                        }}
-                      >
-                        {days === 0 ? 'Today' : `${days}d waiting`}
-                        {action?.requiredPosition
-                          ? ` · ${action.requiredPosition.replace(/_/g, ' ')}`
-                          : action?.isOrganizer
-                            ? ' · Organizer'
-                            : ''}
-                      </span>
-                    </div>
-                  </Card>
-                )
-              })}
-            </div>
-          ) : (
-            <Card>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    {['PO Number', 'Vendor', 'Your role', 'Status', 'Total', 'Updated'].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '10px 12px',
-                          textAlign: 'left',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.map((item, idx) => {
-                    const action = PO_STATUS_ACTIONS[item.status]
-                    return (
-                      <tr
-                        key={item.id}
-                        onClick={() => {
-                          navigate(`/procurement/purchase-orders/${item.id}`)
-                        }}
-                        style={{
-                          cursor: 'pointer',
-                          backgroundColor: idx % 2 === 0 ? 'transparent' : `${theme.bgSurface}44`,
-                          transition: 'background 0.12s',
-                        }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.backgroundColor = `${theme.accent}18`)
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.backgroundColor =
-                            idx % 2 === 0 ? 'transparent' : `${theme.bgSurface}44`)
-                        }
-                      >
-                        <td
-                          style={{
-                            padding: '12px',
-                            fontFamily: 'monospace',
-                            fontSize: '13px',
-                            color: theme.accent,
-                          }}
-                        >
-                          {item.po_number}
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '13px', color: theme.textPrimary }}>
-                          {item.vendor_name ?? '—'}
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
-                          {(action?.requiredPosition?.replace(/_/g, ' ') ?? action?.isOrganizer)
-                            ? 'Organizer'
-                            : '—'}
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <Badge variant={getPOStatusVariant(item.status)}>
-                            {getPOStatusLabel(item.status)}
-                          </Badge>
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '13px', color: theme.textPrimary }}>
-                          <AmountDisplay
-                            amount={parseFloat(item.total_amount)}
-                            currency={item.currency_code}
-                          />
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
-                          {item.updated_at.slice(0, 10)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </Card>
-          )}
+          <Card>
+            <Table
+              columns={columns}
+              data={group}
+              rowKey="id"
+              onRowClick={(item) => {
+                navigate(`/procurement/purchase-orders/${item.id}`)
+              }}
+              getRowStyle={(item) =>
+                daysWaiting(item.updated_at) >= 3 ? { borderLeft: `3px solid ${theme.danger}` } : {}
+              }
+            />
+          </Card>
         </div>
       ))}
     </div>

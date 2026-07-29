@@ -42,6 +42,8 @@ import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
 import { TabBar } from '../../../components/ui/TabBar'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
@@ -3298,253 +3300,238 @@ export default function PurchaseOrderDetail() {
             return null
           }
 
+          const lineColumns: Column<POLine>[] = [
+            {
+              key: 'item',
+              header: 'Item',
+              mobilePrimary: true,
+              render: (line) => (
+                <>
+                  {line.product_name && (
+                    <div
+                      style={{
+                        fontSize: '13px',
+                        color: theme.textPrimary,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {line.product_name}
+                    </div>
+                  )}
+                  {line.description && (
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: theme.textMuted,
+                        marginTop: line.product_name ? '2px' : 0,
+                      }}
+                    >
+                      {line.description}
+                    </div>
+                  )}
+                  {!line.product_name && !line.description && (
+                    <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+                  )}
+                </>
+              ),
+            },
+            {
+              key: 'qty',
+              header: 'Qty',
+              mobilePriority: 4,
+              render: (line) => (
+                <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtN(line.qty)} {line.uom}
+                </span>
+              ),
+            },
+            {
+              key: 'market_price',
+              header: 'Market Price',
+              mobilePriority: 5,
+              render: (line) => (
+                <span style={{ color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                  {fmtN(line.unit_price)} {po.currency_code}
+                </span>
+              ),
+            },
+            {
+              key: 'store_price',
+              header: 'Store Price',
+              mobilePriority: 6,
+              render: (line) => {
+                const sp = parseFloat(String(line.store_price ?? 0))
+                return sp > 0 ? (
+                  <span style={{ color: theme.success, fontVariantNumeric: 'tabular-nums' }}>
+                    {fmtN(sp)} {line.store_price_currency ?? po.currency_code}
+                  </span>
+                ) : (
+                  <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+                    —
+                  </span>
+                )
+              },
+            },
+            {
+              key: 'total',
+              header: 'Total',
+              mobilePriority: 2,
+              render: (line) => {
+                const fs = parseFloat(String(line.qty_from_stock ?? 0))
+                const tb = Math.max(0, parseFloat(String(line.qty ?? 0)) - fs)
+                const sp = parseFloat(String(line.store_price ?? 0))
+                const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
+                const blended =
+                  (fs > 0 && sp > 0 ? fs * sp : 0) +
+                  tb * (mp || parseFloat(String(line.unit_price ?? 0)))
+                return (
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      color: theme.textPrimary,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {fmtN(blended || line.total)} {po.currency_code}
+                  </span>
+                )
+              },
+            },
+            {
+              key: 'received',
+              header: 'Received',
+              mobilePriority: 3,
+              render: (line) => {
+                const received = line.qty_received >= line.qty
+                return (
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ color: received ? theme.accent : theme.textMuted }}>
+                      {fmtN(line.qty_received)}/{fmtN(line.qty)}
+                    </span>
+                    {received && (
+                      <span style={{ marginLeft: '5px', fontSize: '11px', color: theme.accent }}>
+                        ✓
+                      </span>
+                    )}
+                  </span>
+                )
+              },
+            },
+            {
+              key: 'notes',
+              header: 'Notes',
+              mobilePriority: 1,
+              render: (line) => {
+                const comments = lineComments[line.id] ?? []
+                const activeFlag = getLineFlag(line.id)
+                const flagStyle = activeFlag ? FLAG_COLORS[activeFlag] : null
+                const openCount = comments.filter((c) => c.flag && !c.resolved).length
+                const totalCount = comments.length
+                const isAuditFlagged = line.audit_status === 'flagged'
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {isAuditFlagged && (
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: '#dc2626',
+                          fontWeight: 600,
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '4px',
+                        }}
+                      >
+                        <span style={{ flexShrink: 0 }}>⚑</span>
+                        <span style={{ color: '#dc2626', fontWeight: 400 }}>
+                          {line.audit_note || 'Flagged'}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setCommentModal({
+                          lineId: line.id,
+                          description:
+                            line.description || line.product_name || `Line ${line.id.slice(0, 6)}`,
+                        })
+                        setNewComment('')
+                        setNewFlag('')
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: flagStyle
+                          ? `${flagStyle.dot}18`
+                          : totalCount > 0
+                            ? `${theme.accent}12`
+                            : theme.bgSurface,
+                        border: `1px solid ${flagStyle ? flagStyle.dot : totalCount > 0 ? theme.accent : theme.border}`,
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        fontSize: '12px',
+                        color: flagStyle
+                          ? flagStyle.dot
+                          : totalCount > 0
+                            ? theme.accent
+                            : theme.textMuted,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {flagStyle && (
+                        <span
+                          style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            background: flagStyle.dot,
+                            display: 'inline-block',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                      {flagStyle
+                        ? `${FLAG_COLORS[activeFlag!].label} · ${openCount} open`
+                        : totalCount > 0
+                          ? `💬 ${totalCount}`
+                          : '+ Note'}
+                    </button>
+                  </div>
+                )
+              },
+            },
+          ]
+
           return (
             <Card>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      {[
-                        'Item',
-                        'Qty',
-                        'Market Price',
-                        'Store Price',
-                        'Total',
-                        'Received',
-                        'Notes',
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '10px 12px',
-                            textAlign: 'left',
-                            fontSize: '11px',
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {po.lines.map((line) => {
-                      const comments = lineComments[line.id] ?? []
-                      const activeFlag = getLineFlag(line.id)
-                      const flagStyle = activeFlag ? FLAG_COLORS[activeFlag] : null
-                      const openCount = comments.filter((c) => c.flag && !c.resolved).length
-                      const totalCount = comments.length
-                      const received = line.qty_received >= line.qty
-                      const isAuditFlagged = line.audit_status === 'flagged'
-                      return (
-                        <tr
-                          key={line.id}
-                          style={{
-                            borderBottom: isAuditFlagged
-                              ? '1px solid rgba(239,68,68,0.3)'
-                              : flagStyle
-                                ? `1px solid ${flagStyle.border}`
-                                : `1px solid ${theme.border}22`,
-                            background: isAuditFlagged
-                              ? 'rgba(239,68,68,0.06)'
-                              : flagStyle
-                                ? flagStyle.bg
-                                : 'transparent',
-                            borderLeft: isAuditFlagged
-                              ? '3px solid #ef4444'
-                              : flagStyle
-                                ? `3px solid ${flagStyle.dot}`
-                                : '3px solid transparent',
-                          }}
-                        >
-                          <td style={{ padding: '10px 12px' }}>
-                            {line.product_name && (
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  color: theme.textPrimary,
-                                  fontWeight: 500,
-                                }}
-                              >
-                                {line.product_name}
-                              </div>
-                            )}
-                            {line.description && (
-                              <div
-                                style={{
-                                  fontSize: '12px',
-                                  color: theme.textMuted,
-                                  marginTop: line.product_name ? '2px' : 0,
-                                }}
-                              >
-                                {line.description}
-                              </div>
-                            )}
-                            {!line.product_name && !line.description && (
-                              <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
-                            )}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontSize: '13px',
-                              color: theme.textPrimary,
-                              whiteSpace: 'nowrap',
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            {fmtN(line.qty)} {line.uom}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontSize: '13px',
-                              color: theme.textSecondary,
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            {fmtN(line.unit_price)} {po.currency_code}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontSize: '13px',
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            {(() => {
-                              const sp = parseFloat(String(line.store_price ?? 0))
-                              return sp > 0 ? (
-                                <span style={{ color: theme.success }}>
-                                  {fmtN(sp)} {line.store_price_currency ?? po.currency_code}
-                                </span>
-                              ) : (
-                                <span style={{ color: theme.textMuted }}>—</span>
-                              )
-                            })()}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              color: theme.textPrimary,
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            {(() => {
-                              const fs = parseFloat(String(line.qty_from_stock ?? 0))
-                              const tb = Math.max(0, parseFloat(String(line.qty ?? 0)) - fs)
-                              const sp = parseFloat(String(line.store_price ?? 0))
-                              const mp = parseFloat(
-                                String(line.market_price ?? line.unit_price ?? 0),
-                              )
-                              const blended =
-                                (fs > 0 && sp > 0 ? fs * sp : 0) +
-                                tb * (mp || parseFloat(String(line.unit_price ?? 0)))
-                              return `${fmtN(blended || line.total)} ${po.currency_code}`
-                            })()}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontSize: '13px',
-                              whiteSpace: 'nowrap',
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            <span style={{ color: received ? theme.accent : theme.textMuted }}>
-                              {fmtN(line.qty_received)}/{fmtN(line.qty)}
-                            </span>
-                            {received && (
-                              <span
-                                style={{ marginLeft: '5px', fontSize: '11px', color: theme.accent }}
-                              >
-                                ✓
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              {isAuditFlagged && (
-                                <div
-                                  style={{
-                                    fontSize: '12px',
-                                    color: '#dc2626',
-                                    fontWeight: 600,
-                                    display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: '4px',
-                                  }}
-                                >
-                                  <span style={{ flexShrink: 0 }}>⚑</span>
-                                  <span style={{ color: '#dc2626', fontWeight: 400 }}>
-                                    {line.audit_note || 'Flagged'}
-                                  </span>
-                                </div>
-                              )}
-                              <button
-                                onClick={() => {
-                                  setCommentModal({
-                                    lineId: line.id,
-                                    description:
-                                      line.description ||
-                                      line.product_name ||
-                                      `Line ${line.id.slice(0, 6)}`,
-                                  })
-                                  setNewComment('')
-                                  setNewFlag('')
-                                }}
-                                style={{
-                                  cursor: 'pointer',
-                                  background: flagStyle
-                                    ? `${flagStyle.dot}18`
-                                    : totalCount > 0
-                                      ? `${theme.accent}12`
-                                      : theme.bgSurface,
-                                  border: `1px solid ${flagStyle ? flagStyle.dot : totalCount > 0 ? theme.accent : theme.border}`,
-                                  borderRadius: '6px',
-                                  padding: '4px 10px',
-                                  fontSize: '12px',
-                                  color: flagStyle
-                                    ? flagStyle.dot
-                                    : totalCount > 0
-                                      ? theme.accent
-                                      : theme.textMuted,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '5px',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {flagStyle && (
-                                  <span
-                                    style={{
-                                      width: '7px',
-                                      height: '7px',
-                                      borderRadius: '50%',
-                                      background: flagStyle.dot,
-                                      display: 'inline-block',
-                                      flexShrink: 0,
-                                    }}
-                                  />
-                                )}
-                                {flagStyle
-                                  ? `${FLAG_COLORS[activeFlag!].label} · ${openCount} open`
-                                  : totalCount > 0
-                                    ? `💬 ${totalCount}`
-                                    : '+ Note'}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <Table
+                columns={lineColumns}
+                data={po.lines}
+                rowKey="id"
+                getRowStyle={(line) => {
+                  const activeFlag = getLineFlag(line.id)
+                  const flagStyle = activeFlag ? FLAG_COLORS[activeFlag] : null
+                  const isAuditFlagged = line.audit_status === 'flagged'
+                  return {
+                    borderBottom: isAuditFlagged
+                      ? '1px solid rgba(239,68,68,0.3)'
+                      : flagStyle
+                        ? `1px solid ${flagStyle.border}`
+                        : `1px solid ${theme.border}22`,
+                    background: isAuditFlagged
+                      ? 'rgba(239,68,68,0.06)'
+                      : flagStyle
+                        ? flagStyle.bg
+                        : 'transparent',
+                    borderLeft: isAuditFlagged
+                      ? '3px solid #ef4444'
+                      : flagStyle
+                        ? `3px solid ${flagStyle.dot}`
+                        : '3px solid transparent',
+                  }
+                }}
+              />
             </Card>
           )
         })()}
@@ -3569,153 +3556,149 @@ export default function PurchaseOrderDetail() {
               <span style={{ color: theme.textMuted, fontSize: '13px' }}>No receipts yet.</span>
             </Card>
           )}
-          {po.receipts.map((r) => (
-            <Card key={r.id} style={{ marginBottom: '12px', padding: '16px' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', marginBottom: '12px' }}>
-                <div>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>Date: </span>
-                  <span style={{ fontSize: '13px' }}>{r.receipt_date}</span>
-                </div>
-                <div>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>Location: </span>
-                  <span style={{ fontSize: '13px' }}>{r.location_name ?? '—'}</span>
-                </div>
-                <div>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>Received by: </span>
-                  <span style={{ fontSize: '13px' }}>
-                    {r.received_by_name ?? r.received_by_email ?? '—'}
-                  </span>
-                </div>
-              </div>
-              {r.location_notes && (
-                <div style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                    Jobsite/Location notes:{' '}
-                  </span>
-                  {r.location_notes}
-                </div>
-              )}
-              {r.notes && (
-                <div style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}>
-                  <span style={{ fontSize: '11px', color: theme.textMuted }}>Notes: </span>
-                  {r.notes}
-                </div>
-              )}
-              {r.photos && r.photos.length > 0 && (
-                <div style={{ marginBottom: '16px' }}>
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    Photos ({r.photos.length})
+          {po.receipts.map((r) => {
+            const receiptLineColumns: Column<{
+              po_line_id: string
+              description: string
+              qty_received: number
+            }>[] = [
+              {
+                key: 'description',
+                header: 'Description',
+                mobilePrimary: true,
+                render: (rl) => <span style={{ color: theme.textPrimary }}>{rl.description}</span>,
+              },
+              {
+                key: 'qty_received',
+                header: 'Qty received',
+                mobilePriority: 1,
+                render: (rl) => <span style={{ color: theme.textPrimary }}>{rl.qty_received}</span>,
+              },
+            ]
+            return (
+              <Card key={r.id} style={{ marginBottom: '12px', padding: '16px' }}>
+                <div
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', marginBottom: '12px' }}
+                >
+                  <div>
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Date: </span>
+                    <span style={{ fontSize: '13px' }}>{r.receipt_date}</span>
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                    {r.photos.map((ph) => (
-                      <div key={ph.id}>
-                        {ph.downloadUrl ? (
-                          <div
-                            onClick={() => {
-                              openLightbox(ph.downloadUrl!)
-                            }}
-                            style={{
-                              cursor: 'zoom-in',
-                              borderRadius: '8px',
-                              overflow: 'hidden',
-                              border: `1px solid ${theme.border}`,
-                              boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-                              width: '180px',
-                            }}
-                          >
-                            <img
-                              src={ph.downloadUrl}
-                              alt={ph.label ?? ph.originalFilename}
+                  <div>
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Location: </span>
+                    <span style={{ fontSize: '13px' }}>{r.location_name ?? '—'}</span>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Received by: </span>
+                    <span style={{ fontSize: '13px' }}>
+                      {r.received_by_name ?? r.received_by_email ?? '—'}
+                    </span>
+                  </div>
+                </div>
+                {r.location_notes && (
+                  <div
+                    style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
+                  >
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                      Jobsite/Location notes:{' '}
+                    </span>
+                    {r.location_notes}
+                  </div>
+                )}
+                {r.notes && (
+                  <div
+                    style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
+                  >
+                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Notes: </span>
+                    {r.notes}
+                  </div>
+                )}
+                {r.photos && r.photos.length > 0 && (
+                  <div style={{ marginBottom: '16px' }}>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: theme.textMuted,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.06em',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      Photos ({r.photos.length})
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                      {r.photos.map((ph) => (
+                        <div key={ph.id}>
+                          {ph.downloadUrl ? (
+                            <div
+                              onClick={() => {
+                                openLightbox(ph.downloadUrl!)
+                              }}
+                              style={{
+                                cursor: 'zoom-in',
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                border: `1px solid ${theme.border}`,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+                                width: '180px',
+                              }}
+                            >
+                              <img
+                                src={ph.downloadUrl}
+                                alt={ph.label ?? ph.originalFilename}
+                                style={{
+                                  width: '180px',
+                                  height: '130px',
+                                  objectFit: 'cover',
+                                  display: 'block',
+                                }}
+                              />
+                              {ph.label && (
+                                <div
+                                  style={{
+                                    padding: '6px 8px',
+                                    fontSize: '11px',
+                                    color: theme.textSecondary,
+                                    background: theme.bgSurface,
+                                    borderTop: `1px solid ${theme.border}`,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {ph.label}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div
                               style={{
                                 width: '180px',
                                 height: '130px',
-                                objectFit: 'cover',
-                                display: 'block',
+                                borderRadius: '8px',
+                                border: `1px solid ${theme.border}`,
+                                background: theme.bgSurface,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '11px',
+                                color: theme.textMuted,
+                                padding: '8px',
+                                textAlign: 'center',
                               }}
-                            />
-                            {ph.label && (
-                              <div
-                                style={{
-                                  padding: '6px 8px',
-                                  fontSize: '11px',
-                                  color: theme.textSecondary,
-                                  background: theme.bgSurface,
-                                  borderTop: `1px solid ${theme.border}`,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {ph.label}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div
-                            style={{
-                              width: '180px',
-                              height: '130px',
-                              borderRadius: '8px',
-                              border: `1px solid ${theme.border}`,
-                              background: theme.bgSurface,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '11px',
-                              color: theme.textMuted,
-                              padding: '8px',
-                              textAlign: 'center',
-                            }}
-                          >
-                            {ph.originalFilename}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                            >
+                              {ph.originalFilename}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    {['Description', 'Qty received'].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '6px 8px',
-                          textAlign: 'left',
-                          fontSize: '11px',
-                          color: theme.textMuted,
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.lines.map((rl, i) => (
-                    <tr key={i} style={{ borderBottom: `1px solid ${theme.border}22` }}>
-                      <td style={{ padding: '8px', fontSize: '13px', color: theme.textPrimary }}>
-                        {rl.description}
-                      </td>
-                      <td style={{ padding: '8px', fontSize: '13px', color: theme.textPrimary }}>
-                        {rl.qty_received}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-          ))}
+                )}
+                <Table columns={receiptLineColumns} data={r.lines} />
+              </Card>
+            )
+          })}
         </div>
       )}
 

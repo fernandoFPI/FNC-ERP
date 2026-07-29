@@ -15,6 +15,8 @@ import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { Select } from '../../../components/ui/Select'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { PO_POSITIONS } from '../../../lib/po-constants'
 
 interface POPosition {
@@ -235,6 +237,71 @@ export default function POPositionsPage() {
       (scopeType === 'project' && !!projectId) ||
       (scopeType === 'department' && !!departmentId))
 
+  const columns: Column<POPosition>[] = [
+    {
+      key: 'employeeName',
+      header: 'Employee',
+      mobilePrimary: true,
+      render: (p) => <span style={{ color: theme.textPrimary }}>{p.employeeName}</span>,
+    },
+    {
+      key: 'position',
+      header: 'Position',
+      mobileSecondary: true,
+      render: (p) => (
+        <Badge variant={POSITION_VARIANT[p.position] ?? 'neutral'}>
+          {PO_POSITIONS.find((pos) => pos.key === p.position)?.label ?? p.position}
+        </Badge>
+      ),
+    },
+    {
+      key: 'isActive',
+      header: 'Active',
+      mobilePriority: 1,
+      render: (p) => (
+        <Badge variant={p.isActive ? 'success' : 'neutral'}>
+          {p.isActive ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'scope',
+      header: 'Scope',
+      mobilePriority: 2,
+      render: (p) => (
+        <span style={{ color: theme.textMuted }}>
+          {p.projectName
+            ? `Project: ${p.projectName}`
+            : p.departmentName
+              ? `Dept: ${p.departmentName}`
+              : 'Company-wide'}
+        </span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Assigned',
+      mobilePriority: 3,
+      render: (p) => <span style={{ color: theme.textMuted }}>{p.createdAt.slice(0, 10)}</span>,
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (p) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setConfirmRemovePosition(p.id)
+          }}
+        >
+          Remove
+        </Button>
+      ),
+    },
+  ]
+
   function handleAssign() {
     if (!selectedEmployee) return
     void assignPosition({
@@ -290,87 +357,13 @@ export default function POPositionsPage() {
       </div>
 
       <Card>
-        {loading && (
-          <div style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}>
-            Loading…
-          </div>
-        )}
-        {!loading && filtered.length === 0 && (
-          <div
-            style={{
-              padding: '32px',
-              textAlign: 'center',
-              color: theme.textMuted,
-              fontSize: '13px',
-            }}
-          >
-            No positions assigned.
-          </div>
-        )}
-        {!loading && filtered.length > 0 && (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['Employee', 'Position', 'Scope', 'Active', 'Assigned'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '10px 12px',
-                      textAlign: 'left',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-                <th style={{ padding: '10px 12px' }} />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}22` }}>
-                  <td style={{ padding: '12px', fontSize: '13px', color: theme.textPrimary }}>
-                    {p.employeeName}
-                  </td>
-                  <td style={{ padding: '12px' }}>
-                    <Badge variant={POSITION_VARIANT[p.position] ?? 'neutral'}>
-                      {PO_POSITIONS.find((pos) => pos.key === p.position)?.label ?? p.position}
-                    </Badge>
-                  </td>
-                  <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
-                    {p.projectName
-                      ? `Project: ${p.projectName}`
-                      : p.departmentName
-                        ? `Dept: ${p.departmentName}`
-                        : 'Company-wide'}
-                  </td>
-                  <td style={{ padding: '12px' }}>
-                    <Badge variant={p.isActive ? 'success' : 'neutral'}>
-                      {p.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </td>
-                  <td style={{ padding: '12px', fontSize: '12px', color: theme.textMuted }}>
-                    {p.createdAt.slice(0, 10)}
-                  </td>
-                  <td style={{ padding: '12px' }}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setConfirmRemovePosition(p.id)
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <Table
+          columns={columns}
+          data={filtered}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No positions assigned."
+        />
       </Card>
 
       {showAssignModal && (

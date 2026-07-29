@@ -142,6 +142,72 @@ export default function VendorDetail() {
     },
   ]
 
+  const apColumns: Column<VendorInvoice>[] = [
+    {
+      key: 'invoice_number',
+      header: 'Invoice #',
+      mobilePrimary: true,
+      render: (inv) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent }}>{inv.invoice_number}</span>
+      ),
+    },
+    {
+      key: 'invoice_date',
+      header: 'Invoice date',
+      mobileSecondary: true,
+      render: (inv) => (
+        <span style={{ color: theme.textMuted }}>{inv.invoice_date?.slice(0, 10)}</span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (inv) => (
+        <Badge variant={AP_STATUS_VARIANTS[inv.status] ?? 'neutral'} size="sm">
+          {AP_STATUS_LABELS[inv.status] ?? inv.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'due_date',
+      header: 'Due date',
+      mobilePriority: 2,
+      render: (inv) => {
+        const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
+        return (
+          <span style={{ color: isOverdue ? theme.danger : theme.textMuted }}>
+            {inv.due_date?.slice(0, 10)}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'outstanding',
+      header: 'Outstanding',
+      mobilePriority: 3,
+      render: (inv) => (
+        <AmountDisplay
+          amount={parseFloat(inv.net_payable) - parseFloat(inv.amount_paid)}
+          currency={inv.currency_code}
+          size="sm"
+        />
+      ),
+    },
+    {
+      key: 'net_payable',
+      header: 'Net payable',
+      mobilePriority: 4,
+      render: (inv) => (
+        <AmountDisplay
+          amount={parseFloat(inv.net_payable)}
+          currency={inv.currency_code}
+          size="sm"
+        />
+      ),
+    },
+  ]
+
   function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
     return (
       <div
@@ -318,88 +384,14 @@ export default function VendorDetail() {
           ) : apInvoices.length === 0 ? (
             <EmptyState message="No invoices for this vendor" />
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {[
-                    'Invoice #',
-                    'Invoice date',
-                    'Due date',
-                    'Net payable',
-                    'Outstanding',
-                    'Status',
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: 'left',
-                        padding: '8px 14px',
-                        color: theme.textMuted,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {apInvoices.map((inv) => {
-                  const outstanding = parseFloat(inv.net_payable) - parseFloat(inv.amount_paid)
-                  const isOverdue =
-                    inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
-                  return (
-                    <tr
-                      key={inv.id}
-                      style={{ borderBottom: `1px solid ${theme.tableBorder}`, cursor: 'pointer' }}
-                      onClick={() => {
-                        navigate(`/finance/ap/${inv.id}`)
-                      }}
-                    >
-                      <td
-                        style={{
-                          padding: '8px 14px',
-                          fontFamily: 'monospace',
-                          color: theme.accent,
-                        }}
-                      >
-                        {inv.invoice_number}
-                      </td>
-                      <td style={{ padding: '8px 14px', color: theme.textMuted }}>
-                        {inv.invoice_date?.slice(0, 10)}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 14px',
-                          color: isOverdue ? theme.danger : theme.textMuted,
-                        }}
-                      >
-                        {inv.due_date?.slice(0, 10)}
-                      </td>
-                      <td style={{ padding: '8px 14px' }}>
-                        <AmountDisplay
-                          amount={parseFloat(inv.net_payable)}
-                          currency={inv.currency_code}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: '8px 14px' }}>
-                        <AmountDisplay
-                          amount={outstanding}
-                          currency={inv.currency_code}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: '8px 14px' }}>
-                        <Badge variant={AP_STATUS_VARIANTS[inv.status] ?? 'neutral'} size="sm">
-                          {AP_STATUS_LABELS[inv.status] ?? inv.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <Table
+              columns={apColumns}
+              data={apInvoices}
+              rowKey="id"
+              onRowClick={(inv) => {
+                navigate(`/finance/ap/${inv.id}`)
+              }}
+            />
           )}
         </Card>
       )}
