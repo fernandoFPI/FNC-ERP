@@ -14,6 +14,8 @@ const FILTER_DEFAULTS = { search: '', status: '', source: '', fromDate: '', toDa
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 
 interface JournalEntry {
@@ -122,6 +124,88 @@ export default function JournalsPage() {
   const allDraftsSelected = draftIds.length > 0 && draftIds.every((id) => selectedIds.has(id))
   const selectedCount = selectedIds.size
 
+  const columns: Column<JournalEntry>[] = [
+    {
+      key: 'select',
+      header: '',
+      width: '40px',
+      mobileAction: true,
+      renderHeader: () => (
+        <input
+          type="checkbox"
+          checked={allDraftsSelected}
+          onChange={toggleSelectAll}
+          title="Select all drafts"
+          style={{ cursor: 'pointer' }}
+        />
+      ),
+      render: (e) => {
+        const isDraft = e.status === 'draft'
+        return (
+          <input
+            type="checkbox"
+            checked={selectedIds.has(e.id)}
+            disabled={!isDraft}
+            onClick={(ev) => {
+              ev.stopPropagation()
+            }}
+            onChange={() => {
+              toggleSelect(e.id, isDraft)
+            }}
+            style={{ cursor: isDraft ? 'pointer' : 'not-allowed', opacity: isDraft ? 1 : 0.35 }}
+          />
+        )
+      },
+    },
+    {
+      key: 'reference',
+      header: 'Reference',
+      mobilePrimary: true,
+      render: (e) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>
+          {e.reference}
+        </span>
+      ),
+    },
+    {
+      key: 'entry_date',
+      header: 'Date',
+      mobileSecondary: true,
+      render: (e) => e.entry_date,
+    },
+    {
+      key: 'description',
+      header: 'Description',
+      render: (e) => e.description ?? '—',
+    },
+    {
+      key: 'source_type',
+      header: 'Source',
+      render: (e) => <Badge variant="neutral">{e.source_type ?? 'manual'}</Badge>,
+    },
+    {
+      key: 'total_debit',
+      header: 'Debit',
+      render: (e) =>
+        e.total_debit ? (
+          <AmountDisplay amount={parseFloat(e.total_debit)} currency="IQD" />
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (e) => (
+        <Badge
+          variant={e.status === 'posted' ? 'success' : e.status === 'draft' ? 'warning' : 'neutral'}
+        >
+          {e.status}
+        </Badge>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
@@ -207,185 +291,17 @@ export default function JournalsPage() {
           />
         </FilterBar>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ background: theme.bgSurface }}>
-                <th
-                  style={{
-                    padding: '8px 12px',
-                    width: '40px',
-                    borderBottom: `1px solid ${theme.border}`,
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={allDraftsSelected}
-                    onChange={toggleSelectAll}
-                    title="Select all drafts"
-                    style={{ cursor: 'pointer' }}
-                  />
-                </th>
-                {['Reference', 'Date', 'Description', 'Source', 'Debit', 'Status'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '8px 16px',
-                      textAlign: 'left',
-                      fontWeight: 600,
-                      fontSize: '11px',
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      borderBottom: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}
-                  >
-                    Loading…
-                  </td>
-                </tr>
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{ padding: '32px', textAlign: 'center', color: theme.textMuted }}
-                  >
-                    No journal entries found
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((e) => {
-                  const isDraft = e.status === 'draft'
-                  const isSelected = selectedIds.has(e.id)
-                  return (
-                    <tr
-                      key={e.id}
-                      style={{
-                        borderBottom: `1px solid ${theme.border}`,
-                        background: isSelected ? `${theme.accent}22` : 'transparent',
-                        cursor: 'pointer',
-                      }}
-                      onMouseEnter={(ev) => {
-                        if (!isSelected) ev.currentTarget.style.background = theme.bgSurface
-                      }}
-                      onMouseLeave={(ev) => {
-                        ev.currentTarget.style.background = isSelected
-                          ? `${theme.accent}22`
-                          : 'transparent'
-                      }}
-                    >
-                      <td
-                        style={{ padding: '10px 12px' }}
-                        onClick={(ev) => {
-                          ev.stopPropagation()
-                          toggleSelect(e.id, isDraft)
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          disabled={!isDraft}
-                          onChange={() => {
-                            toggleSelect(e.id, isDraft)
-                          }}
-                          style={{
-                            cursor: isDraft ? 'pointer' : 'not-allowed',
-                            opacity: isDraft ? 1 : 0.35,
-                          }}
-                        />
-                      </td>
-                      <td
-                        style={{ padding: '10px 16px' }}
-                        onClick={() => {
-                          navigate(`/finance/journals/${e.id}`)
-                        }}
-                      >
-                        <span
-                          style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}
-                        >
-                          {e.reference}
-                        </span>
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 16px',
-                          color: theme.textSecondary,
-                          fontSize: '13px',
-                        }}
-                        onClick={() => {
-                          navigate(`/finance/journals/${e.id}`)
-                        }}
-                      >
-                        {e.entry_date}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 16px',
-                          color: theme.textSecondary,
-                          fontSize: '13px',
-                        }}
-                        onClick={() => {
-                          navigate(`/finance/journals/${e.id}`)
-                        }}
-                      >
-                        {e.description ?? '—'}
-                      </td>
-                      <td
-                        style={{ padding: '10px 16px' }}
-                        onClick={() => {
-                          navigate(`/finance/journals/${e.id}`)
-                        }}
-                      >
-                        <Badge variant="neutral">{e.source_type ?? 'manual'}</Badge>
-                      </td>
-                      <td
-                        style={{ padding: '10px 16px' }}
-                        onClick={() => {
-                          navigate(`/finance/journals/${e.id}`)
-                        }}
-                      >
-                        {e.total_debit ? (
-                          <AmountDisplay amount={parseFloat(e.total_debit)} currency="IQD" />
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>—</span>
-                        )}
-                      </td>
-                      <td
-                        style={{ padding: '10px 16px' }}
-                        onClick={() => {
-                          navigate(`/finance/journals/${e.id}`)
-                        }}
-                      >
-                        <Badge
-                          variant={
-                            e.status === 'posted'
-                              ? 'success'
-                              : e.status === 'draft'
-                                ? 'warning'
-                                : 'neutral'
-                          }
-                        >
-                          {e.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          columns={columns}
+          data={filtered}
+          rowKey="id"
+          loading={loading && filtered.length === 0}
+          emptyMessage="No journal entries found"
+          onRowClick={(e) => {
+            navigate(`/finance/journals/${e.id}`)
+          }}
+          getRowStyle={(e) => (selectedIds.has(e.id) ? { background: `${theme.accent}22` } : {})}
+        />
       </Card>
 
       {showCombineDialog && (

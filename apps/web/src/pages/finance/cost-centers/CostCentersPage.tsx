@@ -9,8 +9,9 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface CostCenter {
   id: string
@@ -141,6 +142,76 @@ export default function CostCentersPage() {
 
   const parentOptions = items.filter((c) => !editing || c.id !== editing.id)
 
+  const columns: Column<CostCenter>[] = [
+    {
+      key: 'code',
+      header: 'Code',
+      mobilePrimary: true,
+      render: (cc) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent }}>{cc.code}</span>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'Name',
+      mobileSecondary: true,
+      render: (cc) => <span style={{ color: theme.textPrimary }}>{cc.name}</span>,
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (cc) => (
+        <Badge variant={TYPE_VARIANTS[cc.type] ?? 'neutral'} size="sm">
+          {TYPE_LABELS[cc.type] ?? cc.type}
+        </Badge>
+      ),
+    },
+    {
+      key: 'journal_line_count',
+      header: 'Journal lines',
+      render: (cc) => (
+        <span style={{ color: theme.textSecondary }}>{cc.journal_line_count.toLocaleString()}</span>
+      ),
+    },
+    {
+      key: 'is_active',
+      header: 'Status',
+      render: (cc) => (
+        <Badge variant={cc.is_active ? 'success' : 'neutral'} size="sm">
+          {cc.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (cc) => (
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              openEdit(cc)
+            }}
+          >
+            Edit
+          </Button>
+          {cc.is_active && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDeletingId(cc.id)
+              }}
+            >
+              Deactivate
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
@@ -201,86 +272,14 @@ export default function CostCentersPage() {
             Active only
           </label>
         </div>
-        {loading ? (
-          <div style={{ padding: '20px' }}>
-            <div className="skeleton" style={{ height: 200 }} />
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyState message="No cost centers found" />
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['Code', 'Name', 'Type', 'Journal lines', 'Status', 'Actions'].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: 'left',
-                      padding: '8px 14px',
-                      color: theme.textMuted,
-                      fontWeight: 500,
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((cc) => (
-                <tr
-                  key={cc.id}
-                  style={{
-                    borderBottom: `1px solid ${theme.tableBorder}`,
-                    opacity: cc.is_active ? 1 : 0.5,
-                  }}
-                >
-                  <td style={{ padding: '9px 14px', fontFamily: 'monospace', color: theme.accent }}>
-                    {cc.code}
-                  </td>
-                  <td style={{ padding: '9px 14px', color: theme.textPrimary }}>{cc.name}</td>
-                  <td style={{ padding: '9px 14px' }}>
-                    <Badge variant={TYPE_VARIANTS[cc.type] ?? 'neutral'} size="sm">
-                      {TYPE_LABELS[cc.type] ?? cc.type}
-                    </Badge>
-                  </td>
-                  <td style={{ padding: '9px 14px', color: theme.textSecondary }}>
-                    {cc.journal_line_count.toLocaleString()}
-                  </td>
-                  <td style={{ padding: '9px 14px' }}>
-                    <Badge variant={cc.is_active ? 'success' : 'neutral'} size="sm">
-                      {cc.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </td>
-                  <td style={{ padding: '9px 14px' }}>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          openEdit(cc)
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      {cc.is_active && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setDeletingId(cc.id)
-                          }}
-                        >
-                          Deactivate
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <Table
+          columns={columns}
+          data={items}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No cost centers found"
+          getRowStyle={(cc) => (cc.is_active ? {} : { opacity: 0.5 })}
+        />
       </Card>
 
       <Modal

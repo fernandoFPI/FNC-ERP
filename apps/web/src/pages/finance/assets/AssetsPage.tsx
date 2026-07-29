@@ -6,7 +6,11 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { Grid } from '../../../components/ui/Grid'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { api } from '../../../lib/axios'
+import { usePagePadding } from '../../../hooks/usePagePadding'
 
 interface AssetSummary {
   active_count: number
@@ -42,6 +46,7 @@ const STATUS_BADGE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' 
 
 export default function AssetsPage() {
   const { theme } = useTheme()
+  const pagePadding = usePagePadding()
   const navigate = useNavigate()
   const [summary, setSummary] = useState<AssetSummary | null>(null)
   const [assets, setAssets] = useState<Asset[]>([])
@@ -107,8 +112,98 @@ export default function AssetsPage() {
     fontFamily: 'inherit',
   }
 
+  const columns: Column<Asset>[] = [
+    {
+      key: 'asset_number',
+      header: 'Asset No.',
+      mobilePrimary: true,
+      render: (a) => (
+        <span style={{ color: theme.accent, fontFamily: 'monospace' }}>{a.asset_number}</span>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'Name',
+      mobileSecondary: true,
+      render: (a) => a.name,
+    },
+    {
+      key: 'category_name',
+      header: 'Category',
+      render: (a) => a.category_name ?? '—',
+    },
+    {
+      key: 'purchase_date',
+      header: 'Purchase Date',
+      render: (a) => new Date(a.purchase_date).toLocaleDateString(),
+    },
+    {
+      key: 'purchase_cost',
+      header: 'Cost',
+      render: (a) => <AmountDisplay amount={a.purchase_cost} currency="IQD" size="sm" />,
+    },
+    {
+      key: 'book_value',
+      header: 'Book Value',
+      render: (a) => <AmountDisplay amount={a.book_value} currency="IQD" size="sm" colored />,
+    },
+    {
+      key: 'depreciated_pct',
+      header: 'Depreciated %',
+      render: (a) => {
+        const depPct =
+          a.purchase_cost > 0 ? Math.round((a.accumulated_depreciation / a.purchase_cost) * 100) : 0
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '60px',
+                height: '4px',
+                borderRadius: '2px',
+                background: theme.border,
+              }}
+            >
+              <div
+                style={{
+                  width: `${depPct}%`,
+                  height: '100%',
+                  background: depPct >= 100 ? '#6b7280' : theme.accent,
+                  borderRadius: '2px',
+                }}
+              />
+            </div>
+            <span style={{ color: theme.textSecondary }}>{depPct}%</span>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (a) => (
+        <Badge variant={STATUS_BADGE[a.status] ?? 'neutral'}>{a.status.replace('_', ' ')}</Badge>
+      ),
+    },
+    {
+      key: 'view',
+      header: '',
+      mobileAction: true,
+      render: (a) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            navigate(`/finance/assets/${a.id}`)
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ]
+
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={pagePadding}>
       <PageHeader
         title="Fixed Assets"
         subtitle="Asset register and depreciation management"
@@ -141,14 +236,7 @@ export default function AssetsPage() {
 
       {/* KPI Row */}
       {summary && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))',
-            gap: '12px',
-            marginBottom: '20px',
-          }}
-        >
+        <Grid cols={5} tabletCols={3} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               Total Cost
@@ -183,7 +271,7 @@ export default function AssetsPage() {
               {summary.fully_depreciated_count}
             </p>
           </Card>
-        </div>
+        </Grid>
       )}
 
       {/* Filters */}
@@ -218,145 +306,16 @@ export default function AssetsPage() {
 
       {/* Table */}
       <Card padding="none">
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-          <thead>
-            <tr style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
-              {[
-                'Asset No.',
-                'Name',
-                'Category',
-                'Purchase Date',
-                'Cost',
-                'Book Value',
-                'Depreciated %',
-                'Status',
-                '',
-              ].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: '10px 14px',
-                    textAlign: 'left',
-                    color: theme.textMuted,
-                    fontWeight: 500,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td
-                  colSpan={9}
-                  style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                >
-                  Loading...
-                </td>
-              </tr>
-            )}
-            {!loading && !assets.length && (
-              <tr>
-                <td
-                  colSpan={9}
-                  style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                >
-                  No assets found.{' '}
-                  <span
-                    style={{ color: theme.accent, cursor: 'pointer' }}
-                    onClick={() => {
-                      navigate('/finance/assets/new')
-                    }}
-                  >
-                    Add your first asset →
-                  </span>
-                </td>
-              </tr>
-            )}
-            {assets.map((a) => {
-              const depPct =
-                a.purchase_cost > 0
-                  ? Math.round((a.accumulated_depreciation / a.purchase_cost) * 100)
-                  : 0
-              return (
-                <tr
-                  key={a.id}
-                  style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}
-                  onClick={() => {
-                    navigate(`/finance/assets/${a.id}`)
-                  }}
-                >
-                  <td
-                    style={{ padding: '10px 14px', color: theme.accent, fontFamily: 'monospace' }}
-                  >
-                    {a.asset_number}
-                  </td>
-                  <td style={{ padding: '10px 14px', color: theme.textPrimary, fontWeight: 500 }}>
-                    {a.name}
-                  </td>
-                  <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                    {a.category_name ?? '—'}
-                  </td>
-                  <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                    {new Date(a.purchase_date).toLocaleDateString()}
-                  </td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <AmountDisplay amount={a.purchase_cost} currency="IQD" size="sm" />
-                  </td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <AmountDisplay amount={a.book_value} currency="IQD" size="sm" colored />
-                  </td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div
-                        style={{
-                          width: '60px',
-                          height: '4px',
-                          borderRadius: '2px',
-                          background: theme.border,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${depPct}%`,
-                            height: '100%',
-                            background: depPct >= 100 ? '#6b7280' : theme.accent,
-                            borderRadius: '2px',
-                          }}
-                        />
-                      </div>
-                      <span style={{ color: theme.textSecondary }}>{depPct}%</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: '10px 14px' }}>
-                    <Badge variant={STATUS_BADGE[a.status] ?? 'neutral'}>
-                      {a.status.replace('_', ' ')}
-                    </Badge>
-                  </td>
-                  <td
-                    style={{ padding: '10px 14px' }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                    }}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        navigate(`/finance/assets/${a.id}`)
-                      }}
-                    >
-                      View
-                    </Button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <Table
+          columns={columns}
+          data={assets}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No assets found. Use the + New Asset button above to add one."
+          onRowClick={(a) => {
+            navigate(`/finance/assets/${a.id}`)
+          }}
+        />
       </Card>
     </div>
   )

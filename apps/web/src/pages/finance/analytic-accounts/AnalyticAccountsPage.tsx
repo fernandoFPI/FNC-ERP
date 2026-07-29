@@ -10,9 +10,10 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface AnalyticAccount {
   id: string
@@ -149,6 +150,130 @@ export default function AnalyticAccountsPage() {
   const balance = (aa: AnalyticAccount) =>
     parseFloat(aa.total_debits ?? '0') - parseFloat(aa.total_credits ?? '0')
 
+  const columns: Column<AnalyticAccount>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      mobilePrimary: true,
+      render: (aa) => <span style={{ color: theme.textPrimary }}>{aa.name}</span>,
+    },
+    {
+      key: 'code',
+      header: 'Code',
+      mobileSecondary: true,
+      render: (aa) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent }}>{aa.code}</span>
+      ),
+    },
+    {
+      key: 'cost_center_code',
+      header: 'Cost center',
+      mobilePriority: 3,
+      render: (aa) => (
+        <span style={{ color: theme.textMuted, fontFamily: 'monospace', fontSize: '11px' }}>
+          {aa.cost_center_code ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'project_name',
+      header: 'Project',
+      mobilePriority: 4,
+      render: (aa) =>
+        aa.project_name ? (
+          <span title={aa.project_name} style={{ color: theme.textSecondary }}>
+            {aa.project_name.slice(0, 20)}
+            {aa.project_name.length > 20 ? '…' : ''}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      key: 'journal_line_count',
+      header: 'Lines',
+      mobilePriority: 7,
+      render: (aa) => aa.journal_line_count.toLocaleString(),
+    },
+    {
+      key: 'total_debits',
+      header: 'Debits',
+      mobilePriority: 5,
+      render: (aa) => (
+        <AmountDisplay amount={parseFloat(aa.total_debits ?? '0')} currency="IQD" size="sm" />
+      ),
+    },
+    {
+      key: 'total_credits',
+      header: 'Credits',
+      mobilePriority: 6,
+      render: (aa) => (
+        <AmountDisplay amount={parseFloat(aa.total_credits ?? '0')} currency="IQD" size="sm" />
+      ),
+    },
+    {
+      key: 'balance',
+      header: 'Balance',
+      mobilePriority: 2,
+      render: (aa) => {
+        const bal = balance(aa)
+        return (
+          <span style={{ color: bal >= 0 ? theme.textPrimary : theme.danger, fontWeight: 500 }}>
+            {Math.abs(bal).toLocaleString('en-US', {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 0,
+            })}
+            {bal < 0 ? ' Cr' : ''}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'is_active',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (aa) => (
+        <Badge variant={aa.is_active ? 'success' : 'neutral'} size="sm">
+          {aa.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      mobileAction: true,
+      render: (aa) => (
+        <div
+          style={{ display: 'flex', gap: '6px' }}
+          onClick={(ev) => {
+            ev.stopPropagation()
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              openEdit(aa)
+            }}
+          >
+            Edit
+          </Button>
+          {aa.is_active && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDeletingId(aa.id)
+              }}
+            >
+              Deactivate
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
@@ -209,174 +334,17 @@ export default function AnalyticAccountsPage() {
             Active only
           </label>
         </div>
-        {loading ? (
-          <div style={{ padding: '20px' }}>
-            <div className="skeleton" style={{ height: 200 }} />
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyState message="No analytic accounts found" />
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {[
-                  'Code',
-                  'Name',
-                  'Cost center',
-                  'Project',
-                  'Lines',
-                  'Debits',
-                  'Credits',
-                  'Balance',
-                  'Status',
-                  'Actions',
-                ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      textAlign: 'left',
-                      padding: '8px 12px',
-                      color: theme.textMuted,
-                      fontWeight: 500,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((aa) => {
-                const bal = balance(aa)
-                return (
-                  <tr
-                    key={aa.id}
-                    style={{
-                      borderBottom: `1px solid ${theme.tableBorder}`,
-                      opacity: aa.is_active ? 1 : 0.5,
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: '9px 12px',
-                        fontFamily: 'monospace',
-                        color: theme.accent,
-                        cursor: 'pointer',
-                      }}
-                      onClick={() => {
-                        navigate(`/finance/analytic-accounts/${aa.id}`)
-                      }}
-                    >
-                      {aa.code}
-                    </td>
-                    <td
-                      style={{
-                        padding: '9px 12px',
-                        color: theme.textPrimary,
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                      }}
-                      onClick={() => {
-                        navigate(`/finance/analytic-accounts/${aa.id}`)
-                      }}
-                    >
-                      {aa.name}
-                    </td>
-                    <td
-                      style={{
-                        padding: '9px 12px',
-                        color: theme.textMuted,
-                        fontFamily: 'monospace',
-                        fontSize: '11px',
-                      }}
-                    >
-                      {aa.cost_center_code ?? '—'}
-                    </td>
-                    <td
-                      style={{
-                        padding: '9px 12px',
-                        color: theme.textSecondary,
-                        maxWidth: '140px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {aa.project_name ? (
-                        <span title={aa.project_name}>
-                          {aa.project_name.slice(0, 20)}
-                          {aa.project_name.length > 20 ? '…' : ''}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td style={{ padding: '9px 12px', color: theme.textSecondary }}>
-                      {aa.journal_line_count.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '9px 12px' }}>
-                      <AmountDisplay
-                        amount={parseFloat(aa.total_debits ?? '0')}
-                        currency="IQD"
-                        size="sm"
-                      />
-                    </td>
-                    <td style={{ padding: '9px 12px' }}>
-                      <AmountDisplay
-                        amount={parseFloat(aa.total_credits ?? '0')}
-                        currency="IQD"
-                        size="sm"
-                      />
-                    </td>
-                    <td
-                      style={{
-                        padding: '9px 12px',
-                        color: bal >= 0 ? theme.textPrimary : theme.danger,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {Math.abs(bal).toLocaleString('en-US', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      })}
-                      {bal < 0 ? ' Cr' : ''}
-                    </td>
-                    <td style={{ padding: '9px 12px' }}>
-                      <Badge variant={aa.is_active ? 'success' : 'neutral'} size="sm">
-                        {aa.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '9px 12px' }}>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            openEdit(aa)
-                          }}
-                        >
-                          Edit
-                        </Button>
-                        {aa.is_active && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setDeletingId(aa.id)
-                            }}
-                          >
-                            Deactivate
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
+        <Table
+          columns={columns}
+          data={items}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No analytic accounts found"
+          onRowClick={(aa) => {
+            navigate(`/finance/analytic-accounts/${aa.id}`)
+          }}
+          getRowStyle={(aa) => (aa.is_active ? {} : { opacity: 0.5 })}
+        />
       </Card>
 
       <Modal
