@@ -32,6 +32,8 @@ import {
 } from '../../../lib/invoiceHtml'
 import QRCode from 'qrcode'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 type BankAccount = InvoiceBankAccount
 
@@ -232,6 +234,48 @@ export default function InvoiceDetail() {
   const outstanding = Math.max(0, cashTarget - totalPaid)
   const paidPct = cashTarget > 0 ? Math.min(100, (totalPaid / cashTarget) * 100) : 0
   const canPay = ['issued', 'sent', 'partial'].includes(inv.status)
+
+  const paymentColumns: Column<Payment>[] = [
+    {
+      key: 'amount',
+      header: 'Amount',
+      mobilePrimary: true,
+      render: (p) => (
+        <span style={{ fontWeight: 600 }}>
+          <AmountDisplay amount={p.amount} currency={cur} />
+        </span>
+      ),
+    },
+    {
+      key: 'paymentDate',
+      header: 'Date',
+      mobileSecondary: true,
+      render: (p) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{p.paymentDate}</span>
+      ),
+    },
+    {
+      key: 'paymentMethod',
+      header: 'Method',
+      mobilePriority: 1,
+      render: (p) =>
+        p.paymentMethod ? (
+          <Badge variant="neutral">{p.paymentMethod.replace('_', ' ')}</Badge>
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
+    {
+      key: 'paymentReference',
+      header: 'Reference',
+      mobilePriority: 2,
+      render: (p) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px', fontFamily: 'monospace' }}>
+          {p.paymentReference ?? '—'}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1160px' }}>
@@ -767,62 +811,7 @@ export default function InvoiceDetail() {
                 >
                   Payment History
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurfaceHover }}>
-                      {['Date', 'Amount', 'Method', 'Reference'].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '8px 12px',
-                            textAlign: 'left',
-                            fontSize: '11px',
-                            color: theme.textMuted,
-                            fontWeight: 600,
-                            borderBottom: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((p) => (
-                      <tr key={p.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            color: theme.textSecondary,
-                            fontSize: '13px',
-                          }}
-                        >
-                          {p.paymentDate}
-                        </td>
-                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>
-                          <AmountDisplay amount={p.amount} currency={cur} />
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          {p.paymentMethod ? (
-                            <Badge variant="neutral">{p.paymentMethod.replace('_', ' ')}</Badge>
-                          ) : (
-                            <span style={{ color: theme.textMuted }}>—</span>
-                          )}
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            color: theme.textMuted,
-                            fontSize: '12px',
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {p.paymentReference ?? '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <Table columns={paymentColumns} data={payments} rowKey="id" />
               </Card>
             ) : (
               <div

@@ -10,6 +10,8 @@ import { Button } from '../../../components/ui/Button'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { formatCurrency } from '../../../lib/format'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 const STATUS_OPTIONS_ADMIN = [
   { value: 'pending', label: 'Pending' },
@@ -105,9 +107,162 @@ export default function ProjectsPage() {
     setPage(1)
   }
 
-  const TABLE_HEADERS = isAdmin
-    ? ['Code', 'Name', 'Type', 'Status', 'Client', 'Value', 'Budget', 'Completion', 'POs']
-    : ['Code', 'Name', 'Type', 'Status', 'Client', 'Completion', 'POs']
+  const columns: Column<Project>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      mobilePrimary: true,
+      render: (p) => (
+        <span
+          style={{
+            fontWeight: 500,
+            color: theme.textPrimary,
+            maxWidth: '220px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'block',
+          }}
+        >
+          {p.name}
+        </span>
+      ),
+    },
+    {
+      key: 'code',
+      header: 'Code',
+      mobileSecondary: true,
+      render: (p) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '12px', color: theme.textMuted }}>
+          {p.code}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (p) => (
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          {p.isRfq && !['approved', 'completed', 'cancelled_after_approval'].includes(p.status) && (
+            <Badge variant="info">RFQ</Badge>
+          )}
+          <Badge variant={STATUS_VARIANT[p.status] ?? 'neutral'}>
+            {p.status.replace(/_/g, ' ')}
+          </Badge>
+        </div>
+      ),
+    },
+    {
+      key: 'clientName',
+      header: 'Client',
+      mobilePriority: 2,
+      render: (p) => (
+        <span
+          style={{
+            color: theme.textMuted,
+            maxWidth: '160px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'block',
+          }}
+        >
+          {p.clientName ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'overallCompletionPct',
+      header: 'Completion',
+      mobilePriority: 3,
+      render: (p) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              width: '72px',
+              height: '5px',
+              background: theme.border,
+              borderRadius: '999px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                background: theme.accent,
+                width: `${p.overallCompletionPct ?? 0}%`,
+                borderRadius: '999px',
+              }}
+            />
+          </div>
+          <span style={{ fontSize: '11px', color: theme.textMuted }}>
+            {p.overallCompletionPct ?? 0}%
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'projectType',
+      header: 'Type',
+      mobilePriority: 4,
+      render: (p) => (
+        <span style={{ color: theme.textMuted, textTransform: 'capitalize' }}>
+          {p.projectType ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'openPoCount',
+      header: 'POs',
+      mobilePriority: 5,
+      render: (p) => (
+        <div style={{ textAlign: 'center' }}>
+          {(p.openPoCount ?? 0) > 0 ? (
+            <Badge variant="warning">{p.openPoCount}</Badge>
+          ) : (
+            <span style={{ color: theme.textMuted }}>—</span>
+          )}
+        </div>
+      ),
+    },
+    ...(isAdmin
+      ? [
+          {
+            key: 'projectValue',
+            header: 'Value',
+            mobilePriority: 6,
+            render: (p: Project) => (
+              <div
+                style={{
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums',
+                  color: theme.textPrimary,
+                }}
+              >
+                {p.projectValue ? formatCurrency(p.projectValue, p.budgetCurrency ?? 'IQD') : '—'}
+              </div>
+            ),
+          },
+          {
+            key: 'budgetAmount',
+            header: 'Budget',
+            mobilePriority: 7,
+            render: (p: Project) => (
+              <div
+                style={{
+                  textAlign: 'right',
+                  fontVariantNumeric: 'tabular-nums',
+                  color: theme.textMuted,
+                }}
+              >
+                {p.budgetAmount ? formatCurrency(p.budgetAmount, p.budgetCurrency ?? 'IQD') : '—'}
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -288,170 +443,14 @@ export default function ProjectsPage() {
               overflow: 'hidden',
             }}
           >
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ background: theme.bgSurface }}>
-                    {TABLE_HEADERS.map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '10px 14px',
-                          textAlign: 'left',
-                          fontSize: '10px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          borderBottom: `1px solid ${theme.border}`,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {projects.map((p, i) => (
-                    <tr
-                      key={p.id}
-                      onClick={() => {
-                        navigate(`/projects/${p.id}`)
-                      }}
-                      style={{
-                        borderBottom: `1px solid ${theme.border}22`,
-                        cursor: 'pointer',
-                        background: i % 2 === 0 ? 'transparent' : theme.bgSurface + '66',
-                      }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = theme.bgSurfaceHover)
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.background =
-                          i % 2 === 0 ? 'transparent' : theme.bgSurface + '66')
-                      }
-                    >
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          fontFamily: 'monospace',
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                        }}
-                      >
-                        {p.code}
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          fontWeight: 500,
-                          color: theme.textPrimary,
-                          maxWidth: '220px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {p.name}
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          color: theme.textMuted,
-                          textTransform: 'capitalize',
-                        }}
-                      >
-                        {p.projectType ?? '—'}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                          {p.isRfq &&
-                            !['approved', 'completed', 'cancelled_after_approval'].includes(
-                              p.status,
-                            ) && <Badge variant="info">RFQ</Badge>}
-                          <Badge variant={STATUS_VARIANT[p.status] ?? 'neutral'}>
-                            {p.status.replace(/_/g, ' ')}
-                          </Badge>
-                        </div>
-                      </td>
-                      <td
-                        style={{
-                          padding: '12px 14px',
-                          color: theme.textMuted,
-                          maxWidth: '160px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {p.clientName ?? '—'}
-                      </td>
-                      {isAdmin && (
-                        <td
-                          style={{
-                            padding: '12px 14px',
-                            textAlign: 'right',
-                            fontVariantNumeric: 'tabular-nums',
-                            color: theme.textPrimary,
-                          }}
-                        >
-                          {p.projectValue
-                            ? formatCurrency(p.projectValue, p.budgetCurrency ?? 'IQD')
-                            : '—'}
-                        </td>
-                      )}
-                      {isAdmin && (
-                        <td
-                          style={{
-                            padding: '12px 14px',
-                            textAlign: 'right',
-                            fontVariantNumeric: 'tabular-nums',
-                            color: theme.textMuted,
-                          }}
-                        >
-                          {p.budgetAmount
-                            ? formatCurrency(p.budgetAmount, p.budgetCurrency ?? 'IQD')
-                            : '—'}
-                        </td>
-                      )}
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div
-                            style={{
-                              width: '72px',
-                              height: '5px',
-                              background: theme.border,
-                              borderRadius: '999px',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: '100%',
-                                background: theme.accent,
-                                width: `${p.overallCompletionPct ?? 0}%`,
-                                borderRadius: '999px',
-                              }}
-                            />
-                          </div>
-                          <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                            {p.overallCompletionPct ?? 0}%
-                          </span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        {(p.openPoCount ?? 0) > 0 ? (
-                          <Badge variant="warning">{p.openPoCount}</Badge>
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              columns={columns}
+              data={projects}
+              rowKey="id"
+              onRowClick={(p) => {
+                navigate(`/projects/${p.id}`)
+              }}
+            />
           </div>
         )}
       </div>
