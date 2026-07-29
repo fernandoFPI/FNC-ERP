@@ -8,6 +8,9 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import { Grid } from '../../../components/ui/Grid'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { INVENTORY_VALUATION_QUERY } from '../../../graphql/reporting'
 
 interface InvRow {
@@ -57,6 +60,65 @@ export default function InventoryValuationReport() {
       r.sku.toLowerCase().includes(search.toLowerCase()) ||
       r.locationName.toLowerCase().includes(search.toLowerCase()),
   )
+
+  const columns: Column<InvRow>[] = [
+    {
+      key: 'productName',
+      header: 'Product',
+      mobilePrimary: true,
+      render: (row) => (
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.productName}</span>
+      ),
+    },
+    {
+      key: 'sku',
+      header: 'SKU',
+      mobileSecondary: true,
+      render: (row) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.sku}</span>,
+    },
+    {
+      key: 'totalValue',
+      header: 'Total Value',
+      mobilePriority: 1,
+      render: (row) => (
+        <span style={{ fontWeight: 500 }}>
+          <AmountDisplay amount={row.totalValue} currency={row.currency} size="sm" />
+        </span>
+      ),
+    },
+    {
+      key: 'qtyOnHand',
+      header: 'Qty On Hand',
+      mobilePriority: 2,
+      render: (row) => (
+        <span style={{ color: row.qtyOnHand <= 0 ? theme.danger : theme.textSecondary }}>
+          {row.qtyOnHand.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'locationName',
+      header: 'Location',
+      mobilePriority: 3,
+      render: (row) => row.locationName,
+    },
+    {
+      key: 'avgCost',
+      header: 'Avg Cost',
+      mobilePriority: 4,
+      render: (row) => <AmountDisplay amount={row.avgCost} currency={row.currency} size="sm" />,
+    },
+    {
+      key: 'locationType',
+      header: 'Type',
+      mobilePriority: 5,
+      render: (row) => (
+        <Badge variant="neutral" size="sm">
+          {row.locationType}
+        </Badge>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -120,14 +182,7 @@ export default function InventoryValuationReport() {
 
       {/* Summary */}
       {d && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: '12px',
-            marginBottom: '20px',
-          }}
-        >
+        <Grid cols={4} tabletCols={2} phoneCols={2} gap={12} style={{ marginBottom: '20px' }}>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
               Total Value
@@ -164,7 +219,7 @@ export default function InventoryValuationReport() {
               {d.lowStockItems}
             </p>
           </Card>
-        </div>
+        </Grid>
       )}
 
       <Card padding="none">
@@ -179,84 +234,7 @@ export default function InventoryValuationReport() {
             ))}
           </div>
         ) : rows.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {[
-                    'SKU',
-                    'Product',
-                    'Location',
-                    'Type',
-                    'Qty On Hand',
-                    'Avg Cost',
-                    'Total Value',
-                  ].map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: i >= 4 ? 'right' : 'left',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, i) => (
-                  <tr
-                    key={i}
-                    style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.tableRowHover
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {row.sku}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textPrimary, fontWeight: 500 }}>
-                      {row.productName}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                      {row.locationName}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant="neutral" size="sm">
-                        {row.locationType}
-                      </Badge>
-                    </td>
-                    <td
-                      style={{
-                        padding: '12px 14px',
-                        textAlign: 'right',
-                        color: row.qtyOnHand <= 0 ? theme.danger : theme.textSecondary,
-                      }}
-                    >
-                      {row.qtyOnHand.toLocaleString()}
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <AmountDisplay amount={row.avgCost} currency={row.currency} size="sm" />
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 500 }}>
-                      <AmountDisplay amount={row.totalValue} currency={row.currency} size="sm" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table columns={columns} data={rows} />
         ) : (
           <EmptyState
             title="No inventory data"
