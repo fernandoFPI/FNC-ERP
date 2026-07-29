@@ -2906,6 +2906,110 @@ export default function ProjectDetail() {
                   },
                 ]
 
+                type PoSummaryRow = {
+                  status: string
+                  count: number
+                  amount: number
+                }
+                const poSummaryRows: PoSummaryRow[] = PO_ORDER.filter((st) => ovPoMap[st]).map(
+                  (st) => ({
+                    status: st,
+                    count: ovPoMap[st]!.count,
+                    amount: ovPoMap[st]!.amount,
+                  }),
+                )
+                const poSummaryColumns: Column<PoSummaryRow>[] = [
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    mobilePrimary: true,
+                    render: (row) => (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            width: '7px',
+                            height: '7px',
+                            borderRadius: '50%',
+                            background: PO_DOT[row.status],
+                            flexShrink: 0,
+                            display: 'inline-block',
+                          }}
+                        />
+                        <span style={{ color: theme.textPrimary }}>
+                          {PO_LABELS[row.status] ?? row.status}
+                        </span>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'count',
+                    header: 'Qty',
+                    mobilePriority: 1,
+                    renderHeader: () => (
+                      <span style={{ display: 'block', textAlign: 'right' }}>Qty</span>
+                    ),
+                    render: (row) => (
+                      <span
+                        style={{
+                          display: 'block',
+                          textAlign: 'right',
+                          color: theme.textMuted,
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {row.count}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'amount',
+                    header: `Amount (${ovCcy})`,
+                    mobilePriority: 2,
+                    renderHeader: () => (
+                      <span style={{ display: 'block', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        Amount ({ovCcy})
+                      </span>
+                    ),
+                    render: (row) => (
+                      <span
+                        style={{
+                          display: 'block',
+                          textAlign: 'right',
+                          color: theme.textMuted,
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {formatCurrency(row.amount, ovCcy)}
+                      </span>
+                    ),
+                  },
+                ]
+                const poSummaryFooter: Record<string, React.ReactNode> = {
+                  status: 'Total',
+                  count: (
+                    <span
+                      style={{
+                        display: 'block',
+                        textAlign: 'right',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {poTotal}
+                    </span>
+                  ),
+                  amount: (
+                    <span
+                      style={{
+                        display: 'block',
+                        textAlign: 'right',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {formatCurrency(poTotalAmt, ovCcy)}
+                    </span>
+                  ),
+                }
+
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {/* Status banners */}
@@ -3037,142 +3141,12 @@ export default function ProjectDetail() {
                               View All
                             </button>,
                           )}
-                          <div style={{ overflowX: 'auto' }}>
-                            <table
-                              style={{
-                                width: '100%',
-                                borderCollapse: 'collapse',
-                                fontSize: '12px',
-                              }}
-                            >
-                              <thead>
-                                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                                  <th
-                                    style={{
-                                      textAlign: 'left',
-                                      padding: '0 0 6px',
-                                      fontSize: '11px',
-                                      color: theme.textMuted,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    Status
-                                  </th>
-                                  <th
-                                    style={{
-                                      textAlign: 'right',
-                                      padding: '0 0 6px',
-                                      fontSize: '11px',
-                                      color: theme.textMuted,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    Qty
-                                  </th>
-                                  <th
-                                    style={{
-                                      textAlign: 'right',
-                                      padding: '0 0 6px',
-                                      fontSize: '11px',
-                                      color: theme.textMuted,
-                                      fontWeight: 600,
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    Amount ({ovCcy})
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {PO_ORDER.map((st) => {
-                                  const row = ovPoMap[st]
-                                  if (!row) return null
-                                  return (
-                                    <tr
-                                      key={st}
-                                      style={{ borderBottom: `1px solid ${theme.border}22` }}
-                                    >
-                                      <td
-                                        style={{
-                                          padding: '6px 0',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '6px',
-                                        }}
-                                      >
-                                        <span
-                                          style={{
-                                            width: '7px',
-                                            height: '7px',
-                                            borderRadius: '50%',
-                                            background: PO_DOT[st],
-                                            flexShrink: 0,
-                                            display: 'inline-block',
-                                          }}
-                                        />
-                                        <span style={{ color: theme.textPrimary }}>
-                                          {PO_LABELS[st] ?? st}
-                                        </span>
-                                      </td>
-                                      <td
-                                        style={{
-                                          padding: '6px 0',
-                                          textAlign: 'right',
-                                          color: theme.textMuted,
-                                          fontVariantNumeric: 'tabular-nums',
-                                        }}
-                                      >
-                                        {row.count}
-                                      </td>
-                                      <td
-                                        style={{
-                                          padding: '6px 0',
-                                          textAlign: 'right',
-                                          color: theme.textMuted,
-                                          fontVariantNumeric: 'tabular-nums',
-                                        }}
-                                      >
-                                        {formatCurrency(row.amount, ovCcy)}
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                                <tr style={{ borderTop: `2px solid ${theme.border}` }}>
-                                  <td
-                                    style={{
-                                      padding: '7px 0',
-                                      fontWeight: 700,
-                                      color: theme.textPrimary,
-                                    }}
-                                  >
-                                    Total
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '7px 0',
-                                      textAlign: 'right',
-                                      fontWeight: 700,
-                                      color: theme.textPrimary,
-                                      fontVariantNumeric: 'tabular-nums',
-                                    }}
-                                  >
-                                    {poTotal}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '7px 0',
-                                      textAlign: 'right',
-                                      fontWeight: 700,
-                                      color: theme.textPrimary,
-                                      fontVariantNumeric: 'tabular-nums',
-                                    }}
-                                  >
-                                    {formatCurrency(poTotalAmt, ovCcy)}
-                                  </td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
+                          <Table
+                            columns={poSummaryColumns}
+                            data={poSummaryRows}
+                            rowKey="status"
+                            footerRow={poSummaryFooter}
+                          />
                         </>,
                       )}
 
@@ -23507,6 +23481,221 @@ function RiskRegisterTab({
       </div>
     )
 
+  const riskColumns: Column<Risk>[] = [
+    {
+      key: 'riskNo',
+      header: 'No.',
+      mobileSecondary: true,
+      render: (r) => (
+        <span
+          style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: th.textPrimary }}
+        >
+          {r.riskNo}
+        </span>
+      ),
+    },
+    {
+      key: 'category',
+      header: 'Category',
+      mobilePriority: 6,
+      render: (r) => (
+        <span style={{ color: th.textPrimary, textTransform: 'capitalize' }}>{r.category}</span>
+      ),
+    },
+    {
+      key: 'title',
+      header: 'Title',
+      mobilePrimary: true,
+      render: (r) => (
+        <span
+          style={{
+            display: 'inline-block',
+            maxWidth: '200px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            verticalAlign: 'bottom',
+            color: th.textPrimary,
+          }}
+        >
+          {r.title}
+        </span>
+      ),
+    },
+    {
+      key: 'probability',
+      header: 'Probability',
+      mobilePriority: 4,
+      render: (r) => (
+        <span
+          style={{
+            display: 'inline-block',
+            width: '28px',
+            height: '28px',
+            lineHeight: '28px',
+            textAlign: 'center',
+            borderRadius: '4px',
+            background: riskMatrixColor(r.probability * r.impact),
+            fontWeight: 700,
+            color: '#374151',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {r.probability}
+        </span>
+      ),
+    },
+    {
+      key: 'impact',
+      header: 'Impact',
+      mobilePriority: 5,
+      render: (r) => (
+        <span
+          style={{
+            display: 'inline-block',
+            width: '28px',
+            height: '28px',
+            lineHeight: '28px',
+            textAlign: 'center',
+            borderRadius: '4px',
+            background: riskMatrixColor(r.probability * r.impact),
+            fontWeight: 700,
+            color: '#374151',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {r.impact}
+        </span>
+      ),
+    },
+    {
+      key: 'riskScore',
+      header: 'Score',
+      mobilePriority: 3,
+      render: (r) => (
+        <span
+          style={{
+            display: 'inline-block',
+            padding: '2px 10px',
+            borderRadius: '4px',
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+            color: '#374151',
+            background: riskMatrixColor(r.riskScore),
+          }}
+        >
+          {r.riskScore}
+        </span>
+      ),
+    },
+    {
+      key: 'riskLevel',
+      header: 'Level',
+      mobilePriority: 1,
+      render: (r) => riskLevelBadge(r.riskLevel),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 2,
+      render: (r) => (
+        <span
+          style={{
+            padding: '2px 8px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: 600,
+            textTransform: 'capitalize',
+            background: th.bgCanvas,
+            color: th.textSecondary,
+            border: `1px solid ${th.border}`,
+          }}
+        >
+          {r.status.replace(/_/g, ' ')}
+        </span>
+      ),
+    },
+    {
+      key: 'owner',
+      header: 'Owner',
+      mobilePriority: 7,
+      render: (r) => (
+        <span style={{ color: th.textSecondary, fontSize: '12px' }}>{r.owner ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      mobileAction: true,
+      render: (r) => (
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {isAdmin && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                openEdit(r)
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                border: `1px solid ${th.border}`,
+                background: 'transparent',
+                color: th.textSecondary,
+                cursor: 'pointer',
+              }}
+            >
+              Edit
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setReviewModal(r)
+              setReviewForm({
+                probability: r.probability,
+                impact: r.impact,
+                notes: '',
+                reviewedBy: '',
+              })
+            }}
+            style={{
+              fontSize: '11px',
+              padding: '3px 8px',
+              borderRadius: '4px',
+              border: `1px solid ${th.border}`,
+              background: 'transparent',
+              color: th.textSecondary,
+              cursor: 'pointer',
+            }}
+          >
+            Review
+          </button>
+          {isAdmin && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                if (window.confirm('Delete this risk?'))
+                  void deleteRisk({ variables: { id: r.id } })
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                border: `1px solid #fca5a5`,
+                background: 'transparent',
+                color: '#ef4444',
+                cursor: 'pointer',
+              }}
+            >
+              Del
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px 0' }}>
       {/* KPI row */}
@@ -23607,439 +23796,198 @@ function RiskRegisterTab({
       </div>
 
       {/* Table */}
-      <div
-        style={{
-          background: th.bgSurface,
-          border: `1px solid ${th.border}`,
-          borderRadius: '10px',
-          overflow: 'hidden',
-        }}
-      >
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-          <thead>
-            <tr style={{ background: th.bgCanvas, borderBottom: `1px solid ${th.border}` }}>
-              {[
-                'No.',
-                'Category',
-                'Title',
-                'Probability',
-                'Impact',
-                'Score',
-                'Level',
-                'Status',
-                'Owner',
-                'Actions',
-              ].map((h) => (
-                <th
-                  key={h}
+      <Table
+        columns={riskColumns}
+        data={filtered}
+        rowKey="id"
+        emptyMessage="No risks recorded"
+        onRowClick={(r) => setExpandedId(expandedId === r.id ? null : r.id)}
+        renderExpanded={(r) =>
+          expandedId === r.id ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: '16px',
+                fontSize: '13px',
+              }}
+            >
+              <div>
+                <div
                   style={{
-                    padding: '10px 12px',
-                    textAlign: 'left',
                     fontWeight: 600,
-                    fontSize: '11px',
                     color: th.textSecondary,
+                    fontSize: '11px',
                     textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    whiteSpace: 'nowrap',
+                    marginBottom: '4px',
                   }}
                 >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td
-                  colSpan={10}
-                  style={{ padding: '32px', textAlign: 'center', color: th.textMuted }}
-                >
-                  No risks recorded
-                </td>
-              </tr>
-            )}
-            {filtered.map((r, i) => (
-              <React.Fragment key={r.id}>
-                <tr
-                  onClick={() => {
-                    setExpandedId(expandedId === r.id ? null : r.id)
-                  }}
+                  Description
+                </div>
+                <div style={{ color: th.textPrimary }}>{r.description ?? '—'}</div>
+                <div
                   style={{
-                    borderBottom: `1px solid ${th.border}`,
-                    background: i % 2 === 0 ? th.bgSurface : th.bgCanvas,
-                    cursor: 'pointer',
+                    fontWeight: 600,
+                    color: th.textSecondary,
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                    marginTop: '12px',
                   }}
                 >
-                  <td
-                    style={{
-                      padding: '10px 12px',
-                      fontVariantNumeric: 'tabular-nums',
-                      fontWeight: 600,
-                      color: th.textPrimary,
-                    }}
-                  >
-                    {r.riskNo}
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 12px',
-                      color: th.textPrimary,
-                      textTransform: 'capitalize',
-                    }}
-                  >
-                    {r.category}
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 12px',
-                      color: th.textPrimary,
-                      maxWidth: '200px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {r.title}
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 12px',
-                      textAlign: 'center',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    <span
+                  Cause
+                </div>
+                <div style={{ color: th.textPrimary }}>{r.cause ?? '—'}</div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: th.textSecondary,
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                    marginTop: '12px',
+                  }}
+                >
+                  Consequence
+                </div>
+                <div style={{ color: th.textPrimary }}>{r.consequence ?? '—'}</div>
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: th.textSecondary,
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                  }}
+                >
+                  Mitigation Plan
+                </div>
+                <div style={{ color: th.textPrimary }}>{r.mitigationPlan ?? '—'}</div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: th.textSecondary,
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    marginBottom: '4px',
+                    marginTop: '12px',
+                  }}
+                >
+                  Contingency Plan
+                </div>
+                <div style={{ color: th.textPrimary }}>{r.contingencyPlan ?? '—'}</div>
+                {r.residualScore != null && (
+                  <>
+                    <div
                       style={{
-                        display: 'inline-block',
-                        width: '28px',
-                        height: '28px',
-                        lineHeight: '28px',
-                        textAlign: 'center',
-                        borderRadius: '4px',
-                        background: riskMatrixColor(r.probability * r.impact),
-                        fontWeight: 700,
-                        color: '#374151',
-                      }}
-                    >
-                      {r.probability}
-                    </span>
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 12px',
-                      textAlign: 'center',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        width: '28px',
-                        height: '28px',
-                        lineHeight: '28px',
-                        textAlign: 'center',
-                        borderRadius: '4px',
-                        background: riskMatrixColor(r.probability * r.impact),
-                        fontWeight: 700,
-                        color: '#374151',
-                      }}
-                    >
-                      {r.impact}
-                    </span>
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 12px',
-                      textAlign: 'center',
-                      fontWeight: 700,
-                      fontVariantNumeric: 'tabular-nums',
-                      color: '#374151',
-                      background: riskMatrixColor(r.riskScore),
-                    }}
-                  >
-                    {r.riskScore}
-                  </td>
-                  <td style={{ padding: '10px 12px' }}>{riskLevelBadge(r.riskLevel)}</td>
-                  <td style={{ padding: '10px 12px' }}>
-                    <span
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: '999px',
-                        fontSize: '11px',
                         fontWeight: 600,
-                        textTransform: 'capitalize',
-                        background: th.bgCanvas,
                         color: th.textSecondary,
+                        fontSize: '11px',
+                        textTransform: 'uppercase',
+                        marginBottom: '4px',
+                        marginTop: '12px',
+                      }}
+                    >
+                      Residual Risk
+                    </div>
+                    <div>
+                      {riskLevelBadge(r.residualLevel ?? 'low')}{' '}
+                      <span
+                        style={{
+                          color: th.textMuted,
+                          fontSize: '12px',
+                          marginLeft: '6px',
+                        }}
+                      >
+                        P={r.residualProbability} × I={r.residualImpact} = {r.residualScore}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    color: th.textSecondary,
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    marginBottom: '8px',
+                  }}
+                >
+                  Review History
+                </div>
+                {r.reviews.length === 0 ? (
+                  <div style={{ color: th.textMuted }}>No reviews yet</div>
+                ) : (
+                  r.reviews.map((rv) => (
+                    <div
+                      key={rv.id}
+                      style={{
+                        marginBottom: '8px',
+                        padding: '8px',
+                        background: th.bgSurface,
+                        borderRadius: '6px',
                         border: `1px solid ${th.border}`,
                       }}
                     >
-                      {r.status.replace(/_/g, ' ')}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 12px', color: th.textSecondary, fontSize: '12px' }}>
-                    {r.owner ?? '—'}
-                  </td>
-                  <td style={{ padding: '10px 12px' }}>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {isAdmin && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openEdit(r)
-                          }}
-                          style={{
-                            fontSize: '11px',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            border: `1px solid ${th.border}`,
-                            background: 'transparent',
-                            color: th.textSecondary,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Edit
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setReviewModal(r)
-                          setReviewForm({
-                            probability: r.probability,
-                            impact: r.impact,
-                            notes: '',
-                            reviewedBy: '',
-                          })
-                        }}
-                        style={{
-                          fontSize: '11px',
-                          padding: '3px 8px',
-                          borderRadius: '4px',
-                          border: `1px solid ${th.border}`,
-                          background: 'transparent',
-                          color: th.textSecondary,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Review
-                      </button>
-                      {isAdmin && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (window.confirm('Delete this risk?'))
-                              void deleteRisk({ variables: { id: r.id } })
-                          }}
-                          style={{
-                            fontSize: '11px',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            border: `1px solid #fca5a5`,
-                            background: 'transparent',
-                            color: '#ef4444',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Del
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                {expandedId === r.id && (
-                  <tr style={{ borderBottom: `1px solid ${th.border}` }}>
-                    <td colSpan={10} style={{ padding: '16px 20px', background: th.bgCanvas }}>
                       <div
                         style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 1fr 1fr',
-                          gap: '16px',
-                          fontSize: '13px',
+                          fontWeight: 600,
+                          color: th.textPrimary,
+                          fontSize: '12px',
                         }}
                       >
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              color: th.textSecondary,
-                              fontSize: '11px',
-                              textTransform: 'uppercase',
-                              marginBottom: '4px',
-                            }}
-                          >
-                            Description
-                          </div>
-                          <div style={{ color: th.textPrimary }}>{r.description ?? '—'}</div>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              color: th.textSecondary,
-                              fontSize: '11px',
-                              textTransform: 'uppercase',
-                              marginBottom: '4px',
-                              marginTop: '12px',
-                            }}
-                          >
-                            Cause
-                          </div>
-                          <div style={{ color: th.textPrimary }}>{r.cause ?? '—'}</div>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              color: th.textSecondary,
-                              fontSize: '11px',
-                              textTransform: 'uppercase',
-                              marginBottom: '4px',
-                              marginTop: '12px',
-                            }}
-                          >
-                            Consequence
-                          </div>
-                          <div style={{ color: th.textPrimary }}>{r.consequence ?? '—'}</div>
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              color: th.textSecondary,
-                              fontSize: '11px',
-                              textTransform: 'uppercase',
-                              marginBottom: '4px',
-                            }}
-                          >
-                            Mitigation Plan
-                          </div>
-                          <div style={{ color: th.textPrimary }}>{r.mitigationPlan ?? '—'}</div>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              color: th.textSecondary,
-                              fontSize: '11px',
-                              textTransform: 'uppercase',
-                              marginBottom: '4px',
-                              marginTop: '12px',
-                            }}
-                          >
-                            Contingency Plan
-                          </div>
-                          <div style={{ color: th.textPrimary }}>{r.contingencyPlan ?? '—'}</div>
-                          {r.residualScore != null && (
-                            <>
-                              <div
-                                style={{
-                                  fontWeight: 600,
-                                  color: th.textSecondary,
-                                  fontSize: '11px',
-                                  textTransform: 'uppercase',
-                                  marginBottom: '4px',
-                                  marginTop: '12px',
-                                }}
-                              >
-                                Residual Risk
-                              </div>
-                              <div>
-                                {riskLevelBadge(r.residualLevel ?? 'low')}{' '}
-                                <span
-                                  style={{
-                                    color: th.textMuted,
-                                    fontSize: '12px',
-                                    marginLeft: '6px',
-                                  }}
-                                >
-                                  P={r.residualProbability} × I={r.residualImpact} ={' '}
-                                  {r.residualScore}
-                                </span>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        <div>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              color: th.textSecondary,
-                              fontSize: '11px',
-                              textTransform: 'uppercase',
-                              marginBottom: '8px',
-                            }}
-                          >
-                            Review History
-                          </div>
-                          {r.reviews.length === 0 ? (
-                            <div style={{ color: th.textMuted }}>No reviews yet</div>
-                          ) : (
-                            r.reviews.map((rv) => (
-                              <div
-                                key={rv.id}
-                                style={{
-                                  marginBottom: '8px',
-                                  padding: '8px',
-                                  background: th.bgSurface,
-                                  borderRadius: '6px',
-                                  border: `1px solid ${th.border}`,
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontWeight: 600,
-                                    color: th.textPrimary,
-                                    fontSize: '12px',
-                                  }}
-                                >
-                                  P={rv.probability} × I={rv.impact} → {rv.probability * rv.impact}
-                                </div>
-                                {rv.notes && (
-                                  <div
-                                    style={{
-                                      color: th.textSecondary,
-                                      fontSize: '12px',
-                                      marginTop: '2px',
-                                    }}
-                                  >
-                                    {rv.notes}
-                                  </div>
-                                )}
-                                <div
-                                  style={{
-                                    color: th.textMuted,
-                                    fontSize: '11px',
-                                    marginTop: '2px',
-                                  }}
-                                >
-                                  {rv.reviewedBy ?? ''} · {rv.createdAt.slice(0, 10)}
-                                </div>
-                              </div>
-                            ))
-                          )}
-                          <div style={{ marginTop: '12px' }}>
-                            <label style={labelStyle}>Change Status</label>
-                            <select
-                              value={r.status}
-                              onChange={(e) =>
-                                void updateRiskStatus({
-                                  variables: { id: r.id, status: e.target.value },
-                                })
-                              }
-                              style={{ ...inputStyle }}
-                            >
-                              {RISK_STATUSES.map((s) => (
-                                <option key={s} value={s}>
-                                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
+                        P={rv.probability} × I={rv.impact} → {rv.probability * rv.impact}
                       </div>
-                    </td>
-                  </tr>
+                      {rv.notes && (
+                        <div
+                          style={{
+                            color: th.textSecondary,
+                            fontSize: '12px',
+                            marginTop: '2px',
+                          }}
+                        >
+                          {rv.notes}
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          color: th.textMuted,
+                          fontSize: '11px',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {rv.reviewedBy ?? ''} · {rv.createdAt.slice(0, 10)}
+                      </div>
+                    </div>
+                  ))
                 )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                <div style={{ marginTop: '12px' }}>
+                  <label style={labelStyle}>Change Status</label>
+                  <select
+                    value={r.status}
+                    onChange={(e) =>
+                      void updateRiskStatus({
+                        variables: { id: r.id, status: e.target.value },
+                      })
+                    }
+                    style={{ ...inputStyle }}
+                  >
+                    {RISK_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          ) : null
+        }
+      />
 
       {/* Create/Edit Modal */}
       {showModal && (

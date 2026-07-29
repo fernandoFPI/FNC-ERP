@@ -7,6 +7,8 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { CONSOLIDATED_BS_QUERY } from '../../../graphql/reporting'
 
 interface BSRow {
@@ -16,6 +18,10 @@ interface BSRow {
   companies: number[]
   consolidated: number
   eliminated: number
+}
+
+interface BSFlatRow extends BSRow {
+  sectionLabel: string
 }
 
 interface Company {
@@ -66,6 +72,69 @@ export default function ConsolidatedBS() {
     'current_liabilities',
     'non_current_liabilities',
     'equity',
+  ]
+
+  const sections =
+    sectionOrder.filter((s) => rowsByType[s]).length > 0
+      ? sectionOrder.filter((s) => rowsByType[s])
+      : Object.keys(rowsByType)
+
+  const flatRows: BSFlatRow[] = sections.flatMap((section) =>
+    (rowsByType[section] ?? []).map((row) => ({
+      ...row,
+      sectionLabel: section.replace(/_/g, ' '),
+    })),
+  )
+
+  const companyColumns: Column<BSFlatRow>[] = (d?.companies ?? []).map((c, ci) => ({
+    key: `company_${c.id}`,
+    header: c.name,
+    mobilePriority: 1 + ci,
+    render: (row) => (
+      <AmountDisplay amount={row.companies[ci]} currency={d?.currency ?? 'IQD'} size="sm" />
+    ),
+  }))
+
+  const columns: Column<BSFlatRow>[] = [
+    {
+      key: 'account',
+      header: 'Account',
+      mobilePrimary: true,
+      render: (row) => (
+        <>
+          <span style={{ fontSize: '11px', color: theme.textMuted, marginRight: '8px' }}>
+            {row.accountCode}
+          </span>
+          {row.accountName}
+        </>
+      ),
+    },
+    ...companyColumns,
+    ...(showEliminations
+      ? [
+          {
+            key: 'eliminated',
+            header: 'Elim.',
+            mobileLabel: 'Elim.',
+            mobilePriority: 1 + companyColumns.length,
+            render: (row: BSFlatRow) => (
+              <span style={{ color: theme.warning }}>
+                <AmountDisplay amount={row.eliminated} currency={d?.currency ?? 'IQD'} size="sm" />
+              </span>
+            ),
+          } as Column<BSFlatRow>,
+        ]
+      : []),
+    {
+      key: 'consolidated',
+      header: 'Consolidated',
+      mobilePriority: 0,
+      render: (row) => (
+        <span style={{ fontWeight: 500 }}>
+          <AmountDisplay amount={row.consolidated} currency={d?.currency ?? 'IQD'} size="sm" />
+        </span>
+      ),
+    },
   ]
 
   return (
@@ -183,150 +252,14 @@ export default function ConsolidatedBS() {
               />
             ))}
           </div>
-        ) : d?.rows.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  <th
-                    style={{
-                      padding: '10px 16px',
-                      textAlign: 'left',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      borderBottom: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    Account
-                  </th>
-                  {d.companies.map((c) => (
-                    <th
-                      key={c.id}
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: 'right',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {c.name}
-                    </th>
-                  ))}
-                  {showEliminations && (
-                    <th
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: 'right',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      Elim.
-                    </th>
-                  )}
-                  <th
-                    style={{
-                      padding: '10px 16px',
-                      textAlign: 'right',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      borderBottom: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    Consolidated
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {(sectionOrder.filter((s) => rowsByType[s]).length > 0
-                  ? sectionOrder.filter((s) => rowsByType[s])
-                  : Object.keys(rowsByType)
-                ).map((section) => (
-                  <>
-                    <tr key={`section-${section}`}>
-                      <td
-                        colSpan={d.companies.length + (showEliminations ? 2 : 1) + 1}
-                        style={{
-                          padding: '8px 16px',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: theme.textPrimary,
-                          background: theme.bgSurfaceHover,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.04em',
-                        }}
-                      >
-                        {section.replace(/_/g, ' ')}
-                      </td>
-                    </tr>
-                    {rowsByType[section]?.map((row, ri) => (
-                      <tr
-                        key={ri}
-                        style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = theme.tableRowHover
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = 'transparent'
-                        }}
-                      >
-                        <td style={{ padding: '10px 16px', color: theme.textSecondary }}>
-                          <span
-                            style={{ fontSize: '11px', color: theme.textMuted, marginRight: '8px' }}
-                          >
-                            {row.accountCode}
-                          </span>
-                          {row.accountName}
-                        </td>
-                        {row.companies.map((amt, ci) => (
-                          <td key={ci} style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            <AmountDisplay amount={amt} currency={d.currency} size="sm" />
-                          </td>
-                        ))}
-                        {showEliminations && (
-                          <td
-                            style={{
-                              padding: '10px 14px',
-                              textAlign: 'right',
-                              color: theme.warning,
-                            }}
-                          >
-                            <AmountDisplay
-                              amount={row.eliminated}
-                              currency={d.currency}
-                              size="sm"
-                            />
-                          </td>
-                        )}
-                        <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 500 }}>
-                          <AmountDisplay
-                            amount={row.consolidated}
-                            currency={d.currency}
-                            size="sm"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        ) : flatRows.length ? (
+          <Table
+            columns={columns}
+            data={flatRows}
+            getSectionHeader={(row, i) =>
+              i === 0 || row.sectionLabel !== flatRows[i - 1].sectionLabel ? row.sectionLabel : null
+            }
+          />
         ) : (
           <EmptyState
             title="No data"

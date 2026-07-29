@@ -7,6 +7,8 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { Badge } from '../../../components/ui/Badge'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface TBLine {
   id: string
@@ -38,6 +40,60 @@ export default function TrialBalance() {
     else setQueried(true)
   }
 
+  const columns: Column<TBLine>[] = [
+    {
+      key: 'code',
+      header: 'Code',
+      mobilePrimary: true,
+      render: (r) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>{r.code}</span>
+      ),
+    },
+    {
+      key: 'name',
+      header: 'Account Name',
+      mobileSecondary: true,
+      render: (r) => <span style={{ color: theme.textPrimary }}>{r.name}</span>,
+    },
+    {
+      key: 'account_type',
+      header: 'Type',
+      render: (r) => <Badge variant="neutral">{r.account_type}</Badge>,
+    },
+    {
+      key: 'total_debit',
+      header: 'Debit',
+      render: (r) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
+          {parseFloat(r.total_debit).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'total_credit',
+      header: 'Credit',
+      render: (r) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
+          {parseFloat(r.total_credit).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'balance',
+      header: 'Balance',
+      render: (r) => (
+        <span
+          style={{
+            fontFamily: 'monospace',
+            color: parseFloat(r.balance) >= 0 ? theme.textPrimary : theme.danger,
+          }}
+        >
+          {parseFloat(r.balance).toLocaleString()}
+        </span>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader title="Trial Balance" subtitle="As of date summary" />
@@ -60,125 +116,25 @@ export default function TrialBalance() {
 
       {rows.length > 0 && (
         <Card>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {['Code', 'Account Name', 'Type', 'Debit', 'Credit', 'Balance'].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '10px 16px',
-                        textAlign:
-                          h === 'Code' || h === 'Account Name' || h === 'Type' ? 'left' : 'right',
-                        fontWeight: 600,
-                        fontSize: '11px',
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td
-                      style={{
-                        padding: '10px 16px',
-                        fontFamily: 'monospace',
-                        color: theme.textPrimary,
-                      }}
-                    >
-                      {r.code}
-                    </td>
-                    <td style={{ padding: '10px 16px', color: theme.textPrimary }}>{r.name}</td>
-                    <td style={{ padding: '10px 16px' }}>
-                      <Badge variant="neutral">{r.account_type}</Badge>
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px 16px',
-                        textAlign: 'right',
-                        fontFamily: 'monospace',
-                        color: theme.textPrimary,
-                      }}
-                    >
-                      {parseFloat(r.total_debit).toLocaleString()}
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px 16px',
-                        textAlign: 'right',
-                        fontFamily: 'monospace',
-                        color: theme.textPrimary,
-                      }}
-                    >
-                      {parseFloat(r.total_credit).toLocaleString()}
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px 16px',
-                        textAlign: 'right',
-                        fontFamily: 'monospace',
-                        color: parseFloat(r.balance) >= 0 ? theme.textPrimary : theme.danger,
-                      }}
-                    >
-                      {parseFloat(r.balance).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ background: theme.bgSurface, borderTop: `2px solid ${theme.border}` }}>
-                  <td
-                    colSpan={3}
-                    style={{ padding: '10px 16px', fontWeight: 600, color: theme.textPrimary }}
-                  >
-                    Totals
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 16px',
-                      textAlign: 'right',
-                      fontFamily: 'monospace',
-                      fontWeight: 700,
-                      color: theme.textPrimary,
-                    }}
-                  >
-                    {totalDebit.toLocaleString()}
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 16px',
-                      textAlign: 'right',
-                      fontFamily: 'monospace',
-                      fontWeight: 700,
-                      color: theme.textPrimary,
-                    }}
-                  >
-                    {totalCredit.toLocaleString()}
-                  </td>
-                  <td
-                    style={{
-                      padding: '10px 16px',
-                      textAlign: 'right',
-                      fontFamily: 'monospace',
-                      fontWeight: 700,
-                      color:
-                        Math.abs(totalDebit - totalCredit) < 0.01 ? theme.success : theme.danger,
-                    }}
-                  >
-                    {(totalDebit - totalCredit).toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <Table
+            columns={columns}
+            data={rows}
+            rowKey="id"
+            footerRow={{
+              name: 'Totals',
+              total_debit: totalDebit.toLocaleString(),
+              total_credit: totalCredit.toLocaleString(),
+              balance: (
+                <span
+                  style={{
+                    color: Math.abs(totalDebit - totalCredit) < 0.01 ? theme.success : theme.danger,
+                  }}
+                >
+                  {(totalDebit - totalCredit).toLocaleString()}
+                </span>
+              ),
+            }}
+          />
         </Card>
       )}
     </div>

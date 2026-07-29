@@ -7,6 +7,8 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { useToastStore } from '../../../store/toastStore'
 import { usePermission } from '../../../hooks/usePermission'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 
 interface ReturnItem {
   id: string
@@ -274,6 +276,83 @@ export default function POReturnDetail() {
       parseFloat(it.quantity_returned)
     return sum + diff
   }, 0)
+
+  const itemColumns: Column<ReturnItem>[] = [
+    {
+      key: 'description',
+      header: 'Description',
+      mobilePrimary: true,
+      render: (item) => <span style={{ color: theme.textPrimary }}>{item.description}</span>,
+    },
+    {
+      key: 'quantity_returned',
+      header: 'Qty Returned',
+      mobileSecondary: true,
+      render: (item) => (
+        <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+          {parseFloat(item.quantity_returned).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'original_unit_price',
+      header: 'Original Price',
+      render: (item) => (
+        <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+          {fmtNum(item.original_unit_price)}
+        </span>
+      ),
+    },
+    {
+      key: 'assessed_unit_price',
+      header: 'Assessed Price',
+      render: (item) => (
+        <span
+          style={{
+            fontVariantNumeric: 'tabular-nums',
+            color:
+              parseFloat(item.assessed_unit_price) < parseFloat(item.original_unit_price)
+                ? '#ef4444'
+                : theme.textPrimary,
+          }}
+        >
+          {fmtNum(item.assessed_unit_price)}
+        </span>
+      ),
+    },
+    {
+      key: 'line_total',
+      header: 'Line Total',
+      render: (item) => {
+        const itemLoss =
+          (parseFloat(item.original_unit_price) - parseFloat(item.assessed_unit_price)) *
+          parseFloat(item.quantity_returned)
+        return (
+          <div style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: theme.accent }}>
+            {ret.currency_code} {fmtNum(item.line_total)}
+            {ret.return_type === 'damage' && itemLoss > 0 && (
+              <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 400 }}>
+                −{fmtNum(itemLoss)} loss
+              </div>
+            )}
+          </div>
+        )
+      },
+    },
+    ...(ret.return_type === 'damage'
+      ? [
+          {
+            key: 'damage_notes',
+            header: 'Damage Notes',
+            render: (item: ReturnItem) => (
+              <span style={{ color: theme.textMuted, fontSize: '11px' }}>
+                {item.damage_notes ?? '—'}
+              </span>
+            ),
+          } satisfies Column<ReturnItem>,
+        ]
+      : []),
+  ]
 
   return (
     <div style={{ maxWidth: '820px', margin: '0 auto' }}>
@@ -782,135 +861,19 @@ export default function POReturnDetail() {
       {/* Items table */}
       <div style={cardStyle}>
         <div style={{ ...labelStyle, marginBottom: '12px' }}>Return Items</div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ background: theme.bgCanvas }}>
-                {(
-                  [
-                    { label: 'Description', align: 'left' },
-                    { label: 'Qty Returned', align: 'right' },
-                    { label: 'Original Price', align: 'right' },
-                    { label: 'Assessed Price', align: 'right' },
-                    { label: 'Line Total', align: 'right' },
-                    ...(ret.return_type === 'damage'
-                      ? [{ label: 'Damage Notes', align: 'left' }]
-                      : []),
-                  ] as { label: string; align: 'left' | 'right' }[]
-                ).map((h) => (
-                  <th
-                    key={h.label}
-                    style={{
-                      padding: '8px 10px',
-                      textAlign: h.align,
-                      borderBottom: `1px solid ${theme.border}`,
-                      color: theme.textMuted,
-                      fontWeight: 600,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {h.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {ret.items.map((item) => {
-                const itemLoss =
-                  (parseFloat(item.original_unit_price) - parseFloat(item.assessed_unit_price)) *
-                  parseFloat(item.quantity_returned)
-                return (
-                  <tr key={item.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '10px', color: theme.textPrimary }}>
-                      {item.description}
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px',
-                        color: theme.textPrimary,
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {parseFloat(item.quantity_returned).toLocaleString()}
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px',
-                        color: theme.textPrimary,
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {fmtNum(item.original_unit_price)}
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px',
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                        color:
-                          parseFloat(item.assessed_unit_price) <
-                          parseFloat(item.original_unit_price)
-                            ? '#ef4444'
-                            : theme.textPrimary,
-                      }}
-                    >
-                      {fmtNum(item.assessed_unit_price)}
-                    </td>
-                    <td
-                      style={{
-                        padding: '10px',
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                        fontWeight: 600,
-                        color: theme.accent,
-                      }}
-                    >
-                      {ret.currency_code} {fmtNum(item.line_total)}
-                      {ret.return_type === 'damage' && itemLoss > 0 && (
-                        <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 400 }}>
-                          −{fmtNum(itemLoss)} loss
-                        </div>
-                      )}
-                    </td>
-                    {ret.return_type === 'damage' && (
-                      <td style={{ padding: '10px', color: theme.textMuted, fontSize: '11px' }}>
-                        {item.damage_notes ?? '—'}
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: theme.bgCanvas, fontWeight: 700 }}>
-                <td
-                  colSpan={ret.return_type === 'damage' ? 4 : 3}
-                  style={{
-                    padding: '10px',
-                    textAlign: 'right',
-                    color: theme.textMuted,
-                    fontSize: '12px',
-                  }}
-                >
-                  Total
-                </td>
-                <td
-                  style={{
-                    padding: '10px',
-                    textAlign: 'right',
-                    color: theme.accent,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {ret.currency_code} {fmtNum(ret.total_returned_value)}
-                </td>
-                {ret.return_type === 'damage' && <td />}
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <Table
+          columns={itemColumns}
+          data={ret.items}
+          rowKey="id"
+          footerRow={{
+            description: 'Total',
+            line_total: (
+              <span style={{ color: theme.accent }}>
+                {ret.currency_code} {fmtNum(ret.total_returned_value)}
+              </span>
+            ),
+          }}
+        />
       </div>
 
       {/* Credit modal */}

@@ -7,6 +7,17 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
+
+interface BOMLine {
+  id: string
+  sequence: number
+  component_name?: string
+  qty: number
+  uom: string
+  unit_cost?: number
+}
 
 export default function BOMDetail() {
   const { id } = useParams<{ id: string }>()
@@ -23,6 +34,55 @@ export default function BOMDetail() {
     (s: number, l: { qty: number; unit_cost?: number }) => s + (l.qty ?? 0) * (l.unit_cost ?? 0),
     0,
   )
+
+  const columns: Column<BOMLine>[] = [
+    {
+      key: 'sequence',
+      header: '#',
+      mobileSecondary: true,
+      render: (l) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{l.sequence}</span>,
+    },
+    {
+      key: 'component_name',
+      header: 'Component',
+      mobilePrimary: true,
+      render: (l) => (
+        <span style={{ color: theme.textPrimary, fontSize: '13px', fontWeight: 500 }}>
+          {l.component_name}
+        </span>
+      ),
+    },
+    {
+      key: 'qty',
+      header: 'Qty',
+      mobilePriority: 1,
+      render: (l) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{l.qty}</span>
+      ),
+    },
+    {
+      key: 'uom',
+      header: 'UOM',
+      mobilePriority: 2,
+      render: (l) => <Badge variant="neutral">{l.uom}</Badge>,
+    },
+    {
+      key: 'unit_cost',
+      header: 'Unit Cost',
+      mobilePriority: 3,
+      render: (l) => <AmountDisplay amount={l.unit_cost ?? 0} currency="IQD" size="sm" />,
+    },
+    {
+      key: 'line_total',
+      header: 'Line Total',
+      mobilePriority: 4,
+      render: (l) => (
+        <span style={{ fontWeight: 600 }}>
+          <AmountDisplay amount={(l.qty ?? 0) * (l.unit_cost ?? 0)} currency="IQD" size="sm" />
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
@@ -87,103 +147,23 @@ export default function BOMDetail() {
             Total Cost: {totalCost.toLocaleString()} IQD
           </span>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: theme.bgSurfaceHover }}>
-              {['#', 'Component', 'Qty', 'UOM', 'Unit Cost', 'Line Total'].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: '8px 12px',
-                    textAlign: 'left',
-                    fontSize: '11px',
-                    color: theme.textMuted,
-                    fontWeight: 600,
-                    borderBottom: `1px solid ${theme.border}`,
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {(bom.lines ?? []).map(
-              (l: {
-                id: string
-                sequence: number
-                component_name?: string
-                qty: number
-                uom: string
-                unit_cost?: number
-              }) => (
-                <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <td style={{ padding: '8px 12px', color: theme.textMuted, fontSize: '12px' }}>
-                    {l.sequence}
-                  </td>
-                  <td
-                    style={{
-                      padding: '8px 12px',
-                      color: theme.textPrimary,
-                      fontSize: '13px',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {l.component_name}
-                  </td>
-                  <td
-                    style={{
-                      padding: '8px 12px',
-                      fontFamily: 'monospace',
-                      color: theme.textSecondary,
-                    }}
-                  >
-                    {l.qty}
-                  </td>
-                  <td style={{ padding: '8px 12px' }}>
-                    <Badge variant="neutral">{l.uom}</Badge>
-                  </td>
-                  <td style={{ padding: '8px 12px' }}>
-                    <AmountDisplay amount={l.unit_cost ?? 0} currency="IQD" size="sm" />
-                  </td>
-                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>
-                    <AmountDisplay
-                      amount={(l.qty ?? 0) * (l.unit_cost ?? 0)}
-                      currency="IQD"
-                      size="sm"
-                    />
-                  </td>
-                </tr>
-              ),
-            )}
-          </tbody>
-          <tfoot>
-            <tr style={{ background: theme.bgSurfaceHover }}>
-              <td
-                colSpan={5}
-                style={{
-                  padding: '8px 12px',
-                  textAlign: 'right',
-                  fontWeight: 600,
-                  color: theme.textSecondary,
-                  fontSize: '13px',
-                }}
-              >
+        <Table
+          columns={columns}
+          data={bom.lines ?? []}
+          rowKey="id"
+          footerRow={{
+            unit_cost: (
+              <span style={{ color: theme.textSecondary, fontWeight: 600, fontSize: '13px' }}>
                 Total Planned Cost
-              </td>
-              <td
-                style={{
-                  padding: '8px 12px',
-                  fontWeight: 700,
-                  color: theme.accent,
-                  fontFamily: 'monospace',
-                }}
-              >
+              </span>
+            ),
+            line_total: (
+              <span style={{ color: theme.accent, fontWeight: 700, fontFamily: 'monospace' }}>
                 {totalCost.toLocaleString()} IQD
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+              </span>
+            ),
+          }}
+        />
       </Card>
     </div>
   )

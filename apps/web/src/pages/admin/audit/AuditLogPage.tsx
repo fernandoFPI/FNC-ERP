@@ -1,4 +1,4 @@
-﻿import { useState, Fragment } from 'react'
+﻿import { useState } from 'react'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -7,6 +7,8 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { AUDIT_LOG_QUERY } from '../../../graphql/admin'
 
 interface AuditItem {
@@ -76,6 +78,117 @@ export default function AuditLogPage() {
       r.recordId.includes(search),
   )
 
+  const columns: Column<AuditItem>[] = [
+    {
+      key: 'userEmail',
+      header: 'User',
+      mobilePrimary: true,
+      render: (item) => (
+        <span style={{ color: theme.textSecondary, fontSize: '12px' }}>{item.userEmail}</span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Time',
+      mobileSecondary: true,
+      render: (item) => (
+        <span style={{ color: theme.textMuted, fontSize: '11px', whiteSpace: 'nowrap' }}>
+          {new Date(item.createdAt).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'action',
+      header: 'Action',
+      mobilePriority: 1,
+      render: (item) => (
+        <Badge variant={actionVariant(item.action)} size="sm">
+          {item.action}
+        </Badge>
+      ),
+    },
+    {
+      key: 'tableName',
+      header: 'Table',
+      mobilePriority: 2,
+      render: (item) => (
+        <span
+          style={{
+            color: theme.textSecondary,
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '11px',
+          }}
+        >
+          {item.tableName}
+        </span>
+      ),
+    },
+    {
+      key: 'recordId',
+      header: 'Record ID',
+      mobilePriority: 3,
+      render: (item) => (
+        <span
+          style={{
+            color: theme.textMuted,
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '11px',
+          }}
+        >
+          {item.recordId}
+        </span>
+      ),
+    },
+    {
+      key: 'companyName',
+      header: 'Company',
+      mobilePriority: 4,
+      render: (item) => <span style={{ color: theme.textSecondary }}>{item.companyName}</span>,
+    },
+    {
+      key: 'ipAddress',
+      header: 'IP',
+      mobilePriority: 5,
+      render: (item) => (
+        <span
+          style={{
+            color: theme.textMuted,
+            fontFamily: 'ui-monospace, monospace',
+            fontSize: '11px',
+          }}
+        >
+          {item.ipAddress === '::1' || item.ipAddress === '127.0.0.1'
+            ? 'localhost'
+            : (item.ipAddress ?? '—')}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (item) =>
+        (item.oldValues || item.newValues) && (
+          <button
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: theme.accent,
+              fontSize: '12px',
+              fontFamily: 'inherit',
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpandedId(expandedId === item.id ? null : item.id)
+            }}
+          >
+            {expandedId === item.id ? 'Hide' : 'Diff'}
+          </button>
+        ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
@@ -140,210 +253,91 @@ export default function AuditLogPage() {
             ))}
           </div>
         ) : items.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {['Time', 'User', 'Action', 'Table', 'Record ID', 'Company', 'IP', ''].map(
-                    (h) => (
-                      <th
-                        key={h}
+          <Table
+            columns={columns}
+            data={items}
+            rowKey="id"
+            renderExpanded={(item) =>
+              expandedId === item.id ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '16px',
+                  }}
+                >
+                  {item.oldValues && (
+                    <div>
+                      <p
                         style={{
-                          padding: '10px 14px',
-                          textAlign: 'left',
-                          fontSize: '10px',
+                          fontSize: '11px',
                           fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          borderBottom: `1px solid ${theme.border}`,
-                          whiteSpace: 'nowrap',
+                          color: theme.danger,
+                          marginBottom: '4px',
                         }}
                       >
-                        {h}
-                      </th>
-                    ),
+                        Before
+                      </p>
+                      <pre
+                        style={{
+                          fontSize: '11px',
+                          color: theme.textSecondary,
+                          background: theme.bgSurface,
+                          padding: '8px',
+                          borderRadius: '6px',
+                          overflow: 'auto',
+                          maxHeight: '150px',
+                          margin: 0,
+                        }}
+                      >
+                        {(() => {
+                          try {
+                            return JSON.stringify(JSON.parse(item.oldValues), null, 2)
+                          } catch {
+                            return item.oldValues
+                          }
+                        })()}
+                      </pre>
+                    </div>
                   )}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <Fragment key={item.id}>
-                    <tr
-                      style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.tableRowHover
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent'
-                      }}
-                    >
-                      <td
+                  {item.newValues && (
+                    <div>
+                      <p
                         style={{
-                          padding: '10px 14px',
-                          color: theme.textMuted,
                           fontSize: '11px',
-                          whiteSpace: 'nowrap',
+                          fontWeight: 600,
+                          color: theme.success,
+                          marginBottom: '4px',
                         }}
                       >
-                        {new Date(item.createdAt).toLocaleString()}
-                      </td>
-                      <td
+                        After
+                      </p>
+                      <pre
                         style={{
-                          padding: '10px 14px',
+                          fontSize: '11px',
                           color: theme.textSecondary,
-                          fontSize: '12px',
+                          background: theme.bgSurface,
+                          padding: '8px',
+                          borderRadius: '6px',
+                          overflow: 'auto',
+                          maxHeight: '150px',
+                          margin: 0,
                         }}
                       >
-                        {item.userEmail}
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <Badge variant={actionVariant(item.action)} size="sm">
-                          {item.action}
-                        </Badge>
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 14px',
-                          color: theme.textSecondary,
-                          fontFamily: 'ui-monospace, monospace',
-                          fontSize: '11px',
-                        }}
-                      >
-                        {item.tableName}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 14px',
-                          color: theme.textMuted,
-                          fontFamily: 'ui-monospace, monospace',
-                          fontSize: '11px',
-                        }}
-                      >
-                        {item.recordId}
-                      </td>
-                      <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                        {item.companyName}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 14px',
-                          color: theme.textMuted,
-                          fontFamily: 'ui-monospace, monospace',
-                          fontSize: '11px',
-                        }}
-                      >
-                        {item.ipAddress === '::1' || item.ipAddress === '127.0.0.1'
-                          ? 'localhost'
-                          : (item.ipAddress ?? '—')}
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        {(item.oldValues || item.newValues) && (
-                          <button
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: theme.accent,
-                              fontSize: '12px',
-                              fontFamily: 'inherit',
-                            }}
-                            onClick={() => {
-                              setExpandedId(expandedId === item.id ? null : item.id)
-                            }}
-                          >
-                            {expandedId === item.id ? 'Hide' : 'Diff'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                    {expandedId === item.id && (
-                      <tr style={{ background: theme.bgSurfaceHover }}>
-                        <td colSpan={8} style={{ padding: '16px 24px' }}>
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                              gap: '16px',
-                            }}
-                          >
-                            {item.oldValues && (
-                              <div>
-                                <p
-                                  style={{
-                                    fontSize: '11px',
-                                    fontWeight: 600,
-                                    color: theme.danger,
-                                    marginBottom: '4px',
-                                  }}
-                                >
-                                  Before
-                                </p>
-                                <pre
-                                  style={{
-                                    fontSize: '11px',
-                                    color: theme.textSecondary,
-                                    background: theme.bgSurface,
-                                    padding: '8px',
-                                    borderRadius: '6px',
-                                    overflow: 'auto',
-                                    maxHeight: '150px',
-                                    margin: 0,
-                                  }}
-                                >
-                                  {(() => {
-                                    try {
-                                      return JSON.stringify(JSON.parse(item.oldValues), null, 2)
-                                    } catch {
-                                      return item.oldValues
-                                    }
-                                  })()}
-                                </pre>
-                              </div>
-                            )}
-                            {item.newValues && (
-                              <div>
-                                <p
-                                  style={{
-                                    fontSize: '11px',
-                                    fontWeight: 600,
-                                    color: theme.success,
-                                    marginBottom: '4px',
-                                  }}
-                                >
-                                  After
-                                </p>
-                                <pre
-                                  style={{
-                                    fontSize: '11px',
-                                    color: theme.textSecondary,
-                                    background: theme.bgSurface,
-                                    padding: '8px',
-                                    borderRadius: '6px',
-                                    overflow: 'auto',
-                                    maxHeight: '150px',
-                                    margin: 0,
-                                  }}
-                                >
-                                  {(() => {
-                                    try {
-                                      return JSON.stringify(JSON.parse(item.newValues), null, 2)
-                                    } catch {
-                                      return item.newValues
-                                    }
-                                  })()}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        {(() => {
+                          try {
+                            return JSON.stringify(JSON.parse(item.newValues), null, 2)
+                          } catch {
+                            return item.newValues
+                          }
+                        })()}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              ) : null
+            }
+          />
         ) : (
           <EmptyState title="No audit records" message="Adjust filters to search the audit log." />
         )}

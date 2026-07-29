@@ -8,6 +8,8 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { PROJECT_PROFITABILITY_QUERY } from '../../../graphql/reporting'
 
 interface CostBreakdown {
@@ -82,6 +84,112 @@ export default function ProjectProfitabilityReport() {
       r.code.toLowerCase().includes(search.toLowerCase()),
   )
 
+  const columns: Column<ProjectRow>[] = [
+    {
+      key: 'name',
+      header: 'Project',
+      mobilePrimary: true,
+      render: (row) => (
+        <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{row.name}</span>
+      ),
+    },
+    {
+      key: 'code',
+      header: 'Code',
+      mobileSecondary: true,
+      render: (row) => <span style={{ color: theme.textMuted, fontSize: '12px' }}>{row.code}</span>,
+    },
+    {
+      key: 'companyName',
+      header: 'Company',
+      mobilePriority: 8,
+      render: (row) => <span style={{ color: theme.textSecondary }}>{row.companyName}</span>,
+    },
+    {
+      key: 'projectType',
+      header: 'Type',
+      mobilePriority: 7,
+      render: (row) => (
+        <Badge variant="neutral" size="sm">
+          {row.projectType}
+        </Badge>
+      ),
+    },
+    {
+      key: 'budget',
+      header: 'Budget',
+      mobilePriority: 5,
+      render: (row) => <AmountDisplay amount={row.budget} currency="USD" size="sm" />,
+    },
+    {
+      key: 'actualCost',
+      header: 'Actual Cost',
+      mobilePriority: 6,
+      render: (row) => <AmountDisplay amount={row.actualCost} currency="USD" size="sm" />,
+    },
+    {
+      key: 'revenue',
+      header: 'Revenue',
+      mobilePriority: 4,
+      render: (row) => <AmountDisplay amount={row.revenue} currency="USD" size="sm" />,
+    },
+    {
+      key: 'margin',
+      header: 'Margin',
+      mobilePriority: 3,
+      render: (row) => <AmountDisplay amount={row.margin} currency="USD" size="sm" colored />,
+    },
+    {
+      key: 'marginPct',
+      header: 'Margin %',
+      mobilePriority: 2,
+      render: (row) => (
+        <span
+          style={{
+            fontWeight: 600,
+            color: marginColor(row.marginPct, theme),
+            fontFamily: 'ui-monospace, monospace',
+          }}
+        >
+          {row.marginPct.toFixed(1)}%
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (row) => (
+        <Badge variant={statusVariant(row.status)} size="sm">
+          {row.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (row) => (
+        <button
+          style={{
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: theme.accent,
+            fontSize: '12px',
+            fontFamily: 'inherit',
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            setExpandedId(expandedId === row.id ? null : row.id)
+          }}
+        >
+          {expandedId === row.id ? 'Hide' : 'Costs'}
+        </button>
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px' }}>
       <PageHeader
@@ -138,155 +246,40 @@ export default function ProjectProfitabilityReport() {
             ))}
           </div>
         ) : rows.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {[
-                    'Code',
-                    'Project',
-                    'Company',
-                    'Type',
-                    'Budget',
-                    'Actual Cost',
-                    'Revenue',
-                    'Margin',
-                    'Margin %',
-                    'Status',
-                    '',
-                  ].map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: i >= 4 && i <= 8 ? 'right' : 'left',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <>
-                    <tr
-                      key={row.id}
-                      style={{ borderBottom: `1px solid ${theme.tableBorder}` }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.tableRowHover
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent'
-                      }}
-                    >
-                      <td
-                        style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}
+          <Table
+            columns={columns}
+            data={rows}
+            rowKey="id"
+            renderExpanded={(row) =>
+              expandedId === row.id ? (
+                <div>
+                  <p
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      marginBottom: '10px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    Cost Breakdown
+                  </p>
+                  <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                    {row.costBreakdown.map((cb) => (
+                      <div
+                        key={cb.key}
+                        style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
                       >
-                        {row.code}
-                      </td>
-                      <td
-                        style={{ padding: '12px 14px', color: theme.textPrimary, fontWeight: 500 }}
-                      >
-                        {row.name}
-                      </td>
-                      <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                        {row.companyName}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant="neutral" size="sm">
-                          {row.projectType}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <AmountDisplay amount={row.budget} currency="USD" size="sm" />
-                      </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <AmountDisplay amount={row.actualCost} currency="USD" size="sm" />
-                      </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <AmountDisplay amount={row.revenue} currency="USD" size="sm" />
-                      </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <AmountDisplay amount={row.margin} currency="USD" size="sm" colored />
-                      </td>
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <span
-                          style={{
-                            fontWeight: 600,
-                            color: marginColor(row.marginPct, theme),
-                            fontFamily: 'ui-monospace, monospace',
-                          }}
-                        >
-                          {row.marginPct.toFixed(1)}%
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant={statusVariant(row.status)} size="sm">
-                          {row.status}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <button
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: theme.accent,
-                            fontSize: '12px',
-                            fontFamily: 'inherit',
-                          }}
-                          onClick={() => {
-                            setExpandedId(expandedId === row.id ? null : row.id)
-                          }}
-                        >
-                          {expandedId === row.id ? 'Hide' : 'Costs'}
-                        </button>
-                      </td>
-                    </tr>
-                    {expandedId === row.id && (
-                      <tr key={`${row.id}-expanded`} style={{ background: theme.bgSurfaceHover }}>
-                        <td colSpan={11} style={{ padding: '16px 24px' }}>
-                          <p
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: theme.textMuted,
-                              marginBottom: '10px',
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
-                            Cost Breakdown
-                          </p>
-                          <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                            {row.costBreakdown.map((cb) => (
-                              <div
-                                key={cb.key}
-                                style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
-                              >
-                                <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                                  {cb.label}
-                                </span>
-                                <AmountDisplay amount={cb.amount} currency="USD" size="sm" />
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        <span style={{ fontSize: '11px', color: theme.textMuted }}>{cb.label}</span>
+                        <AmountDisplay amount={cb.amount} currency="USD" size="sm" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null
+            }
+          />
         ) : (
           <EmptyState
             title="No projects found"
