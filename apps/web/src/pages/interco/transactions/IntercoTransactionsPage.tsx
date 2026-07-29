@@ -7,7 +7,6 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
 import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
@@ -17,6 +16,8 @@ const FILTER_DEFAULTS = { search: '', status: '', type: '', fromDate: '', toDate
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { INTERCO_TRANSACTIONS_QUERY, CREATE_INTERCO_TRANSACTION } from '../../../graphql/interco'
 
@@ -125,6 +126,65 @@ export default function IntercoTransactionsPage() {
       r.fromCompanyName.toLowerCase().includes(search.toLowerCase()),
   )
 
+  const columns: Column<IntercoTxItem>[] = [
+    {
+      key: 'reference',
+      header: 'Reference',
+      mobilePrimary: true,
+      render: (row) => (
+        <span style={{ color: theme.accent, fontWeight: 500 }}>{row.reference}</span>
+      ),
+    },
+    {
+      key: 'transactionType',
+      header: 'Type',
+      mobilePriority: 3,
+      render: (row) => (
+        <Badge variant="neutral" size="sm">
+          {row.transactionType.replace('interco_', '')}
+        </Badge>
+      ),
+    },
+    {
+      key: 'fromCompanyName',
+      header: 'From',
+      mobileSecondary: true,
+      render: (row) => <span style={{ color: theme.textSecondary }}>{row.fromCompanyName}</span>,
+    },
+    {
+      key: 'toCompanyName',
+      header: 'To',
+      mobilePriority: 4,
+      render: (row) => <span style={{ color: theme.textSecondary }}>{row.toCompanyName}</span>,
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      mobilePriority: 2,
+      render: (row) => <AmountDisplay amount={row.amount} currency={row.currencyCode} size="sm" />,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (row) => (
+        <Badge variant={statusVariant(row.status)} size="sm">
+          {row.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: 'Date',
+      mobilePriority: 5,
+      render: (row) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {new Date(row.createdAt).toLocaleDateString()}
+        </span>
+      ),
+    },
+  ]
+
   function handleCreate() {
     createTx({
       variables: {
@@ -219,92 +279,16 @@ export default function IntercoTransactionsPage() {
       </Card>
 
       <Card padding="none">
-        {loading ? (
-          <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: '48px', borderRadius: '6px', marginBottom: '8px' }}
-              />
-            ))}
-          </div>
-        ) : items.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {['Reference', 'Type', 'From', 'To', 'Amount', 'Status', 'Date'].map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: i === 4 ? 'right' : 'left',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => (
-                  <tr
-                    key={row.id}
-                    style={{ borderBottom: `1px solid ${theme.tableBorder}`, cursor: 'pointer' }}
-                    onClick={() => {
-                      navigate(`/interco/transactions/${row.id}`)
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.tableRowHover
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <td style={{ padding: '12px 14px', color: theme.accent, fontWeight: 500 }}>
-                      {row.reference}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant="neutral" size="sm">
-                        {row.transactionType.replace('interco_', '')}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                      {row.fromCompanyName}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                      {row.toCompanyName}
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <AmountDisplay amount={row.amount} currency={row.currencyCode} size="sm" />
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant={statusVariant(row.status)} size="sm">
-                        {row.status}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {new Date(row.createdAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState
-            title="No transactions"
-            message="Create a new intercompany transaction to get started."
-          />
-        )}
+        <Table
+          columns={columns}
+          data={items}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No transactions found. Create a new intercompany transaction to get started."
+          onRowClick={(row) => {
+            navigate(`/interco/transactions/${row.id}`)
+          }}
+        />
       </Card>
 
       {/* Create Modal */}

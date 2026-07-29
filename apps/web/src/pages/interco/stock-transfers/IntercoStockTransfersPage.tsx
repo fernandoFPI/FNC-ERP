@@ -7,8 +7,9 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
-import { EmptyState } from '../../../components/ui/EmptyState'
 import { FilterBar } from '../../../components/ui/FilterBar'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { INTERCO_STOCK_TRANSFERS_QUERY } from '../../../graphql/interco'
 
 interface StockTransferItem {
@@ -70,6 +71,65 @@ export default function IntercoStockTransfersPage() {
       r.fromCompanyName.toLowerCase().includes(search.toLowerCase()) ||
       r.toCompanyName.toLowerCase().includes(search.toLowerCase()),
   )
+
+  const columns: Column<StockTransferItem>[] = [
+    {
+      key: 'transferNumber',
+      header: 'Transfer #',
+      mobilePrimary: true,
+      render: (row) => (
+        <span style={{ color: theme.accent, fontWeight: 500 }}>{row.transferNumber}</span>
+      ),
+    },
+    {
+      key: 'fromCompanyName',
+      header: 'From',
+      mobileSecondary: true,
+      render: (row) => <span style={{ color: theme.textSecondary }}>{row.fromCompanyName}</span>,
+    },
+    {
+      key: 'toCompanyName',
+      header: 'To',
+      mobilePriority: 4,
+      render: (row) => <span style={{ color: theme.textSecondary }}>{row.toCompanyName}</span>,
+    },
+    {
+      key: 'pricingMethod',
+      header: 'Pricing Method',
+      mobilePriority: 3,
+      render: (row) => (
+        <Badge variant="neutral" size="sm">
+          {row.pricingMethod}
+        </Badge>
+      ),
+    },
+    {
+      key: 'totalValue',
+      header: 'Total Value',
+      mobilePriority: 2,
+      render: (row) => <AmountDisplay amount={row.totalValue} currency="USD" size="sm" />,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (row) => (
+        <Badge variant={statusVariant(row.status)} size="sm">
+          {row.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'transferDate',
+      header: 'Date',
+      mobilePriority: 5,
+      render: (row) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+          {new Date(row.transferDate).toLocaleDateString()}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -133,97 +193,16 @@ export default function IntercoStockTransfersPage() {
       </Card>
 
       <Card padding="none">
-        {loading ? (
-          <div style={{ padding: '24px' }}>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: '48px', borderRadius: '6px', marginBottom: '8px' }}
-              />
-            ))}
-          </div>
-        ) : items.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurface }}>
-                  {[
-                    'Transfer #',
-                    'From',
-                    'To',
-                    'Pricing Method',
-                    'Total Value',
-                    'Status',
-                    'Date',
-                  ].map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: i === 4 ? 'right' : 'left',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => (
-                  <tr
-                    key={row.id}
-                    style={{ borderBottom: `1px solid ${theme.tableBorder}`, cursor: 'pointer' }}
-                    onClick={() => {
-                      navigate(`/interco/stock-transfers/${row.id}`)
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.tableRowHover
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <td style={{ padding: '12px 14px', color: theme.accent, fontWeight: 500 }}>
-                      {row.transferNumber}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                      {row.fromCompanyName}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textSecondary }}>
-                      {row.toCompanyName}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant="neutral" size="sm">
-                        {row.pricingMethod}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <AmountDisplay amount={row.totalValue} currency="USD" size="sm" />
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant={statusVariant(row.status)} size="sm">
-                        {row.status}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 14px', color: theme.textMuted, fontSize: '12px' }}>
-                      {new Date(row.transferDate).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyState title="No stock transfers" message="No intercompany stock transfers found." />
-        )}
+        <Table
+          columns={columns}
+          data={items}
+          rowKey="id"
+          loading={loading}
+          emptyMessage="No intercompany stock transfers found."
+          onRowClick={(row) => {
+            navigate(`/interco/stock-transfers/${row.id}`)
+          }}
+        />
       </Card>
     </div>
   )

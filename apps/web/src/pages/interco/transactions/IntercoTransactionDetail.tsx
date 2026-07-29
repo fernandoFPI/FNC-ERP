@@ -12,6 +12,8 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Modal } from '../../../components/ui/Modal'
 import { Select } from '../../../components/ui/Select'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import {
   INTERCO_TRANSACTION_QUERY,
@@ -72,12 +74,6 @@ function JournalEntryPreview({
   tx: IntercoTxDetail
   theme: Record<string, string>
 }) {
-  const tdBase: React.CSSProperties = {
-    padding: '8px 12px',
-    fontSize: 13,
-    borderBottom: `1px solid ${theme.tableBorder ?? theme.border}`,
-  }
-
   const entries = [
     {
       company: tx.fromCompanyName,
@@ -109,91 +105,48 @@ function JournalEntryPreview({
     },
   ]
 
+  const columns: Column<(typeof entries)[number]>[] = [
+    {
+      key: 'company',
+      header: 'Company',
+      mobileSecondary: true,
+      render: (e) => <span style={{ color: theme.textSecondary }}>{e.company}</span>,
+    },
+    {
+      key: 'account',
+      header: 'Account',
+      mobilePrimary: true,
+      render: (e) => (
+        <span style={{ color: theme.textPrimary, fontFamily: 'monospace', fontSize: '12px' }}>
+          {e.account}
+        </span>
+      ),
+    },
+    {
+      key: 'side',
+      header: 'Side',
+      mobilePriority: 1,
+      render: (e) => (
+        <Badge variant={e.side === 'Debit' ? 'info' : 'warning'} size="sm">
+          {e.side}
+        </Badge>
+      ),
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      mobilePriority: 2,
+      render: (e) => <AmountDisplay amount={e.amount} currency={e.currency} size="sm" />,
+    },
+  ]
+
   return (
     <div>
       <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12 }}>
         The following journal entries will be created in both entities on posting:
       </p>
-      <div style={{ overflowX: 'auto', border: `1px solid ${theme.border}`, borderRadius: 8 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: theme.bgSurfaceHover }}>
-              <th
-                style={{
-                  ...tdBase,
-                  textAlign: 'left',
-                  fontWeight: 600,
-                  color: theme.textMuted,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Company
-              </th>
-              <th
-                style={{
-                  ...tdBase,
-                  textAlign: 'left',
-                  fontWeight: 600,
-                  color: theme.textMuted,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Account
-              </th>
-              <th
-                style={{
-                  ...tdBase,
-                  textAlign: 'center',
-                  fontWeight: 600,
-                  color: theme.textMuted,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Side
-              </th>
-              <th
-                style={{
-                  ...tdBase,
-                  textAlign: 'right',
-                  fontWeight: 600,
-                  color: theme.textMuted,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Amount
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e, i) => (
-              <tr key={i}>
-                <td style={{ ...tdBase, color: theme.textSecondary }}>{e.company}</td>
-                <td
-                  style={{
-                    ...tdBase,
-                    color: theme.textPrimary,
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                  }}
-                >
-                  {e.account}
-                </td>
-                <td style={{ ...tdBase, textAlign: 'center' }}>
-                  <Badge variant={e.side === 'Debit' ? 'info' : 'warning'} size="sm">
-                    {e.side}
-                  </Badge>
-                </td>
-                <td style={{ ...tdBase, textAlign: 'right' }}>
-                  <AmountDisplay amount={e.amount} currency={e.currency} size="sm" />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div style={{ border: `1px solid ${theme.border}`, borderRadius: 8, overflow: 'hidden' }}>
+        <Table columns={columns} data={entries} />
       </div>
       <p style={{ fontSize: 11, color: theme.textMuted, marginTop: 10, fontStyle: 'italic' }}>
         Note: Exact accounts are determined at creation time. This preview shows the transaction
