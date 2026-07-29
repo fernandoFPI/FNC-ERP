@@ -56,4 +56,37 @@ describe('Table', () => {
     const skeletons = container.querySelectorAll('.skeleton')
     expect(skeletons.length).toBeGreaterThan(0)
   })
+
+  it('renders a footer row with the given values under the matching columns', () => {
+    wrap(<Table columns={columns} data={data} footerRow={{ name: 'Total', value: '300' }} />)
+    expect(screen.getByText('Total')).toBeInTheDocument()
+    expect(screen.getByText('300')).toBeInTheDocument()
+  })
+
+  it('does not render a footer row when data is empty', () => {
+    wrap(<Table columns={columns} data={[]} footerRow={{ name: 'Total' }} />)
+    expect(screen.queryByText('Total')).not.toBeInTheDocument()
+  })
+
+  it('renders expanded content only for rows renderExpanded returns content for', () => {
+    wrap(
+      <Table
+        columns={columns}
+        data={data}
+        renderExpanded={(row) => (row.id === '1' ? <span>Detail for Alpha</span> : null)}
+      />,
+    )
+    expect(screen.getByText('Detail for Alpha')).toBeInTheDocument()
+  })
+
+  it('renders a section header before the row it applies to', () => {
+    wrap(
+      <Table
+        columns={columns}
+        data={data}
+        getSectionHeader={(row, i) => (i === 0 ? 'Group A' : null)}
+      />,
+    )
+    expect(screen.getByText('Group A')).toBeInTheDocument()
+  })
 })
