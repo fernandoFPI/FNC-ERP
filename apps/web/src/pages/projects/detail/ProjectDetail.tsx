@@ -257,6 +257,7 @@ import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
+import { Table, type Column } from '../../../components/ui/Table'
 import JSZip from 'jszip'
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger' | 'info'> = {
@@ -398,7 +399,9 @@ export default function ProjectDetail() {
       addToast({ type: 'success', message: 'Status updated' })
       void refetch()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [adminSetPhase, { loading: adminPhaseSetting }] = useMutation(ADMIN_SET_PHASE, {
     onCompleted: () => {
@@ -406,7 +409,9 @@ export default function ProjectDetail() {
       addToast({ type: 'success', message: 'Phase updated' })
       void refetch()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [showActionsPanel, setShowActionsPanel] = useState(false)
   const [tab, setTab] = useState('overview')
@@ -462,8 +467,12 @@ export default function ProjectDetail() {
     api
       .get<LiveMember[]>(`/projects/${id}/members`)
       .then((r) => setLiveTeam(Array.isArray(r.data) ? r.data : []))
-      .catch(() => { addToast({ type: 'error', message: 'Failed to load team members' }); })
-      .finally(() => { setTeamLoading(false); })
+      .catch(() => {
+        addToast({ type: 'error', message: 'Failed to load team members' })
+      })
+      .finally(() => {
+        setTeamLoading(false)
+      })
   }, [id])
 
   useEffect(() => {
@@ -557,7 +566,9 @@ export default function ProjectDetail() {
       addToast({ type: 'success', message: 'Scope of work saved' })
       void refetchRFQLines()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const { data: drawingsData, refetch: refetchDrawings } = useQuery(PROJECT_DRAWINGS_QUERY, {
     variables: { projectId: id },
@@ -609,26 +620,34 @@ export default function ProjectDetail() {
     onCompleted: () => {
       void refetchBidDeliverables()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [deleteBidDeliverable] = useMutation(DELETE_BID_DELIVERABLE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Deliverable removed' })
       void refetchBidDeliverables()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [uploadBidDeliverableFile] = useMutation(UPLOAD_BID_DELIVERABLE_FILE, {
     onCompleted: () => {
       void refetchBidDeliverables()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [deleteBidDeliverableFile] = useMutation(DELETE_BID_DELIVERABLE_FILE, {
     onCompleted: () => {
       void refetchBidDeliverables()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const { data: bidPackageFilesData, refetch: refetchBidPackageFiles } = useQuery(
     BID_PACKAGE_FILES_QUERY,
@@ -642,13 +661,17 @@ export default function ProjectDetail() {
     onCompleted: () => {
       void refetchBidPackageFiles()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [deleteBidPackageFile] = useMutation(DELETE_BID_PACKAGE_FILE, {
     onCompleted: () => {
       void refetchBidPackageFiles()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [upsertBidCostItems, { loading: savingCosts }] = useMutation(UPSERT_BID_COST_ITEMS, {
     onCompleted: () => {
@@ -656,27 +679,35 @@ export default function ProjectDetail() {
       void refetchBidCosts()
       void refetchBidSummary()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [createBidSupplierQuotation] = useMutation(CREATE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Quotation added' })
       void refetchBidQuotations()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [updateBidSupplierQuotation] = useMutation(UPDATE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
       void refetchBidQuotations()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [deleteBidSupplierQuotation] = useMutation(DELETE_BID_SUPPLIER_QUOTATION, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Quotation removed' })
       void refetchBidQuotations()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [updateBidCommercialSummary, { loading: savingSummary }] = useMutation(
     UPDATE_BID_COMMERCIAL_SUMMARY,
@@ -692,28 +723,36 @@ export default function ProjectDetail() {
       addToast({ type: 'success', message: 'Bid submitted for approval' })
       void refetchBidSummary()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [approveBid, { loading: approvingBid }] = useMutation(APPROVE_BID, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid approved' })
       void refetchBidSummary()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [rejectBid, { loading: rejectingBid }] = useMutation(REJECT_BID, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid rejected' })
       void refetchBidSummary()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [reviseBidM, { loading: revisingBid }] = useMutation(REVISE_BID, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Bid revised' })
       void refetchBidSummary()
     },
-    onError: (e) => { addToast({ type: 'error', message: e.message }); },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
 
   // ── Execution queries ──────────────────────────────────────────────────────
@@ -749,7 +788,9 @@ export default function ProjectDetail() {
     fetchPolicy: 'cache-and-network',
   })
   // ── Execution mutations ────────────────────────────────────────────────────
-  const execError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const execError = (e: Error) => {
+    addToast({ type: 'error', message: e.message })
+  }
   const [createProjectRFI] = useMutation(CREATE_PROJECT_RFI, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'RFI created' })
@@ -769,7 +810,7 @@ export default function ProjectDetail() {
     onError: execError,
     update(cache, { data }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rfi = (data)?.respondToRFI
+      const rfi = data?.respondToRFI
       if (!rfi?.id) return
       const cacheId = cache.identify({ __typename: 'ProjectRFI', id: rfi.id })
       if (!cacheId) {
@@ -1112,7 +1153,9 @@ export default function ProjectDetail() {
     skip: skipCC,
     fetchPolicy: 'cache-and-network',
   })
-  const ccError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const ccError = (e: Error) => {
+    addToast({ type: 'error', message: e.message })
+  }
   const [createCostCode] = useMutation(CREATE_COST_CODE, {
     onCompleted: () => {
       void refetchCCCodes()
@@ -1261,7 +1304,9 @@ export default function ProjectDetail() {
     skip: skipVO,
     fetchPolicy: 'cache-and-network',
   })
-  const voError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const voError = (e: Error) => {
+    addToast({ type: 'error', message: e.message })
+  }
   const voRefresh = () => {
     void refetchVO()
   }
@@ -1323,7 +1368,9 @@ export default function ProjectDetail() {
     skip: skipMOM,
     fetchPolicy: 'cache-and-network',
   })
-  const momError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const momError = (e: Error) => {
+    addToast({ type: 'error', message: e.message })
+  }
   const momRefresh = () => {
     void refetchMOM()
   }
@@ -1538,8 +1585,8 @@ export default function ProjectDetail() {
   const hideRiskRegister: boolean = lifecycleData?.lifecycleConfig?.hideRiskRegister ?? true
 
   // Lifecycle from company config, with hardcoded fallback until it loads.
-  const lifecycleStages: { key: string; label: string }[] = lifecycleData?.lifecycleConfig
-    ?.phases?.length
+  const lifecycleStages: { key: string; label: string }[] = lifecycleData?.lifecycleConfig?.phases
+    ?.length
     ? lifecycleData.lifecycleConfig.phases.map((ph: { key: string; label: string }) => ({
         key: ph.key,
         label: ph.label,
@@ -1548,7 +1595,11 @@ export default function ProjectDetail() {
   const phaseOrder = lifecycleStages.map((s) => s.key)
   const moduleMinPhase: Record<string, string> = { ...DEFAULT_MODULE_MIN_PHASE }
   const moduleLabels: Record<string, string> = {}
-  for (const m of (lifecycleData?.lifecycleConfig?.modules ?? []) as { moduleKey: string; minPhaseKey: string; label?: string | null }[]) {
+  for (const m of (lifecycleData?.lifecycleConfig?.modules ?? []) as {
+    moduleKey: string
+    minPhaseKey: string
+    label?: string | null
+  }[]) {
     moduleMinPhase[m.moduleKey] = m.minPhaseKey
     if (m.label) moduleLabels[m.moduleKey] = m.label
   }
@@ -1798,13 +1849,21 @@ export default function ProjectDetail() {
               position: 'relative',
             }}
           >
-            <Button variant="secondary" size="sm" onClick={() => { navigate(`/projects/${id}/edit`); }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                navigate(`/projects/${id}/edit`)
+              }}
+            >
               Edit
             </Button>
             {((p.allowedActions ?? []).length > 0 || isAdmin) && (
               <>
                 <button
-                  onClick={() => { setShowActionsPanel(v => !v); }}
+                  onClick={() => {
+                    setShowActionsPanel((v) => !v)
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -2755,6 +2814,98 @@ export default function ProjectDetail() {
                       })
                     : '—'
 
+                // Financial Summary table (Table component migration)
+                type FinancialSummaryRow = {
+                  label: string
+                  val: number | null
+                  color: string
+                  bold: boolean
+                  text?: string
+                }
+                const financialSummaryRows: FinancialSummaryRow[] = [
+                  {
+                    label: 'Approved Budget',
+                    val: ovBudget,
+                    color: theme.textPrimary,
+                    bold: false,
+                  },
+                  {
+                    label: 'Actual Cost',
+                    val: ovActual,
+                    color: theme.textPrimary,
+                    bold: false,
+                  },
+                  {
+                    label: 'Committed Cost (incl. store)',
+                    val: ovCommitted,
+                    color: theme.textPrimary,
+                    bold: false,
+                  },
+                  ...(ovStoreCosts > 0
+                    ? [
+                        {
+                          label: '  · Store Price Component',
+                          val: ovStoreCosts,
+                          color: theme.textMuted,
+                          bold: false,
+                        },
+                      ]
+                    : []),
+                  {
+                    label: 'Remaining Budget',
+                    val: ovRemaining,
+                    color: ovRemaining < 0 ? '#ef4444' : '#22c55e',
+                    bold: true,
+                  },
+                  {
+                    label: 'Forecast Cost at Completion',
+                    val: ovEAC,
+                    color: theme.textPrimary,
+                    bold: false,
+                  },
+                  {
+                    label: 'Expected Profit',
+                    val: ovProfit,
+                    color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
+                    bold: false,
+                  },
+                  {
+                    label: 'Profit Margin',
+                    val: null,
+                    color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
+                    bold: true,
+                    text: `${ovMarginPct.toFixed(1)}%`,
+                  },
+                ]
+                const financialSummaryColumns: Column<FinancialSummaryRow>[] = [
+                  {
+                    key: 'label',
+                    header: 'Description',
+                    mobilePrimary: true,
+                    render: (row) => (
+                      <span style={{ color: theme.textPrimary, fontSize: '12px' }}>
+                        {row.label}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'value',
+                    header: `Amount (${ovCcy})`,
+                    mobilePriority: 1,
+                    render: (row) => (
+                      <span
+                        style={{
+                          fontVariantNumeric: 'tabular-nums',
+                          color: row.color,
+                          fontWeight: row.bold ? 700 : 400,
+                        }}
+                      >
+                        {row.text ?? (row.val != null ? formatCurrency(row.val, ovCcy) : '—')}
+                      </span>
+                    ),
+                  },
+                ]
+
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                     {/* Status banners */}
@@ -2860,127 +3011,11 @@ export default function ProjectDetail() {
                       {card(
                         <>
                           {ch('Financial Summary')}
-                          <div style={{ overflowX: 'auto' }}>
-                            <table
-                              style={{
-                                width: '100%',
-                                borderCollapse: 'collapse',
-                                fontSize: '12px',
-                              }}
-                            >
-                              <thead>
-                                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                                  <th
-                                    style={{
-                                      textAlign: 'left',
-                                      padding: '0 0 6px',
-                                      fontSize: '11px',
-                                      color: theme.textMuted,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    Description
-                                  </th>
-                                  <th
-                                    style={{
-                                      textAlign: 'right',
-                                      padding: '0 0 6px',
-                                      fontSize: '11px',
-                                      color: theme.textMuted,
-                                      fontWeight: 600,
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    Amount ({ovCcy})
-                                  </th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {[
-                                  {
-                                    label: 'Approved Budget',
-                                    val: ovBudget,
-                                    color: theme.textPrimary,
-                                    bold: false,
-                                  },
-                                  {
-                                    label: 'Actual Cost',
-                                    val: ovActual,
-                                    color: theme.textPrimary,
-                                    bold: false,
-                                  },
-                                  {
-                                    label: 'Committed Cost (incl. store)',
-                                    val: ovCommitted,
-                                    color: theme.textPrimary,
-                                    bold: false,
-                                  },
-                                  ...(ovStoreCosts > 0
-                                    ? [
-                                        {
-                                          label: '  · Store Price Component',
-                                          val: ovStoreCosts,
-                                          color: theme.textMuted,
-                                          bold: false,
-                                        },
-                                      ]
-                                    : []),
-                                  {
-                                    label: 'Remaining Budget',
-                                    val: ovRemaining,
-                                    color: ovRemaining < 0 ? '#ef4444' : '#22c55e',
-                                    bold: true,
-                                  },
-                                  {
-                                    label: 'Forecast Cost at Completion',
-                                    val: ovEAC,
-                                    color: theme.textPrimary,
-                                    bold: false,
-                                  },
-                                  {
-                                    label: 'Expected Profit',
-                                    val: ovProfit,
-                                    color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
-                                    bold: false,
-                                  },
-                                  {
-                                    label: 'Profit Margin',
-                                    val: null,
-                                    color: ovProfit >= 0 ? '#22c55e' : '#ef4444',
-                                    bold: true,
-                                    text: `${ovMarginPct.toFixed(1)}%`,
-                                  },
-                                ].map((row) => (
-                                  <tr
-                                    key={row.label}
-                                    style={{ borderBottom: `1px solid ${theme.border}22` }}
-                                  >
-                                    <td
-                                      style={{
-                                        padding: '6px 0',
-                                        color: theme.textPrimary,
-                                        fontSize: '12px',
-                                      }}
-                                    >
-                                      {row.label}
-                                    </td>
-                                    <td
-                                      style={{
-                                        padding: '6px 0',
-                                        textAlign: 'right',
-                                        fontVariantNumeric: 'tabular-nums',
-                                        color: row.color,
-                                        fontWeight: row.bold ? 700 : 400,
-                                      }}
-                                    >
-                                      {row.text ??
-                                        (row.val != null ? formatCurrency(row.val, ovCcy) : '—')}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
+                          <Table
+                            columns={financialSummaryColumns}
+                            data={financialSummaryRows}
+                            rowKey="label"
+                          />
                         </>,
                       )}
 
@@ -6227,7 +6262,9 @@ export default function ProjectDetail() {
         projectId={id!}
         stage={editStage}
         open={stageDrawer}
-        onClose={() => { setStageDrawer(false); }}
+        onClose={() => {
+          setStageDrawer(false)
+        }}
         onSaved={() => refetch()}
         teamMembers={liveTeam.map((m) => ({
           id: m.id,
@@ -6671,7 +6708,9 @@ function RFQLinesTab({
                       {isEditable && (
                         <td style={{ padding: '4px 8px', width: '32px' }}>
                           <button
-                            onClick={() => { removeRow(i); }}
+                            onClick={() => {
+                              removeRow(i)
+                            }}
                             style={{
                               background: 'none',
                               border: 'none',
@@ -6749,6 +6788,63 @@ function RFQLinesTab({
         const hasPhases = [...phaseMap.keys()].some((k) => k !== '(Unassigned)')
         if (!hasPhases) return null
         const phases = [...phaseMap.entries()]
+        const phaseRows = phases.map(([label, v]) => ({ label, ...v }))
+        const phaseColumns: Column<{
+          label: string
+          scopeCost: number
+          bidTotal: number
+          count: number
+        }>[] = [
+          {
+            key: 'label',
+            header: 'Phase / Group',
+            mobilePrimary: true,
+            render: (row) => (
+              <span
+                style={{
+                  fontWeight: row.label === '(Unassigned)' ? 400 : 600,
+                  color: row.label === '(Unassigned)' ? theme.textMuted : theme.textPrimary,
+                }}
+              >
+                {row.label}
+              </span>
+            ),
+          },
+          {
+            key: 'count',
+            header: 'Lines',
+            mobilePriority: 3,
+            render: (row) => <span style={{ color: theme.textMuted }}>{row.count}</span>,
+          },
+          {
+            key: 'scopeCost',
+            header: 'Scope Cost',
+            mobilePriority: 1,
+            render: (row) => (
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: '#f59e0b' }}>
+                {row.scopeCost.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            ),
+          },
+          {
+            key: 'bidTotal',
+            header: 'Bid Total',
+            mobilePriority: 2,
+            render: (row) => (
+              <span
+                style={{ fontVariantNumeric: 'tabular-nums', color: theme.accent, fontWeight: 600 }}
+              >
+                {row.bidTotal.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            ),
+          },
+        ]
         return (
           <div
             style={{
@@ -6771,74 +6867,7 @@ function RFQLinesTab({
             >
               Phase Breakdown {isEditable ? '' : '— stages auto-created on approval'}
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr>
-                  {['Phase / Group', 'Lines', 'Scope Cost', 'Bid Total'].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '7px 14px',
-                        textAlign: h === 'Phase / Group' ? 'left' : 'right',
-                        fontSize: '10px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {phases.map(([label, { scopeCost, bidTotal, count }]) => (
-                  <tr key={label} style={{ borderBottom: `1px solid ${theme.border}22` }}>
-                    <td
-                      style={{
-                        padding: '7px 14px',
-                        fontWeight: label === '(Unassigned)' ? 400 : 600,
-                        color: label === '(Unassigned)' ? theme.textMuted : theme.textPrimary,
-                      }}
-                    >
-                      {label}
-                    </td>
-                    <td style={{ padding: '7px 14px', textAlign: 'right', color: theme.textMuted }}>
-                      {count}
-                    </td>
-                    <td
-                      style={{
-                        padding: '7px 14px',
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                        color: '#f59e0b',
-                      }}
-                    >
-                      {scopeCost.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-                    <td
-                      style={{
-                        padding: '7px 14px',
-                        textAlign: 'right',
-                        fontVariantNumeric: 'tabular-nums',
-                        color: theme.accent,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {bidTotal.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <Table columns={phaseColumns} data={phaseRows} rowKey="label" />
           </div>
         )
       })()}
@@ -7080,7 +7109,9 @@ function RFQPhasesTab({
       if (e.key === 'ArrowLeft') setPreviewIndex((i) => (i !== null ? Math.max(i - 1, 0) : null))
     }
     window.addEventListener('keydown', handler)
-    return () => { window.removeEventListener('keydown', handler); }
+    return () => {
+      window.removeEventListener('keydown', handler)
+    }
   }, [previewIndex, selected])
 
   const handleStatusChange = async (phase: RFQPhaseData, status: string) => {
@@ -8150,7 +8181,12 @@ function RFQPhasesTab({
             <div
               style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '2px' }}
             >
-              <Button variant="ghost" onClick={() => { setPendingFile(null); }}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setPendingFile(null)
+                }}
+              >
                 Cancel
               </Button>
               <Button
@@ -10707,7 +10743,11 @@ function BiddingTab({
 
   // Computed totals from rows (live)
   const rowTotals = costRows.reduce<Record<string, number>>((acc, r) => {
-    const total = r.totalCost ? Number(r.totalCost) : (r.quantity && r.unitCost ? Number(r.quantity) * Number(r.unitCost) : 0)
+    const total = r.totalCost
+      ? Number(r.totalCost)
+      : r.quantity && r.unitCost
+        ? Number(r.quantity) * Number(r.unitCost)
+        : 0
     acc[r.costType] = (acc[r.costType] ?? 0) + total
     acc['__total'] = (acc['__total'] ?? 0) + total
     return acc
@@ -14154,9 +14194,13 @@ function EngineeringTab({
   const [statusDropdownPos, setStatusDropdownPos] = React.useState({ top: 0, left: 0 })
   React.useEffect(() => {
     if (!statusDropdownId) return
-    const close = () => { setStatusDropdownId(null); }
+    const close = () => {
+      setStatusDropdownId(null)
+    }
     document.addEventListener('click', close)
-    return () => { document.removeEventListener('click', close); }
+    return () => {
+      document.removeEventListener('click', close)
+    }
   }, [statusDropdownId])
 
   const renderRow = (doc: EngDoc, isHistory = false) => {
@@ -15155,201 +15199,196 @@ function EngineeringTab({
                 administrative: { bg: '#f0fdf4', color: '#15803d' },
                 general: { bg: theme.bgSurface, color: theme.textMuted },
               }
-              return (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ background: theme.bgSurface }}>
-                        {[
-                          '#',
-                          'Description',
-                          'Clause',
-                          'Category',
-                          'Status',
-                          'Resolution',
-                          'Actions',
-                        ].map((h) => (
-                          <th
-                            key={h}
+              const clientCommentColumns: Column<(typeof clientComments)[number]>[] = [
+                {
+                  key: 'commentNo',
+                  header: '#',
+                  mobilePriority: 3,
+                  render: (c) => (
+                    <span
+                      style={{
+                        color: theme.textMuted,
+                        fontVariantNumeric: 'tabular-nums',
+                        fontWeight: 700,
+                      }}
+                    >
+                      #{c.commentNo}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'description',
+                  header: 'Description',
+                  mobilePrimary: true,
+                  render: (c) => (
+                    <div style={{ color: theme.textPrimary, maxWidth: 300, whiteSpace: 'normal' }}>
+                      {c.description}
+                    </div>
+                  ),
+                },
+                {
+                  key: 'clauseRef',
+                  header: 'Clause',
+                  mobilePriority: 4,
+                  render: (c) => (
+                    <span style={{ color: theme.textMuted }}>{c.clauseRef ?? '—'}</span>
+                  ),
+                },
+                {
+                  key: 'category',
+                  header: 'Category',
+                  mobileSecondary: true,
+                  render: (c) => {
+                    const cat = CAT_COLORS[c.category] ?? CAT_COLORS.general!
+                    return (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: 5,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: cat.bg,
+                          color: cat.color,
+                        }}
+                      >
+                        {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
+                      </span>
+                    )
+                  },
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  mobilePriority: 1,
+                  render: (c) => {
+                    const isClosed = c.status !== 'open'
+                    return isClosed ? (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: 5,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: '#f0fdf4',
+                          color: '#15803d',
+                        }}
+                      >
+                        {c.status === 'waived' ? 'Waived' : 'Closed'}
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: 5,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: '#fef3c7',
+                          color: '#92400e',
+                        }}
+                      >
+                        Open
+                      </span>
+                    )
+                  },
+                },
+                {
+                  key: 'resolution',
+                  header: 'Resolution',
+                  mobilePriority: 2,
+                  render: (c) => {
+                    const isClosed = c.status !== 'open'
+                    return (
+                      <div
+                        style={{
+                          color: theme.textSecondary,
+                          fontStyle: isClosed ? 'italic' : 'normal',
+                          whiteSpace: 'normal',
+                        }}
+                      >
+                        {c.resolution ?? (isClosed ? '' : '—')}
+                        {c.closedByName && (
+                          <span style={{ color: theme.textMuted, marginLeft: 4 }}>
+                            ({c.closedByName})
+                          </span>
+                        )}
+                      </div>
+                    )
+                  },
+                },
+                {
+                  key: 'actions',
+                  header: 'Actions',
+                  mobileAction: true,
+                  render: (c) => {
+                    const isClosed = c.status !== 'open'
+                    return (
+                      <>
+                        {isAdmin && !isClosed && (
+                          <button
+                            onClick={async () => {
+                              const res = window.prompt('Resolution / how was this addressed?')
+                              if (!res?.trim()) return
+                              try {
+                                await closeClientCommentM({
+                                  variables: { id: c.id, resolution: res.trim() },
+                                })
+                                void loadClientComments({ variables: { documentId: doc.id } })
+                                void refetch()
+                              } catch (e: unknown) {
+                                addToast({ type: 'error', message: (e as Error).message })
+                              }
+                            }}
                             style={{
-                              padding: '7px 12px',
-                              fontWeight: 700,
+                              padding: '4px 10px',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              borderRadius: 6,
+                              border: '1px solid #bbf7d0',
+                              background: '#f0fdf4',
+                              color: '#15803d',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Close
+                          </button>
+                        )}
+                        {isAdmin && isClosed && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await reopenClientCommentM({ variables: { id: c.id } })
+                                void loadClientComments({ variables: { documentId: doc.id } })
+                                void refetch()
+                              } catch (e: unknown) {
+                                addToast({ type: 'error', message: (e as Error).message })
+                              }
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              borderRadius: 6,
+                              border: `1px solid ${theme.border}`,
+                              background: 'transparent',
                               color: theme.textMuted,
-                              textAlign: 'left',
-                              fontSize: 10,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
-                              whiteSpace: 'nowrap',
-                              borderBottom: `1px solid ${theme.border}`,
+                              cursor: 'pointer',
                             }}
                           >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {clientComments.map((c) => {
-                        const cat = CAT_COLORS[c.category] ?? CAT_COLORS.general!
-                        const isClosed = c.status !== 'open'
-                        return (
-                          <tr
-                            key={c.id}
-                            style={{
-                              borderBottom: `1px solid ${theme.border}`,
-                              opacity: isClosed ? 0.65 : 1,
-                            }}
-                          >
-                            <td
-                              style={{
-                                padding: '8px 12px',
-                                color: theme.textMuted,
-                                fontVariantNumeric: 'tabular-nums',
-                                fontWeight: 700,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              #{c.commentNo}
-                            </td>
-                            <td
-                              style={{
-                                padding: '8px 12px',
-                                color: theme.textPrimary,
-                                maxWidth: 300,
-                              }}
-                            >
-                              {c.description}
-                            </td>
-                            <td
-                              style={{
-                                padding: '8px 12px',
-                                color: theme.textMuted,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {c.clauseRef ?? '—'}
-                            </td>
-                            <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                              <span
-                                style={{
-                                  padding: '2px 8px',
-                                  borderRadius: 5,
-                                  fontSize: 11,
-                                  fontWeight: 600,
-                                  background: cat.bg,
-                                  color: cat.color,
-                                }}
-                              >
-                                {c.category.charAt(0).toUpperCase() + c.category.slice(1)}
-                              </span>
-                            </td>
-                            <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                              {isClosed ? (
-                                <span
-                                  style={{
-                                    padding: '2px 8px',
-                                    borderRadius: 5,
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    background: '#f0fdf4',
-                                    color: '#15803d',
-                                  }}
-                                >
-                                  {c.status === 'waived' ? 'Waived' : 'Closed'}
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    padding: '2px 8px',
-                                    borderRadius: 5,
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    background: '#fef3c7',
-                                    color: '#92400e',
-                                  }}
-                                >
-                                  Open
-                                </span>
-                              )}
-                            </td>
-                            <td
-                              style={{
-                                padding: '8px 12px',
-                                color: theme.textSecondary,
-                                fontStyle: isClosed ? 'italic' : 'normal',
-                              }}
-                            >
-                              {c.resolution ?? (isClosed ? '' : '—')}
-                              {c.closedByName && (
-                                <span style={{ color: theme.textMuted, marginLeft: 4 }}>
-                                  ({c.closedByName})
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                              {isAdmin && !isClosed && (
-                                <button
-                                  onClick={async () => {
-                                    const res = window.prompt(
-                                      'Resolution / how was this addressed?',
-                                    )
-                                    if (!res?.trim()) return
-                                    try {
-                                      await closeClientCommentM({
-                                        variables: { id: c.id, resolution: res.trim() },
-                                      })
-                                      void loadClientComments({ variables: { documentId: doc.id } })
-                                      void refetch()
-                                    } catch (e: unknown) {
-                                      addToast({ type: 'error', message: (e as Error).message })
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '4px 10px',
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    borderRadius: 6,
-                                    border: '1px solid #bbf7d0',
-                                    background: '#f0fdf4',
-                                    color: '#15803d',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Close
-                                </button>
-                              )}
-                              {isAdmin && isClosed && (
-                                <button
-                                  onClick={async () => {
-                                    try {
-                                      await reopenClientCommentM({ variables: { id: c.id } })
-                                      void loadClientComments({ variables: { documentId: doc.id } })
-                                      void refetch()
-                                    } catch (e: unknown) {
-                                      addToast({ type: 'error', message: (e as Error).message })
-                                    }
-                                  }}
-                                  style={{
-                                    padding: '4px 10px',
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    borderRadius: 6,
-                                    border: `1px solid ${theme.border}`,
-                                    background: 'transparent',
-                                    color: theme.textMuted,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Reopen
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            Reopen
+                          </button>
+                        )}
+                      </>
+                    )
+                  },
+                },
+              ]
+              return (
+                <Table
+                  columns={clientCommentColumns}
+                  data={clientComments}
+                  rowKey="id"
+                  getRowStyle={(c) => ({ opacity: c.status !== 'open' ? 0.65 : 1 })}
+                />
               )
             })()}
           </div>
@@ -16779,178 +16818,172 @@ function EngineeringTab({
             <div
               style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}
             >
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurface }}>
-                      {[
-                        'Company',
-                        'Contact',
-                        'Discipline',
-                        'Doc Type',
-                        'Status Trigger',
-                        'Copies',
-                        'Format',
-                        'Auto',
-                        'Actions',
-                      ].map((h, i) => (
-                        <th
-                          key={i}
-                          style={{
-                            padding: '10px 14px',
-                            textAlign: 'left',
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.07em',
-                            borderBottom: `1px solid ${theme.border}`,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ddmEntries.map((e, idx) => {
+              {(() => {
+                const ddmColumns: Column<DDMEntry>[] = [
+                  {
+                    key: 'companyName',
+                    header: 'Company',
+                    mobilePrimary: true,
+                    render: (e) => (
+                      <span style={{ fontWeight: 600, color: theme.textPrimary }}>
+                        {e.companyName}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'contact',
+                    header: 'Contact',
+                    mobileSecondary: true,
+                    render: (e) => (
+                      <>
+                        <div>{e.contactName ?? '—'}</div>
+                        {e.contactEmail && (
+                          <div style={{ fontSize: 11, color: theme.textMuted }}>
+                            {e.contactEmail}
+                          </div>
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'discipline',
+                    header: 'Discipline',
+                    mobilePriority: 4,
+                    render: (e) =>
+                      e.discipline ?? <span style={{ color: theme.textMuted }}>All</span>,
+                  },
+                  {
+                    key: 'docType',
+                    header: 'Doc Type',
+                    mobilePriority: 5,
+                    render: (e) => e.docType ?? <span style={{ color: theme.textMuted }}>All</span>,
+                  },
+                  {
+                    key: 'statusTrigger',
+                    header: 'Status Trigger',
+                    mobilePriority: 1,
+                    render: (e) => {
                       const stMeta = ENG_DOC_STATUSES[e.statusTrigger] ?? ENG_DOC_STATUSES.draft!
                       return (
-                        <tr
-                          key={e.id}
+                        <span
                           style={{
-                            borderBottom: `1px solid ${theme.border}`,
-                            background: idx % 2 === 0 ? 'transparent' : theme.bgSurface,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            background: stMeta.bg,
+                            color: stMeta.text,
+                            fontSize: 11,
+                            fontWeight: 700,
                           }}
                         >
-                          <td
+                          <span
                             style={{
-                              padding: '10px 14px',
-                              fontWeight: 600,
-                              color: theme.textPrimary,
+                              width: 5,
+                              height: 5,
+                              borderRadius: '50%',
+                              background: stMeta.dot,
+                            }}
+                          />
+                          {stMeta.label}
+                        </span>
+                      )
+                    },
+                  },
+                  {
+                    key: 'copies',
+                    header: 'Copies',
+                    mobilePriority: 3,
+                    render: (e) => e.copies,
+                  },
+                  {
+                    key: 'format',
+                    header: 'Format',
+                    mobilePriority: 2,
+                    render: (e) => e.format,
+                  },
+                  {
+                    key: 'autoTransmit',
+                    header: 'Auto',
+                    mobilePriority: 6,
+                    render: (e) =>
+                      e.autoTransmit ? (
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            background: '#f0fdf4',
+                            color: '#15803d',
+                            fontSize: 10,
+                            fontWeight: 700,
+                          }}
+                        >
+                          Auto
+                        </span>
+                      ) : (
+                        <span style={{ color: theme.textMuted, fontSize: 12 }}>Manual</span>
+                      ),
+                  },
+                  {
+                    key: 'actions',
+                    header: 'Actions',
+                    mobileAction: true,
+                    render: (e) =>
+                      isAdmin && (
+                        <div
+                          style={{ display: 'flex', gap: 4 }}
+                          onClick={(ev) => ev.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => {
+                              setEditDDM(e)
+                              setDDMForm({
+                                companyName: e.companyName,
+                                contactName: e.contactName ?? '',
+                                contactEmail: e.contactEmail ?? '',
+                                discipline: e.discipline ?? '',
+                                docType: e.docType ?? '',
+                                statusTrigger: e.statusTrigger,
+                                copies: e.copies,
+                                format: e.format as DDMEntry['format'],
+                                autoTransmit: e.autoTransmit,
+                                notes: e.notes ?? '',
+                              })
+                              setShowDDMModal(true)
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              background: theme.bgSurface,
+                              border: `1px solid ${theme.border}`,
+                              color: theme.textSecondary,
+                              fontSize: 11,
+                              cursor: 'pointer',
                             }}
                           >
-                            {e.companyName}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                            <div>{e.contactName ?? '—'}</div>
-                            {e.contactEmail && (
-                              <div style={{ fontSize: 11, color: theme.textMuted }}>
-                                {e.contactEmail}
-                              </div>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                            {e.discipline ?? <span style={{ color: theme.textMuted }}>All</span>}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                            {e.docType ?? <span style={{ color: theme.textMuted }}>All</span>}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                padding: '2px 8px',
-                                borderRadius: 999,
-                                background: stMeta.bg,
-                                color: stMeta.text,
-                                fontSize: 11,
-                                fontWeight: 700,
-                              }}
-                            >
-                              <span
-                                style={{
-                                  width: 5,
-                                  height: 5,
-                                  borderRadius: '50%',
-                                  background: stMeta.dot,
-                                }}
-                              />
-                              {stMeta.label}
-                            </span>
-                          </td>
-                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                            {e.copies}
-                          </td>
-                          <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                            {e.format}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}>
-                            {e.autoTransmit ? (
-                              <span
-                                style={{
-                                  padding: '2px 8px',
-                                  borderRadius: 999,
-                                  background: '#f0fdf4',
-                                  color: '#15803d',
-                                  fontSize: 10,
-                                  fontWeight: 700,
-                                }}
-                              >
-                                Auto
-                              </span>
-                            ) : (
-                              <span style={{ color: theme.textMuted, fontSize: 12 }}>Manual</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}>
-                            {isAdmin && (
-                              <div style={{ display: 'flex', gap: 4 }}>
-                                <button
-                                  onClick={() => {
-                                    setEditDDM(e)
-                                    setDDMForm({
-                                      companyName: e.companyName,
-                                      contactName: e.contactName ?? '',
-                                      contactEmail: e.contactEmail ?? '',
-                                      discipline: e.discipline ?? '',
-                                      docType: e.docType ?? '',
-                                      statusTrigger: e.statusTrigger,
-                                      copies: e.copies,
-                                      format: e.format as DDMEntry['format'],
-                                      autoTransmit: e.autoTransmit,
-                                      notes: e.notes ?? '',
-                                    })
-                                    setShowDDMModal(true)
-                                  }}
-                                  style={{
-                                    padding: '4px 10px',
-                                    borderRadius: 6,
-                                    background: theme.bgSurface,
-                                    border: `1px solid ${theme.border}`,
-                                    color: theme.textSecondary,
-                                    fontSize: 11,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => void handleDeleteDDM(e.id)}
-                                  style={{
-                                    padding: '4px 10px',
-                                    borderRadius: 6,
-                                    background: '#fff1f2',
-                                    border: '1px solid #fca5a5',
-                                    color: '#dc2626',
-                                    fontSize: 11,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => void handleDeleteDDM(e.id)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              background: '#fff1f2',
+                              border: '1px solid #fca5a5',
+                              color: '#dc2626',
+                              fontSize: 11,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ),
+                  },
+                ]
+                return <Table columns={ddmColumns} data={ddmEntries} rowKey="id" />
+              })()}
             </div>
           )}
         </div>
@@ -21207,7 +21240,9 @@ function AttachmentsTab({
       })
       .then((r) => setFiles(r.data as unknown as FileAttachment[]))
       .catch(() => {})
-      .finally(() => { setLoading(false); })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [projectId])
 
   // Filter visible files by role + active category filter
@@ -21609,7 +21644,9 @@ function AttachmentsTab({
             e.preventDefault()
             setDragOver(true)
           }}
-          onDragLeave={() => { setDragOver(false); }}
+          onDragLeave={() => {
+            setDragOver(false)
+          }}
           onDrop={(e) => {
             e.preventDefault()
             setDragOver(false)
@@ -21841,7 +21878,9 @@ function HandoverTab({
   const certs: HandoverCertType[] = data?.projectHandoverCertificates ?? []
 
   const refresh = () => void refetch()
-  const onError = (e: Error) => { addToast({ type: 'error', message: e.message }); }
+  const onError = (e: Error) => {
+    addToast({ type: 'error', message: e.message })
+  }
 
   const [createCert] = useMutation(CREATE_HANDOVER_CERT, {
     onCompleted: () => {
@@ -22072,6 +22111,159 @@ function HandoverTab({
       })
     setItemModal(null)
   }
+
+  const itemColumns: Column<HandoverItemType>[] = [
+    {
+      key: 'sequence',
+      header: '#',
+      mobilePriority: 4,
+      render: (item) => (
+        <span style={{ color: th.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+          {item.sequence}
+        </span>
+      ),
+    },
+    {
+      key: 'category',
+      header: 'Category',
+      mobileSecondary: true,
+      render: (item) => {
+        const catLabel =
+          HANDOVER_ITEM_CATEGORIES.find((c) => c.value === item.category)?.label ?? item.category
+        return (
+          <span style={{ color: th.textSecondary, fontSize: '12px', whiteSpace: 'nowrap' }}>
+            {catLabel}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'description',
+      header: 'Description',
+      mobilePrimary: true,
+      render: (item) => (
+        <>
+          {item.description}
+          {item.notes && (
+            <div
+              style={{
+                fontSize: '11px',
+                color: th.textMuted,
+                marginTop: '2px',
+                fontStyle: 'italic',
+              }}
+            >
+              {item.notes}
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (item) => {
+        const iSt = HANDOVER_ITEM_STATUS_COLOR[item.status] ?? HANDOVER_ITEM_STATUS_COLOR['pending']
+        return (
+          <span
+            style={{
+              padding: '2px 8px',
+              borderRadius: '999px',
+              fontSize: '11px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              background: iSt.bg,
+              color: iSt.color,
+            }}
+          >
+            {item.status.replace(/_/g, ' ')}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'verifiedBy',
+      header: 'Verified By',
+      mobilePriority: 2,
+      render: (item) => (
+        <span style={{ color: th.textSecondary, fontSize: '12px' }}>{item.verifiedBy ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'verifiedAt',
+      header: 'Verified At',
+      mobilePriority: 3,
+      render: (item) => (
+        <span style={{ color: th.textSecondary, fontSize: '12px', whiteSpace: 'nowrap' }}>
+          {item.verifiedAt ? item.verifiedAt.slice(0, 10) : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      mobileAction: true,
+      render: (item) => (
+        <div style={{ display: 'flex', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
+          {isAdmin && item.status !== 'completed' && item.status !== 'waived' && (
+            <button
+              onClick={() => {
+                setVerifyName('')
+                setVerifyModal({ item })
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                border: `1px solid #bbf7d0`,
+                background: '#f0fdf4',
+                color: '#166534',
+                cursor: 'pointer',
+              }}
+            >
+              Verify
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => openEditItem(item)}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                border: `1px solid ${th.border}`,
+                background: 'transparent',
+                color: th.textSecondary,
+                cursor: 'pointer',
+              }}
+            >
+              Edit
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => {
+                if (window.confirm('Delete this item?'))
+                  void deleteItem({ variables: { id: item.id } })
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                border: '1px solid #fca5a5',
+                background: 'transparent',
+                color: '#ef4444',
+                cursor: 'pointer',
+              }}
+            >
+              Del
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ]
 
   if (loading && !certs.length)
     return (
@@ -22579,194 +22771,7 @@ function HandoverTab({
                         No checklist items yet. Add items to track handover requirements.
                       </div>
                     ) : (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table
-                          style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}
-                        >
-                          <thead>
-                            <tr
-                              style={{
-                                background: th.bgCanvas,
-                                borderBottom: `1px solid ${th.border}`,
-                              }}
-                            >
-                              {[
-                                '#',
-                                'Category',
-                                'Description',
-                                'Status',
-                                'Verified By',
-                                'Verified At',
-                                '',
-                              ].map((h) => (
-                                <th
-                                  key={h}
-                                  style={{
-                                    padding: '8px 12px',
-                                    textAlign: 'left',
-                                    fontWeight: 600,
-                                    fontSize: '11px',
-                                    color: th.textSecondary,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.04em',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {h}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {cert.items.map((item, idx) => {
-                              const iSt =
-                                HANDOVER_ITEM_STATUS_COLOR[item.status] ??
-                                HANDOVER_ITEM_STATUS_COLOR['pending']
-                              const catLabel =
-                                HANDOVER_ITEM_CATEGORIES.find((c) => c.value === item.category)
-                                  ?.label ?? item.category
-                              return (
-                                <tr
-                                  key={item.id}
-                                  style={{
-                                    borderBottom: `1px solid ${th.border}`,
-                                    background: idx % 2 === 0 ? th.bgSurface : th.bgCanvas,
-                                  }}
-                                >
-                                  <td
-                                    style={{
-                                      padding: '9px 12px',
-                                      color: th.textMuted,
-                                      fontVariantNumeric: 'tabular-nums',
-                                    }}
-                                  >
-                                    {item.sequence}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '9px 12px',
-                                      color: th.textSecondary,
-                                      fontSize: '12px',
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {catLabel}
-                                  </td>
-                                  <td style={{ padding: '9px 12px', color: th.textPrimary }}>
-                                    {item.description}
-                                    {item.notes && (
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          color: th.textMuted,
-                                          marginTop: '2px',
-                                          fontStyle: 'italic',
-                                        }}
-                                      >
-                                        {item.notes}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td style={{ padding: '9px 12px' }}>
-                                    <span
-                                      style={{
-                                        padding: '2px 8px',
-                                        borderRadius: '999px',
-                                        fontSize: '11px',
-                                        fontWeight: 700,
-                                        textTransform: 'uppercase',
-                                        background: iSt.bg,
-                                        color: iSt.color,
-                                      }}
-                                    >
-                                      {item.status.replace(/_/g, ' ')}
-                                    </span>
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '9px 12px',
-                                      color: th.textSecondary,
-                                      fontSize: '12px',
-                                    }}
-                                  >
-                                    {item.verifiedBy ?? '—'}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '9px 12px',
-                                      color: th.textSecondary,
-                                      fontSize: '12px',
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {item.verifiedAt ? item.verifiedAt.slice(0, 10) : '—'}
-                                  </td>
-                                  <td style={{ padding: '9px 12px' }}>
-                                    <div style={{ display: 'flex', gap: '4px' }}>
-                                      {isAdmin &&
-                                        item.status !== 'completed' &&
-                                        item.status !== 'waived' && (
-                                          <button
-                                            onClick={() => {
-                                              setVerifyName('')
-                                              setVerifyModal({ item })
-                                            }}
-                                            style={{
-                                              fontSize: '11px',
-                                              padding: '3px 8px',
-                                              borderRadius: '4px',
-                                              border: `1px solid #bbf7d0`,
-                                              background: '#f0fdf4',
-                                              color: '#166534',
-                                              cursor: 'pointer',
-                                            }}
-                                          >
-                                            Verify
-                                          </button>
-                                        )}
-                                      {isAdmin && (
-                                        <button
-                                          onClick={() => openEditItem(item)}
-                                          style={{
-                                            fontSize: '11px',
-                                            padding: '3px 8px',
-                                            borderRadius: '4px',
-                                            border: `1px solid ${th.border}`,
-                                            background: 'transparent',
-                                            color: th.textSecondary,
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          Edit
-                                        </button>
-                                      )}
-                                      {isAdmin && (
-                                        <button
-                                          onClick={() => {
-                                            if (window.confirm('Delete this item?'))
-                                              void deleteItem({ variables: { id: item.id } })
-                                          }}
-                                          style={{
-                                            fontSize: '11px',
-                                            padding: '3px 8px',
-                                            borderRadius: '4px',
-                                            border: '1px solid #fca5a5',
-                                            background: 'transparent',
-                                            color: '#ef4444',
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          Del
-                                        </button>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      <Table columns={itemColumns} data={cert.items} rowKey="id" />
                     )}
                   </div>
                 )}
@@ -23657,7 +23662,9 @@ function RiskRegisterTab({
             {filtered.map((r, i) => (
               <React.Fragment key={r.id}>
                 <tr
-                  onClick={() => { setExpandedId(expandedId === r.id ? null : r.id); }}
+                  onClick={() => {
+                    setExpandedId(expandedId === r.id ? null : r.id)
+                  }}
                   style={{
                     borderBottom: `1px solid ${th.border}`,
                     background: i % 2 === 0 ? th.bgSurface : th.bgCanvas,
@@ -25183,7 +25190,9 @@ function ContractManagementTab({
         {contracts.map((c) => (
           <button
             key={c.id}
-            onClick={() => { setSelectedContractId(c.id); }}
+            onClick={() => {
+              setSelectedContractId(c.id)
+            }}
             style={{
               padding: '8px 16px',
               borderRadius: '8px',
@@ -25460,178 +25469,153 @@ function ContractManagementTab({
                 </button>
               )}
             </div>
-            {selectedContract.milestones.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  color: th.textMuted,
-                  padding: '24px',
-                  fontSize: '13px',
-                }}
-              >
-                No milestones defined
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: th.bgCanvas, borderBottom: `1px solid ${th.border}` }}>
-                      {['#', 'Milestone', 'Amount', 'Status', 'Reached', 'Actions'].map((h) => (
-                        <th
-                          key={h}
+            {(() => {
+              const milestoneColumns: Column<ContractMilestone>[] = [
+                {
+                  key: 'sequence',
+                  header: '#',
+                  mobilePriority: 3,
+                  render: (ms) => (
+                    <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textMuted }}>
+                      {ms.sequence}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'name',
+                  header: 'Milestone',
+                  mobilePrimary: true,
+                  render: (ms) => (
+                    <span style={{ color: th.textPrimary, fontWeight: 500 }}>{ms.name}</span>
+                  ),
+                },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  mobileSecondary: true,
+                  render: (ms) => (
+                    <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textPrimary }}>
+                      {fmt(ms.billableAmount, ms.currencyCode)}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  mobilePriority: 1,
+                  render: (ms) =>
+                    ms.status === 'reached' ? (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: '#f0fdf4',
+                          color: '#166534',
+                          border: '1px solid #bbf7d0',
+                        }}
+                      >
+                        REACHED
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          background: '#fffbeb',
+                          color: '#92400e',
+                          border: '1px solid #fde68a',
+                        }}
+                      >
+                        PENDING
+                      </span>
+                    ),
+                },
+                {
+                  key: 'reachedAt',
+                  header: 'Reached',
+                  mobilePriority: 2,
+                  render: (ms) => (
+                    <span style={{ color: th.textSecondary, fontSize: '12px' }}>
+                      {ms.reachedAt ? ms.reachedAt.slice(0, 10) : '—'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: 'Actions',
+                  mobileAction: true,
+                  render: (ms) => (
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {isAdmin && ms.status !== 'reached' && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Mark "${ms.name}" as reached?`))
+                              onReachMilestone(selectedContract.id, ms.id)
+                          }}
                           style={{
-                            padding: '8px 12px',
-                            textAlign: 'left',
-                            fontWeight: 600,
                             fontSize: '11px',
-                            color: th.textSecondary,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #bbf7d0',
+                            background: '#f0fdf4',
+                            color: '#166534',
+                            cursor: 'pointer',
                           }}
                         >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...selectedContract.milestones]
-                      .sort((a, b) => a.sequence - b.sequence)
-                      .map((ms, i) => (
-                        <tr
-                          key={ms.id}
+                          Reach
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => openEditMilestone(selectedContract.id, ms)}
                           style={{
-                            borderBottom: `1px solid ${th.border}`,
-                            background: i % 2 === 0 ? th.bgSurface : th.bgCanvas,
+                            fontSize: '11px',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: `1px solid ${th.border}`,
+                            background: 'transparent',
+                            color: th.textSecondary,
+                            cursor: 'pointer',
                           }}
                         >
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontVariantNumeric: 'tabular-nums',
-                              color: th.textMuted,
-                            }}
-                          >
-                            {ms.sequence}
-                          </td>
-                          <td
-                            style={{ padding: '10px 12px', color: th.textPrimary, fontWeight: 500 }}
-                          >
-                            {ms.name}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              fontVariantNumeric: 'tabular-nums',
-                              color: th.textPrimary,
-                            }}
-                          >
-                            {fmt(ms.billableAmount, ms.currencyCode)}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            {ms.status === 'reached' ? (
-                              <span
-                                style={{
-                                  padding: '2px 8px',
-                                  borderRadius: '999px',
-                                  fontSize: '11px',
-                                  fontWeight: 700,
-                                  background: '#f0fdf4',
-                                  color: '#166534',
-                                  border: '1px solid #bbf7d0',
-                                }}
-                              >
-                                REACHED
-                              </span>
-                            ) : (
-                              <span
-                                style={{
-                                  padding: '2px 8px',
-                                  borderRadius: '999px',
-                                  fontSize: '11px',
-                                  fontWeight: 700,
-                                  background: '#fffbeb',
-                                  color: '#92400e',
-                                  border: '1px solid #fde68a',
-                                }}
-                              >
-                                PENDING
-                              </span>
-                            )}
-                          </td>
-                          <td
-                            style={{
-                              padding: '10px 12px',
-                              color: th.textSecondary,
-                              fontSize: '12px',
-                            }}
-                          >
-                            {ms.reachedAt ? ms.reachedAt.slice(0, 10) : '—'}
-                          </td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              {isAdmin && ms.status !== 'reached' && (
-                                <button
-                                  onClick={() => {
-                                    if (window.confirm(`Mark "${ms.name}" as reached?`))
-                                      onReachMilestone(selectedContract.id, ms.id)
-                                  }}
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '3px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #bbf7d0',
-                                    background: '#f0fdf4',
-                                    color: '#166534',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Reach
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <button
-                                  onClick={() => openEditMilestone(selectedContract.id, ms)}
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '3px 8px',
-                                    borderRadius: '4px',
-                                    border: `1px solid ${th.border}`,
-                                    background: 'transparent',
-                                    color: th.textSecondary,
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                              )}
-                              {isAdmin && (
-                                <button
-                                  onClick={() => {
-                                    if (window.confirm('Delete this milestone?'))
-                                      onDeleteMilestone(ms.id)
-                                  }}
-                                  style={{
-                                    fontSize: '11px',
-                                    padding: '3px 8px',
-                                    borderRadius: '4px',
-                                    border: '1px solid #fca5a5',
-                                    background: 'transparent',
-                                    color: '#ef4444',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  Del
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                          Edit
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm('Delete this milestone?')) onDeleteMilestone(ms.id)
+                          }}
+                          style={{
+                            fontSize: '11px',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #fca5a5',
+                            background: 'transparent',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Del
+                        </button>
+                      )}
+                    </div>
+                  ),
+                },
+              ]
+              return (
+                <Table
+                  columns={milestoneColumns}
+                  data={[...selectedContract.milestones].sort((a, b) => a.sequence - b.sequence)}
+                  rowKey="id"
+                  emptyMessage="No milestones defined"
+                />
+              )
+            })()}
           </div>
 
           {/* Invoices */}
@@ -25665,113 +25649,82 @@ function ContractManagementTab({
                 No invoices for this contract
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: th.bgCanvas, borderBottom: `1px solid ${th.border}` }}>
-                      {[
-                        'Invoice No.',
-                        'Method',
-                        'Invoice Date',
-                        'Due Date',
-                        'Gross',
-                        'Retention',
-                        'Net Payable',
-                        'Status',
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '8px 12px',
-                            textAlign: 'left',
-                            fontWeight: 600,
-                            fontSize: '11px',
-                            color: th.textSecondary,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {contractInvoices.map((inv, i) => (
-                      <tr
-                        key={inv.id}
+              <Table
+                columns={[
+                  {
+                    key: 'invoiceNumber',
+                    header: 'Invoice No.',
+                    mobilePrimary: true,
+                    render: (inv: InvoiceSummary) => (
+                      <span style={{ fontWeight: 600, color: th.textPrimary }}>
+                        {inv.invoiceNumber}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'billingMethod',
+                    header: 'Method',
+                    mobileSecondary: true,
+                    render: (inv: InvoiceSummary) => inv.billingMethod.replace(/_/g, ' '),
+                  },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    mobilePriority: 1,
+                    render: (inv: InvoiceSummary) => invoiceStatusBadge(inv.status),
+                  },
+                  {
+                    key: 'netPayable',
+                    header: 'Net Payable',
+                    mobilePriority: 2,
+                    render: (inv: InvoiceSummary) => (
+                      <span
                         style={{
-                          borderBottom: `1px solid ${th.border}`,
-                          background: i % 2 === 0 ? th.bgSurface : th.bgCanvas,
+                          fontVariantNumeric: 'tabular-nums',
+                          fontWeight: 700,
+                          color: th.textPrimary,
                         }}
                       >
-                        <td
-                          style={{ padding: '10px 12px', fontWeight: 600, color: th.textPrimary }}
-                        >
-                          {inv.invoiceNumber}
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            color: th.textSecondary,
-                            fontSize: '12px',
-                          }}
-                        >
-                          {inv.billingMethod.replace(/_/g, ' ')}
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            color: th.textSecondary,
-                            fontSize: '12px',
-                          }}
-                        >
-                          {inv.invoiceDate.slice(0, 10)}
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            color: th.textSecondary,
-                            fontSize: '12px',
-                          }}
-                        >
-                          {inv.dueDate ? inv.dueDate.slice(0, 10) : '—'}
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            fontVariantNumeric: 'tabular-nums',
-                            color: th.textPrimary,
-                          }}
-                        >
-                          {fmt(inv.grossTotal)}
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            fontVariantNumeric: 'tabular-nums',
-                            color: th.textMuted,
-                          }}
-                        >
-                          {fmt(inv.retentionAmount)}
-                        </td>
-                        <td
-                          style={{
-                            padding: '10px 12px',
-                            fontVariantNumeric: 'tabular-nums',
-                            fontWeight: 700,
-                            color: th.textPrimary,
-                          }}
-                        >
-                          {fmt(inv.netPayable)}
-                        </td>
-                        <td style={{ padding: '10px 12px' }}>{invoiceStatusBadge(inv.status)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        {fmt(inv.netPayable)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'invoiceDate',
+                    header: 'Invoice Date',
+                    mobilePriority: 3,
+                    render: (inv: InvoiceSummary) => inv.invoiceDate.slice(0, 10),
+                  },
+                  {
+                    key: 'dueDate',
+                    header: 'Due Date',
+                    mobilePriority: 4,
+                    render: (inv: InvoiceSummary) => (inv.dueDate ? inv.dueDate.slice(0, 10) : '—'),
+                  },
+                  {
+                    key: 'grossTotal',
+                    header: 'Gross',
+                    mobilePriority: 5,
+                    render: (inv: InvoiceSummary) => (
+                      <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textPrimary }}>
+                        {fmt(inv.grossTotal)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'retentionAmount',
+                    header: 'Retention',
+                    mobilePriority: 6,
+                    render: (inv: InvoiceSummary) => (
+                      <span style={{ fontVariantNumeric: 'tabular-nums', color: th.textMuted }}>
+                        {fmt(inv.retentionAmount)}
+                      </span>
+                    ),
+                  },
+                ]}
+                data={contractInvoices}
+                rowKey="id"
+              />
             )}
           </div>
         </>
@@ -25907,7 +25860,25 @@ interface ExecFile {
   createdAt: string
   downloadUrl: string | null
 }
-interface RFIRow { id: string; projectId: string; rfiNumber: string; subject: string; description: string | null; drawingRef: string | null; specRef: string | null; raisedByName: string | null; raisedDate: string; requiredDate: string | null; respondedDate: string | null; status: string; response: string | null; respondedByName: string | null; files: ExecFile[]; createdAt: string; updatedAt: string }
+interface RFIRow {
+  id: string
+  projectId: string
+  rfiNumber: string
+  subject: string
+  description: string | null
+  drawingRef: string | null
+  specRef: string | null
+  raisedByName: string | null
+  raisedDate: string
+  requiredDate: string | null
+  respondedDate: string | null
+  status: string
+  response: string | null
+  respondedByName: string | null
+  files: ExecFile[]
+  createdAt: string
+  updatedAt: string
+}
 interface SIRow {
   id: string
   projectId: string
@@ -26069,7 +26040,20 @@ interface ExecProps {
   onDeleteHSE: (id: string) => void
   onUploadHSEFile: (v: Record<string, unknown>) => void
   onDeleteHSEFile: (v: Record<string, unknown>) => void
-  ifcDocs: { id: string; refNumber: string; discipline: string; docType: string; title: string; revision: string; status: string; issueDate: string | null; downloadUrl: string | null; filename: string | null; originatorName: string | null; purposeOfIssue: string | null }[]
+  ifcDocs: {
+    id: string
+    refNumber: string
+    discipline: string
+    docType: string
+    title: string
+    revision: string
+    status: string
+    issueDate: string | null
+    downloadUrl: string | null
+    filename: string | null
+    originatorName: string | null
+    purposeOfIssue: string | null
+  }[]
 }
 
 const EXEC_STATUS_COLOR: Record<string, { bg: string; color: string; border: string }> = {
@@ -26253,7 +26237,10 @@ function execFileList(
   )
 }
 
-interface UploadState { uploading: boolean; progress: number }
+interface UploadState {
+  uploading: boolean
+  progress: number
+}
 
 async function execUpload(
   file: File,
@@ -27206,6 +27193,108 @@ function ExecutionTab({
   const filteredHSE =
     hseType === 'all' ? hseRecords : hseRecords.filter((r) => r.recordType === hseType)
 
+  const itpItemColumns: Column<ITPItemRow>[] = [
+    {
+      key: 'activity',
+      header: 'Activity',
+      mobilePrimary: true,
+      render: (item) => <span style={{ color: th.textPrimary }}>{item.activity}</span>,
+    },
+    {
+      key: 'inspectionType',
+      header: 'Type',
+      mobileSecondary: true,
+      render: (item) => (
+        <span
+          style={{
+            fontWeight: 700,
+            fontSize: '11px',
+            color:
+              {
+                check: '#1d4ed8',
+                hold: '#991b1b',
+                witness: '#7e22ce',
+                review: '#166534',
+              }[item.inspectionType] ?? th.textMuted,
+          }}
+        >
+          {item.inspectionType.charAt(0).toUpperCase()}
+        </span>
+      ),
+    },
+    {
+      key: 'result',
+      header: 'Result',
+      mobilePriority: 1,
+      render: (item) =>
+        item.result ? execBadge(item.result, th) : <span style={{ color: th.textMuted }}>—</span>,
+    },
+    {
+      key: 'inspectionDate',
+      header: 'Date',
+      mobilePriority: 2,
+      render: (item) => <span style={{ color: th.textMuted }}>{item.inspectionDate ?? '—'}</span>,
+    },
+    {
+      key: 'inspectorName',
+      header: 'Inspector',
+      mobilePriority: 3,
+      render: (item) => <span style={{ color: th.textMuted }}>{item.inspectorName ?? '—'}</span>,
+    },
+    {
+      key: 'contractorRole',
+      header: 'Contractor',
+      mobilePriority: 4,
+      render: (item) => <span style={{ color: th.textMuted }}>{item.contractorRole ?? '—'}</span>,
+    },
+    {
+      key: 'clientRole',
+      header: 'Client',
+      mobilePriority: 5,
+      render: (item) => <span style={{ color: th.textMuted }}>{item.clientRole ?? '—'}</span>,
+    },
+    {
+      key: 'sequence',
+      header: '#',
+      mobilePriority: 6,
+      render: (item) => <span style={{ color: th.textMuted }}>{item.sequence + 1}</span>,
+    },
+    ...(isEditable
+      ? [
+          {
+            key: 'action',
+            header: 'Action',
+            mobileAction: true,
+            render: (item: ITPItemRow) => (
+              <button
+                onClick={() => {
+                  setItpResultForm({
+                    result: 'pass',
+                    inspectorName: '',
+                    inspectionDate: new Date().toISOString().slice(0, 10),
+                    remarks: '',
+                  })
+                  setItpResultModal({ open: true, item })
+                }}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: `1px solid ${th.border}`,
+                  background: 'none',
+                  color: th.textSecondary,
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Record
+              </button>
+            ),
+          } satisfies Column<ITPItemRow>,
+        ]
+      : []),
+  ]
+
   return (
     <div style={{ padding: '0 0 40px' }}>
       {/* Sub-navigation */}
@@ -27252,6 +27341,169 @@ function ExecutionTab({
             acc[k].push(d)
             return acc
           }, {})
+          const ifcColumns: Column<(typeof ifcDocs)[number]>[] = [
+            {
+              key: 'refNumber',
+              header: 'Ref No.',
+              mobilePrimary: true,
+              render: (doc) => (
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    fontWeight: 700,
+                    color: th.accent,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {doc.refNumber}
+                </span>
+              ),
+            },
+            {
+              key: 'title',
+              header: 'Title',
+              mobileSecondary: true,
+              render: (doc) => (
+                <span style={{ color: th.textPrimary, fontWeight: 500 }}>{doc.title}</span>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              mobilePriority: 1,
+              render: (doc) => (
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: '2px 8px',
+                    borderRadius: 20,
+                    background: th.successBg,
+                    color: th.success,
+                    border: `1px solid ${th.successBorder}`,
+                    fontWeight: 700,
+                    letterSpacing: 0.5,
+                  }}
+                >
+                  {doc.status}
+                </span>
+              ),
+            },
+            {
+              key: 'issueDate',
+              header: 'Issue Date',
+              mobilePriority: 2,
+              render: (doc) => (
+                <span
+                  style={{
+                    color: th.textSecondary,
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {doc.issueDate ? new Date(doc.issueDate).toLocaleDateString() : '—'}
+                </span>
+              ),
+            },
+            {
+              key: 'docType',
+              header: 'Type',
+              mobilePriority: 3,
+              render: (doc) => (
+                <span
+                  style={{
+                    color: th.textSecondary,
+                    whiteSpace: 'nowrap',
+                    textTransform: 'uppercase',
+                    fontSize: 11,
+                  }}
+                >
+                  {doc.docType}
+                </span>
+              ),
+            },
+            {
+              key: 'originatorName',
+              header: 'Originator',
+              mobilePriority: 4,
+              render: (doc) => (
+                <span style={{ color: th.textSecondary, whiteSpace: 'nowrap' }}>
+                  {doc.originatorName ?? '—'}
+                </span>
+              ),
+            },
+            {
+              key: 'revision',
+              header: 'Rev',
+              mobilePriority: 5,
+              render: (doc) => (
+                <span
+                  style={{
+                    color: th.textSecondary,
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    textAlign: 'center',
+                  }}
+                >
+                  {doc.revision}
+                </span>
+              ),
+            },
+            {
+              key: 'purposeOfIssue',
+              header: 'Purpose',
+              mobilePriority: 6,
+              render: (doc) => (
+                <span style={{ color: th.textMuted, fontSize: 12 }}>
+                  {doc.purposeOfIssue ?? '—'}
+                </span>
+              ),
+            },
+            {
+              key: 'download',
+              header: '',
+              mobileAction: true,
+              render: (doc) =>
+                doc.downloadUrl ? (
+                  <a
+                    href={doc.downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '4px 10px',
+                      borderRadius: 5,
+                      background: th.accentBg,
+                      color: th.accent,
+                      border: `1px solid ${th.accentBorder}`,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textDecoration: 'none',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Download
+                  </a>
+                ) : (
+                  <span style={{ fontSize: 11, color: th.textMuted }}>No file</span>
+                ),
+            },
+          ]
           return (
             <div>
               <div
@@ -27353,195 +27605,7 @@ function ExecutionTab({
                             {docs.length} doc{docs.length !== 1 ? 's' : ''}
                           </span>
                         </div>
-                        <div style={{ overflowX: 'auto' }}>
-                          <table
-                            style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}
-                          >
-                            <thead>
-                              <tr>
-                                {[
-                                  'Ref No.',
-                                  'Type',
-                                  'Title',
-                                  'Rev',
-                                  'Status',
-                                  'Issue Date',
-                                  'Originator',
-                                  'Purpose',
-                                  '',
-                                ].map((h) => (
-                                  <th
-                                    key={h}
-                                    style={{
-                                      padding: '9px 14px',
-                                      textAlign: 'left',
-                                      fontWeight: 600,
-                                      fontSize: 11,
-                                      color: th.textMuted,
-                                      textTransform: 'uppercase',
-                                      letterSpacing: 0.5,
-                                      borderBottom: `1px solid ${th.tableBorder}`,
-                                      whiteSpace: 'nowrap',
-                                      background: 'transparent',
-                                    }}
-                                  >
-                                    {h}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {docs.map((doc, i) => (
-                                <tr
-                                  key={doc.id}
-                                  style={{
-                                    borderBottom: `1px solid ${th.tableBorder}`,
-                                    background:
-                                      i % 2 === 0
-                                        ? 'transparent'
-                                        : isDark
-                                          ? 'rgba(255,255,255,0.015)'
-                                          : 'rgba(0,0,0,0.01)',
-                                  }}
-                                >
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      fontFamily: 'monospace',
-                                      fontSize: 12,
-                                      fontWeight: 700,
-                                      color: th.accent,
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {doc.refNumber}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      color: th.textSecondary,
-                                      whiteSpace: 'nowrap',
-                                      textTransform: 'uppercase',
-                                      fontSize: 11,
-                                    }}
-                                  >
-                                    {doc.docType}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      color: th.textPrimary,
-                                      fontWeight: 500,
-                                      maxWidth: 280,
-                                    }}
-                                  >
-                                    {doc.title}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      color: th.textSecondary,
-                                      fontFamily: 'monospace',
-                                      fontSize: 12,
-                                      textAlign: 'center',
-                                    }}
-                                  >
-                                    {doc.revision}
-                                  </td>
-                                  <td style={{ padding: '11px 14px' }}>
-                                    <span
-                                      style={{
-                                        fontSize: 10,
-                                        padding: '2px 8px',
-                                        borderRadius: 20,
-                                        background: th.successBg,
-                                        color: th.success,
-                                        border: `1px solid ${th.successBorder}`,
-                                        fontWeight: 700,
-                                        letterSpacing: 0.5,
-                                      }}
-                                    >
-                                      {doc.status}
-                                    </span>
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      color: th.textSecondary,
-                                      whiteSpace: 'nowrap',
-                                      fontVariantNumeric: 'tabular-nums',
-                                    }}
-                                  >
-                                    {doc.issueDate
-                                      ? new Date(doc.issueDate).toLocaleDateString()
-                                      : '—'}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      color: th.textSecondary,
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {doc.originatorName ?? '—'}
-                                  </td>
-                                  <td
-                                    style={{
-                                      padding: '11px 14px',
-                                      color: th.textMuted,
-                                      fontSize: 12,
-                                    }}
-                                  >
-                                    {doc.purposeOfIssue ?? '—'}
-                                  </td>
-                                  <td style={{ padding: '11px 14px', textAlign: 'right' }}>
-                                    {doc.downloadUrl ? (
-                                      <a
-                                        href={doc.downloadUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: 4,
-                                          padding: '4px 10px',
-                                          borderRadius: 5,
-                                          background: th.accentBg,
-                                          color: th.accent,
-                                          border: `1px solid ${th.accentBorder}`,
-                                          fontSize: 11,
-                                          fontWeight: 600,
-                                          textDecoration: 'none',
-                                          whiteSpace: 'nowrap',
-                                        }}
-                                      >
-                                        <svg
-                                          width="11"
-                                          height="11"
-                                          viewBox="0 0 24 24"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          strokeWidth="2.5"
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                        >
-                                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                          <polyline points="7 10 12 15 17 10" />
-                                          <line x1="12" y1="15" x2="12" y2="3" />
-                                        </svg>
-                                        Download
-                                      </a>
-                                    ) : (
-                                      <span style={{ fontSize: 11, color: th.textMuted }}>
-                                        No file
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        <Table columns={ifcColumns} data={docs} rowKey="id" />
                       </div>
                     ))}
                 </div>
@@ -28262,120 +28326,8 @@ function ExecutionTab({
                       )}
                     </div>
                     {expandedId === r.id && r.items.length > 0 && (
-                      <div style={{ borderTop: `1px solid ${th.border}`, overflowX: 'auto' }}>
-                        <table
-                          style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}
-                        >
-                          <thead>
-                            <tr style={{ background: th.bgCanvas }}>
-                              {[
-                                '#',
-                                'Activity',
-                                'Type',
-                                'Contractor',
-                                'Client',
-                                'Result',
-                                'Inspector',
-                                'Date',
-                                isEditable ? 'Action' : '',
-                              ]
-                                .filter(Boolean)
-                                .map((h) => (
-                                  <th
-                                    key={h}
-                                    style={{
-                                      padding: '7px 12px',
-                                      textAlign: 'left',
-                                      fontWeight: 700,
-                                      color: th.textMuted,
-                                      borderBottom: `1px solid ${th.border}`,
-                                      whiteSpace: 'nowrap',
-                                      fontSize: '10px',
-                                      textTransform: 'uppercase',
-                                      letterSpacing: '0.04em',
-                                    }}
-                                  >
-                                    {h}
-                                  </th>
-                                ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {r.items.map((item) => (
-                              <tr key={item.id} style={{ borderBottom: `1px solid ${th.border}` }}>
-                                <td style={{ padding: '8px 12px', color: th.textMuted }}>
-                                  {item.sequence + 1}
-                                </td>
-                                <td style={{ padding: '8px 12px', color: th.textPrimary }}>
-                                  {item.activity}
-                                </td>
-                                <td style={{ padding: '8px 12px' }}>
-                                  <span
-                                    style={{
-                                      fontWeight: 700,
-                                      fontSize: '11px',
-                                      color:
-                                        {
-                                          check: '#1d4ed8',
-                                          hold: '#991b1b',
-                                          witness: '#7e22ce',
-                                          review: '#166534',
-                                        }[item.inspectionType] ?? th.textMuted,
-                                    }}
-                                  >
-                                    {item.inspectionType.charAt(0).toUpperCase()}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '8px 12px', color: th.textMuted }}>
-                                  {item.contractorRole ?? '—'}
-                                </td>
-                                <td style={{ padding: '8px 12px', color: th.textMuted }}>
-                                  {item.clientRole ?? '—'}
-                                </td>
-                                <td style={{ padding: '8px 12px' }}>
-                                  {item.result ? (
-                                    execBadge(item.result, th)
-                                  ) : (
-                                    <span style={{ color: th.textMuted }}>—</span>
-                                  )}
-                                </td>
-                                <td style={{ padding: '8px 12px', color: th.textMuted }}>
-                                  {item.inspectorName ?? '—'}
-                                </td>
-                                <td style={{ padding: '8px 12px', color: th.textMuted }}>
-                                  {item.inspectionDate ?? '—'}
-                                </td>
-                                {isEditable && (
-                                  <td style={{ padding: '8px 12px' }}>
-                                    <button
-                                      onClick={() => {
-                                        setItpResultForm({
-                                          result: 'pass',
-                                          inspectorName: '',
-                                          inspectionDate: new Date().toISOString().slice(0, 10),
-                                          remarks: '',
-                                        })
-                                        setItpResultModal({ open: true, item })
-                                      }}
-                                      style={{
-                                        padding: '4px 10px',
-                                        borderRadius: 6,
-                                        border: `1px solid ${th.border}`,
-                                        background: 'none',
-                                        color: th.textSecondary,
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                        cursor: 'pointer',
-                                      }}
-                                    >
-                                      Record
-                                    </button>
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div style={{ borderTop: `1px solid ${th.border}` }}>
+                        <Table columns={itpItemColumns} data={r.items} rowKey="id" />
                       </div>
                     )}
                     <div
@@ -32929,7 +32881,9 @@ function PlanningTab(props: PlanningProps) {
                 )}
               </>
             )}
-            {mBtns(saveActivity, () => { setActModal({ open: false, mode: 'create', act: {} }); })}
+            {mBtns(saveActivity, () => {
+              setActModal({ open: false, mode: 'create', act: {} })
+            })}
             {actModal.mode === 'edit' && isAdmin && (
               <button
                 style={{
@@ -33026,7 +32980,12 @@ function PlanningTab(props: PlanningProps) {
       )}
 
       {depModal && (
-        <div style={modalOverlay} onClick={() => { setDepModal(false); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setDepModal(false)
+          }}
+        >
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             {mHdr('Add Dependency')}
             {planField(
@@ -33091,7 +33050,12 @@ function PlanningTab(props: PlanningProps) {
       )}
 
       {blModal && (
-        <div style={modalOverlay} onClick={() => { setBlModal(false); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setBlModal(false)
+          }}
+        >
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             {mHdr('Save Baseline')}
             {planField(
@@ -33204,7 +33168,12 @@ function PlanningTab(props: PlanningProps) {
       )}
 
       {assignModal.open && (
-        <div style={modalOverlay} onClick={() => { setAssignModal({ open: false, activityId: '' }); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setAssignModal({ open: false, activityId: '' })
+          }}
+        >
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             {mHdr('Assign Resource')}
             {planField(
@@ -34822,9 +34791,37 @@ function CostControlTab(props: CostControlProps) {
 
 // ── VariationOrdersTab ────────────────────────────────────────────────────────
 
-interface VOCostItemType { id: string; voId: string; category: string; description: string; quantity: number; unit: string | null; unitRate: number; amount: number; notes: string | null; createdAt: string }
-interface VOCorrType { id: string; voId: string; correspondenceDate: string; direction: string; referenceNumber: string | null; subject: string; description: string | null; createdAt: string }
-interface VODrawingType { id: string; voId: string; drawingNumber: string; revision: string | null; title: string | null; notes: string | null; createdAt: string }
+interface VOCostItemType {
+  id: string
+  voId: string
+  category: string
+  description: string
+  quantity: number
+  unit: string | null
+  unitRate: number
+  amount: number
+  notes: string | null
+  createdAt: string
+}
+interface VOCorrType {
+  id: string
+  voId: string
+  correspondenceDate: string
+  direction: string
+  referenceNumber: string | null
+  subject: string
+  description: string | null
+  createdAt: string
+}
+interface VODrawingType {
+  id: string
+  voId: string
+  drawingNumber: string
+  revision: string | null
+  title: string | null
+  notes: string | null
+  createdAt: string
+}
 interface VariationOrderType {
   id: string
   projectId: string
@@ -34855,7 +34852,11 @@ interface VariationOrderType {
   updatedAt: string
 }
 
-interface VOContractOption { id: string; contractNumber: string; contractName: string }
+interface VOContractOption {
+  id: string
+  contractNumber: string
+  contractName: string
+}
 
 interface VariationOrdersProps {
   projectId: string
@@ -35212,11 +35213,19 @@ function VariationOrdersTab(props: VariationOrdersProps) {
     const grandTotal = variationOrders.reduce((s, v) => s + v.voValue, 0)
 
     const byChangeType = Object.entries(
-      variationOrders.reduce<Record<string, number>>((acc, v) => { const k = v.changeType; acc[k] = (acc[k] ?? 0) + v.voValue; return acc }, {})
+      variationOrders.reduce<Record<string, number>>((acc, v) => {
+        const k = v.changeType
+        acc[k] = (acc[k] ?? 0) + v.voValue
+        return acc
+      }, {}),
     ).sort((a, b) => b[1] - a[1])
 
     const byInitiator = Object.entries(
-      variationOrders.reduce<Record<string, number>>((acc, v) => { const k = v.initiatedBy; acc[k] = (acc[k] ?? 0) + v.voValue; return acc }, {})
+      variationOrders.reduce<Record<string, number>>((acc, v) => {
+        const k = v.initiatedBy
+        acc[k] = (acc[k] ?? 0) + v.voValue
+        return acc
+      }, {}),
     ).sort((a, b) => b[1] - a[1])
 
     return (
@@ -36228,7 +36237,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
       {/* VO Create/Edit Modal */}
       {voModal.open && (
-        <div style={modalOverlay} onClick={() => { setVOModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setVOModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             {mHdr(voModal.mode === 'create' ? 'New Variation Order' : `Edit ${voForm.voNumber}`)}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -36446,7 +36460,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
       {/* Approve Modal */}
       {approveModal.open && (
-        <div style={modalOverlay} onClick={() => { setApproveModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setApproveModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={{ ...modalBox, maxWidth: '380px' }} onClick={(e) => e.stopPropagation()}>
             {mHdr(`Approve ${approveModal.voNumber}`)}
             <div style={{ fontSize: '13px', color: th.textSecondary, marginBottom: '12px' }}>
@@ -36512,7 +36531,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
       {/* Reject Modal */}
       {rejectModal.open && (
-        <div style={modalOverlay} onClick={() => { setRejectModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setRejectModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={{ ...modalBox, maxWidth: '420px' }} onClick={(e) => e.stopPropagation()}>
             {mHdr(`Reject ${rejectModal.voNumber}`)}
             {voff(
@@ -36629,7 +36653,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
       {/* Correspondence Modal */}
       {corrModal.open && (
-        <div style={modalOverlay} onClick={() => { setCorrModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setCorrModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             {mHdr('Add Correspondence Entry')}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -36695,7 +36724,12 @@ function VariationOrdersTab(props: VariationOrdersProps) {
 
       {/* Drawing Modal */}
       {drawModal.open && (
-        <div style={modalOverlay} onClick={() => { setDrawModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setDrawModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={{ ...modalBox, maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
             {mHdr('Link Affected Drawing')}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -36809,7 +36843,25 @@ interface MeetingActionType {
   carryOverFrom: string | null
   createdAt: string
 }
-interface MeetingType { id: string; projectId: string; meetingNumber: string; meetingType: string; title: string; meetingDate: string; location: string | null; chairperson: string | null; attendees: string | null; agenda: string | null; minutes: string | null; distributionList: string | null; status: string; issuedAt: string | null; actions: MeetingActionType[]; createdAt: string; updatedAt: string }
+interface MeetingType {
+  id: string
+  projectId: string
+  meetingNumber: string
+  meetingType: string
+  title: string
+  meetingDate: string
+  location: string | null
+  chairperson: string | null
+  attendees: string | null
+  agenda: string | null
+  minutes: string | null
+  distributionList: string | null
+  status: string
+  issuedAt: string | null
+  actions: MeetingActionType[]
+  createdAt: string
+  updatedAt: string
+}
 
 interface MeetingsProps {
   projectId: string
@@ -37465,7 +37517,12 @@ function MeetingsTab(props: MeetingsProps) {
                 flexWrap: 'wrap',
               }}
             >
-              <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => { toggleM(m.id); }}>
+              <div
+                style={{ flex: 1, cursor: 'pointer' }}
+                onClick={() => {
+                  toggleM(m.id)
+                }}
+              >
                 <div
                   style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}
                 >
@@ -38240,7 +38297,12 @@ function MeetingsTab(props: MeetingsProps) {
 
       {/* Meeting Create/Edit Modal */}
       {mModal.open && (
-        <div style={modalOverlay} onClick={() => { setMModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setMModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={modalBox} onClick={(e) => e.stopPropagation()}>
             {mHdr(
               mModal.mode === 'create'
@@ -38345,7 +38407,12 @@ function MeetingsTab(props: MeetingsProps) {
 
       {/* Action Create/Edit Modal */}
       {aModal.open && (
-        <div style={modalOverlay} onClick={() => { setAModal(m => ({ ...m, open: false })); }}>
+        <div
+          style={modalOverlay}
+          onClick={() => {
+            setAModal((m) => ({ ...m, open: false }))
+          }}
+        >
           <div style={{ ...modalBox, maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
             {mHdr(aModal.mode === 'create' ? 'Add Action Item' : 'Edit Action Item')}
             {voff(
