@@ -2324,11 +2324,9 @@ export default function ProjectDetail() {
         style={{
           padding: isPhone ? '0 8px' : '0 24px',
           background: theme.bgSurface,
-          borderBottom: `1px solid ${theme.border}`,
-          overflowX: 'auto',
         }}
       >
-        <TabBar tabs={TABS} active={tab} onChange={setTab} />
+        <TabBar tabs={TABS} active={tab} onChange={setTab} fadeColor={theme.bgSurface} />
       </div>
 
       {/* Tab content */}

@@ -1,5 +1,6 @@
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
+import { ScrollFadeRow } from './ScrollFadeRow'
 
 interface StatusStep {
   key: string
@@ -16,6 +17,8 @@ interface StatusBarProps {
   steps?: StatusStep[]
   currentStep?: string
   rejectedSteps?: string[]
+  /** Background this strip sits on, for the ScrollFadeRow edge fade. Defaults to page canvas. */
+  fadeColor?: string
 }
 
 export function StatusBar({
@@ -26,6 +29,7 @@ export function StatusBar({
   steps,
   currentStep,
   rejectedSteps = [],
+  fadeColor,
 }: StatusBarProps) {
   const { theme } = useTheme()
 
@@ -43,15 +47,7 @@ export function StatusBar({
   const isDanger = isRejected
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0',
-        overflowX: 'auto',
-        padding: '4px 0',
-      }}
-    >
+    <ScrollFadeRow fadeColor={fadeColor} align="center" style={{ padding: '4px 0' }}>
       {resolvedStatuses.map((status, i) => {
         const isCompleted = i < currentIndex
         const isCurrent = i === currentIndex
@@ -123,6 +119,6 @@ export function StatusBar({
           </React.Fragment>
         )
       })}
-    </div>
+    </ScrollFadeRow>
   )
 }

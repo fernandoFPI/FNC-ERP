@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { useAuthStore } from '../../store/authStore'
+import { useNotificationStore } from '../../store/notificationStore'
 
 // ── Mini SVG icon set for BottomNav ──────────────────────────────────────────
 
@@ -105,36 +106,36 @@ const NAV_SETS: Record<string, BottomNavItem[]> = {
     { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Reports', icon: 'bar-chart-2', path: '/reporting/executive' },
     { label: 'Projects', icon: 'briefcase', path: '/projects' },
-    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Notifs', icon: 'bell', path: '/notifications' },
   ],
   finance: [
     { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'AR', icon: 'arrow-down-circle', path: '/finance/ar' },
     { label: 'AP', icon: 'arrow-up-circle', path: '/finance/ap' },
-    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Notifs', icon: 'bell', path: '/notifications' },
   ],
   project_manager: [
     { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Projects', icon: 'briefcase', path: '/projects' },
     { label: 'Queue', icon: 'list', path: '/procurement/queue' },
-    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Notifs', icon: 'bell', path: '/notifications' },
   ],
   store_keeper: [
     { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Stock', icon: 'package', path: '/inventory/balances' },
     { label: 'Queue', icon: 'list', path: '/procurement/queue' },
-    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Notifs', icon: 'bell', path: '/notifications' },
   ],
   hr_admin: [
     { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Staff', icon: 'users', path: '/hr/employees' },
     { label: 'Attend.', icon: 'clock', path: '/attendance' },
-    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Notifs', icon: 'bell', path: '/notifications' },
   ],
   default: [
     { label: 'Home', icon: 'home', path: '/dashboard' },
     { label: 'Queue', icon: 'list', path: '/procurement/queue' },
-    { label: 'Notifs', icon: 'bell', path: '/settings/notifications' },
+    { label: 'Notifs', icon: 'bell', path: '/notifications' },
     { label: 'Settings', icon: 'settings', path: '/settings' },
   ],
 }
@@ -146,6 +147,7 @@ export function BottomNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
+  const unreadCount = useNotificationStore((s) => s.unreadCount)
 
   function getNavItems(): BottomNavItem[] {
     const role = user?.role
@@ -219,6 +221,21 @@ export function BottomNav() {
                   height: '4px',
                   borderRadius: '50%',
                   background: theme.accent,
+                }}
+              />
+            )}
+            {item.icon === 'bell' && unreadCount > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '8px',
+                  left: '50%',
+                  transform: 'translateX(2px)',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: theme.danger,
+                  border: `1.5px solid ${theme.bgSurface}`,
                 }}
               />
             )}

@@ -7,6 +7,7 @@ import { useAPPendingCount } from '../../hooks/useAPPendingCount'
 import { usePermission } from '../../hooks/usePermission'
 import { useCompanyStore } from '../../store/companyStore'
 import { useAuthStore } from '../../store/authStore'
+import { getInitials } from '../../lib/userDisplay'
 
 interface NavChild {
   label: string
@@ -969,6 +970,7 @@ export function Sidebar({
   const { theme } = useTheme()
   const location = useLocation()
   const user = useAuthStore((s) => s.user)
+  const clearAuth = useAuthStore((s) => s.clearAuth)
   const approvalCount = useApprovalStore((s) => s.pendingCount)
   const overdueMaintenanceCount = useApprovalStore((s) => s.overdueMaintenanceCount)
   const myPOQueueCount = useMyPOQueueCount()
@@ -1439,6 +1441,110 @@ export function Sidebar({
       </div>
 
       <div style={{ borderTop: `0.5px solid ${theme.border}`, padding: '8px 0', flexShrink: 0 }}>
+        {/* Phone drawer only — Topbar drops the avatar menu on phone, so
+            identity + Profile/Sign out live here instead, reachable via
+            BottomNav's "More" button. */}
+        {mobile && user && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '8px 16px 12px',
+            }}
+          >
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                flexShrink: 0,
+                background: theme.accentBg,
+                border: `1px solid ${theme.accentBorder}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: theme.accent,
+              }}
+            >
+              {user.profilePicture ? (
+                <img
+                  src={user.profilePicture}
+                  alt="avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                getInitials(user.email)
+              )}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              {user.firstName && user.lastName && (
+                <p
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: theme.textPrimary,
+                    margin: '0 0 1px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {user.firstName} {user.lastName}
+                </p>
+              )}
+              <p
+                style={{
+                  fontSize: '11px',
+                  color: theme.textMuted,
+                  margin: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {user.email}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {mobile && (
+          <NavLink
+            to="/settings/profile"
+            style={{ textDecoration: 'none', display: 'block' }}
+            onClick={handleNavClick}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '9px 16px',
+                minHeight: touchMinHeight,
+                color:
+                  location.pathname === '/settings/profile' ? theme.accent : theme.textSecondary,
+                background:
+                  location.pathname === '/settings/profile' ? theme.accentBg : 'transparent',
+                borderLeft:
+                  location.pathname === '/settings/profile'
+                    ? `2.5px solid ${theme.accent}`
+                    : '2.5px solid transparent',
+                cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <span style={{ display: 'flex', flexShrink: 0 }}>
+                <Icon name="users" />
+              </span>
+              <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Profile</span>
+            </div>
+          </NavLink>
+        )}
+
         {user?.system_admin && (
           <NavLink
             to="/admin"
@@ -1553,6 +1659,33 @@ export function Sidebar({
             <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Help</span>
           )}
         </button>
+
+        {mobile && (
+          <button
+            onClick={() => {
+              clearAuth()
+              navigate('/login')
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '9px 16px',
+              minHeight: touchMinHeight,
+              color: theme.danger,
+              cursor: 'pointer',
+              background: 'none',
+              border: 'none',
+              width: '100%',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <span style={{ display: 'flex', flexShrink: 0 }}>
+              <Icon name="log-out" />
+            </span>
+            <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>Sign out</span>
+          </button>
+        )}
       </div>
     </div>
   )

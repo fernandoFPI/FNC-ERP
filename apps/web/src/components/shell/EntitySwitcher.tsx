@@ -9,6 +9,12 @@ import { api } from '../../lib/axios'
 import { decodeJWT } from '../../lib/jwt'
 import { apolloClient } from '../../lib/apollo'
 
+function getCompanyInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
+  return (words[0]?.slice(0, 2) ?? 'Co').toUpperCase()
+}
+
 function getCompanyColor(companyName: string): string {
   const name = companyName.toLowerCase()
   if (name.includes('yakam')) return '#3de8c8'
@@ -74,63 +80,36 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
 
   const color = getCompanyColor(activeCompany?.name ?? '')
 
-  // ── Compact pill (phone) ─────────────────────────────────────────────────────
+  // ── Compact badge (phone) — a circular initials badge instead of a wide
+  // truncated pill, so it doesn't compete with the breadcrumb for space. ────
   const compactButton = (
     <button
       onClick={() => {
         setError(null)
         setOpen((v) => !v)
       }}
+      aria-label={activeCompany?.name ? `Switch company (${activeCompany.name})` : 'Select company'}
+      title={activeCompany?.name ?? 'Select company'}
       style={{
-        display: 'inline-flex',
+        width: '34px',
+        height: '34px',
+        flexShrink: 0,
+        display: 'flex',
         alignItems: 'center',
-        gap: '5px',
-        padding: '4px 8px',
+        justifyContent: 'center',
         background: theme.bgSurface,
-        border: `1px solid ${theme.border}`,
-        borderRadius: '16px',
+        border: `1.5px solid ${color}`,
+        borderRadius: '50%',
         color: theme.textPrimary,
         cursor: 'pointer',
-        fontSize: '12px',
+        fontSize: '11px',
         fontFamily: 'inherit',
-        fontWeight: 500,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
         WebkitTapHighlightColor: 'transparent',
       }}
     >
-      {loading ? (
-        <Spinner size="sm" />
-      ) : (
-        <span
-          style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            background: color,
-            boxShadow: `0 0 5px ${color}`,
-            flexShrink: 0,
-          }}
-        />
-      )}
-      <span
-        style={{
-          maxWidth: '56px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {(activeCompany?.name ?? 'Co').split(' ')[0]}
-      </span>
-      <svg
-        width="8"
-        height="8"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke={theme.textMuted}
-        strokeWidth="2"
-      >
-        <polyline points="6 9 12 15 18 9" />
-      </svg>
+      {loading ? <Spinner size="sm" /> : getCompanyInitials(activeCompany?.name ?? 'Co')}
     </button>
   )
 

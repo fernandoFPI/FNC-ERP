@@ -10,8 +10,10 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import { Grid } from '../../../components/ui/Grid'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import { usePagePadding } from '../../../hooks/usePagePadding'
 
 interface ARSummary {
   total_outstanding: string
@@ -135,6 +137,7 @@ export default function ARDashboard() {
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
   const activeCompany = useCompanyStore((s) => s.activeCompany)
+  const pagePadding = usePagePadding()
 
   const [summary, setSummary] = useState<ARSummary | null>(null)
   const [invoices, setInvoices] = useState<ARInvoice[]>([])
@@ -258,21 +261,14 @@ export default function ARDashboard() {
   }
 
   return (
-    <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1600px' }}>
+    <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
         title="Accounts Receivable"
         subtitle={`${activeCompany?.name ?? ''} · as of today`}
       />
 
       {/* KPI row */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '14px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={5} tabletCols={3} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         {[
           {
             label: 'Total Outstanding',
@@ -345,17 +341,10 @@ export default function ARDashboard() {
             )}
           </Card>
         ))}
-      </div>
+      </Grid>
 
       {/* Aging + Source breakdown */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1.5fr 1fr',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={2} tabletCols={1} phoneCols={1} gap={16} style={{ marginBottom: '24px' }}>
         <Card padding="md">
           <h3
             style={{
@@ -494,17 +483,10 @@ export default function ARDashboard() {
             </>
           )}
         </Card>
-      </div>
+      </Grid>
 
       {/* By-client + invoices grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1.6fr',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={2} tabletCols={1} phoneCols={1} gap={16} style={{ marginBottom: '24px' }}>
         <Card padding="md">
           <h3
             style={{
@@ -796,7 +778,7 @@ export default function ARDashboard() {
             </div>
           )}
         </Card>
-      </div>
+      </Grid>
     </div>
   )
 }

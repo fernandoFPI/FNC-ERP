@@ -8,6 +8,7 @@ import { useAuthStore } from '../../store/authStore'
 import { useNotificationStore } from '../../store/notificationStore'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 import { api } from '../../lib/axios'
+import { getInitials } from '../../lib/userDisplay'
 
 const SEGMENT_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -108,12 +109,6 @@ function buildCrumbs(pathname: string) {
     isLast: i === segments.length - 1,
     isId: UUID_RE.test(seg) || /^\d+$/.test(seg),
   }))
-}
-
-function getInitials(email: string): string {
-  const parts = email.split('@')[0]?.split('.') ?? []
-  if (parts.length >= 2) return (parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')
-  return (parts[0]?.slice(0, 2) ?? 'U').toUpperCase()
 }
 
 interface TopbarProps {
@@ -362,200 +357,232 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
           </button>
         )}
 
-        <ThemeSwitcher />
+        {/* Theme, notifications, and the avatar menu are all reachable via the
+            phone drawer (More → Sidebar footer) and BottomNav's Notifs tab —
+            dropping them here keeps the phone topbar to hamburger + breadcrumb
+            + company badge. */}
+        {!isPhone && <ThemeSwitcher />}
 
         {/* Notifications */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => {
-              isPhone ? navigate('/notifications') : setNotifOpen(true)
-            }}
-            aria-label="Notifications"
-            style={{
-              width: '34px',
-              height: '34px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: theme.bgSurface,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '8px',
-              color: theme.textSecondary,
-              cursor: 'pointer',
-              position: 'relative',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
+        {!isPhone && (
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => {
+                setNotifOpen(true)
+              }}
+              aria-label="Notifications"
+              style={{
+                width: '34px',
+                height: '34px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: theme.bgSurface,
+                border: `1px solid ${theme.border}`,
+                borderRadius: '8px',
+                color: theme.textSecondary,
+                cursor: 'pointer',
+                position: 'relative',
+                WebkitTapHighlightColor: 'transparent',
+              }}
             >
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            {unreadCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: '4px',
-                  right: '4px',
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  background: theme.danger,
-                  boxShadow: `0 0 4px ${theme.danger}`,
-                }}
-              />
-            )}
-          </button>
-        </div>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {unreadCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '4px',
+                    right: '4px',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: theme.danger,
+                    boxShadow: `0 0 4px ${theme.danger}`,
+                  }}
+                />
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Avatar */}
-        <div style={{ position: 'relative' }}>
-          <button
-            onClick={() => {
-              setAvatarMenuOpen((v) => !v)
-            }}
-            aria-label="User menu"
-            style={{
-              width: '34px',
-              height: '34px',
-              borderRadius: '50%',
-              background: theme.accentBg,
-              border: `1px solid ${theme.accentBorder}`,
-              color: theme.accent,
-              cursor: 'pointer',
-              fontSize: '12px',
-              fontWeight: 700,
-              letterSpacing: '0.02em',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'inherit',
-              WebkitTapHighlightColor: 'transparent',
-              overflow: 'hidden',
-              padding: 0,
-            }}
-          >
-            {user?.profilePicture ? (
-              <img
-                src={user.profilePicture}
-                alt="avatar"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            ) : (
-              initials
-            )}
-          </button>
-          {avatarMenuOpen && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                right: 0,
-                zIndex: 500,
-                minWidth: '180px',
+        {!isPhone && (
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => {
+                setAvatarMenuOpen((v) => !v)
               }}
-              onMouseLeave={() => {
-                setAvatarMenuOpen(false)
+              aria-label="User menu"
+              style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '50%',
+                background: theme.accentBg,
+                border: `1px solid ${theme.accentBorder}`,
+                color: theme.accent,
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'inherit',
+                WebkitTapHighlightColor: 'transparent',
+                overflow: 'hidden',
+                padding: 0,
               }}
             >
+              {user?.profilePicture ? (
+                <img
+                  src={user.profilePicture}
+                  alt="avatar"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                initials
+              )}
+            </button>
+            {avatarMenuOpen && (
               <div
                 style={{
-                  background: theme.bgSurface,
-                  border: `1px solid ${theme.border}`,
-                  borderRadius: '10px',
-                  backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
-                  overflow: 'hidden',
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  right: 0,
+                  zIndex: 500,
+                  minWidth: '180px',
+                }}
+                onMouseLeave={() => {
+                  setAvatarMenuOpen(false)
                 }}
               >
                 <div
                   style={{
-                    padding: '12px 14px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
+                    background: theme.bgSurface,
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '10px',
+                    backdropFilter: theme.hasBlur ? theme.blurAmount : 'none',
+                    overflow: 'hidden',
                   }}
                 >
                   <div
                     style={{
-                      width: '36px',
-                      height: '36px',
-                      borderRadius: '50%',
-                      flexShrink: 0,
-                      background: theme.accentBg,
-                      border: `1px solid ${theme.accentBorder}`,
+                      padding: '12px 14px',
+                      borderBottom: `1px solid ${theme.border}`,
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: theme.accent,
+                      gap: '10px',
                     }}
                   >
-                    {user?.profilePicture ? (
-                      <img
-                        src={user.profilePicture}
-                        alt="avatar"
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : (
-                      initials
-                    )}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    {displayName && (
+                    <div
+                      style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                        background: theme.accentBg,
+                        border: `1px solid ${theme.accentBorder}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        color: theme.accent,
+                      }}
+                    >
+                      {user?.profilePicture ? (
+                        <img
+                          src={user.profilePicture}
+                          alt="avatar"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        initials
+                      )}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      {displayName && (
+                        <p
+                          style={{
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            color: theme.textPrimary,
+                            margin: '0 0 1px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {displayName}
+                        </p>
+                      )}
                       <p
                         style={{
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          color: theme.textPrimary,
-                          margin: '0 0 1px',
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          margin: 0,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        {displayName}
+                        {user?.email ?? ''}
                       </p>
-                    )}
-                    <p
-                      style={{
-                        fontSize: '11px',
-                        color: theme.textMuted,
-                        margin: 0,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {user?.email ?? ''}
-                    </p>
+                    </div>
                   </div>
-                </div>
-                <div style={{ padding: '4px' }}>
-                  {[
-                    { label: 'Profile', path: '/settings/profile' },
-                    { label: 'Settings', path: '/settings' },
-                  ].map((item) => (
+                  <div style={{ padding: '4px' }}>
+                    {[
+                      { label: 'Profile', path: '/settings/profile' },
+                      { label: 'Settings', path: '/settings' },
+                    ].map((item) => (
+                      <button
+                        key={item.path}
+                        onClick={() => {
+                          navigate(item.path)
+                          setAvatarMenuOpen(false)
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          padding: '8px 10px',
+                          fontSize: '13px',
+                          color: theme.textSecondary,
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          fontFamily: 'inherit',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = theme.bgSurfaceHover
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'none'
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                     <button
-                      key={item.path}
-                      onClick={() => {
-                        navigate(item.path)
-                        setAvatarMenuOpen(false)
-                      }}
+                      onClick={handleSignOut}
                       style={{
                         display: 'block',
                         width: '100%',
                         padding: '8px 10px',
                         fontSize: '13px',
-                        color: theme.textSecondary,
+                        color: theme.danger,
                         background: 'none',
                         border: 'none',
                         borderRadius: '6px',
@@ -564,44 +591,20 @@ export function Topbar({ compact = false, onMenuToggle }: TopbarProps) {
                         fontFamily: 'inherit',
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.bgSurfaceHover
+                        e.currentTarget.style.background = theme.dangerBg
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.background = 'none'
                       }}
                     >
-                      {item.label}
+                      Sign out
                     </button>
-                  ))}
-                  <button
-                    onClick={handleSignOut}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      padding: '8px 10px',
-                      fontSize: '13px',
-                      color: theme.danger,
-                      background: 'none',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: 'inherit',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.dangerBg
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'none'
-                    }}
-                  >
-                    Sign out
-                  </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       <NotificationsDrawer

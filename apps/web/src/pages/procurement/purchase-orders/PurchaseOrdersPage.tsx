@@ -9,6 +9,7 @@ import { FilterBar } from '../../../components/ui/FilterBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
+import { FilterChipStrip } from '../../../components/ui/FilterChipStrip'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
@@ -433,121 +434,19 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
 
-      {(() => {
-        const variantColors: Record<string, { bg: string; color: string; border: string }> = {
-          success: { bg: theme.successBg, color: theme.success, border: theme.successBorder },
-          warning: { bg: theme.warningBg, color: theme.warning, border: theme.warningBorder },
-          danger: { bg: theme.dangerBg, color: theme.danger, border: theme.dangerBorder },
-          info: { bg: theme.infoBg, color: theme.info, border: theme.infoBorder },
-          neutral: { bg: theme.bgSurface, color: theme.textSecondary, border: theme.border },
-          accent: { bg: theme.accentBg, color: theme.accent, border: theme.accentBorder },
-        }
-        const allStatuses = [...PO_STATUSES, { key: 'deleted', label: 'Deleted' } as const]
-        const total = orders.length
-        return (
-          <div
-            style={{
-              marginTop: '16px',
-              display: 'flex',
-              gap: '6px',
-              overflowX: 'auto',
-              paddingBottom: '2px',
-            }}
-          >
-            <button
-              onClick={() => {
-                setStatusFilter('')
-              }}
-              style={{
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '7px',
-                cursor: 'pointer',
-                border: `1px solid ${!statusFilter ? theme.accentBorder : theme.border}`,
-                background: !statusFilter ? theme.accentBg : theme.bgSurface,
-                color: !statusFilter ? theme.accent : theme.textMuted,
-                fontSize: '12px',
-                fontWeight: !statusFilter ? 600 : 400,
-              }}
-            >
-              All
-              <span
-                style={{
-                  minWidth: '18px',
-                  height: '18px',
-                  borderRadius: '9px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  background: !statusFilter ? theme.accent : theme.border,
-                  color: !statusFilter ? '#fff' : theme.textMuted,
-                  padding: '0 4px',
-                }}
-              >
-                {total}
-              </span>
-            </button>
-
-            <div
-              style={{ width: '1px', background: theme.border, margin: '4px 2px', flexShrink: 0 }}
-            />
-
-            {allStatuses.map((s) => {
-              const count = orders.filter((o) => o.status === s.key).length
-              const active = statusFilter === s.key
-              const variant = getPOStatusVariant(s.key)
-              const vc = variantColors[variant]
-              return (
-                <button
-                  key={s.key}
-                  onClick={() => {
-                    setStatusFilter(active ? '' : s.key)
-                  }}
-                  style={{
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '7px',
-                    cursor: 'pointer',
-                    border: `1px solid ${active ? vc.border : theme.border}`,
-                    background: active ? vc.bg : theme.bgSurface,
-                    color: active ? vc.color : theme.textMuted,
-                    fontSize: '12px',
-                    fontWeight: active ? 600 : 400,
-                    opacity: count === 0 ? 0.45 : 1,
-                  }}
-                >
-                  {s.label}
-                  <span
-                    style={{
-                      minWidth: '18px',
-                      height: '18px',
-                      borderRadius: '9px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      background: active ? vc.color : count > 0 ? vc.bg : theme.border,
-                      color: active ? '#fff' : count > 0 ? vc.color : theme.textMuted,
-                      padding: '0 4px',
-                    }}
-                  >
-                    {count}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )
-      })()}
+      <div style={{ marginTop: '16px' }}>
+        <FilterChipStrip
+          allCount={orders.length}
+          activeKey={statusFilter}
+          onChange={setStatusFilter}
+          chips={[...PO_STATUSES, { key: 'deleted', label: 'Deleted' } as const].map((s) => ({
+            key: s.key,
+            label: s.label,
+            count: orders.filter((o) => o.status === s.key).length,
+            variant: getPOStatusVariant(s.key),
+          }))}
+        />
+      </div>
 
       <Card style={{ marginTop: '12px' }}>
         <FilterBar

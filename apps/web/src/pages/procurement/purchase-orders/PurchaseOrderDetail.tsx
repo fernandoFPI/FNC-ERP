@@ -40,6 +40,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
+import { TabBar } from '../../../components/ui/TabBar'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
@@ -652,50 +653,59 @@ export default function PurchaseOrderDetail() {
                 </div>
               )
             })()}
-            {apInvoice !== undefined &&
-              can('finance.ap.view') &&
-              (apInvoice ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    navigate(`/finance/ap/${apInvoice.id}`)
-                  }}
-                >
-                  View Invoice
-                </Button>
-              ) : can('finance.ap.edit') && po.status === 'completed' ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    navigate(`/finance/ap/new?po_id=${id}`)
-                  }}
-                >
-                  Create Invoice
-                </Button>
-              ) : null)}
-            {['received', 'invoiced', 'completed'].includes(po.status) &&
-              can('procurement.po.edit', 'edit') && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    navigate(`/procurement/purchase-orders/${id}/returns/new`)
-                  }}
-                >
-                  ↩ Create Return
-                </Button>
-              )}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setShowPrintModal(true)
-              }}
-            >
-              Print PO
-            </Button>
+            {/* Primary contextual actions — pinned to a bottom sticky bar on
+                phone instead of crowding the header row (StickyActionBar is a
+                no-op passthrough on tablet+desktop). */}
+            <StickyActionBar>
+              {apInvoice !== undefined &&
+                can('finance.ap.view') &&
+                (apInvoice ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    fullWidthOnMobile
+                    onClick={() => {
+                      navigate(`/finance/ap/${apInvoice.id}`)
+                    }}
+                  >
+                    View Invoice
+                  </Button>
+                ) : can('finance.ap.edit') && po.status === 'completed' ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    fullWidthOnMobile
+                    onClick={() => {
+                      navigate(`/finance/ap/new?po_id=${id}`)
+                    }}
+                  >
+                    Create Invoice
+                  </Button>
+                ) : null)}
+              {['received', 'invoiced', 'completed'].includes(po.status) &&
+                can('procurement.po.edit', 'edit') && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    fullWidthOnMobile
+                    onClick={() => {
+                      navigate(`/procurement/purchase-orders/${id}/returns/new`)
+                    }}
+                  >
+                    ↩ Create Return
+                  </Button>
+                )}
+              <Button
+                variant="secondary"
+                size="sm"
+                fullWidthOnMobile
+                onClick={() => {
+                  setShowPrintModal(true)
+                }}
+              >
+                Print PO
+              </Button>
+            </StickyActionBar>
             {(po.status === 'draft' || po.status === 'inventory_check') && (
               <Button
                 variant="danger"
@@ -763,7 +773,7 @@ export default function PurchaseOrderDetail() {
                         top: 'calc(100% + 10px)',
                         right: 0,
                         zIndex: 200,
-                        width: 380,
+                        width: 'min(380px, calc(100vw - 32px))',
                         background: theme.bgCanvas,
                         border: `1px solid ${theme.border}`,
                         borderRadius: '12px',
@@ -3232,62 +3242,15 @@ export default function PurchaseOrderDetail() {
       )}
 
       {/* Tabs */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '0',
-          borderBottom: `2px solid ${theme.border}`,
-          marginBottom: '16px',
-          overflowX: 'auto',
-        }}
-      >
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => {
-              setActiveTab(t.key)
-            }}
-            style={{
-              padding: isPhone ? '9px 12px' : '10px 18px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: isPhone ? '12px' : '13px',
-              color: activeTab === t.key ? theme.accent : theme.textSecondary,
-              borderBottom:
-                activeTab === t.key ? `2px solid ${theme.accent}` : '2px solid transparent',
-              marginBottom: '-2px',
-              fontWeight: activeTab === t.key ? 600 : 400,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-              transition: 'color 0.15s',
-            }}
-          >
-            {isPhone ? (phoneTabLabels[t.key] ?? t.label) : t.label}
-            {(t.badge ?? 0) > 0 && (
-              <span
-                style={{
-                  minWidth: '18px',
-                  height: '18px',
-                  borderRadius: '9px',
-                  background: theme.warning,
-                  color: '#fff',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0 4px',
-                }}
-              >
-                {t.badge}
-              </span>
-            )}
-          </button>
-        ))}
+      <div style={{ marginBottom: '16px' }}>
+        <TabBar
+          tabs={tabs}
+          active={activeTab}
+          onChange={(key) => {
+            setActiveTab(key as Tab)
+          }}
+          phoneLabels={phoneTabLabels}
+        />
       </div>
 
       {/* Tab content */}

@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
 import { useBreakpoint } from '../../hooks/useBreakpoint'
 
@@ -15,6 +15,8 @@ export interface Column<T> {
   mobilePrimary?: boolean
   mobileSecondary?: boolean
   mobileAction?: boolean
+  // Lower sorts first among body fields on phone card view; ties keep column order.
+  mobilePriority?: number
   tabletHide?: boolean
 }
 
@@ -95,6 +97,7 @@ export function Table<T extends object>({
 }: TableProps<T>) {
   const { theme } = useTheme()
   const { isPhone, isTablet } = useBreakpoint()
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
 
   // ── PHONE — Card list view ───────────────────────────────────────────────────
   if (isPhone && mobileCard) {
@@ -118,9 +121,19 @@ export function Table<T extends object>({
     const primaryCol = columns.find((c) => c.mobilePrimary) ?? columns[0]
     const secondaryCol = columns.find((c) => c.mobileSecondary)
     const actionCol = columns.find((c) => c.mobileAction)
-    const bodyColumns = columns.filter(
-      (c) => !c.mobileHide && !c.mobilePrimary && !c.mobileSecondary && !c.mobileAction,
-    )
+    const bodyColumns = columns
+      .filter((c) => !c.mobileHide && !c.mobilePrimary && !c.mobileSecondary && !c.mobileAction)
+      .sort((a, b) => (a.mobilePriority ?? Number.MAX_SAFE_INTEGER) - (b.mobilePriority ?? Number.MAX_SAFE_INTEGER))
+    const COLLAPSED_ROW_COUNT = 3
+
+    const toggleExpanded = (key: string) => {
+      setExpandedRows((prev) => {
+        const next = new Set(prev)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+    }
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '8px' }}>
@@ -129,6 +142,9 @@ export function Table<T extends object>({
           const primaryContent = primaryCol ? renderValue(primaryCol, row) : null
           const secondaryContent = secondaryCol ? renderValue(secondaryCol, row) : null
           const actionContent = actionCol ? renderValue(actionCol, row) : null
+          const isExpanded = expandedRows.has(key)
+          const visibleBodyColumns = isExpanded ? bodyColumns : bodyColumns.slice(0, COLLAPSED_ROW_COUNT)
+          const hiddenCount = bodyColumns.length - COLLAPSED_ROW_COUNT
 
           return (
             <div
@@ -196,35 +212,66 @@ export function Table<T extends object>({
                 ) : null}
               </div>
 
-              {/* Body fields — label/value grid */}
+              {/* Body fields — stacked label/value rows */}
               {bodyColumns.length > 0 && (
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '8px',
+                    display: 'flex',
+                    flexDirection: 'column',
                     paddingTop: '10px',
                     borderTop: `0.5px solid ${theme.tableBorder ?? theme.border}`,
                   }}
                 >
-                  {bodyColumns.map((col) => (
-                    <div key={col.key}>
-                      <div
-                        style={{
-                          fontSize: '10px',
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          marginBottom: '2px',
-                        }}
-                      >
+                  {visibleBodyColumns.map((col, i) => (
+                    <div
+                      key={col.key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        padding: '6px 0',
+                        borderTop: i === 0 ? 'none' : `0.5px solid ${theme.tableBorder ?? theme.border}`,
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', color: theme.textMuted, flexShrink: 0 }}>
                         {col.mobileLabel ?? col.header}
                       </div>
-                      <div style={{ fontSize: '13px', color: theme.textSecondary }}>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          color: theme.textSecondary,
+                          textAlign: 'right',
+                          minWidth: 0,
+                        }}
+                      >
                         {renderValue(col, row)}
                       </div>
                     </div>
                   ))}
+                  {hiddenCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleExpanded(key)
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '8px 0 0',
+                        marginTop: visibleBodyColumns.length > 0 ? '2px' : 0,
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: theme.accent,
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      {isExpanded ? 'Show less' : `+${hiddenCount} more`}
+                    </button>
+                  )}
                 </div>
               )}
             </div>

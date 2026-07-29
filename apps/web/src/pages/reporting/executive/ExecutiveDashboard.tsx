@@ -7,8 +7,10 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { Button } from '../../../components/ui/Button'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import { Grid } from '../../../components/ui/Grid'
 import { EXECUTIVE_DASHBOARD_QUERY } from '../../../graphql/reporting'
 import { formatNumber } from '../../../lib/format'
+import { usePagePadding } from '../../../hooks/usePagePadding'
 import {
   BarChart,
   Bar,
@@ -143,6 +145,7 @@ function ScatterTooltip({
 
 export default function ExecutiveDashboard() {
   const { theme } = useTheme()
+  const pagePadding = usePagePadding()
   const { data, loading, refetch } = useQuery<ExecutiveDashboardData>(EXECUTIVE_DASHBOARD_QUERY)
 
   const d = data?.executiveDashboard
@@ -154,7 +157,7 @@ export default function ExecutiveDashboard() {
   }))
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={pagePadding}>
       <PageHeader
         title="Executive Dashboard"
         subtitle="Consolidated group performance overview"
@@ -172,14 +175,7 @@ export default function ExecutiveDashboard() {
       />
 
       {/* KPI Row */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: '14px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={6} tabletCols={3} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         <KPITrendCard
           label="Total Revenue"
           value={d ? `$${(d.totalRevenue / 1000000).toFixed(2)}M` : '—'}
@@ -218,17 +214,10 @@ export default function ExecutiveDashboard() {
           trendData={[]}
           sparkline={false}
         />
-      </div>
+      </Grid>
 
       {/* Entity Breakdown — 3-column grid */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: '14px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={3} tabletCols={2} phoneCols={1} gap={14} style={{ marginBottom: '24px' }}>
         {loading ? (
           [1, 2, 3].map((i) => (
             <div key={i} className="skeleton" style={{ height: '120px', borderRadius: '10px' }} />
@@ -311,17 +300,10 @@ export default function ExecutiveDashboard() {
             <EmptyState message="No entity data" />
           </div>
         )}
-      </div>
+      </Grid>
 
       {/* Revenue by Entity + Profit Trend */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1.5fr 1fr',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={2} tabletCols={1} phoneCols={1} gap={16} style={{ marginBottom: '24px' }}>
         {/* Revenue Stacked Bar Chart */}
         <Card padding="md">
           <h3
@@ -410,7 +392,7 @@ export default function ExecutiveDashboard() {
             <EmptyState message="No trend data" />
           )}
         </Card>
-      </div>
+      </Grid>
 
       {/* Project Profitability Scatter */}
       <Card padding="md" style={{ marginBottom: '24px' }}>

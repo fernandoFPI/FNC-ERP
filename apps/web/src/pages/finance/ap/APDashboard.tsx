@@ -13,6 +13,8 @@ import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../../components/ui/EmptyState'
+import { Grid } from '../../../components/ui/Grid'
+import { usePagePadding } from '../../../hooks/usePagePadding'
 
 interface APSummary {
   total_outstanding: string
@@ -120,6 +122,7 @@ export default function APDashboard() {
   const activeCompany = useCompanyStore((s) => s.activeCompany)
   const { can } = usePermission()
   const canApproveAP = can('finance.ap.approve', 'approve')
+  const pagePadding = usePagePadding()
 
   const [summary, setSummary] = useState<APSummary | null>(null)
   const [invoices, setInvoices] = useState<VendorInvoice[]>([])
@@ -194,7 +197,7 @@ export default function APDashboard() {
     })
 
   return (
-    <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1600px' }}>
+    <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1600px' }}>
       <PageHeader
         title="Accounts Payable"
         subtitle={activeCompany?.name ?? ''}
@@ -212,14 +215,7 @@ export default function APDashboard() {
       />
 
       {/* KPI row */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '14px',
-          marginBottom: '24px',
-        }}
-      >
+      <Grid cols={4} tabletCols={2} phoneCols={2} gap={14} style={{ marginBottom: '24px' }}>
         {[
           {
             label: 'Total Outstanding',
@@ -281,7 +277,7 @@ export default function APDashboard() {
             </Card>
           </div>
         ))}
-      </div>
+      </Grid>
 
       {/* Aging */}
       <Card padding="md" style={{ marginBottom: '24px' }}>

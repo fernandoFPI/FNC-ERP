@@ -1,5 +1,7 @@
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
+import { useBreakpoint } from '../../hooks/useBreakpoint'
+import { ScrollFadeRow } from './ScrollFadeRow'
 
 interface Tab {
   key: string
@@ -12,18 +14,21 @@ interface TabBarProps {
   tabs: Tab[]
   active: string
   onChange: (key: string) => void
+  /** Shorter labels shown on phone, keyed by tab key — falls back to `label`. */
+  phoneLabels?: Partial<Record<string, string>>
+  /** Background this strip sits on, for the ScrollFadeRow edge fade. Defaults to page canvas. */
+  fadeColor?: string
 }
 
-export function TabBar({ tabs, active, onChange }: TabBarProps) {
+export function TabBar({ tabs, active, onChange, phoneLabels, fadeColor }: TabBarProps) {
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
 
   return (
-    <div
+    <ScrollFadeRow
+      fadeColor={fadeColor}
       style={{
-        display: 'flex',
-        gap: '0',
         borderBottom: `1px solid ${theme.border}`,
-        overflowX: 'auto',
       }}
     >
       {tabs.map((tab, i) => {
@@ -53,8 +58,8 @@ export function TabBar({ tabs, active, onChange }: TabBarProps) {
                 background: 'transparent',
                 border: 'none',
                 borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
-                padding: '10px 16px',
-                fontSize: '13px',
+                padding: isPhone ? '9px 12px' : '10px 16px',
+                fontSize: isPhone ? '12px' : '13px',
                 fontWeight: isActive ? 500 : 400,
                 color: isActive ? theme.accent : theme.textMuted,
                 cursor: 'pointer',
@@ -65,6 +70,7 @@ export function TabBar({ tabs, active, onChange }: TabBarProps) {
                 transition: 'color 0.15s, border-color 0.15s',
                 fontFamily: 'inherit',
                 marginBottom: '-1px',
+                flexShrink: 0,
               }}
               onMouseEnter={(e) => {
                 if (!isActive) e.currentTarget.style.color = theme.textSecondary
@@ -73,7 +79,7 @@ export function TabBar({ tabs, active, onChange }: TabBarProps) {
                 if (!isActive) e.currentTarget.style.color = theme.textMuted
               }}
             >
-              {tab.label}
+              {isPhone ? (phoneLabels?.[tab.key] ?? tab.label) : tab.label}
               {tab.badge !== undefined && tab.badge > 0 && (
                 <span
                   style={{
@@ -93,6 +99,6 @@ export function TabBar({ tabs, active, onChange }: TabBarProps) {
           </React.Fragment>
         )
       })}
-    </div>
+    </ScrollFadeRow>
   )
 }
