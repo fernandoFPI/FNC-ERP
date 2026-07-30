@@ -6,6 +6,9 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
 
 interface BankAccount {
@@ -369,6 +372,108 @@ export default function ReconcileWorkspace() {
 
   // ── Account overview (no statementId) ─────────────────────────────────────
   if (!statementId) {
+    const statementColumns: Column<StatementSummary>[] = [
+      {
+        key: 'period',
+        header: 'Period',
+        mobilePrimary: true,
+        render: (s) => (
+          <span style={{ color: theme.textPrimary, fontWeight: 600, fontFamily: 'monospace' }}>
+            {s.period}
+          </span>
+        ),
+      },
+      {
+        key: 'statement_date',
+        header: 'Statement Date',
+        mobileSecondary: true,
+        render: (s) => new Date(s.statement_date).toLocaleDateString(),
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        mobilePriority: 1,
+        render: (s) => (
+          <Badge variant={STMT_BADGE[s.status] ?? 'neutral'}>{s.status.replace('_', ' ')}</Badge>
+        ),
+      },
+      {
+        key: 'progress',
+        header: 'Progress',
+        mobilePriority: 2,
+        render: (s) => {
+          const pct =
+            Number(s.total_lines) > 0
+              ? Math.round((Number(s.matched_lines) / Number(s.total_lines)) * 100)
+              : 0
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                style={{
+                  width: '60px',
+                  height: '4px',
+                  borderRadius: '2px',
+                  background: theme.border,
+                }}
+              >
+                <div
+                  style={{
+                    width: `${pct}%`,
+                    height: '100%',
+                    borderRadius: '2px',
+                    background: pct === 100 ? '#22c55e' : theme.accent,
+                  }}
+                />
+              </div>
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                {s.matched_lines}/{s.total_lines}
+              </span>
+            </div>
+          )
+        },
+      },
+      {
+        key: 'opening_balance',
+        header: 'Opening',
+        mobilePriority: 3,
+        render: (s) => (
+          <AmountDisplay
+            amount={s.opening_balance}
+            currency={account?.currency_code ?? 'IQD'}
+            size="sm"
+          />
+        ),
+      },
+      {
+        key: 'closing_balance',
+        header: 'Closing',
+        mobilePriority: 4,
+        render: (s) => (
+          <AmountDisplay
+            amount={s.closing_balance}
+            currency={account?.currency_code ?? 'IQD'}
+            size="sm"
+          />
+        ),
+      },
+      {
+        key: 'open',
+        header: '',
+        mobileAction: true,
+        render: (s) => (
+          <Button
+            variant={s.status === 'reconciled' ? 'ghost' : 'primary'}
+            size="sm"
+            onClick={() => {
+              navigate(`/finance/bank/${accountId}/reconcile/${s.id}`)
+            }}
+          >
+            {s.status === 'reconciled' ? 'View' : 'Open'}
+          </Button>
+        ),
+      },
+    ]
+
     return (
       <div style={{ padding: '24px' }}>
         <PageHeader
@@ -416,136 +521,13 @@ export default function ReconcileWorkspace() {
         )}
 
         <Card padding="none">
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr
-                style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}
-              >
-                {['Period', 'Statement Date', 'Opening', 'Closing', 'Progress', 'Status', ''].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '10px 14px',
-                        textAlign: 'left',
-                        color: theme.textMuted,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                  >
-                    Loading...
-                  </td>
-                </tr>
-              )}
-              {!loading && !statements.length && (
-                <tr>
-                  <td
-                    colSpan={7}
-                    style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
-                  >
-                    No statements yet.{' '}
-                    <span
-                      style={{ color: theme.accent, cursor: 'pointer' }}
-                      onClick={() => {
-                        setShowNewStmt(true)
-                      }}
-                    >
-                      Create the first statement →
-                    </span>
-                  </td>
-                </tr>
-              )}
-              {statements.map((s) => {
-                const pct =
-                  Number(s.total_lines) > 0
-                    ? Math.round((Number(s.matched_lines) / Number(s.total_lines)) * 100)
-                    : 0
-                return (
-                  <tr key={s.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td
-                      style={{
-                        padding: '10px 14px',
-                        color: theme.textPrimary,
-                        fontWeight: 600,
-                        fontFamily: 'monospace',
-                      }}
-                    >
-                      {s.period}
-                    </td>
-                    <td style={{ padding: '10px 14px', color: theme.textSecondary }}>
-                      {new Date(s.statement_date).toLocaleDateString()}
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <AmountDisplay
-                        amount={s.opening_balance}
-                        currency={account?.currency_code ?? 'IQD'}
-                        size="sm"
-                      />
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <AmountDisplay
-                        amount={s.closing_balance}
-                        currency={account?.currency_code ?? 'IQD'}
-                        size="sm"
-                      />
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div
-                          style={{
-                            width: '60px',
-                            height: '4px',
-                            borderRadius: '2px',
-                            background: theme.border,
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: `${pct}%`,
-                              height: '100%',
-                              borderRadius: '2px',
-                              background: pct === 100 ? '#22c55e' : theme.accent,
-                            }}
-                          />
-                        </div>
-                        <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                          {s.matched_lines}/{s.total_lines}
-                        </span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <Badge variant={STMT_BADGE[s.status] ?? 'neutral'}>
-                        {s.status.replace('_', ' ')}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <Button
-                        variant={s.status === 'reconciled' ? 'ghost' : 'primary'}
-                        size="sm"
-                        onClick={() => {
-                          navigate(`/finance/bank/${accountId}/reconcile/${s.id}`)
-                        }}
-                      >
-                        {s.status === 'reconciled' ? 'View' : 'Open'}
-                      </Button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <Table
+            columns={statementColumns}
+            data={statements}
+            rowKey="id"
+            loading={loading}
+            emptyMessage="No statements yet. Click + New Statement to create the first one."
+          />
         </Card>
 
         {/* New Statement Modal */}
@@ -687,6 +669,34 @@ export default function ReconcileWorkspace() {
   const reconPct = totalLines > 0 ? Math.round((matchedLines / totalLines) * 100) : 0
   const isReconciled = stmt.status === 'reconciled'
   const canFinalize = !isReconciled && totalLines > 0 && matchedLines === totalLines
+
+  type LineDraft = typeof emptyLineDraft
+  const lineDraftFields: LineItemField<LineDraft>[] = (
+    [
+      { field: 'transaction_date', label: 'Date *', type: 'date', width: '120px' },
+      { field: 'description', label: 'Description *', type: 'text', width: '160px' },
+      { field: 'reference', label: 'Reference', type: 'text', width: '90px' },
+      { field: 'debit', label: 'Debit (Out)', type: 'number', width: '90px' },
+      { field: 'credit', label: 'Credit (In)', type: 'number', width: '90px' },
+      { field: 'balance_after', label: 'Balance After', type: 'number', width: '90px' },
+    ] as const
+  ).map(({ field, label, type, width }) => ({
+    key: field,
+    label,
+    width,
+    render: (line: LineDraft, i: number) => (
+      <input
+        type={type}
+        style={{ ...inputStyle, fontSize: '11px', padding: '4px 6px' }}
+        value={line[field]}
+        onChange={(e) => {
+          setLineDrafts((prev) =>
+            prev.map((l, j) => (j === i ? { ...l, [field]: e.target.value } : l)),
+          )
+        }}
+      />
+    ),
+  }))
 
   return (
     <div
@@ -1227,109 +1237,17 @@ export default function ReconcileWorkspace() {
                 ✕
               </Button>
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    {[
-                      'Date *',
-                      'Description *',
-                      'Reference',
-                      'Debit (Out)',
-                      'Credit (In)',
-                      'Balance After',
-                      '',
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '6px 8px',
-                          textAlign: 'left',
-                          color: theme.textMuted,
-                          fontWeight: 500,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineDrafts.map((line, i) => (
-                    <tr key={i}>
-                      {(
-                        [
-                          'transaction_date',
-                          'description',
-                          'reference',
-                          'debit',
-                          'credit',
-                          'balance_after',
-                        ] as const
-                      ).map((field) => (
-                        <td key={field} style={{ padding: '4px 4px' }}>
-                          <input
-                            type={
-                              field === 'transaction_date'
-                                ? 'date'
-                                : ['debit', 'credit', 'balance_after'].includes(field)
-                                  ? 'number'
-                                  : 'text'
-                            }
-                            style={{
-                              ...inputStyle,
-                              fontSize: '11px',
-                              padding: '4px 6px',
-                              width:
-                                field === 'description'
-                                  ? '160px'
-                                  : field === 'transaction_date'
-                                    ? '120px'
-                                    : '90px',
-                            }}
-                            value={line[field]}
-                            onChange={(e) => {
-                              setLineDrafts((prev) =>
-                                prev.map((l, j) =>
-                                  j === i ? { ...l, [field]: e.target.value } : l,
-                                ),
-                              )
-                            }}
-                          />
-                        </td>
-                      ))}
-                      <td style={{ padding: '4px 4px' }}>
-                        <button
-                          onClick={() => {
-                            setLineDrafts((prev) => prev.filter((_, j) => j !== i))
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: theme.textMuted,
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                          }}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
+            <LineItemEditor
+              fields={lineDraftFields}
+              rows={lineDrafts}
+              onRemoveRow={(i) => {
+                setLineDrafts((prev) => prev.filter((_, j) => j !== i))
+              }}
+              onAddRow={() => {
                 setLineDrafts((prev) => [...prev, { ...emptyLineDraft }])
               }}
-              style={{ marginTop: '8px' }}
-            >
-              + Add Row
-            </Button>
+              addLabel="+ Add Row"
+            />
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
             >
