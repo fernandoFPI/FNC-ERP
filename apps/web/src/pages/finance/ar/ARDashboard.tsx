@@ -11,6 +11,8 @@ import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -252,6 +254,121 @@ export default function ARDashboard() {
     if (inv.source_type === 'project') return `/projects/invoices/${inv.id}`
     return `/rental/contracts/${inv.source_id}`
   }
+
+  const byClientColumns: Column<ARByClient>[] = [
+    {
+      key: 'client_name',
+      header: 'Client',
+      mobilePrimary: true,
+      render: (c) => c.client_name,
+    },
+    {
+      key: 'total_outstanding',
+      header: 'Outstanding',
+      mobilePriority: 1,
+      render: (c) => (
+        <AmountDisplay amount={parseFloat(c.total_outstanding)} currency="IQD" size="sm" />
+      ),
+    },
+    {
+      key: 'overdue_count',
+      header: 'Overdue',
+      mobilePriority: 2,
+      render: (c) =>
+        c.overdue_count > 0 ? (
+          <Badge variant="danger" size="sm">
+            {c.overdue_count}
+          </Badge>
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
+    {
+      key: 'oldest_due_date',
+      header: 'Oldest due',
+      mobilePriority: 3,
+      render: (c) => (
+        <span
+          style={{
+            color: new Date(c.oldest_due_date) < new Date() ? theme.danger : theme.textMuted,
+          }}
+        >
+          {c.oldest_due_date?.slice(0, 10) ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'invoice_count',
+      header: 'Open',
+      mobilePriority: 4,
+      render: (c) => c.invoice_count,
+    },
+  ]
+
+  const invoiceColumns: Column<ARInvoice>[] = [
+    {
+      key: 'invoice_number',
+      header: 'Invoice #',
+      mobilePrimary: true,
+      render: (inv) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent }}>{inv.invoice_number}</span>
+      ),
+    },
+    {
+      key: 'client_name',
+      header: 'Client',
+      mobileSecondary: true,
+      render: (inv) => inv.client_name,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (inv) => (
+        <Badge variant={statusVariant(inv.status)} size="sm">
+          {inv.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'outstanding',
+      header: 'Outstanding',
+      mobilePriority: 2,
+      render: (inv) => (
+        <AmountDisplay
+          amount={parseFloat(inv.outstanding)}
+          currency={inv.currency_code}
+          size="sm"
+        />
+      ),
+    },
+    {
+      key: 'days_overdue',
+      header: 'Days',
+      mobilePriority: 3,
+      render: (inv) => <DaysCell days={inv.days_overdue} />,
+    },
+    {
+      key: 'source_type',
+      header: 'Type',
+      mobilePriority: 4,
+      render: (inv) => (
+        <Badge variant={inv.source_type === 'project' ? 'accent' : 'warning'} size="sm">
+          {inv.source_type}
+        </Badge>
+      ),
+    },
+    {
+      key: 'due_date',
+      header: 'Due',
+      mobilePriority: 5,
+      render: (inv) => (
+        <span style={{ color: inv.days_overdue > 0 ? theme.danger : theme.textMuted }}>
+          {inv.due_date?.slice(0, 10)}
+        </span>
+      ),
+    },
+  ]
 
   const statusVariant = (s: string): 'success' | 'warning' | 'danger' | 'accent' | 'neutral' => {
     if (s === 'paid') return 'success'
@@ -503,76 +620,18 @@ export default function ARDashboard() {
           ) : byClient.length === 0 ? (
             <EmptyState message="No outstanding receivables" />
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    {['Client', 'Open', 'Outstanding', 'Oldest due', 'Overdue'].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          textAlign: 'left',
-                          padding: '6px 8px',
-                          color: theme.textMuted,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {byClient.slice(0, 10).map((c) => (
-                    <tr
-                      key={c.client_name}
-                      onClick={() => {
-                        setSelectedClient(selectedClient === c.client_name ? '' : c.client_name)
-                      }}
-                      style={{
-                        borderBottom: `1px solid ${theme.tableBorder}`,
-                        cursor: 'pointer',
-                        background:
-                          selectedClient === c.client_name ? theme.accentBg : 'transparent',
-                      }}
-                    >
-                      <td style={{ padding: '7px 8px', color: theme.textPrimary, fontWeight: 500 }}>
-                        {c.client_name}
-                      </td>
-                      <td style={{ padding: '7px 8px', color: theme.textMuted }}>
-                        {c.invoice_count}
-                      </td>
-                      <td style={{ padding: '7px 8px' }}>
-                        <AmountDisplay
-                          amount={parseFloat(c.total_outstanding)}
-                          currency="IQD"
-                          size="sm"
-                        />
-                      </td>
-                      <td
-                        style={{
-                          padding: '7px 8px',
-                          color:
-                            new Date(c.oldest_due_date) < new Date()
-                              ? theme.danger
-                              : theme.textMuted,
-                        }}
-                      >
-                        {c.oldest_due_date?.slice(0, 10) ?? '—'}
-                      </td>
-                      <td style={{ padding: '7px 8px' }}>
-                        {c.overdue_count > 0 ? (
-                          <Badge variant="danger" size="sm">
-                            {c.overdue_count}
-                          </Badge>
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              <Table
+                columns={byClientColumns}
+                data={byClient.slice(0, 10)}
+                rowKey="client_name"
+                onRowClick={(c) => {
+                  setSelectedClient(selectedClient === c.client_name ? '' : c.client_name)
+                }}
+                getRowStyle={(c) =>
+                  selectedClient === c.client_name ? { background: theme.accentBg } : {}
+                }
+              />
               {selectedClient && (
                 <p
                   style={{
@@ -667,80 +726,15 @@ export default function ARDashboard() {
           ) : filteredInvoices.length === 0 ? (
             <EmptyState message="No invoices found" />
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    {['Invoice #', 'Client', 'Type', 'Outstanding', 'Due', 'Status', 'Days'].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          style={{
-                            textAlign: 'left',
-                            padding: '6px 8px',
-                            color: theme.textMuted,
-                            fontWeight: 500,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredInvoices.map((inv) => (
-                    <tr
-                      key={inv.id}
-                      onClick={() => {
-                        navigate(invoiceLink(inv))
-                      }}
-                      style={{ borderBottom: `1px solid ${theme.tableBorder}`, cursor: 'pointer' }}
-                    >
-                      <td
-                        style={{ padding: '7px 8px', fontFamily: 'monospace', color: theme.accent }}
-                      >
-                        {inv.invoice_number}
-                      </td>
-                      <td style={{ padding: '7px 8px', color: theme.textSecondary }}>
-                        {inv.client_name}
-                      </td>
-                      <td style={{ padding: '7px 8px' }}>
-                        <Badge
-                          variant={inv.source_type === 'project' ? 'accent' : 'warning'}
-                          size="sm"
-                        >
-                          {inv.source_type}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '7px 8px' }}>
-                        <AmountDisplay
-                          amount={parseFloat(inv.outstanding)}
-                          currency={inv.currency_code}
-                          size="sm"
-                        />
-                      </td>
-                      <td
-                        style={{
-                          padding: '7px 8px',
-                          color: inv.days_overdue > 0 ? theme.danger : theme.textMuted,
-                        }}
-                      >
-                        {inv.due_date?.slice(0, 10)}
-                      </td>
-                      <td style={{ padding: '7px 8px' }}>
-                        <Badge variant={statusVariant(inv.status)} size="sm">
-                          {inv.status}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '7px 8px' }}>
-                        <DaysCell days={inv.days_overdue} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              <Table
+                columns={invoiceColumns}
+                data={filteredInvoices}
+                rowKey="id"
+                onRowClick={(inv) => {
+                  navigate(invoiceLink(inv))
+                }}
+              />
               {total > 20 && (
                 <div
                   style={{

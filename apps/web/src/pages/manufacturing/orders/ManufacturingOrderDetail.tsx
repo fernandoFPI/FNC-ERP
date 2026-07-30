@@ -14,12 +14,14 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
-import { Button } from '../../../components/ui/Button'
+import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { TabBar } from '../../../components/ui/TabBar'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { KPICard } from '../../../components/ui/KPICard'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
 import { MOCompletionForm } from './MOCompletionForm'
 import { MOCostAnalysis } from './MOCostAnalysis'
@@ -42,6 +44,15 @@ interface MOComponentStatus {
   qtyAvailable: number
   qtyShortfall: number
   hasSufficientStock: boolean
+}
+
+interface MOLine {
+  id: string
+  component_name?: string
+  qty_planned: number
+  qty_consumed: number
+  unit_cost: number
+  total_cost: number
 }
 
 export default function ManufacturingOrderDetail() {
@@ -134,6 +145,132 @@ export default function ManufacturingOrderDetail() {
   const isDone = mo.status === 'done'
 
   const shortfallCount = missingComponents.filter((c) => c.qtyShortfall > 0).length
+
+  const componentColumns: Column<MOLine>[] = [
+    {
+      key: 'component_name',
+      header: 'Component',
+      mobilePrimary: true,
+      render: (l) => l.component_name,
+    },
+    {
+      key: 'qty_planned',
+      header: 'Qty Planned',
+      mobilePriority: 1,
+      render: (l) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{l.qty_planned}</span>
+      ),
+    },
+    {
+      key: 'qty_consumed',
+      header: 'Qty Consumed',
+      mobilePriority: 2,
+      render: (l) => (
+        <span
+          style={{
+            fontFamily: 'monospace',
+            color: l.qty_consumed >= l.qty_planned ? theme.success : theme.textPrimary,
+          }}
+        >
+          {l.qty_consumed}
+        </span>
+      ),
+    },
+    {
+      key: 'unit_cost',
+      header: 'Unit Cost',
+      mobilePriority: 3,
+      render: (l) => <AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" />,
+    },
+    {
+      key: 'total_cost',
+      header: 'Total Cost',
+      mobilePriority: 4,
+      render: (l) => <AmountDisplay amount={l.total_cost} currency="IQD" size="sm" />,
+    },
+  ]
+
+  const stockColumns: Column<MOComponentStatus>[] = [
+    {
+      key: 'productName',
+      header: 'Product',
+      mobilePrimary: true,
+      render: (c) => {
+        const rowColor = c.hasSufficientStock
+          ? '#16a34a'
+          : c.qtyAvailable > 0
+            ? '#d97706'
+            : '#dc2626'
+        return (
+          <>
+            <span
+              style={{
+                display: 'inline-block',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: rowColor,
+                marginRight: '8px',
+              }}
+            />
+            {c.productName ?? '—'}
+            {c.uom ? ` (${c.uom})` : ''}
+          </>
+        )
+      },
+    },
+    {
+      key: 'qtyRequired',
+      header: 'Required',
+      mobilePriority: 1,
+      render: (c) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{c.qtyRequired}</span>
+      ),
+    },
+    {
+      key: 'qtyOnHand',
+      header: 'On Hand',
+      mobilePriority: 2,
+      render: (c) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
+          {c.qtyOnHand.toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      key: 'qtyAvailable',
+      header: 'Available',
+      mobilePriority: 3,
+      render: (c) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
+          {c.qtyAvailable.toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      key: 'qtyShortfall',
+      header: 'Shortfall',
+      mobilePriority: 4,
+      render: (c) => {
+        const rowColor = c.hasSufficientStock
+          ? '#16a34a'
+          : c.qtyAvailable > 0
+            ? '#d97706'
+            : '#dc2626'
+        return (
+          <span
+            style={{
+              fontFamily: 'monospace',
+              fontWeight: 600,
+              color: c.qtyShortfall > 0 ? rowColor : theme.success,
+            }}
+          >
+            {c.qtyShortfall.toFixed(2)}
+          </span>
+        )
+      },
+    },
+  ]
 
   const TABS = [
     { key: 'details', label: 'Details' },
@@ -293,79 +430,7 @@ export default function ManufacturingOrderDetail() {
             >
               Components
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurfaceHover }}>
-                  {['Component', 'Qty Planned', 'Qty Consumed', 'Unit Cost', 'Total Cost'].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '8px 12px',
-                          textAlign: 'left',
-                          fontSize: '11px',
-                          color: theme.textMuted,
-                          fontWeight: 600,
-                          borderBottom: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {(mo.lines ?? []).map(
-                  (l: {
-                    id: string
-                    component_name?: string
-                    qty_planned: number
-                    qty_consumed: number
-                    unit_cost: number
-                    total_cost: number
-                  }) => (
-                    <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          color: theme.textPrimary,
-                          fontSize: '13px',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {l.component_name}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          color: theme.textSecondary,
-                        }}
-                      >
-                        {l.qty_planned}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          color:
-                            l.qty_consumed >= l.qty_planned ? theme.success : theme.textPrimary,
-                        }}
-                      >
-                        {l.qty_consumed}
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        <AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" />
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: 500 }}>
-                        <AmountDisplay amount={l.total_cost} currency="IQD" size="sm" />
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
+            <Table columns={componentColumns} data={mo.lines ?? []} rowKey="id" />
           </Card>
         )}
 
@@ -391,137 +456,39 @@ export default function ManufacturingOrderDetail() {
                   <Badge variant="warning">{shortfallCount} component(s) need procurement</Badge>
                 )}
                 {shortfallCount > 0 && (
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      const lines = missingComponents
-                        .filter((c) => c.qtyShortfall > 0)
-                        .map((c) => ({
-                          product_id: c.componentProductId,
-                          description: c.productName ?? '',
-                          qty: String(c.qtyShortfall),
-                          unit_price: '0',
-                          uom: c.uom ?? 'pc',
-                        }))
-                      sessionStorage.setItem('po_prefill_lines', JSON.stringify(lines))
-                      navigate(
-                        `/procurement/purchase-orders/new?moId=${mo.id}&purpose=manufacturing`,
-                      )
-                    }}
-                  >
-                    Create PO for missing items
-                  </Button>
+                  <StickyActionBar>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      fullWidthOnMobile
+                      onClick={() => {
+                        const lines = missingComponents
+                          .filter((c) => c.qtyShortfall > 0)
+                          .map((c) => ({
+                            product_id: c.componentProductId,
+                            description: c.productName ?? '',
+                            qty: String(c.qtyShortfall),
+                            unit_price: '0',
+                            uom: c.uom ?? 'pc',
+                          }))
+                        sessionStorage.setItem('po_prefill_lines', JSON.stringify(lines))
+                        navigate(
+                          `/procurement/purchase-orders/new?moId=${mo.id}&purpose=manufacturing`,
+                        )
+                      }}
+                    >
+                      Create PO for missing items
+                    </Button>
+                  </StickyActionBar>
                 )}
               </div>
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurfaceHover }}>
-                  {['Product', 'Required', 'On Hand', 'Available', 'Shortfall'].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '8px 12px',
-                        textAlign: 'left',
-                        fontSize: '11px',
-                        color: theme.textMuted,
-                        fontWeight: 600,
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {missingComponents.map((c) => {
-                  const rowColor = c.hasSufficientStock
-                    ? '#16a34a'
-                    : c.qtyAvailable > 0
-                      ? '#d97706'
-                      : '#dc2626'
-                  return (
-                    <tr key={c.bomLineId} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          color: theme.textPrimary,
-                          fontSize: '13px',
-                          fontWeight: 500,
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            background: rowColor,
-                            marginRight: '8px',
-                          }}
-                        />
-                        {c.productName ?? '—'}
-                        {c.uom ? ` (${c.uom})` : ''}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          color: theme.textSecondary,
-                        }}
-                      >
-                        {c.qtyRequired}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          color: theme.textSecondary,
-                        }}
-                      >
-                        {c.qtyOnHand.toFixed(2)}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          color: theme.textSecondary,
-                        }}
-                      >
-                        {c.qtyAvailable.toFixed(2)}
-                      </td>
-                      <td
-                        style={{
-                          padding: '8px 12px',
-                          fontFamily: 'monospace',
-                          fontWeight: 600,
-                          color: c.qtyShortfall > 0 ? rowColor : theme.success,
-                        }}
-                      >
-                        {c.qtyShortfall.toFixed(2)}
-                      </td>
-                    </tr>
-                  )
-                })}
-                {missingComponents.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      style={{
-                        padding: '16px',
-                        textAlign: 'center',
-                        color: theme.textMuted,
-                        fontSize: '13px',
-                      }}
-                    >
-                      No BOM components found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <Table
+              columns={stockColumns}
+              data={missingComponents}
+              rowKey="bomLineId"
+              emptyMessage="No BOM components found."
+            />
           </Card>
         )}
 

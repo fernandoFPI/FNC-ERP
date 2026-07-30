@@ -14,6 +14,8 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { Grid } from '../../../components/ui/Grid'
+import type { Column } from '../../../components/ui/Table'
+import { Table } from '../../../components/ui/Table'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 
 interface APSummary {
@@ -195,6 +197,122 @@ export default function APDashboard() {
       if (scoreA !== scoreB) return scoreA - scoreB
       return new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
     })
+
+  const invoiceColumns: Column<VendorInvoice>[] = [
+    {
+      key: 'invoice_number',
+      header: 'Invoice #',
+      mobilePrimary: true,
+      render: (inv) => (
+        <span style={{ fontFamily: 'monospace', color: theme.accent }}>{inv.invoice_number}</span>
+      ),
+    },
+    {
+      key: 'vendor_name',
+      header: 'Vendor',
+      mobileSecondary: true,
+      render: (inv) => inv.vendor_name,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      mobilePriority: 1,
+      render: (inv) => (
+        <Badge variant={STATUS_VARIANTS[inv.status] ?? 'neutral'} size="sm">
+          {STATUS_LABELS[inv.status] ?? inv.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'outstanding',
+      header: 'Outstanding',
+      mobilePriority: 2,
+      render: (inv) => (
+        <AmountDisplay
+          amount={parseFloat(inv.outstanding ?? '0')}
+          currency={inv.currency_code}
+          size="sm"
+        />
+      ),
+    },
+    {
+      key: 'due_date',
+      header: 'Due date',
+      mobilePriority: 3,
+      render: (inv) => {
+        const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
+        return (
+          <span style={{ color: isOverdue ? theme.danger : theme.textMuted }}>
+            {inv.due_date?.slice(0, 10)}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'net_payable',
+      header: 'Net payable',
+      mobilePriority: 4,
+      render: (inv) => (
+        <AmountDisplay
+          amount={parseFloat(inv.net_payable)}
+          currency={inv.currency_code}
+          size="sm"
+        />
+      ),
+    },
+    {
+      key: 'po_number',
+      header: 'PO #',
+      mobilePriority: 5,
+      render: (inv) => (
+        <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>
+          {inv.po_number ?? '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'invoice_date',
+      header: 'Invoice date',
+      mobilePriority: 6,
+      render: (inv) => inv.invoice_date?.slice(0, 10),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      mobileAction: true,
+      render: (inv) => (
+        <div
+          style={{ display: 'flex', gap: '6px' }}
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
+        >
+          {canApproveAP && inv.status === 'submitted' && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setApprovingId(inv.id)
+              }}
+            >
+              Approve
+            </Button>
+          )}
+          {['approved', 'partially_paid'].includes(inv.status) && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                navigate(`/finance/ap/${inv.id}`)
+              }}
+            >
+              Pay
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ]
 
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1600px' }}>
@@ -390,146 +508,18 @@ export default function APDashboard() {
         ) : filtered.length === 0 ? (
           <EmptyState message="No vendor invoices" />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  {[
-                    'Invoice #',
-                    'Vendor',
-                    'PO #',
-                    'Invoice date',
-                    'Due date',
-                    'Net payable',
-                    'Outstanding',
-                    'Status',
-                    'Actions',
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: 'left',
-                        padding: '8px 14px',
-                        color: theme.textMuted,
-                        fontWeight: 500,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((inv) => {
-                  const isOverdue =
-                    inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
-                  return (
-                    <tr
-                      key={inv.id}
-                      style={{
-                        borderBottom: `1px solid ${theme.tableBorder}`,
-                        borderLeft: isOverdue
-                          ? `3px solid ${theme.warning}`
-                          : '3px solid transparent',
-                      }}
-                    >
-                      <td
-                        style={{
-                          padding: '9px 14px',
-                          fontFamily: 'monospace',
-                          color: theme.accent,
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => {
-                          navigate(`/finance/ap/${inv.id}`)
-                        }}
-                      >
-                        {inv.invoice_number}
-                      </td>
-                      <td style={{ padding: '9px 14px', color: theme.textSecondary }}>
-                        {inv.vendor_name}
-                      </td>
-                      <td
-                        style={{
-                          padding: '9px 14px',
-                          color: theme.textMuted,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        {inv.po_number ?? '—'}
-                      </td>
-                      <td style={{ padding: '9px 14px', color: theme.textMuted }}>
-                        {inv.invoice_date?.slice(0, 10)}
-                      </td>
-                      <td
-                        style={{
-                          padding: '9px 14px',
-                          color: isOverdue ? theme.danger : theme.textMuted,
-                        }}
-                      >
-                        {inv.due_date?.slice(0, 10)}
-                      </td>
-                      <td style={{ padding: '9px 14px' }}>
-                        <AmountDisplay
-                          amount={parseFloat(inv.net_payable)}
-                          currency={inv.currency_code}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: '9px 14px' }}>
-                        <AmountDisplay
-                          amount={parseFloat(inv.outstanding ?? '0')}
-                          currency={inv.currency_code}
-                          size="sm"
-                        />
-                      </td>
-                      <td style={{ padding: '9px 14px' }}>
-                        <Badge variant={STATUS_VARIANTS[inv.status] ?? 'neutral'} size="sm">
-                          {STATUS_LABELS[inv.status] ?? inv.status}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '9px 14px' }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              navigate(`/finance/ap/${inv.id}`)
-                            }}
-                          >
-                            View
-                          </Button>
-                          {canApproveAP && inv.status === 'submitted' && (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setApprovingId(inv.id)
-                              }}
-                            >
-                              Approve
-                            </Button>
-                          )}
-                          {['approved', 'partially_paid'].includes(inv.status) && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                navigate(`/finance/ap/${inv.id}`)
-                              }}
-                            >
-                              Pay
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table
+            columns={invoiceColumns}
+            data={filtered}
+            rowKey="id"
+            onRowClick={(inv) => {
+              navigate(`/finance/ap/${inv.id}`)
+            }}
+            getRowStyle={(inv) => {
+              const isOverdue = inv.days_overdue > 0 && !['paid', 'cancelled'].includes(inv.status)
+              return isOverdue ? { borderLeft: `3px solid ${theme.warning}` } : {}
+            }}
+          />
         )}
       </Card>
 
