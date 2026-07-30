@@ -258,6 +258,7 @@ import { useAuthStore } from '../../../store/authStore'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { Table, type Column } from '../../../components/ui/Table'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import JSZip from 'jszip'
 
 const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'neutral' | 'danger' | 'info'> = {
@@ -6405,6 +6406,161 @@ function RFQLinesTab({
     boxSizing: 'border-box',
   }
 
+  // Read-only view groups rows by phase label with a divider on the first row of each
+  // new group (editable view shows phaseLabel per-row via the field itself, ungrouped).
+  const newPhaseGroupRows = new Set<RFQLine>()
+  if (!isEditable) {
+    rows.forEach((r, i) => {
+      const prevPhase = i > 0 ? rows[i - 1].phaseLabel.trim() : null
+      const thisPhase = r.phaseLabel.trim()
+      if (thisPhase && thisPhase !== prevPhase) newPhaseGroupRows.add(r)
+    })
+  }
+
+  const lineFields: LineItemField<RFQLine>[] = [
+    {
+      key: 'index',
+      label: '#',
+      width: '32px',
+      render: (_row, i) => (
+        <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>{i + 1}</span>
+      ),
+    },
+    {
+      key: 'phaseLabel',
+      label: 'Phase / Group',
+      width: '120px',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            value={row.phaseLabel}
+            onChange={(e) => update(i, 'phaseLabel', e.target.value)}
+            placeholder="e.g. Light Gauge"
+          />
+        ) : (
+          <span style={{ fontSize: '11px', color: theme.accent, fontWeight: 500 }}>
+            {row.phaseLabel || ''}
+          </span>
+        ),
+    },
+    {
+      key: 'description',
+      label: 'Description *',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            value={row.description}
+            onChange={(e) => update(i, 'description', e.target.value)}
+            placeholder="Describe item or deliverable…"
+          />
+        ) : (
+          <span style={{ color: theme.textPrimary }}>{row.description}</span>
+        ),
+    },
+    {
+      key: 'quantity',
+      label: 'Qty',
+      width: '80px',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            type="number"
+            min="0"
+            step="any"
+            value={row.quantity}
+            onChange={(e) => update(i, 'quantity', e.target.value)}
+            placeholder="0"
+          />
+        ) : (
+          <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+            {row.quantity || '—'}
+          </span>
+        ),
+    },
+    {
+      key: 'unit',
+      label: 'Unit',
+      width: '80px',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            value={row.unit}
+            onChange={(e) => update(i, 'unit', e.target.value)}
+            placeholder="pcs"
+          />
+        ) : (
+          <span style={{ color: theme.textMuted }}>{row.unit || '—'}</span>
+        ),
+    },
+    {
+      key: 'estimatedUnitCost',
+      label: 'Est. Cost/Unit',
+      width: '120px',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            type="number"
+            min="0"
+            step="any"
+            value={row.estimatedUnitCost}
+            onChange={(e) => update(i, 'estimatedUnitCost', e.target.value)}
+            placeholder="0.00"
+          />
+        ) : (
+          <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
+            {row.estimatedUnitCost || '—'}
+          </span>
+        ),
+    },
+    {
+      key: 'bidUnitPrice',
+      label: 'Bid Price/Unit',
+      width: '120px',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            type="number"
+            min="0"
+            step="any"
+            value={row.bidUnitPrice}
+            onChange={(e) => update(i, 'bidUnitPrice', e.target.value)}
+            placeholder="0.00"
+          />
+        ) : (
+          <span
+            style={{
+              color: theme.textPrimary,
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: 500,
+            }}
+          >
+            {row.bidUnitPrice || '—'}
+          </span>
+        ),
+    },
+    {
+      key: 'notes',
+      label: 'Notes',
+      render: (row, i) =>
+        isEditable ? (
+          <input
+            style={cellStyle}
+            value={row.notes}
+            onChange={(e) => update(i, 'notes', e.target.value)}
+            placeholder="Optional notes…"
+          />
+        ) : (
+          <span style={{ color: theme.textMuted }}>{row.notes || '—'}</span>
+        ),
+    },
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Outcome banner */}
@@ -6491,223 +6647,22 @@ function RFQLinesTab({
       </div>
 
       {/* Lines table */}
-      <div
-        style={{
-          background: theme.bgSurface,
-          border: `1px solid ${theme.border}`,
-          borderRadius: '10px',
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ background: theme.bgSurface }}>
-                {[
-                  '#',
-                  'Phase / Group',
-                  'Description *',
-                  'Qty',
-                  'Unit',
-                  'Est. Cost/Unit',
-                  'Bid Price/Unit',
-                  'Notes',
-                  ...(isEditable ? [''] : []),
-                ].map((h) => (
-                  <th
-                    key={h}
-                    style={{
-                      padding: '8px 10px',
-                      textAlign: 'left',
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      borderBottom: `1px solid ${theme.border}`,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => {
-                const prevPhase = i > 0 ? rows[i - 1].phaseLabel.trim() : null
-                const thisPhase = row.phaseLabel.trim()
-                const isNewPhaseGroup = !isEditable && thisPhase && thisPhase !== prevPhase
-                return (
-                  <React.Fragment key={i}>
-                    {isNewPhaseGroup && (
-                      <tr style={{ background: `${theme.accent}18` }}>
-                        <td
-                          colSpan={8}
-                          style={{
-                            padding: '5px 10px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: theme.accent,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
-                          }}
-                        >
-                          {thisPhase}
-                        </td>
-                      </tr>
-                    )}
-                    <tr style={{ borderBottom: `1px solid ${theme.border}22` }}>
-                      <td
-                        style={{
-                          padding: '6px 10px',
-                          color: theme.textMuted,
-                          fontVariantNumeric: 'tabular-nums',
-                          width: '32px',
-                        }}
-                      >
-                        {i + 1}
-                      </td>
-                      <td style={{ padding: '4px 6px', width: '120px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            value={row.phaseLabel}
-                            onChange={(e) => update(i, 'phaseLabel', e.target.value)}
-                            placeholder="e.g. Light Gauge"
-                          />
-                        ) : (
-                          <span style={{ fontSize: '11px', color: theme.accent, fontWeight: 500 }}>
-                            {row.phaseLabel || ''}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '4px 6px', minWidth: '200px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            value={row.description}
-                            onChange={(e) => update(i, 'description', e.target.value)}
-                            placeholder="Describe item or deliverable…"
-                          />
-                        ) : (
-                          <span style={{ color: theme.textPrimary }}>{row.description}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '4px 6px', width: '80px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={row.quantity}
-                            onChange={(e) => update(i, 'quantity', e.target.value)}
-                            placeholder="0"
-                          />
-                        ) : (
-                          <span
-                            style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}
-                          >
-                            {row.quantity || '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '4px 6px', width: '80px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            value={row.unit}
-                            onChange={(e) => update(i, 'unit', e.target.value)}
-                            placeholder="pcs"
-                          />
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>{row.unit || '—'}</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '4px 6px', width: '120px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={row.estimatedUnitCost}
-                            onChange={(e) => update(i, 'estimatedUnitCost', e.target.value)}
-                            placeholder="0.00"
-                          />
-                        ) : (
-                          <span
-                            style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}
-                          >
-                            {row.estimatedUnitCost || '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '4px 6px', width: '120px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={row.bidUnitPrice}
-                            onChange={(e) => update(i, 'bidUnitPrice', e.target.value)}
-                            placeholder="0.00"
-                          />
-                        ) : (
-                          <span
-                            style={{
-                              color: theme.textPrimary,
-                              fontVariantNumeric: 'tabular-nums',
-                              fontWeight: 500,
-                            }}
-                          >
-                            {row.bidUnitPrice || '—'}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '4px 6px', minWidth: '140px' }}>
-                        {isEditable ? (
-                          <input
-                            style={cellStyle}
-                            value={row.notes}
-                            onChange={(e) => update(i, 'notes', e.target.value)}
-                            placeholder="Optional notes…"
-                          />
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>{row.notes || '—'}</span>
-                        )}
-                      </td>
-                      {isEditable && (
-                        <td style={{ padding: '4px 8px', width: '32px' }}>
-                          <button
-                            onClick={() => {
-                              removeRow(i)
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#ef4444',
-                              cursor: 'pointer',
-                              fontSize: '16px',
-                              lineHeight: 1,
-                              padding: '2px 4px',
-                            }}
-                            title="Remove line"
-                          >
-                            ×
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  </React.Fragment>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <LineItemEditor
+        fields={lineFields}
+        rows={rows}
+        rowKey={(row, i) => row.id || String(i)}
+        getRowStyle={(row) =>
+          newPhaseGroupRows.has(row) ? { borderTop: `2px solid ${theme.accent}` } : {}
+        }
+        onRemoveRow={
+          isEditable
+            ? (i) => {
+                removeRow(i)
+              }
+            : undefined
+        }
+        emptyMessage="No scope lines yet"
+      />
 
       {isEditable && (
         <div style={{ display: 'flex', gap: '8px' }}>

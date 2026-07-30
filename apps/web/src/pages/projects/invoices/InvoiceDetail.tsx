@@ -34,6 +34,7 @@ import QRCode from 'qrcode'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 
 type BankAccount = InvoiceBankAccount
 
@@ -234,6 +235,120 @@ export default function InvoiceDetail() {
   const outstanding = Math.max(0, cashTarget - totalPaid)
   const paidPct = cashTarget > 0 ? Math.min(100, (totalPaid / cashTarget) * 100) : 0
   const canPay = ['issued', 'sent', 'partial'].includes(inv.status)
+
+  const editInputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '4px 8px',
+    borderRadius: '5px',
+    border: `1px solid ${theme.border}`,
+    background: theme.bgCanvas,
+    color: theme.textPrimary,
+    fontSize: '12px',
+    boxSizing: 'border-box',
+  }
+
+  const editLineFields: LineItemField<(typeof editLines)[number]>[] = [
+    {
+      key: 'index',
+      label: '#',
+      width: '36px',
+      render: (_el, idx) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{idx + 1}</span>
+      ),
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      render: (el) => (
+        <input
+          style={{ ...editInputStyle, minWidth: '200px' }}
+          value={el.description}
+          onChange={(e) => {
+            setEditLines((p) =>
+              p.map((r) => (r._key === el._key ? { ...r, description: e.target.value } : r)),
+            )
+          }}
+        />
+      ),
+    },
+    {
+      key: 'source',
+      label: 'Source',
+      width: '110px',
+      render: (el) => {
+        const original = (inv.lines ?? ([] as InvoiceLine[])).find(
+          (l: InvoiceLine) => l.id === el.id,
+        )
+        return <Badge variant="neutral">{original?.sourceType ?? 'manual'}</Badge>
+      },
+    },
+    {
+      key: 'qty',
+      label: 'Qty',
+      width: '80px',
+      render: (el) => (
+        <input
+          type="number"
+          min="0"
+          step="any"
+          style={editInputStyle}
+          value={el.qty}
+          onFocus={(e) => {
+            e.target.select()
+          }}
+          onChange={(e) => {
+            setEditLines((p) =>
+              p.map((r) => (r._key === el._key ? { ...r, qty: e.target.value } : r)),
+            )
+          }}
+        />
+      ),
+    },
+    {
+      key: 'unitCost',
+      label: 'Unit Cost',
+      width: '130px',
+      render: (el) => (
+        <input
+          type="number"
+          min="0"
+          step="any"
+          style={{ ...editInputStyle, fontFamily: 'monospace' }}
+          value={el.unitCost}
+          onFocus={(e) => {
+            e.target.select()
+          }}
+          onChange={(e) => {
+            setEditLines((p) =>
+              p.map((r) => (r._key === el._key ? { ...r, unitCost: e.target.value } : r)),
+            )
+          }}
+        />
+      ),
+    },
+    {
+      key: 'total',
+      label: 'Total (preview)',
+      width: '140px',
+      render: (el) => {
+        const qty = parseFloat(el.qty) || 0
+        const unit = parseFloat(el.unitCost) || 0
+        const preview = qty * unit
+        return (
+          <span
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '13px',
+              color: theme.textPrimary,
+              fontWeight: 600,
+            }}
+          >
+            {preview.toLocaleString(undefined, { maximumFractionDigits: 2 })} {cur}
+          </span>
+        )
+      },
+    },
+  ]
 
   const paymentColumns: Column<Payment>[] = [
     {
@@ -497,222 +612,94 @@ export default function InvoiceDetail() {
                 </div>
               )}
             </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: theme.bgSurfaceHover }}>
-                  {(editMode
-                    ? ['#', 'Description', 'Source', 'Qty', 'Unit Cost', 'Total (preview)', '']
-                    : [
-                        '#',
-                        'Description',
-                        'Source',
-                        'Qty',
-                        'Unit Cost',
-                        'Subtotal',
-                        'Margin',
-                        'Total',
-                      ]
-                  ).map((h, i) => (
-                    <th
-                      key={i}
-                      style={{
-                        padding: '8px 12px',
-                        textAlign: 'left',
-                        fontSize: '11px',
-                        color: theme.textMuted,
-                        fontWeight: 600,
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {editMode
-                  ? editLines.map((el, idx) => {
-                      const original = (inv.lines ?? ([] as InvoiceLine[])).find(
-                        (l: InvoiceLine) => l.id === el.id,
-                      )
-                      const qty = parseFloat(el.qty) || 0
-                      const unit = parseFloat(el.unitCost) || 0
-                      const preview = qty * unit
-                      const inpStyle: React.CSSProperties = {
-                        width: '100%',
-                        padding: '4px 8px',
-                        borderRadius: '5px',
-                        border: `1px solid ${theme.border}`,
-                        background: theme.bgCanvas,
-                        color: theme.textPrimary,
-                        fontSize: '12px',
-                        boxSizing: 'border-box',
-                      }
-                      return (
-                        <tr key={el._key} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                          <td
-                            style={{
-                              padding: '6px 12px',
-                              color: theme.textMuted,
-                              fontSize: '12px',
-                            }}
-                          >
-                            {idx + 1}
-                          </td>
-                          <td style={{ padding: '6px 8px' }}>
-                            <input
-                              style={{ ...inpStyle, minWidth: '200px' }}
-                              value={el.description}
-                              onChange={(e) => {
-                                setEditLines((p) =>
-                                  p.map((r) =>
-                                    r._key === el._key ? { ...r, description: e.target.value } : r,
-                                  ),
-                                )
-                              }}
-                            />
-                          </td>
-                          <td style={{ padding: '6px 12px' }}>
-                            <Badge variant="neutral">{original?.sourceType ?? 'manual'}</Badge>
-                          </td>
-                          <td style={{ padding: '6px 8px', width: '80px' }}>
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              style={inpStyle}
-                              value={el.qty}
-                              onFocus={(e) => {
-                                e.target.select()
-                              }}
-                              onChange={(e) => {
-                                setEditLines((p) =>
-                                  p.map((r) =>
-                                    r._key === el._key ? { ...r, qty: e.target.value } : r,
-                                  ),
-                                )
-                              }}
-                            />
-                          </td>
-                          <td style={{ padding: '6px 8px', width: '130px' }}>
-                            <input
-                              type="number"
-                              min="0"
-                              step="any"
-                              style={{ ...inpStyle, fontFamily: 'monospace' }}
-                              value={el.unitCost}
-                              onFocus={(e) => {
-                                e.target.select()
-                              }}
-                              onChange={(e) => {
-                                setEditLines((p) =>
-                                  p.map((r) =>
-                                    r._key === el._key ? { ...r, unitCost: e.target.value } : r,
-                                  ),
-                                )
-                              }}
-                            />
-                          </td>
-                          <td
-                            style={{
-                              padding: '6px 12px',
-                              fontFamily: 'monospace',
-                              fontSize: '13px',
-                              color: theme.textPrimary,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {preview.toLocaleString(undefined, { maximumFractionDigits: 2 })} {cur}
-                          </td>
-                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                            <button
-                              onClick={() => {
-                                removeEditLine(el._key)
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                color: theme.danger ?? '#ef4444',
-                                fontSize: '16px',
-                                lineHeight: 1,
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                              }}
-                              title="Remove line"
-                            >
-                              ×
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  : (inv.lines ?? []).map((l: InvoiceLine) => (
-                      <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td
-                          style={{ padding: '8px 12px', color: theme.textMuted, fontSize: '12px' }}
-                        >
-                          {l.lineNumber}
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            color: theme.textPrimary,
-                            fontSize: '13px',
-                          }}
-                        >
-                          {l.description}
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <Badge variant="neutral">{l.sourceType}</Badge>
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            fontFamily: 'monospace',
-                            fontSize: '13px',
-                            color: theme.textSecondary,
-                          }}
-                        >
-                          {l.qty}
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <AmountDisplay amount={l.unitCost} currency={cur} size="sm" />
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <AmountDisplay amount={l.subtotal} currency={cur} size="sm" />
-                        </td>
-                        <td style={{ padding: '8px 12px', fontSize: '12px', color: theme.success }}>
-                          {l.marginPct}%
-                        </td>
-                        <td style={{ padding: '8px 12px', fontWeight: 600 }}>
-                          <AmountDisplay amount={l.lineTotal} currency={cur} size="sm" />
-                        </td>
-                      </tr>
+            {editMode ? (
+              <LineItemEditor
+                fields={editLineFields}
+                rows={editLines}
+                rowKey={(el) => el._key}
+                onRemoveRow={(idx) => {
+                  removeEditLine(editLines[idx]._key)
+                }}
+                onAddRow={addEditLine}
+                addLabel="+ Add Line"
+              />
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: theme.bgSurfaceHover }}>
+                    {[
+                      '#',
+                      'Description',
+                      'Source',
+                      'Qty',
+                      'Unit Cost',
+                      'Subtotal',
+                      'Margin',
+                      'Total',
+                    ].map((h, i) => (
+                      <th
+                        key={i}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          fontWeight: 600,
+                          borderBottom: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        {h}
+                      </th>
                     ))}
-              </tbody>
-            </table>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(inv.lines ?? []).map((l: InvoiceLine) => (
+                    <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                      <td style={{ padding: '8px 12px', color: theme.textMuted, fontSize: '12px' }}>
+                        {l.lineNumber}
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          color: theme.textPrimary,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {l.description}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <Badge variant="neutral">{l.sourceType}</Badge>
+                      </td>
+                      <td
+                        style={{
+                          padding: '8px 12px',
+                          fontFamily: 'monospace',
+                          fontSize: '13px',
+                          color: theme.textSecondary,
+                        }}
+                      >
+                        {l.qty}
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <AmountDisplay amount={l.unitCost} currency={cur} size="sm" />
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <AmountDisplay amount={l.subtotal} currency={cur} size="sm" />
+                      </td>
+                      <td style={{ padding: '8px 12px', fontSize: '12px', color: theme.success }}>
+                        {l.marginPct}%
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 600 }}>
+                        <AmountDisplay amount={l.lineTotal} currency={cur} size="sm" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             {editMode && (
               <>
-                <div style={{ marginTop: '10px' }}>
-                  <button
-                    onClick={addEditLine}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      padding: '5px 12px',
-                      border: `1px dashed ${theme.border}`,
-                      borderRadius: '6px',
-                      background: 'none',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      color: theme.accent,
-                    }}
-                  >
-                    + Add Line
-                  </button>
-                </div>
                 <div
                   style={{
                     marginTop: '10px',

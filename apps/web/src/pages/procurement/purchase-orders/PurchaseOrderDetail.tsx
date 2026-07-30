@@ -44,6 +44,7 @@ import { TabBar } from '../../../components/ui/TabBar'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
@@ -3993,286 +3994,287 @@ export default function PurchaseOrderDetail() {
                   </div>
                 )}
 
-                {editDraft && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {/* Header fields */}
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                        gap: '12px',
-                      }}
-                    >
-                      <div>
-                        <label style={labelStyle}>Notes</label>
-                        <textarea
-                          value={editDraft.notes}
-                          rows={2}
-                          style={{ ...inputStyle, resize: 'vertical' }}
-                          onChange={(e) => {
-                            setEditDraft({ ...editDraft, notes: e.target.value })
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Expected delivery</label>
-                        <input
-                          type="date"
-                          value={editDraft.expected_delivery_date}
-                          style={inputStyle}
-                          onChange={(e) => {
-                            setEditDraft({ ...editDraft, expected_delivery_date: e.target.value })
-                          }}
-                        />
-                      </div>
-                    </div>
+                {editDraft &&
+                  (() => {
+                    const existingLineFields: LineItemField<EditDraft['lines'][number]>[] = [
+                      {
+                        key: 'description',
+                        label: 'Description',
+                        render: (line, i) => (
+                          <input
+                            value={line.description}
+                            style={inputStyle}
+                            disabled={line._removed}
+                            onChange={(e) => {
+                              const lines = [...editDraft.lines]
+                              lines[i] = { ...lines[i], description: e.target.value }
+                              setEditDraft({ ...editDraft, lines })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'qty',
+                        label: 'Qty',
+                        width: '80px',
+                        render: (line, i) => (
+                          <input
+                            type="number"
+                            value={line.qty}
+                            style={inputStyle}
+                            disabled={line._removed}
+                            onChange={(e) => {
+                              const lines = [...editDraft.lines]
+                              lines[i] = { ...lines[i], qty: Number(e.target.value) }
+                              setEditDraft({ ...editDraft, lines })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'unit_price',
+                        label: 'Unit price',
+                        width: '110px',
+                        render: (line, i) => (
+                          <input
+                            type="number"
+                            value={line.unit_price}
+                            style={inputStyle}
+                            disabled={line._removed}
+                            onChange={(e) => {
+                              const lines = [...editDraft.lines]
+                              lines[i] = { ...lines[i], unit_price: Number(e.target.value) }
+                              setEditDraft({ ...editDraft, lines })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'uom',
+                        label: 'UOM',
+                        width: '70px',
+                        render: (line, i) => (
+                          <input
+                            value={line.uom}
+                            style={inputStyle}
+                            disabled={line._removed}
+                            onChange={(e) => {
+                              const lines = [...editDraft.lines]
+                              lines[i] = { ...lines[i], uom: e.target.value }
+                              setEditDraft({ ...editDraft, lines })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'actions',
+                        label: '',
+                        width: '70px',
+                        render: (line, i) => (
+                          <button
+                            onClick={() => {
+                              const lines = [...editDraft.lines]
+                              lines[i] = { ...lines[i], _removed: !lines[i]._removed }
+                              setEditDraft({ ...editDraft, lines })
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: line._removed ? theme.accent : theme.danger,
+                              fontSize: '12px',
+                            }}
+                          >
+                            {line._removed ? 'Restore' : 'Remove'}
+                          </button>
+                        ),
+                      },
+                    ]
 
-                    {/* Lines */}
-                    <div>
-                      <div
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          marginBottom: '8px',
-                        }}
-                      >
-                        Line items
-                      </div>
-                      <table
-                        style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}
-                      >
-                        <thead>
-                          <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                            {['Description', 'Qty', 'Unit price', 'UOM', ''].map((h) => (
-                              <th
-                                key={h}
-                                style={{
-                                  padding: '6px 8px',
-                                  textAlign: 'left',
-                                  fontSize: '11px',
-                                  color: theme.textMuted,
-                                }}
-                              >
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {editDraft.lines.map((line, i) => (
-                            <tr
-                              key={line.id}
-                              style={{
-                                borderBottom: `1px solid ${theme.border}22`,
-                                opacity: line._removed ? 0.4 : 1,
-                              }}
-                            >
-                              <td style={{ padding: '4px 8px' }}>
-                                <input
-                                  value={line.description}
-                                  style={{ ...inputStyle, width: '100%' }}
-                                  disabled={line._removed}
-                                  onChange={(e) => {
-                                    const lines = [...editDraft.lines]
-                                    lines[i] = { ...lines[i], description: e.target.value }
-                                    setEditDraft({ ...editDraft, lines })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px', width: '80px' }}>
-                                <input
-                                  type="number"
-                                  value={line.qty}
-                                  style={{ ...inputStyle, width: '80px' }}
-                                  disabled={line._removed}
-                                  onChange={(e) => {
-                                    const lines = [...editDraft.lines]
-                                    lines[i] = { ...lines[i], qty: Number(e.target.value) }
-                                    setEditDraft({ ...editDraft, lines })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px', width: '110px' }}>
-                                <input
-                                  type="number"
-                                  value={line.unit_price}
-                                  style={{ ...inputStyle, width: '110px' }}
-                                  disabled={line._removed}
-                                  onChange={(e) => {
-                                    const lines = [...editDraft.lines]
-                                    lines[i] = { ...lines[i], unit_price: Number(e.target.value) }
-                                    setEditDraft({ ...editDraft, lines })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px', width: '70px' }}>
-                                <input
-                                  value={line.uom}
-                                  style={{ ...inputStyle, width: '70px' }}
-                                  disabled={line._removed}
-                                  onChange={(e) => {
-                                    const lines = [...editDraft.lines]
-                                    lines[i] = { ...lines[i], uom: e.target.value }
-                                    setEditDraft({ ...editDraft, lines })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px' }}>
-                                <button
-                                  onClick={() => {
-                                    const lines = [...editDraft.lines]
-                                    lines[i] = { ...lines[i], _removed: !lines[i]._removed }
-                                    setEditDraft({ ...editDraft, lines })
-                                  }}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    color: line._removed ? theme.accent : theme.danger,
-                                    fontSize: '12px',
-                                  }}
-                                >
-                                  {line._removed ? 'Restore' : 'Remove'}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                          {editDraft.linesAdded.map((line, i) => (
-                            <tr
-                              key={`new-${i}`}
-                              style={{
-                                borderBottom: `1px solid ${theme.border}22`,
-                                background: theme.accentBg + '44',
-                              }}
-                            >
-                              <td style={{ padding: '4px 8px' }}>
-                                <input
-                                  placeholder="Description"
-                                  value={line.description}
-                                  style={{ ...inputStyle, width: '100%' }}
-                                  onChange={(e) => {
-                                    const a = [...editDraft.linesAdded]
-                                    a[i] = { ...a[i], description: e.target.value }
-                                    setEditDraft({ ...editDraft, linesAdded: a })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px' }}>
-                                <input
-                                  type="number"
-                                  value={line.qty}
-                                  style={{ ...inputStyle, width: '80px' }}
-                                  onChange={(e) => {
-                                    const a = [...editDraft.linesAdded]
-                                    a[i] = { ...a[i], qty: Number(e.target.value) }
-                                    setEditDraft({ ...editDraft, linesAdded: a })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px' }}>
-                                <input
-                                  type="number"
-                                  value={line.unit_price}
-                                  style={{ ...inputStyle, width: '110px' }}
-                                  onChange={(e) => {
-                                    const a = [...editDraft.linesAdded]
-                                    a[i] = { ...a[i], unit_price: Number(e.target.value) }
-                                    setEditDraft({ ...editDraft, linesAdded: a })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px' }}>
-                                <input
-                                  value={line.uom}
-                                  style={{ ...inputStyle, width: '70px' }}
-                                  onChange={(e) => {
-                                    const a = [...editDraft.linesAdded]
-                                    a[i] = { ...a[i], uom: e.target.value }
-                                    setEditDraft({ ...editDraft, linesAdded: a })
-                                  }}
-                                />
-                              </td>
-                              <td style={{ padding: '4px 8px' }}>
-                                <button
-                                  onClick={() => {
-                                    const a = editDraft.linesAdded.filter((_, j) => j !== i)
-                                    setEditDraft({ ...editDraft, linesAdded: a })
-                                  }}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    color: theme.danger,
-                                    fontSize: '12px',
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      <button
-                        onClick={() => {
-                          setEditDraft({
-                            ...editDraft,
-                            linesAdded: [
-                              ...editDraft.linesAdded,
-                              { description: '', qty: 1, unit_price: 0, uom: 'unit' },
-                            ],
-                          })
-                        }}
-                        style={{
-                          marginTop: '8px',
-                          background: 'none',
-                          border: `1px dashed ${theme.border}`,
-                          borderRadius: '6px',
-                          padding: '5px 12px',
-                          color: theme.textMuted,
-                          cursor: 'pointer',
-                          fontSize: '12px',
-                        }}
-                      >
-                        + Add line
-                      </button>
-                    </div>
+                    const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
+                      {
+                        key: 'description',
+                        label: 'Description',
+                        render: (line, i) => (
+                          <input
+                            placeholder="Description"
+                            value={line.description}
+                            style={inputStyle}
+                            onChange={(e) => {
+                              const a = [...editDraft.linesAdded]
+                              a[i] = { ...a[i], description: e.target.value }
+                              setEditDraft({ ...editDraft, linesAdded: a })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'qty',
+                        label: 'Qty',
+                        width: '80px',
+                        render: (line, i) => (
+                          <input
+                            type="number"
+                            value={line.qty}
+                            style={inputStyle}
+                            onChange={(e) => {
+                              const a = [...editDraft.linesAdded]
+                              a[i] = { ...a[i], qty: Number(e.target.value) }
+                              setEditDraft({ ...editDraft, linesAdded: a })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'unit_price',
+                        label: 'Unit price',
+                        width: '110px',
+                        render: (line, i) => (
+                          <input
+                            type="number"
+                            value={line.unit_price}
+                            style={inputStyle}
+                            onChange={(e) => {
+                              const a = [...editDraft.linesAdded]
+                              a[i] = { ...a[i], unit_price: Number(e.target.value) }
+                              setEditDraft({ ...editDraft, linesAdded: a })
+                            }}
+                          />
+                        ),
+                      },
+                      {
+                        key: 'uom',
+                        label: 'UOM',
+                        width: '70px',
+                        render: (line, i) => (
+                          <input
+                            value={line.uom}
+                            style={inputStyle}
+                            onChange={(e) => {
+                              const a = [...editDraft.linesAdded]
+                              a[i] = { ...a[i], uom: e.target.value }
+                              setEditDraft({ ...editDraft, linesAdded: a })
+                            }}
+                          />
+                        ),
+                      },
+                    ]
 
-                    {/* Submit */}
-                    <div>
-                      <label style={labelStyle}>Reason for changes (optional)</label>
-                      <input
-                        value={editRequestNotes}
-                        style={inputStyle}
-                        placeholder="Explain why these changes are needed..."
-                        onChange={(e) => {
-                          setEditRequestNotes(e.target.value)
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <Button
-                        variant="primary"
-                        loading={leR}
-                        onClick={() => {
-                          const changes = buildChanges(editDraft)
-                          void submitEditRequest({
-                            variables: {
-                              id: po.id,
-                              changes: JSON.stringify(changes),
-                              notes: editRequestNotes || undefined,
-                            },
-                          })
-                        }}
-                      >
-                        Submit edit request
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {/* Header fields */}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                            gap: '12px',
+                          }}
+                        >
+                          <div>
+                            <label style={labelStyle}>Notes</label>
+                            <textarea
+                              value={editDraft.notes}
+                              rows={2}
+                              style={{ ...inputStyle, resize: 'vertical' }}
+                              onChange={(e) => {
+                                setEditDraft({ ...editDraft, notes: e.target.value })
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Expected delivery</label>
+                            <input
+                              type="date"
+                              value={editDraft.expected_delivery_date}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                setEditDraft({
+                                  ...editDraft,
+                                  expected_delivery_date: e.target.value,
+                                })
+                              }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Lines */}
+                        <div>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: theme.textMuted,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.05em',
+                              marginBottom: '8px',
+                            }}
+                          >
+                            Line items
+                          </div>
+                          <LineItemEditor
+                            fields={existingLineFields}
+                            rows={editDraft.lines}
+                            rowKey={(line) => line.id}
+                            getRowStyle={(line) => ({ opacity: line._removed ? 0.4 : 1 })}
+                          />
+                          <div style={{ marginTop: '10px' }}>
+                            <LineItemEditor
+                              fields={addedLineFields}
+                              rows={editDraft.linesAdded}
+                              rowKey={(_, i) => `new-${i}`}
+                              getRowStyle={() => ({ background: theme.accentBg + '44' })}
+                              onRemoveRow={(idx) => {
+                                const a = editDraft.linesAdded.filter((_, j) => j !== idx)
+                                setEditDraft({ ...editDraft, linesAdded: a })
+                              }}
+                              onAddRow={() => {
+                                setEditDraft({
+                                  ...editDraft,
+                                  linesAdded: [
+                                    ...editDraft.linesAdded,
+                                    { description: '', qty: 1, unit_price: 0, uom: 'unit' },
+                                  ],
+                                })
+                              }}
+                              addLabel="+ Add line"
+                              emptyMessage="No new lines added"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Submit */}
+                        <div>
+                          <label style={labelStyle}>Reason for changes (optional)</label>
+                          <input
+                            value={editRequestNotes}
+                            style={inputStyle}
+                            placeholder="Explain why these changes are needed..."
+                            onChange={(e) => {
+                              setEditRequestNotes(e.target.value)
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <Button
+                            variant="primary"
+                            loading={leR}
+                            onClick={() => {
+                              const changes = buildChanges(editDraft)
+                              void submitEditRequest({
+                                variables: {
+                                  id: po.id,
+                                  changes: JSON.stringify(changes),
+                                  notes: editRequestNotes || undefined,
+                                },
+                              })
+                            }}
+                          >
+                            Submit edit request
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })()}
               </Card>
 
               {/* ── Edit request history ── */}
