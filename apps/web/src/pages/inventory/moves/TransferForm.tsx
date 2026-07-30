@@ -8,6 +8,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 
 interface TransferLine {
@@ -37,6 +38,67 @@ export default function TransferForm() {
 
   const locations = locationsData?.stockLocations ?? []
   const products = productsData?.products ?? []
+
+  const lineFields: LineItemField<TransferLine>[] = [
+    {
+      key: 'product_id',
+      label: 'Product',
+      render: (line, i) => (
+        <Select
+          value={line.product_id}
+          onChange={(e) => {
+            setLines((p) =>
+              p.map((l, idx) => (idx === i ? { ...l, product_id: e.target.value } : l)),
+            )
+          }}
+          required
+        >
+          <option value="">Select product…</option>
+          {products.map((p: { id: string; sku: string; name: string }) => (
+            <option key={p.id} value={p.id}>
+              {p.sku} — {p.name}
+            </option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      key: 'qty',
+      label: 'Qty',
+      width: '100px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Qty"
+          value={line.qty}
+          onChange={(e) => {
+            setLines((p) => p.map((l, idx) => (idx === i ? { ...l, qty: e.target.value } : l)))
+          }}
+        />
+      ),
+    },
+    {
+      key: 'unit_cost',
+      label: 'Unit Cost',
+      width: '100px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Cost"
+          value={line.unit_cost}
+          onChange={(e) => {
+            setLines((p) =>
+              p.map((l, idx) => (idx === i ? { ...l, unit_cost: e.target.value } : l)),
+            )
+          }}
+        />
+      ),
+    },
+  ]
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -168,85 +230,18 @@ export default function TransferForm() {
             Lines
           </div>
           <div style={{ padding: '12px' }}>
-            {lines.map((line, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 100px 100px 28px',
-                  gap: '8px',
-                  marginBottom: '8px',
-                  alignItems: 'center',
-                }}
-              >
-                <Select
-                  value={line.product_id}
-                  onChange={(e) => {
-                    setLines((p) =>
-                      p.map((l, idx) => (idx === i ? { ...l, product_id: e.target.value } : l)),
-                    )
-                  }}
-                  required
-                >
-                  <option value="">Select product…</option>
-                  {products.map((p: { id: string; sku: string; name: string }) => (
-                    <option key={p.id} value={p.id}>
-                      {p.sku} — {p.name}
-                    </option>
-                  ))}
-                </Select>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Qty"
-                  value={line.qty}
-                  onChange={(e) => {
-                    setLines((p) =>
-                      p.map((l, idx) => (idx === i ? { ...l, qty: e.target.value } : l)),
-                    )
-                  }}
-                />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Cost"
-                  value={line.unit_cost}
-                  onChange={(e) => {
-                    setLines((p) =>
-                      p.map((l, idx) => (idx === i ? { ...l, unit_cost: e.target.value } : l)),
-                    )
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLines((p) => p.filter((_, idx) => idx !== i))
-                  }}
-                  disabled={lines.length <= 1}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: theme.danger,
-                    fontSize: '16px',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => {
+            <LineItemEditor
+              fields={lineFields}
+              rows={lines}
+              onRemoveRow={(i) => {
+                setLines((p) => p.filter((_, idx) => idx !== i))
+              }}
+              removeDisabled={() => lines.length <= 1}
+              onAddRow={() => {
                 setLines((p) => [...p, emptyLine()])
               }}
-            >
-              + Add Line
-            </Button>
+              addLabel="+ Add Line"
+            />
           </div>
         </Card>
 

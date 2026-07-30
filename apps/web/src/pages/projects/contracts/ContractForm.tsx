@@ -18,6 +18,8 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 
 const BILLING_METHODS: { value: string; label: string }[] = [
   { value: 'fixed_lump_sum', label: 'Fixed Lump Sum' },
@@ -60,6 +62,7 @@ export default function ContractForm() {
   const isEdit = !!id
   const addToast = useToastStore((s) => s.addToast)
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
 
   const [selectedProjectId, setSelectedProjectId] = useState(urlProjectId)
   const [projectError, setProjectError] = useState('')
@@ -240,24 +243,6 @@ export default function ContractForm() {
     }
   }
 
-  const thStyle: React.CSSProperties = {
-    textAlign: 'left',
-    fontSize: '11px',
-    fontWeight: 600,
-    color: theme.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    padding: '8px 10px',
-    borderBottom: `1px solid ${theme.border}`,
-  }
-  const tdStyle: React.CSSProperties = {
-    padding: '8px 10px',
-    fontSize: '13px',
-    color: theme.textPrimary,
-    borderBottom: `1px solid ${theme.border}`,
-    verticalAlign: 'middle',
-  }
-
   const statusBadge = (status: string) => {
     const colors: Record<string, { bg: string; text: string }> = {
       pending: { bg: `${theme.accent}20`, text: theme.accent },
@@ -282,6 +267,141 @@ export default function ContractForm() {
       </span>
     )
   }
+
+  const milestoneFields: LineItemField<MilestoneRow>[] = [
+    {
+      key: 'sequence',
+      label: '#',
+      width: '50px',
+      render: (m, idx) => {
+        const isPending = !m.status || m.status === 'pending'
+        return isPending ? (
+          <input
+            type="number"
+            value={m.sequence}
+            onChange={(e) => {
+              setMilestones((ms) =>
+                ms.map((x, i) => (i === idx ? { ...x, sequence: e.target.value } : x)),
+              )
+            }}
+            style={{ ...selectStyle, padding: '4px 6px' }}
+          />
+        ) : (
+          <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>{m.sequence}</span>
+        )
+      },
+    },
+    {
+      key: 'name',
+      label: 'Name',
+      render: (m, idx) => {
+        const isPending = !m.status || m.status === 'pending'
+        return isPending ? (
+          <input
+            value={m.name}
+            onChange={(e) => {
+              setMilestones((ms) =>
+                ms.map((x, i) => (i === idx ? { ...x, name: e.target.value } : x)),
+              )
+            }}
+            style={{ ...selectStyle, padding: '4px 8px' }}
+          />
+        ) : (
+          <span>{m.name}</span>
+        )
+      },
+    },
+    {
+      key: 'billableAmount',
+      label: 'Amount',
+      width: '160px',
+      render: (m, idx) => {
+        const isPending = !m.status || m.status === 'pending'
+        return isPending ? (
+          <input
+            type="number"
+            step="0.01"
+            value={m.billableAmount}
+            onChange={(e) => {
+              setMilestones((ms) =>
+                ms.map((x, i) => (i === idx ? { ...x, billableAmount: e.target.value } : x)),
+              )
+            }}
+            style={{ ...selectStyle, padding: '4px 8px' }}
+          />
+        ) : (
+          <span style={{ fontFamily: 'monospace' }}>
+            {parseFloat(m.billableAmount).toLocaleString()}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'currencyCode',
+      label: 'Currency',
+      width: '90px',
+      render: (m, idx) => {
+        const isPending = !m.status || m.status === 'pending'
+        return isPending ? (
+          <select
+            value={m.currencyCode}
+            onChange={(e) => {
+              setMilestones((ms) =>
+                ms.map((x, i) => (i === idx ? { ...x, currencyCode: e.target.value } : x)),
+              )
+            }}
+            style={{ ...selectStyle, padding: '4px 8px' }}
+          >
+            {CURRENCIES.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span style={{ fontFamily: 'monospace' }}>{m.currencyCode}</span>
+        )
+      },
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      width: '90px',
+      render: (m) => statusBadge(m.status ?? 'pending'),
+    },
+    {
+      key: 'actions',
+      label: '',
+      width: '120px',
+      render: (m) => {
+        const isPending = !m.status || m.status === 'pending'
+        return (
+          isPending && (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={savingMilestoneId === m.id}
+                onClick={() => handleSaveMilestone(m)}
+              >
+                Save
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setConfirmDeleteMilestone(m.id!)
+                }}
+                style={{ color: '#ef4444' }}
+              >
+                Delete
+              </Button>
+            </div>
+          )
+        )
+      },
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '960px' }}>
@@ -466,7 +586,13 @@ export default function ContractForm() {
             required
           />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isPhone ? '1fr' : '2fr 1fr',
+              gap: '12px',
+            }}
+          >
             <Input
               label="Contract Value"
               type="number"
@@ -562,134 +688,12 @@ export default function ContractForm() {
 
             {/* Existing milestones */}
             {milestones.length > 0 && (
-              <div style={{ overflowX: 'auto', marginBottom: '20px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...thStyle, width: '50px' }}>#</th>
-                      <th style={thStyle}>Name</th>
-                      <th style={{ ...thStyle, width: '160px' }}>Amount</th>
-                      <th style={{ ...thStyle, width: '90px' }}>Currency</th>
-                      <th style={{ ...thStyle, width: '90px' }}>Status</th>
-                      <th style={{ ...thStyle, width: '120px' }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {milestones.map((m, idx) => {
-                      const isPending = !m.status || m.status === 'pending'
-                      return (
-                        <tr key={m.id ?? idx}>
-                          <td style={tdStyle}>
-                            {isPending ? (
-                              <input
-                                type="number"
-                                value={m.sequence}
-                                onChange={(e) => {
-                                  setMilestones((ms) =>
-                                    ms.map((x, i) =>
-                                      i === idx ? { ...x, sequence: e.target.value } : x,
-                                    ),
-                                  )
-                                }}
-                                style={{ ...selectStyle, width: '50px', padding: '4px 6px' }}
-                              />
-                            ) : (
-                              <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
-                                {m.sequence}
-                              </span>
-                            )}
-                          </td>
-                          <td style={tdStyle}>
-                            {isPending ? (
-                              <input
-                                value={m.name}
-                                onChange={(e) => {
-                                  setMilestones((ms) =>
-                                    ms.map((x, i) =>
-                                      i === idx ? { ...x, name: e.target.value } : x,
-                                    ),
-                                  )
-                                }}
-                                style={{ ...selectStyle, padding: '4px 8px', width: '100%' }}
-                              />
-                            ) : (
-                              <span>{m.name}</span>
-                            )}
-                          </td>
-                          <td style={tdStyle}>
-                            {isPending ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={m.billableAmount}
-                                onChange={(e) => {
-                                  setMilestones((ms) =>
-                                    ms.map((x, i) =>
-                                      i === idx ? { ...x, billableAmount: e.target.value } : x,
-                                    ),
-                                  )
-                                }}
-                                style={{ ...selectStyle, padding: '4px 8px', width: '100%' }}
-                              />
-                            ) : (
-                              <span style={{ fontFamily: 'monospace' }}>
-                                {parseFloat(m.billableAmount).toLocaleString()}
-                              </span>
-                            )}
-                          </td>
-                          <td style={tdStyle}>
-                            {isPending ? (
-                              <select
-                                value={m.currencyCode}
-                                onChange={(e) => {
-                                  setMilestones((ms) =>
-                                    ms.map((x, i) =>
-                                      i === idx ? { ...x, currencyCode: e.target.value } : x,
-                                    ),
-                                  )
-                                }}
-                                style={{ ...selectStyle, padding: '4px 8px' }}
-                              >
-                                {CURRENCIES.map((c) => (
-                                  <option key={c.value} value={c.value}>
-                                    {c.label}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span style={{ fontFamily: 'monospace' }}>{m.currencyCode}</span>
-                            )}
-                          </td>
-                          <td style={tdStyle}>{statusBadge(m.status ?? 'pending')}</td>
-                          <td style={tdStyle}>
-                            {isPending && (
-                              <div style={{ display: 'flex', gap: '6px' }}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  loading={savingMilestoneId === m.id}
-                                  onClick={() => handleSaveMilestone(m)}
-                                >
-                                  Save
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setConfirmDeleteMilestone(m.id!)
-                                  }}
-                                  style={{ color: '#ef4444' }}
-                                >
-                                  Delete
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+              <div style={{ marginBottom: '20px' }}>
+                <LineItemEditor
+                  fields={milestoneFields}
+                  rows={milestones}
+                  rowKey={(m, idx) => m.id ?? String(idx)}
+                />
               </div>
             )}
 
@@ -717,9 +721,9 @@ export default function ContractForm() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '60px 1fr 150px 100px auto',
+                  gridTemplateColumns: isPhone ? '1fr' : '60px 1fr 150px 100px auto',
                   gap: '10px',
-                  alignItems: 'flex-end',
+                  alignItems: isPhone ? 'stretch' : 'flex-end',
                 }}
               >
                 <div>

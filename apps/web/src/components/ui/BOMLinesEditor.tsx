@@ -1,7 +1,6 @@
 import { useTheme } from '../../theme/ThemeContext'
-import { Button } from './Button'
-import { Input } from './Input'
 import { SearchableSelect } from './SearchableSelect'
+import { LineItemEditor, type LineItemField } from './LineItemEditor'
 
 export interface BOMLine {
   id: string
@@ -74,15 +73,147 @@ export function BOMLinesEditor({
     onChange(arr)
   }
 
-  const thStyle: React.CSSProperties = {
-    padding: '8px 12px',
-    textAlign: 'left',
-    fontSize: '11px',
-    color: theme.textMuted,
-    fontWeight: 600,
-    borderBottom: `1px solid ${theme.border}`,
-    whiteSpace: 'nowrap',
+  const numberInputStyle: React.CSSProperties = {
+    width: '100%',
+    background: theme.bgSurface,
+    color: theme.textPrimary,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '4px',
+    padding: '4px 8px',
+    fontSize: '13px',
+    fontFamily: 'monospace',
   }
+
+  const textInputStyle: React.CSSProperties = {
+    width: '100%',
+    background: theme.bgSurface,
+    color: theme.textPrimary,
+    border: `1px solid ${theme.border}`,
+    borderRadius: '4px',
+    padding: '4px 8px',
+    fontSize: '12px',
+  }
+
+  const reorderButtonStyle = (disabled: boolean): React.CSSProperties => ({
+    background: 'none',
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    color: theme.textMuted,
+    padding: '2px 4px',
+  })
+
+  const fields: LineItemField<BOMLine>[] = [
+    {
+      key: 'index',
+      label: '#',
+      width: '30px',
+      mobileHide: true,
+      render: (_line, idx) => (
+        <span style={{ color: theme.textMuted, fontSize: '12px' }}>{idx + 1}</span>
+      ),
+    },
+    {
+      key: 'component',
+      label: 'Component',
+      render: (line) => (
+        <SearchableSelect
+          value={line.component_product_id}
+          onChange={(pid) => {
+            selectProduct(line.id, pid)
+          }}
+          options={products.map((p) => ({ value: p.id, label: p.name }))}
+          placeholder="Select product…"
+        />
+      ),
+    },
+    {
+      key: 'qty',
+      label: 'Qty',
+      width: '80px',
+      render: (line) => (
+        <input
+          type="number"
+          min="0.001"
+          step="0.001"
+          value={line.qty}
+          onChange={(e) => {
+            updateLine(line.id, { qty: parseFloat(e.target.value) || 0 })
+          }}
+          style={numberInputStyle}
+        />
+      ),
+    },
+    {
+      key: 'uom',
+      label: 'UOM',
+      width: '60px',
+      render: (line) => (
+        <input
+          value={line.uom}
+          onChange={(e) => {
+            updateLine(line.id, { uom: e.target.value })
+          }}
+          style={textInputStyle}
+        />
+      ),
+    },
+    {
+      key: 'unit_cost',
+      label: 'Unit Cost',
+      width: '100px',
+      render: (line) => (
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.unit_cost}
+          onChange={(e) => {
+            updateLine(line.id, { unit_cost: parseFloat(e.target.value) || 0 })
+          }}
+          style={numberInputStyle}
+        />
+      ),
+    },
+    {
+      key: 'line_total',
+      label: 'Line Total',
+      width: '100px',
+      render: (line) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.textPrimary }}>
+          {(line.qty * line.unit_cost).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'order',
+      label: 'Order',
+      width: '70px',
+      render: (line, idx) => (
+        <span style={{ whiteSpace: 'nowrap' }}>
+          <button
+            type="button"
+            onClick={() => {
+              moveUp(idx)
+            }}
+            disabled={idx === 0}
+            style={reorderButtonStyle(idx === 0)}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              moveDown(idx)
+            }}
+            disabled={idx === lines.length - 1}
+            style={reorderButtonStyle(idx === lines.length - 1)}
+          >
+            ↓
+          </button>
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div>
@@ -104,217 +235,29 @@ export function BOMLinesEditor({
         )}
       </div>
 
-      <div style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: theme.bgSurfaceHover }}>
-              <th style={{ ...thStyle, width: '30px' }}>#</th>
-              <th style={thStyle}>Component</th>
-              <th style={{ ...thStyle, width: '80px' }}>Qty</th>
-              <th style={{ ...thStyle, width: '60px' }}>UOM</th>
-              <th style={{ ...thStyle, width: '100px' }}>Unit Cost</th>
-              <th style={{ ...thStyle, width: '100px' }}>Line Total</th>
-              <th style={{ ...thStyle, width: '70px' }}>Order</th>
-              <th style={{ ...thStyle, width: '40px' }} />
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((line, idx) => {
-              const lineTotal = line.qty * line.unit_cost
-              return (
-                <tr
-                  key={line.id}
-                  style={{ borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}
-                >
-                  <td style={{ padding: '6px 12px', color: theme.textMuted, fontSize: '12px' }}>
-                    {idx + 1}
-                  </td>
-                  <td style={{ padding: '4px 8px' }}>
-                    <SearchableSelect
-                      value={line.component_product_id}
-                      onChange={(pid) => {
-                        selectProduct(line.id, pid)
-                      }}
-                      options={products.map((p) => ({ value: p.id, label: p.name }))}
-                      placeholder="Select product…"
-                    />
-                  </td>
-                  <td style={{ padding: '4px 8px' }}>
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="0.001"
-                      value={line.qty}
-                      onChange={(e) => {
-                        updateLine(line.id, { qty: parseFloat(e.target.value) || 0 })
-                      }}
-                      style={{
-                        width: '100%',
-                        background: theme.bgSurface,
-                        color: theme.textPrimary,
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        fontSize: '13px',
-                        fontFamily: 'monospace',
-                      }}
-                    />
-                  </td>
-                  <td style={{ padding: '4px 8px' }}>
-                    <input
-                      value={line.uom}
-                      onChange={(e) => {
-                        updateLine(line.id, { uom: e.target.value })
-                      }}
-                      style={{
-                        width: '100%',
-                        background: theme.bgSurface,
-                        color: theme.textPrimary,
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        fontSize: '12px',
-                      }}
-                    />
-                  </td>
-                  <td style={{ padding: '4px 8px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.unit_cost}
-                      onChange={(e) => {
-                        updateLine(line.id, { unit_cost: parseFloat(e.target.value) || 0 })
-                      }}
-                      style={{
-                        width: '100%',
-                        background: theme.bgSurface,
-                        color: theme.textPrimary,
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '4px',
-                        padding: '4px 8px',
-                        fontSize: '13px',
-                        fontFamily: 'monospace',
-                      }}
-                    />
-                  </td>
-                  <td
-                    style={{
-                      padding: '6px 12px',
-                      fontFamily: 'monospace',
-                      fontSize: '13px',
-                      color: theme.textPrimary,
-                    }}
-                  >
-                    {lineTotal.toLocaleString()}
-                  </td>
-                  <td style={{ padding: '4px', whiteSpace: 'nowrap' }}>
-                    <button
-                      onClick={() => {
-                        moveUp(idx)
-                      }}
-                      disabled={idx === 0}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: idx === 0 ? 'not-allowed' : 'pointer',
-                        color: theme.textMuted,
-                        padding: '2px 4px',
-                      }}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => {
-                        moveDown(idx)
-                      }}
-                      disabled={idx === lines.length - 1}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: idx === lines.length - 1 ? 'not-allowed' : 'pointer',
-                        color: theme.textMuted,
-                        padding: '2px 4px',
-                      }}
-                    >
-                      ↓
-                    </button>
-                  </td>
-                  <td style={{ padding: '4px' }}>
-                    <button
-                      onClick={() => {
-                        removeLine(line.id)
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: theme.danger,
-                        padding: '4px',
-                        fontSize: '16px',
-                      }}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-            {lines.length === 0 && (
-              <tr>
-                <td
-                  colSpan={8}
-                  style={{
-                    padding: '20px',
-                    textAlign: 'center',
-                    color: theme.textMuted,
-                    fontSize: '13px',
-                  }}
-                >
-                  No components added yet
-                </td>
-              </tr>
-            )}
-          </tbody>
-          {lines.length > 0 && (
-            <tfoot>
-              <tr style={{ background: theme.bgSurfaceHover }}>
-                <td
-                  colSpan={5}
-                  style={{
-                    padding: '8px 12px',
-                    textAlign: 'right',
-                    fontSize: '13px',
-                    color: theme.textSecondary,
-                    fontWeight: 600,
-                  }}
-                >
-                  Total Planned Cost
-                </td>
-                <td
-                  style={{
-                    padding: '8px 12px',
-                    fontFamily: 'monospace',
-                    fontSize: '13px',
-                    color: theme.accent,
-                    fontWeight: 700,
-                  }}
-                >
-                  {lines.reduce((s, l) => s + l.qty * l.unit_cost, 0).toLocaleString()}
-                </td>
-                <td colSpan={2} />
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-
-      <Button variant="ghost" size="sm" onClick={addLine} style={{ marginTop: '8px' }}>
-        + Add Component
-      </Button>
+      <LineItemEditor
+        fields={fields}
+        rows={lines}
+        rowKey={(line) => line.id}
+        onRemoveRow={(idx) => {
+          removeLine(lines[idx].id)
+        }}
+        onAddRow={addLine}
+        addLabel="+ Add Component"
+        emptyMessage="No components added yet"
+        footerRow={{
+          component: (
+            <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: 600 }}>
+              Total Planned Cost
+            </span>
+          ),
+          line_total: (
+            <span style={{ fontFamily: 'monospace', fontSize: '13px', color: theme.accent }}>
+              {lines.reduce((s, l) => s + l.qty * l.unit_cost, 0).toLocaleString()}
+            </span>
+          ),
+        }}
+      />
     </div>
   )
 }
-
-// suppress unused import
-void Input

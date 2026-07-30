@@ -15,12 +15,14 @@ import { Button } from '../../../components/ui/Button'
 import { useToastStore } from '../../../store/toastStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 
 export default function ManufacturingOrderForm() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const addToast = useToastStore((s) => s.addToast)
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
 
   const [form, setForm] = useState({
     bom_id: searchParams.get('bomId') ?? '',
@@ -93,7 +95,13 @@ export default function ManufacturingOrderForm() {
           onSubmit={handleSubmit}
           style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '24px' }}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isPhone ? '1fr' : '2fr 1fr',
+              gap: '16px',
+            }}
+          >
             <div>
               <SearchableSelect
                 label="Bill of Materials"
