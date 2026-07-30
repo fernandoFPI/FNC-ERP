@@ -4,6 +4,7 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
 
 interface TermLine {
@@ -182,6 +183,112 @@ export default function PaymentTermsPage() {
     marginBottom: '3px',
     display: 'block' as const,
   }
+
+  const lineFields: LineItemField<TermLine>[] = [
+    {
+      key: 'description',
+      label: 'Description',
+      width: '30%',
+      render: (line, idx) => (
+        <input
+          style={inputStyle}
+          value={line.description}
+          onChange={(e) => {
+            updateLine(idx, { description: e.target.value })
+          }}
+          placeholder={line.is_retention ? 'Retention' : `Installment ${idx + 1}`}
+        />
+      ),
+    },
+    {
+      key: 'value_type',
+      label: 'Type',
+      width: '80px',
+      render: (line, idx) => (
+        <select
+          style={inputStyle}
+          value={line.value_type}
+          onChange={(e) => {
+            updateLine(idx, { value_type: e.target.value as 'percent' | 'fixed' })
+          }}
+        >
+          <option value="percent">%</option>
+          <option value="fixed">Fixed</option>
+        </select>
+      ),
+    },
+    {
+      key: 'value',
+      label: 'Value',
+      width: '80px',
+      render: (line, idx) => (
+        <input
+          type="number"
+          style={inputStyle}
+          value={line.value}
+          onChange={(e) => {
+            updateLine(idx, { value: Number(e.target.value) })
+          }}
+        />
+      ),
+    },
+    {
+      key: 'due_type',
+      label: 'Due',
+      width: '150px',
+      render: (line, idx) => (
+        <select
+          style={inputStyle}
+          value={line.due_type}
+          onChange={(e) => {
+            updateLine(idx, {
+              due_type: e.target.value as TermLine['due_type'],
+              is_retention: e.target.value === 'retention',
+            })
+          }}
+        >
+          {Object.entries(DUE_LABELS).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+    {
+      key: 'days',
+      label: 'Days',
+      width: '65px',
+      render: (line, idx) => (
+        <input
+          type="number"
+          style={inputStyle}
+          value={line.days}
+          disabled={line.due_type !== 'days'}
+          onChange={(e) => {
+            updateLine(idx, { days: Number(e.target.value) })
+          }}
+        />
+      ),
+    },
+    {
+      key: 'is_retention',
+      label: 'Retention',
+      width: '70px',
+      render: (line, idx) => (
+        <input
+          type="checkbox"
+          checked={line.is_retention}
+          onChange={(e) => {
+            updateLine(idx, {
+              is_retention: e.target.checked,
+              due_type: e.target.checked ? 'retention' : 'days',
+            })
+          }}
+        />
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -461,129 +568,14 @@ export default function PaymentTermsPage() {
             >
               Installment Lines
             </h4>
-            <div
-              style={{
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                overflow: 'hidden',
-                marginBottom: '10px',
-              }}
-            >
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ background: theme.bgSurface }}>
-                    {['Description', 'Type', 'Value', 'Due', 'Days', 'Retention', ''].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '7px 8px',
-                          textAlign: 'left',
-                          color: theme.textMuted,
-                          fontWeight: 500,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {form.lines.map((line, idx) => (
-                    <tr key={idx} style={{ borderTop: `1px solid ${theme.border}` }}>
-                      <td style={{ padding: '5px 4px' }}>
-                        <input
-                          style={{ ...inputStyle, minWidth: '120px' }}
-                          value={line.description}
-                          onChange={(e) => {
-                            updateLine(idx, { description: e.target.value })
-                          }}
-                          placeholder={line.is_retention ? 'Retention' : `Installment ${idx + 1}`}
-                        />
-                      </td>
-                      <td style={{ padding: '5px 4px' }}>
-                        <select
-                          style={{ ...inputStyle, width: '70px' }}
-                          value={line.value_type}
-                          onChange={(e) => {
-                            updateLine(idx, { value_type: e.target.value as 'percent' | 'fixed' })
-                          }}
-                        >
-                          <option value="percent">%</option>
-                          <option value="fixed">Fixed</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '5px 4px' }}>
-                        <input
-                          type="number"
-                          style={{ ...inputStyle, width: '70px' }}
-                          value={line.value}
-                          onChange={(e) => {
-                            updateLine(idx, { value: Number(e.target.value) })
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '5px 4px' }}>
-                        <select
-                          style={{ ...inputStyle, minWidth: '130px' }}
-                          value={line.due_type}
-                          onChange={(e) => {
-                            updateLine(idx, {
-                              due_type: e.target.value as TermLine['due_type'],
-                              is_retention: e.target.value === 'retention',
-                            })
-                          }}
-                        >
-                          {Object.entries(DUE_LABELS).map(([k, v]) => (
-                            <option key={k} value={k}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '5px 4px' }}>
-                        <input
-                          type="number"
-                          style={{ ...inputStyle, width: '55px' }}
-                          value={line.days}
-                          disabled={line.due_type !== 'days'}
-                          onChange={(e) => {
-                            updateLine(idx, { days: Number(e.target.value) })
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '5px 8px', textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={line.is_retention}
-                          onChange={(e) => {
-                            updateLine(idx, {
-                              is_retention: e.target.checked,
-                              due_type: e.target.checked ? 'retention' : 'days',
-                            })
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '5px 4px' }}>
-                        <button
-                          onClick={() => {
-                            setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }))
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: theme.textMuted,
-                            cursor: 'pointer',
-                            fontSize: '14px',
-                          }}
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ marginBottom: '10px' }}>
+              <LineItemEditor
+                fields={lineFields}
+                rows={form.lines}
+                onRemoveRow={(idx) => {
+                  setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== idx) }))
+                }}
+              />
             </div>
 
             {/* Line total validation */}
