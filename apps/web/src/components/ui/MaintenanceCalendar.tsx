@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from '../../theme/ThemeContext'
+import { useBreakpoint } from '../../hooks/useBreakpoint'
 
 export interface MaintenanceEvent {
   id: string
@@ -39,6 +40,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export function MaintenanceCalendar({ events, onEventClick }: Props) {
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
@@ -119,93 +121,193 @@ export function MaintenanceCalendar({ events, onEventClick }: Props) {
         </button>
       </div>
 
-      {/* Day names */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
-          gap: '1px',
-          marginBottom: '4px',
-        }}
-      >
-        {DAY_NAMES.map((d) => (
-          <div
-            key={d}
-            style={{
-              textAlign: 'center',
-              fontSize: '11px',
-              color: theme.textMuted,
-              paddingBottom: '4px',
-            }}
-          >
-            {d}
-          </div>
-        ))}
-      </div>
+      {isPhone ? (
+        <>
+          {(() => {
+            const daysWithEvents = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+              .map((day) => {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                return { day, dateStr, events: eventsByDate[dateStr] ?? [] }
+              })
+              .filter((d) => d.events.length > 0)
 
-      {/* Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-        {cells.map((day, idx) => {
-          if (!day) return <div key={`empty-${idx}`} />
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const dayEvents = eventsByDate[dateStr] ?? []
-          const isToday =
-            year === now.getFullYear() && month === now.getMonth() && day === now.getDate()
-
-          return (
-            <div
-              key={dateStr}
-              style={{
-                minHeight: '54px',
-                border: `1px solid ${isToday ? theme.accent : theme.border}`,
-                borderRadius: '4px',
-                padding: '4px',
-                background: isToday ? theme.accentBg : theme.bgSurface,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: isToday ? theme.accent : theme.textMuted,
-                  fontWeight: isToday ? 600 : 400,
-                  marginBottom: '2px',
-                }}
-              >
-                {day}
-              </div>
-              {dayEvents.slice(0, 2).map((ev) => (
-                <button
-                  key={ev.id}
-                  onClick={() => onEventClick?.(ev)}
+            if (daysWithEvents.length === 0) {
+              return (
+                <div
                   style={{
-                    display: 'block',
-                    width: '100%',
-                    background: TYPE_COLOR[ev.type] ?? theme.accent,
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '3px',
-                    padding: '1px 4px',
-                    fontSize: '10px',
-                    marginBottom: '1px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    padding: '24px 0',
+                    textAlign: 'center',
+                    color: theme.textMuted,
+                    fontSize: '13px',
                   }}
                 >
-                  {ev.title}
-                </button>
-              ))}
-              {dayEvents.length > 2 && (
-                <div style={{ fontSize: '9px', color: theme.textMuted }}>
-                  +{dayEvents.length - 2} more
+                  No maintenance events this month
                 </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {daysWithEvents.map(({ day, dateStr, events: dayEvents }) => (
+                  <div
+                    key={dateStr}
+                    style={{
+                      background: theme.bgSurface,
+                      border: `0.5px solid ${theme.border}`,
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: theme.textMuted,
+                        marginBottom: '6px',
+                      }}
+                    >
+                      {new Date(year, month, day).toLocaleDateString('default', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {dayEvents.map((ev) => (
+                        <button
+                          key={ev.id}
+                          onClick={() => onEventClick?.(ev)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'none',
+                            border: 'none',
+                            padding: '4px 0',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            WebkitTapHighlightColor: 'transparent',
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '7px',
+                              height: '7px',
+                              borderRadius: '50%',
+                              background: TYPE_COLOR[ev.type] ?? theme.accent,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span
+                            style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 500 }}
+                          >
+                            {ev.title}
+                          </span>
+                          {ev.assetName && (
+                            <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                              · {ev.assetName}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </>
+      ) : (
+        <>
+          {/* Day names */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, 1fr)',
+              gap: '1px',
+              marginBottom: '4px',
+            }}
+          >
+            {DAY_NAMES.map((d) => (
+              <div
+                key={d}
+                style={{
+                  textAlign: 'center',
+                  fontSize: '11px',
+                  color: theme.textMuted,
+                  paddingBottom: '4px',
+                }}
+              >
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
+            {cells.map((day, idx) => {
+              if (!day) return <div key={`empty-${idx}`} />
+              const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+              const dayEvents = eventsByDate[dateStr] ?? []
+              const isToday =
+                year === now.getFullYear() && month === now.getMonth() && day === now.getDate()
+
+              return (
+                <div
+                  key={dateStr}
+                  style={{
+                    minHeight: '54px',
+                    border: `1px solid ${isToday ? theme.accent : theme.border}`,
+                    borderRadius: '4px',
+                    padding: '4px',
+                    background: isToday ? theme.accentBg : theme.bgSurface,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: isToday ? theme.accent : theme.textMuted,
+                      fontWeight: isToday ? 600 : 400,
+                      marginBottom: '2px',
+                    }}
+                  >
+                    {day}
+                  </div>
+                  {dayEvents.slice(0, 2).map((ev) => (
+                    <button
+                      key={ev.id}
+                      onClick={() => onEventClick?.(ev)}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        background: TYPE_COLOR[ev.type] ?? theme.accent,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '3px',
+                        padding: '1px 4px',
+                        fontSize: '10px',
+                        marginBottom: '1px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {ev.title}
+                    </button>
+                  ))}
+                  {dayEvents.length > 2 && (
+                    <div style={{ fontSize: '9px', color: theme.textMuted }}>
+                      +{dayEvents.length - 2} more
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       {/* Legend */}
       <div style={{ display: 'flex', gap: '16px', marginTop: '12px', flexWrap: 'wrap' }}>

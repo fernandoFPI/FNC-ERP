@@ -1,5 +1,6 @@
 import React from 'react'
 import { useTheme } from '../../theme/ThemeContext'
+import { useBreakpoint } from '../../hooks/useBreakpoint'
 
 interface LeaveEntry {
   employeeName: string
@@ -27,6 +28,7 @@ function fmt(d: Date) {
 
 export function LeaveCalendar({ month, leaves, onMonthChange }: LeaveCalendarProps) {
   const { theme } = useTheme()
+  const { isPhone } = useBreakpoint()
   const year = month.getFullYear()
   const mon = month.getMonth()
 
@@ -105,78 +107,170 @@ export function LeaveCalendar({ month, leaves, onMonthChange }: LeaveCalendarPro
         </button>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
-          gap: '2px',
-          marginBottom: '4px',
-        }}
-      >
-        {DAY_LABELS.map((d) => (
-          <div
-            key={d}
-            style={{
-              textAlign: 'center',
-              fontSize: '10px',
-              fontWeight: 600,
-              color: theme.textMuted,
-              textTransform: 'uppercase',
-              padding: '4px 0',
-            }}
-          >
-            {d}
-          </div>
-        ))}
-      </div>
+      {isPhone ? (
+        <>
+          {(() => {
+            const daysWithLeaves = Array.from({ length: daysInMonth }, (_, i) => i + 1)
+              .map((day) => {
+                const dateStr = `${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                return { day, dateStr, entries: dateLeaves[dateStr] ?? [] }
+              })
+              .filter((d) => d.entries.length > 0)
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-        {cells.map((day, i) => {
-          if (day == null) return <div key={`e-${i}`} />
-          const dateStr = `${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const entries = dateLeaves[dateStr] ?? []
-
-          return (
-            <div
-              key={dateStr}
-              style={{
-                height: '56px',
-                border: `1px solid ${theme.border}`,
-                borderRadius: '6px',
-                padding: '4px',
-                overflow: 'hidden',
-                background: theme.bgSurface,
-              }}
-            >
-              <div style={{ fontSize: '11px', color: theme.textSecondary, marginBottom: '2px' }}>
-                {day}
-              </div>
-              {entries.slice(0, 2).map((e, j) => (
+            if (daysWithLeaves.length === 0) {
+              return (
                 <div
-                  key={j}
                   style={{
-                    fontSize: '9px',
-                    lineHeight: 1.2,
-                    background: `${LEAVE_COLORS[e.colorIdx]}22`,
-                    color: LEAVE_COLORS[e.colorIdx],
-                    borderRadius: '3px',
-                    padding: '1px 3px',
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    textOverflow: 'ellipsis',
-                    marginBottom: '1px',
+                    padding: '24px 0',
+                    textAlign: 'center',
+                    color: theme.textMuted,
+                    fontSize: '13px',
                   }}
                 >
-                  {e.employeeName.split(' ')[0]}
+                  No approved leave this month
                 </div>
-              ))}
-              {entries.length > 2 && (
-                <div style={{ fontSize: '9px', color: theme.textMuted }}>+{entries.length - 2}</div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+              )
+            }
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {daysWithLeaves.map(({ day, dateStr, entries }) => (
+                  <div
+                    key={dateStr}
+                    style={{
+                      background: theme.bgSurface,
+                      border: `0.5px solid ${theme.border}`,
+                      borderRadius: '10px',
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        color: theme.textMuted,
+                        marginBottom: '6px',
+                      }}
+                    >
+                      {new Date(year, mon, day).toLocaleDateString('default', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {entries.map((e, j) => (
+                        <div
+                          key={j}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: '7px',
+                              height: '7px',
+                              borderRadius: '50%',
+                              background: LEAVE_COLORS[e.colorIdx],
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span style={{ color: theme.textPrimary, fontWeight: 500 }}>
+                            {e.employeeName}
+                          </span>
+                          <span style={{ color: theme.textMuted }}>· {e.leaveTypeName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, 1fr)',
+              gap: '2px',
+              marginBottom: '4px',
+            }}
+          >
+            {DAY_LABELS.map((d) => (
+              <div
+                key={d}
+                style={{
+                  textAlign: 'center',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  color: theme.textMuted,
+                  textTransform: 'uppercase',
+                  padding: '4px 0',
+                }}
+              >
+                {d}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
+            {cells.map((day, i) => {
+              if (day == null) return <div key={`e-${i}`} />
+              const dateStr = `${year}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+              const entries = dateLeaves[dateStr] ?? []
+
+              return (
+                <div
+                  key={dateStr}
+                  style={{
+                    height: '56px',
+                    border: `1px solid ${theme.border}`,
+                    borderRadius: '6px',
+                    padding: '4px',
+                    overflow: 'hidden',
+                    background: theme.bgSurface,
+                  }}
+                >
+                  <div
+                    style={{ fontSize: '11px', color: theme.textSecondary, marginBottom: '2px' }}
+                  >
+                    {day}
+                  </div>
+                  {entries.slice(0, 2).map((e, j) => (
+                    <div
+                      key={j}
+                      style={{
+                        fontSize: '9px',
+                        lineHeight: 1.2,
+                        background: `${LEAVE_COLORS[e.colorIdx]}22`,
+                        color: LEAVE_COLORS[e.colorIdx],
+                        borderRadius: '3px',
+                        padding: '1px 3px',
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
+                        marginBottom: '1px',
+                      }}
+                    >
+                      {e.employeeName.split(' ')[0]}
+                    </div>
+                  ))}
+                  {entries.length > 2 && (
+                    <div style={{ fontSize: '9px', color: theme.textMuted }}>
+                      +{entries.length - 2}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       {/* Legend */}
       {Object.keys(typeColorMap).length > 0 && (
