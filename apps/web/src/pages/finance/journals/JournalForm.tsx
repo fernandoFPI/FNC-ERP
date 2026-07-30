@@ -14,6 +14,7 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { Textarea } from '../../../components/ui/Textarea'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 
 interface JournalLine {
@@ -100,6 +101,74 @@ export default function JournalForm() {
     }
   }
 
+  const lineFields: LineItemField<JournalLine>[] = [
+    {
+      key: 'account_id',
+      label: 'Account',
+      render: (line, i) => (
+        <Select
+          value={line.account_id}
+          onChange={(e) => {
+            updateLine(i, 'account_id', e.target.value)
+          }}
+        >
+          <option value="">Select account…</option>
+          {accountOptions.map((o: { value: string; label: string }) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      width: '160px',
+      render: (line, i) => (
+        <Input
+          value={line.description}
+          onChange={(e) => {
+            updateLine(i, 'description', e.target.value)
+          }}
+          placeholder="Description"
+        />
+      ),
+    },
+    {
+      key: 'debit',
+      label: 'Debit',
+      width: '120px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.debit}
+          onChange={(e) => {
+            updateLine(i, 'debit', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'credit',
+      label: 'Credit',
+      width: '120px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.credit}
+          onChange={(e) => {
+            updateLine(i, 'credit', e.target.value)
+          }}
+        />
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
       <PageHeader
@@ -143,123 +212,23 @@ export default function JournalForm() {
           </div>
 
           {/* Lines table */}
-          <div
-            data-tour="journal-lines-table"
-            style={{ border: `1px solid ${theme.border}`, borderRadius: '8px', overflow: 'hidden' }}
-          >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 160px 120px 120px 32px',
-                gap: '0',
-                background: theme.bgSurface,
-                padding: '8px 12px',
-                borderBottom: `1px solid ${theme.border}`,
+          <div data-tour="journal-lines-table">
+            <LineItemEditor
+              fields={lineFields}
+              rows={lines}
+              onRemoveRow={(i) => {
+                removeLine(i)
               }}
-            >
-              {['Account', 'Description', 'Debit', 'Credit', ''].map((h) => (
-                <span
-                  key={h}
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: theme.textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                  }}
-                >
-                  {h}
-                </span>
-              ))}
-            </div>
-
-            {lines.map((line, i) => (
-              <div
-                key={i}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 160px 120px 120px 32px',
-                  gap: '0',
-                  padding: '8px 12px',
-                  borderBottom: `1px solid ${theme.border}`,
-                  alignItems: 'center',
-                }}
-              >
-                <Select
-                  value={line.account_id}
-                  onChange={(e) => {
-                    updateLine(i, 'account_id', e.target.value)
-                  }}
-                >
-                  <option value="">Select account…</option>
-                  {accountOptions.map((o: { value: string; label: string }) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-                <Input
-                  value={line.description}
-                  onChange={(e) => {
-                    updateLine(i, 'description', e.target.value)
-                  }}
-                  placeholder="Description"
-                />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={line.debit}
-                  onChange={(e) => {
-                    updateLine(i, 'debit', e.target.value)
-                  }}
-                />
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={line.credit}
-                  onChange={(e) => {
-                    updateLine(i, 'credit', e.target.value)
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    removeLine(i)
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: theme.danger,
-                    fontSize: '16px',
-                    padding: '0 4px',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-
-            {/* Totals */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 160px 120px 120px 32px',
-                padding: '8px 12px',
-                background: theme.bgSurface,
-                alignItems: 'center',
+              footerRow={{
+                description: (
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}>
+                    Totals
+                  </span>
+                ),
+                debit: <AmountDisplay amount={totalDebit} currency="IQD" />,
+                credit: <AmountDisplay amount={totalCredit} currency="IQD" />,
               }}
-            >
-              <span />
-              <span style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}>
-                Totals
-              </span>
-              <AmountDisplay amount={totalDebit} currency="IQD" />
-              <AmountDisplay amount={totalCredit} currency="IQD" />
-              <span />
-            </div>
+            />
           </div>
 
           {!isBalanced && totalDebit + totalCredit > 0 && (

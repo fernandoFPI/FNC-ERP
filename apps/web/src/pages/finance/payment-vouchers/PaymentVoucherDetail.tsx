@@ -17,6 +17,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import type { VoucherPrintLine, VoucherPrintJournal } from '../../../lib/voucherHtml'
 import { buildPaymentVoucherHTML } from '../../../lib/voucherHtml'
@@ -424,6 +425,83 @@ export default function PaymentVoucherDetail() {
     display: 'block',
   }
 
+  const lineFields: LineItemField<VoucherLine>[] = [
+    ...(['acct_1', 'acct_2', 'acct_3', 'acct_4', 'acct_5'] as const).map((f, i) => ({
+      key: f,
+      label: `Acct ${i + 1}`,
+      width: '64px',
+      render: (line: VoucherLine, idx: number) => (
+        <input
+          type="text"
+          readOnly={isReadOnly}
+          value={line[f]}
+          maxLength={12}
+          style={{
+            ...inputStyle,
+            textAlign: 'center' as const,
+            fontFamily: 'monospace',
+            fontSize: '11px',
+          }}
+          onChange={(e) => {
+            updateLine(idx, f, e.target.value)
+          }}
+        />
+      ),
+    })),
+    {
+      key: 'statement',
+      label: 'Statement (البيان)',
+      render: (line, idx) => (
+        <input
+          type="text"
+          readOnly={isReadOnly}
+          value={line.statement}
+          placeholder="Description…"
+          style={inputStyle}
+          onChange={(e) => {
+            updateLine(idx, 'statement', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'amount_iqd',
+      label: 'Amount IQD',
+      width: '110px',
+      render: (line, idx) => (
+        <input
+          type="number"
+          readOnly={isReadOnly}
+          value={line.amount_iqd}
+          min="0"
+          step="0.01"
+          style={{ ...inputStyle, textAlign: 'right', fontFamily: 'monospace' }}
+          onChange={(e) => {
+            updateLine(idx, 'amount_iqd', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'amount_usd',
+      label: 'Amount USD',
+      width: '100px',
+      render: (line, idx) => (
+        <input
+          type="number"
+          readOnly={isReadOnly}
+          value={line.amount_usd}
+          min="0"
+          step="0.01"
+          style={{ ...inputStyle, textAlign: 'right', fontFamily: 'monospace' }}
+          onChange={(e) => {
+            updateLine(idx, 'amount_usd', e.target.value)
+          }}
+        />
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1400px' }}>
       <PageHeader
@@ -701,162 +779,30 @@ export default function PaymentVoucherDetail() {
                 )}
               </div>
 
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr style={{ background: theme.bgSurface }}>
-                      {[
-                        'Acct 1',
-                        'Acct 2',
-                        'Acct 3',
-                        'Acct 4',
-                        'Acct 5',
-                        'Statement (البيان)',
-                        'Amount IQD',
-                        'Amount USD',
-                        '',
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '8px 8px',
-                            textAlign: 'left',
-                            fontWeight: 600,
-                            fontSize: '11px',
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                            borderBottom: `1px solid ${theme.border}`,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((line, idx) => (
-                      <tr key={idx} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        {(['acct_1', 'acct_2', 'acct_3', 'acct_4', 'acct_5'] as const).map((f) => (
-                          <td key={f} style={{ padding: '6px 6px' }}>
-                            <input
-                              type="text"
-                              readOnly={isReadOnly}
-                              value={line[f]}
-                              maxLength={12}
-                              style={{
-                                ...inputStyle,
-                                width: '64px',
-                                textAlign: 'center',
-                                fontFamily: 'monospace',
-                                fontSize: '11px',
-                              }}
-                              onChange={(e) => {
-                                updateLine(idx, f, e.target.value)
-                              }}
-                            />
-                          </td>
-                        ))}
-                        <td style={{ padding: '6px 6px' }}>
-                          <input
-                            type="text"
-                            readOnly={isReadOnly}
-                            value={line.statement}
-                            placeholder="Description…"
-                            style={{ ...inputStyle, minWidth: '200px' }}
-                            onChange={(e) => {
-                              updateLine(idx, 'statement', e.target.value)
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: '6px 6px' }}>
-                          <input
-                            type="number"
-                            readOnly={isReadOnly}
-                            value={line.amount_iqd}
-                            min="0"
-                            step="0.01"
-                            style={{
-                              ...inputStyle,
-                              width: '110px',
-                              textAlign: 'right',
-                              fontFamily: 'monospace',
-                            }}
-                            onChange={(e) => {
-                              updateLine(idx, 'amount_iqd', e.target.value)
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: '6px 6px' }}>
-                          <input
-                            type="number"
-                            readOnly={isReadOnly}
-                            value={line.amount_usd}
-                            min="0"
-                            step="0.01"
-                            style={{
-                              ...inputStyle,
-                              width: '100px',
-                              textAlign: 'right',
-                              fontFamily: 'monospace',
-                            }}
-                            onChange={(e) => {
-                              updateLine(idx, 'amount_usd', e.target.value)
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: '6px 8px' }}>
-                          {!isReadOnly && lines.length > 1 && (
-                            <button
-                              onClick={() => {
-                                removeLine(idx)
-                              }}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                cursor: 'pointer',
-                                color: theme.danger ?? '#e53e3e',
-                                fontSize: '16px',
-                                lineHeight: 1,
-                              }}
-                            >
-                              ×
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-
-                    {/* Totals row */}
-                    <tr style={{ background: theme.bgSurface, fontWeight: 600 }}>
-                      <td colSpan={5}></td>
-                      <td
-                        style={{
-                          padding: '8px',
-                          fontSize: '12px',
-                          color: theme.textSecondary,
-                          textAlign: 'right',
-                          paddingRight: '16px',
-                        }}
-                      >
-                        Total
-                      </td>
-                      <td style={{ padding: '8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                        <AmountDisplay amount={totalIqd} currency="IQD" />
-                      </td>
-                      <td style={{ padding: '8px', fontFamily: 'monospace', textAlign: 'right' }}>
-                        {totalUsd > 0 ? (
-                          <AmountDisplay amount={totalUsd} currency="USD" />
-                        ) : (
-                          <span style={{ color: theme.textMuted }}>—</span>
-                        )}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <LineItemEditor
+                fields={lineFields}
+                rows={lines}
+                onRemoveRow={
+                  isReadOnly
+                    ? undefined
+                    : (idx) => {
+                        removeLine(idx)
+                      }
+                }
+                removeDisabled={() => lines.length <= 1}
+                footerRow={{
+                  statement: (
+                    <span style={{ fontSize: '12px', color: theme.textSecondary }}>Total</span>
+                  ),
+                  amount_iqd: <AmountDisplay amount={totalIqd} currency="IQD" />,
+                  amount_usd:
+                    totalUsd > 0 ? (
+                      <AmountDisplay amount={totalUsd} currency="USD" />
+                    ) : (
+                      <span style={{ color: theme.textMuted }}>—</span>
+                    ),
+                }}
+              />
             </Card>
 
             {/* Linked journals detail (when journals are selected) */}

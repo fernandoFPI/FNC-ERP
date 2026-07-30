@@ -6,6 +6,7 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
 
 interface Claim {
@@ -201,6 +202,99 @@ export default function ExpenseClaimsPage() {
   }
 
   const totalLines = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+
+  const lineFields: LineItemField<LineForm>[] = [
+    {
+      key: 'expense_date',
+      label: 'Date',
+      width: '120px',
+      render: (line, i) => (
+        <input
+          type="date"
+          style={inputStyle}
+          value={line.expense_date}
+          onChange={(e) => {
+            updateLine(i, 'expense_date', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'category_id',
+      label: 'Category',
+      width: '140px',
+      render: (line, i) => (
+        <select
+          style={inputStyle}
+          value={line.category_id}
+          onChange={(e) => {
+            applyCategory(i, e.target.value)
+          }}
+        >
+          <option value="">— Category —</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+    {
+      key: 'gl_account_id',
+      label: 'GL Account',
+      width: '160px',
+      render: (line, i) => (
+        <select
+          style={inputStyle}
+          value={line.gl_account_id}
+          onChange={(e) => {
+            updateLine(i, 'gl_account_id', e.target.value)
+          }}
+        >
+          <option value="">— Account —</option>
+          {glAccounts.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.code} · {g.name}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      width: '160px',
+      render: (line, i) => (
+        <input
+          style={inputStyle}
+          value={line.description}
+          onChange={(e) => {
+            updateLine(i, 'description', e.target.value)
+          }}
+          placeholder="What was this for?"
+        />
+      ),
+    },
+    {
+      key: 'amount',
+      label: 'Amount',
+      width: '100px',
+      render: (line, i) => (
+        <input
+          type="number"
+          style={{ ...inputStyle, textAlign: 'right' }}
+          value={line.amount}
+          min="0.01"
+          step="0.01"
+          onChange={(e) => {
+            updateLine(i, 'amount', e.target.value)
+          }}
+          placeholder="0.00"
+        />
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px' }}>
@@ -537,122 +631,15 @@ export default function ExpenseClaimsPage() {
             >
               Expense Lines
             </p>
-            <div style={{ overflowX: 'auto', marginBottom: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                <thead>
-                  <tr
-                    style={{
-                      background: theme.bgSurface,
-                      borderBottom: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    {['Date', 'Category', 'GL Account', 'Description', 'Amount', ''].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '6px 8px',
-                          textAlign: 'left',
-                          color: theme.textMuted,
-                          fontWeight: 500,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l, i) => (
-                    <tr key={i} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input
-                          type="date"
-                          style={{ ...inputStyle, width: '120px' }}
-                          value={l.expense_date}
-                          onChange={(e) => {
-                            updateLine(i, 'expense_date', e.target.value)
-                          }}
-                        />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          style={{ ...inputStyle, width: '140px' }}
-                          value={l.category_id}
-                          onChange={(e) => {
-                            applyCategory(i, e.target.value)
-                          }}
-                        >
-                          <option value="">— Category —</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <select
-                          style={{ ...inputStyle, width: '160px' }}
-                          value={l.gl_account_id}
-                          onChange={(e) => {
-                            updateLine(i, 'gl_account_id', e.target.value)
-                          }}
-                        >
-                          <option value="">— Account —</option>
-                          {glAccounts.map((g) => (
-                            <option key={g.id} value={g.id}>
-                              {g.code} · {g.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input
-                          style={{ ...inputStyle, width: '160px' }}
-                          value={l.description}
-                          onChange={(e) => {
-                            updateLine(i, 'description', e.target.value)
-                          }}
-                          placeholder="What was this for?"
-                        />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        <input
-                          type="number"
-                          style={{ ...inputStyle, width: '100px', textAlign: 'right' }}
-                          value={l.amount}
-                          min="0.01"
-                          step="0.01"
-                          onChange={(e) => {
-                            updateLine(i, 'amount', e.target.value)
-                          }}
-                          placeholder="0.00"
-                        />
-                      </td>
-                      <td style={{ padding: '4px 6px' }}>
-                        {lines.length > 1 && (
-                          <button
-                            onClick={() => {
-                              setLines((ls) => ls.filter((_, idx) => idx !== i))
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: '#ef4444',
-                              fontSize: '14px',
-                              padding: '0 4px',
-                            }}
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ marginBottom: '8px' }}>
+              <LineItemEditor
+                fields={lineFields}
+                rows={lines}
+                onRemoveRow={(i) => {
+                  setLines((ls) => ls.filter((_, idx) => idx !== i))
+                }}
+                removeDisabled={() => lines.length <= 1}
+              />
             </div>
             <div
               style={{
