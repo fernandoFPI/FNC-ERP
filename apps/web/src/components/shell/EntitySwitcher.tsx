@@ -182,9 +182,10 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
           style={{
             position: 'absolute',
             top: 'calc(100% + 6px)',
-            left: 0,
+            ...(compact ? { right: 0 } : { left: 0 }),
             zIndex: 500,
             minWidth: '220px',
+            maxWidth: 'calc(100vw - 24px)',
           }}
         >
           <Card padding="none" rimHighlight>

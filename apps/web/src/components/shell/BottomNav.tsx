@@ -91,6 +91,13 @@ const ICONS: Record<string, (color: string) => JSX.Element> = {
       <line x1="12" y1="22.08" x2="12" y2="12" />
     </svg>
   ),
+  'shopping-cart': (c) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8">
+      <circle cx="9" cy="21" r="1" />
+      <circle cx="20" cy="21" r="1" />
+      <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+    </svg>
+  ),
 }
 
 // ── Role-based nav sets ──────────────────────────────────────────────────────
@@ -110,8 +117,8 @@ const NAV_SETS: Record<string, BottomNavItem[]> = {
   ],
   finance: [
     { label: 'Home', icon: 'home', path: '/dashboard' },
-    { label: 'AR', icon: 'arrow-down-circle', path: '/finance/ar' },
-    { label: 'AP', icon: 'arrow-up-circle', path: '/finance/ap' },
+    { label: 'Projects', icon: 'briefcase', path: '/projects' },
+    { label: 'PO', icon: 'shopping-cart', path: '/procurement/purchase-orders' },
     { label: 'Notifs', icon: 'bell', path: '/notifications' },
   ],
   project_manager: [
