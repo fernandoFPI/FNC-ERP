@@ -18,6 +18,7 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
 
@@ -268,6 +269,73 @@ export default function ReceiptForm() {
     }
   }
 
+  const receiptLineFields: LineItemField<ReceiptLine>[] = [
+    {
+      key: 'description',
+      label: 'Description',
+      render: (line) => <span style={{ color: theme.textSecondary }}>{line.description}</span>,
+    },
+    {
+      key: 'po_unit_price',
+      label: 'PO Price',
+      render: (line) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+          {line.po_unit_price > 0 ? line.po_unit_price.toLocaleString() : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'ordered_qty',
+      label: 'Ordered',
+      render: (line) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textPrimary }}>
+          {line.ordered_qty.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'qty_received_so_far',
+      label: 'Received',
+      render: (line) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textMuted }}>
+          {line.qty_received_so_far.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'qty_from_stock',
+      label: 'From Stock',
+      render: (line) => (
+        <span
+          style={{
+            fontFamily: 'monospace',
+            color: line.qty_from_stock > 0 ? '#16a34a' : theme.textMuted,
+          }}
+        >
+          {line.qty_from_stock > 0 ? line.qty_from_stock.toLocaleString() : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'qty_to_receive',
+      label: 'To Receive',
+      width: '140px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.qty_to_receive}
+          onChange={(e) => {
+            setLines((prev) =>
+              prev.map((l, idx) => (idx === i ? { ...l, qty_to_receive: e.target.value } : l)),
+            )
+          }}
+        />
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
       <PageHeader
@@ -499,88 +567,13 @@ export default function ReceiptForm() {
           >
             Lines
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ background: theme.bgSurface }}>
-                {['Description', 'PO Price', 'Ordered', 'Received', 'From Stock', 'To Receive'].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '8px 16px',
-                        textAlign: 'left',
-                        fontWeight: 600,
-                        fontSize: '11px',
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        borderBottom: `1px solid ${theme.border}`,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line, i) => (
-                <tr key={line.po_line_id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                  <td style={{ padding: '8px 16px', color: theme.textSecondary }}>
-                    {line.description}
-                  </td>
-                  <td
-                    style={{
-                      padding: '8px 16px',
-                      fontFamily: 'monospace',
-                      color: theme.textMuted,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {line.po_unit_price > 0 ? line.po_unit_price.toLocaleString() : '—'}
-                  </td>
-                  <td
-                    style={{
-                      padding: '8px 16px',
-                      fontFamily: 'monospace',
-                      color: theme.textPrimary,
-                    }}
-                  >
-                    {line.ordered_qty.toLocaleString()}
-                  </td>
-                  <td
-                    style={{ padding: '8px 16px', fontFamily: 'monospace', color: theme.textMuted }}
-                  >
-                    {line.qty_received_so_far.toLocaleString()}
-                  </td>
-                  <td
-                    style={{
-                      padding: '8px 16px',
-                      fontFamily: 'monospace',
-                      color: line.qty_from_stock > 0 ? '#16a34a' : theme.textMuted,
-                    }}
-                  >
-                    {line.qty_from_stock > 0 ? line.qty_from_stock.toLocaleString() : '—'}
-                  </td>
-                  <td style={{ padding: '8px 16px' }}>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.qty_to_receive}
-                      onChange={(e) => {
-                        setLines((prev) =>
-                          prev.map((l, idx) =>
-                            idx === i ? { ...l, qty_to_receive: e.target.value } : l,
-                          ),
-                        )
-                      }}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ padding: '12px 16px' }}>
+            <LineItemEditor
+              fields={receiptLineFields}
+              rows={lines}
+              rowKey={(line) => line.po_line_id}
+            />
+          </div>
         </Card>
 
         <div

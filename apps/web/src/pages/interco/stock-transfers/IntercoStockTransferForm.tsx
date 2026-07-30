@@ -15,6 +15,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 
 interface TransferLine {
   id: string
@@ -86,6 +87,82 @@ export default function IntercoStockTransferForm() {
   function updateLine(id: string, field: keyof TransferLine, value: string) {
     setLines((l) => l.map((x) => (x.id === id ? { ...x, [field]: value } : x)))
   }
+
+  const transferLineFields: LineItemField<TransferLine>[] = [
+    {
+      key: 'product_id',
+      label: 'Product',
+      width: '30%',
+      render: (line) => (
+        <SearchableSelect
+          value={line.product_id}
+          onChange={(v) => {
+            updateLine(line.id, 'product_id', v)
+          }}
+          placeholder="Select product…"
+          options={products.map((p: { id: string; name: string; sku: string }) => ({
+            value: p.id,
+            label: `${p.sku} — ${p.name}`,
+          }))}
+        />
+      ),
+    },
+    {
+      key: 'from_location_id',
+      label: 'From Location (here)',
+      width: '25%',
+      render: (line) => (
+        <SearchableSelect
+          value={line.from_location_id}
+          onChange={(v) => {
+            updateLine(line.id, 'from_location_id', v)
+          }}
+          placeholder="Select location…"
+          options={fromLocs.map((l: { id: string; name: string }) => ({
+            value: l.id,
+            label: l.name,
+          }))}
+        />
+      ),
+    },
+    {
+      key: 'to_location_id',
+      label: 'To Location (destination)',
+      width: '25%',
+      render: (line) => (
+        <SearchableSelect
+          value={line.to_location_id}
+          onChange={(v) => {
+            updateLine(line.id, 'to_location_id', v)
+          }}
+          placeholder={toCompanyId ? 'Select location…' : 'Pick company first'}
+          options={toLocs.map((l: { id: string; name: string }) => ({
+            value: l.id,
+            label: l.name,
+          }))}
+          disabled={!toCompanyId}
+        />
+      ),
+    },
+    {
+      key: 'qty',
+      label: 'Qty',
+      width: '100px',
+      render: (line) => (
+        <input
+          type="number"
+          min="0.001"
+          step="0.001"
+          value={line.qty}
+          onChange={(e) => {
+            updateLine(line.id, 'qty', e.target.value)
+          }}
+          style={{ ...selectStyle, width: '100%', fontFamily: 'monospace' }}
+          required
+        />
+      ),
+    },
+  ]
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -192,109 +269,15 @@ export default function IntercoStockTransferForm() {
             </Button>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr>
-                  {['Product', 'From Location (here)', 'To Location (destination)', 'Qty', ''].map(
-                    (h, i) => (
-                      <th
-                        key={i}
-                        style={{
-                          padding: '8px 10px',
-                          textAlign: 'left',
-                          fontSize: '11px',
-                          color: theme.textMuted,
-                          fontWeight: 600,
-                          borderBottom: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line) => (
-                  <tr key={line.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '8px 6px', minWidth: '180px' }}>
-                      <SearchableSelect
-                        value={line.product_id}
-                        onChange={(v) => {
-                          updateLine(line.id, 'product_id', v)
-                        }}
-                        placeholder="Select product…"
-                        options={products.map((p: { id: string; name: string; sku: string }) => ({
-                          value: p.id,
-                          label: `${p.sku} — ${p.name}`,
-                        }))}
-                      />
-                    </td>
-                    <td style={{ padding: '8px 6px', minWidth: '160px' }}>
-                      <SearchableSelect
-                        value={line.from_location_id}
-                        onChange={(v) => {
-                          updateLine(line.id, 'from_location_id', v)
-                        }}
-                        placeholder="Select location…"
-                        options={fromLocs.map((l: { id: string; name: string }) => ({
-                          value: l.id,
-                          label: l.name,
-                        }))}
-                      />
-                    </td>
-                    <td style={{ padding: '8px 6px', minWidth: '160px' }}>
-                      <SearchableSelect
-                        value={line.to_location_id}
-                        onChange={(v) => {
-                          updateLine(line.id, 'to_location_id', v)
-                        }}
-                        placeholder={toCompanyId ? 'Select location…' : 'Pick company first'}
-                        options={toLocs.map((l: { id: string; name: string }) => ({
-                          value: l.id,
-                          label: l.name,
-                        }))}
-                        disabled={!toCompanyId}
-                      />
-                    </td>
-                    <td style={{ padding: '8px 6px', width: '100px' }}>
-                      <input
-                        type="number"
-                        min="0.001"
-                        step="0.001"
-                        value={line.qty}
-                        onChange={(e) => {
-                          updateLine(line.id, 'qty', e.target.value)
-                        }}
-                        style={{ ...selectStyle, width: '90px', fontFamily: 'monospace' }}
-                        required
-                      />
-                    </td>
-                    <td style={{ padding: '8px 6px' }}>
-                      {lines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            removeLine(line.id)
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: theme.danger,
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                          }}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <LineItemEditor
+            fields={transferLineFields}
+            rows={lines}
+            rowKey={(line) => line.id}
+            onRemoveRow={(idx) => {
+              removeLine(lines[idx].id)
+            }}
+            removeDisabled={() => lines.length <= 1}
+          />
 
           {!toCompanyId && (
             <div

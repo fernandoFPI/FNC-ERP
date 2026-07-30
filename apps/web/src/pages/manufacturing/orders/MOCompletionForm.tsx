@@ -4,6 +4,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 
 interface MOLine {
   id: string
@@ -63,6 +64,86 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
   const variance = computedMaterialCost - planned
   const varPct = planned > 0 ? (variance / planned) * 100 : 0
   const overBudget = variance > 0
+
+  const materialFields: LineItemField<MOLine>[] = [
+    {
+      key: 'component_name',
+      label: 'Component',
+      render: (l) => (
+        <span style={{ fontWeight: 500, color: theme.textPrimary }}>{l.component_name}</span>
+      ),
+    },
+    {
+      key: 'qty_planned',
+      label: 'Planned',
+      render: (l) => (
+        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>{l.qty_planned}</span>
+      ),
+    },
+    {
+      key: 'actual',
+      label: 'Actual',
+      width: '90px',
+      render: (l) => {
+        const actualQty = parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
+        const overUsed = actualQty - l.qty_planned > 0
+        return (
+          <input
+            type="number"
+            step="0.001"
+            value={componentActuals[l.id] ?? String(l.qty_planned)}
+            onChange={(e) => {
+              setActual(l.id, e.target.value)
+            }}
+            style={{
+              width: '100%',
+              padding: '4px 6px',
+              borderRadius: '5px',
+              border: `1px solid ${overUsed ? theme.danger : theme.borderInput}`,
+              background: overUsed ? '#ef444411' : theme.bgCanvas,
+              color: theme.textPrimary,
+              fontFamily: 'monospace',
+              fontSize: '13px',
+            }}
+          />
+        )
+      },
+    },
+    {
+      key: 'unit_cost',
+      label: 'Unit Cost',
+      render: (l) => <AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" />,
+    },
+    {
+      key: 'total',
+      label: 'Total',
+      render: (l) => {
+        const actualQty = parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
+        return <AmountDisplay amount={actualQty * l.unit_cost} currency="IQD" size="sm" />
+      },
+    },
+    {
+      key: 'variance',
+      label: 'Variance',
+      render: (l) => {
+        const actualQty = parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
+        const lineVar = actualQty - l.qty_planned
+        const overUsed = lineVar > 0
+        return (
+          <span
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              color: overUsed ? theme.danger : theme.success,
+            }}
+          >
+            {lineVar >= 0 ? '+' : ''}
+            {lineVar.toFixed(2)}
+          </span>
+        )
+      },
+    },
+  ]
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -143,104 +224,7 @@ export function MOCompletionForm({ open, onClose, mo, onComplete, loading }: Pro
             >
               Materials Consumed
             </div>
-            <div
-              style={{
-                border: `1px solid ${theme.border}`,
-                borderRadius: '8px',
-                overflow: 'hidden',
-              }}
-            >
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ background: theme.bgSurface }}>
-                    {['Component', 'Planned', 'Actual', 'Unit Cost', 'Total', 'Variance'].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '8px 12px',
-                            textAlign: 'left',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            color: theme.textMuted,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.06em',
-                            borderBottom: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {mo.lines.map((l) => {
-                    const actualQty =
-                      parseFloat(componentActuals[l.id] ?? String(l.qty_planned)) || 0
-                    const totalCost = actualQty * l.unit_cost
-                    const lineVar = actualQty - l.qty_planned
-                    const overUsed = lineVar > 0
-
-                    return (
-                      <tr key={l.id} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                        <td
-                          style={{ padding: '8px 12px', fontWeight: 500, color: theme.textPrimary }}
-                        >
-                          {l.component_name}
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            fontFamily: 'monospace',
-                            color: theme.textSecondary,
-                          }}
-                        >
-                          {l.qty_planned}
-                        </td>
-                        <td style={{ padding: '8px 4px', width: '90px' }}>
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={componentActuals[l.id] ?? String(l.qty_planned)}
-                            onChange={(e) => {
-                              setActual(l.id, e.target.value)
-                            }}
-                            style={{
-                              width: '80px',
-                              padding: '4px 6px',
-                              borderRadius: '5px',
-                              border: `1px solid ${overUsed ? theme.danger : theme.borderInput}`,
-                              background: overUsed ? '#ef444411' : theme.bgCanvas,
-                              color: theme.textPrimary,
-                              fontFamily: 'monospace',
-                              fontSize: '13px',
-                            }}
-                          />
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <AmountDisplay amount={l.unit_cost} currency="IQD" size="sm" />
-                        </td>
-                        <td style={{ padding: '8px 12px' }}>
-                          <AmountDisplay amount={totalCost} currency="IQD" size="sm" />
-                        </td>
-                        <td
-                          style={{
-                            padding: '8px 12px',
-                            fontFamily: 'monospace',
-                            fontSize: '12px',
-                            color: overUsed ? theme.danger : theme.success,
-                          }}
-                        >
-                          {lineVar >= 0 ? '+' : ''}
-                          {lineVar.toFixed(2)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <LineItemEditor fields={materialFields} rows={mo.lines} rowKey={(l) => l.id} />
           </div>
         )}
 

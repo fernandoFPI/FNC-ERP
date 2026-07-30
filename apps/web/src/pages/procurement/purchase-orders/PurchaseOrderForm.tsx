@@ -16,6 +16,7 @@ import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 
 interface POLine {
@@ -232,6 +233,95 @@ export default function PurchaseOrderForm() {
       addToast({ type: 'error', message: (err as Error).message })
     }
   }
+
+  const lineFields: LineItemField<POLine>[] = [
+    {
+      key: 'product',
+      label: 'Product / Description',
+      render: (line, i) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <SearchableSelect
+            value={line.product_id}
+            onChange={(v) => {
+              updateLine(i, 'product_id', v)
+            }}
+            options={productOptions}
+            placeholder="Search by name or SKU…"
+            minDropdownWidth={400}
+          />
+          <Input
+            value={line.description}
+            onChange={(e) => {
+              updateLine(i, 'description', e.target.value)
+            }}
+            placeholder="Description"
+          />
+        </div>
+      ),
+    },
+    {
+      key: 'uom',
+      label: 'UOM',
+      width: '160px',
+      render: (line, i) => (
+        <Input
+          value={line.uom}
+          onChange={(e) => {
+            updateLine(i, 'uom', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'qty',
+      label: 'Qty',
+      width: '80px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.qty}
+          onChange={(e) => {
+            updateLine(i, 'qty', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'unit_price',
+      label: 'Unit Price',
+      width: '100px',
+      render: (line, i) => (
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={line.unit_price}
+          onChange={(e) => {
+            updateLine(i, 'unit_price', e.target.value)
+          }}
+        />
+      ),
+    },
+    {
+      key: 'total',
+      label: 'Total',
+      width: '90px',
+      render: (line) => (
+        <span
+          style={{
+            fontFamily: 'monospace',
+            fontSize: '12px',
+            color: theme.textPrimary,
+            padding: '0 4px',
+          }}
+        >
+          {(parseFloat(line.qty || '0') * parseFloat(line.unit_price || '0')).toLocaleString()}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1100px' }}>
@@ -496,154 +586,46 @@ export default function PurchaseOrderForm() {
             >
               Order Lines
             </div>
+            <div style={{ margin: '12px' }}>
+              <LineItemEditor
+                fields={lineFields}
+                rows={lines}
+                onRemoveRow={(idx) => {
+                  setLines((p) => p.filter((_, i) => i !== idx))
+                }}
+                removeDisabled={() => lines.length <= 1}
+              />
+            </div>
+
             <div
               style={{
-                border: `1px solid ${theme.border}`,
-                borderRadius: '6px',
-                margin: '12px',
-                overflow: 'hidden',
+                padding: '8px 16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                borderTop: `1px solid ${theme.border}`,
               }}
             >
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 160px 80px 100px 60px 28px',
-                  gap: '0',
-                  background: theme.bgSurface,
-                  padding: '6px 10px',
-                  borderBottom: `1px solid ${theme.border}`,
+              <Button
+                data-tour="po-add-line"
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => {
+                  setLines((p) => [...p, emptyLine()])
                 }}
               >
-                {['Product / Description', 'UOM', 'Qty', 'Unit Price', 'Total', ''].map((h) => (
-                  <span
-                    key={h}
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    {h}
-                  </span>
-                ))}
-              </div>
-
-              {lines.map((line, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 160px 80px 100px 60px 28px',
-                    gap: '0',
-                    padding: '6px 10px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    alignItems: 'center',
-                  }}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <SearchableSelect
-                      value={line.product_id}
-                      onChange={(v) => {
-                        updateLine(i, 'product_id', v)
-                      }}
-                      options={productOptions}
-                      placeholder="Search by name or SKU…"
-                      minDropdownWidth={400}
-                    />
-                    <Input
-                      value={line.description}
-                      onChange={(e) => {
-                        updateLine(i, 'description', e.target.value)
-                      }}
-                      placeholder="Description"
-                    />
-                  </div>
-                  <Input
-                    value={line.uom}
-                    onChange={(e) => {
-                      updateLine(i, 'uom', e.target.value)
-                    }}
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.qty}
-                    onChange={(e) => {
-                      updateLine(i, 'qty', e.target.value)
-                    }}
-                  />
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={line.unit_price}
-                    onChange={(e) => {
-                      updateLine(i, 'unit_price', e.target.value)
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '12px',
-                      color: theme.textPrimary,
-                      padding: '0 4px',
-                    }}
-                  >
-                    {(
-                      parseFloat(line.qty || '0') * parseFloat(line.unit_price || '0')
-                    ).toLocaleString()}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLines((p) => p.filter((_, idx) => idx !== i))
-                    }}
-                    disabled={lines.length <= 1}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      color: theme.danger,
-                      fontSize: '16px',
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-
-              <div
+                + Add Line
+              </Button>
+              <span
                 style={{
-                  padding: '8px 16px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  borderTop: `1px solid ${theme.border}`,
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: theme.textPrimary,
+                  fontFamily: 'monospace',
                 }}
               >
-                <Button
-                  data-tour="po-add-line"
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={() => {
-                    setLines((p) => [...p, emptyLine()])
-                  }}
-                >
-                  + Add Line
-                </Button>
-                <span
-                  style={{
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    color: theme.textPrimary,
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  Total: {subtotal.toLocaleString()} {form.currency_code}
-                </span>
-              </div>
+                Total: {subtotal.toLocaleString()} {form.currency_code}
+              </span>
             </div>
           </Card>
         </div>

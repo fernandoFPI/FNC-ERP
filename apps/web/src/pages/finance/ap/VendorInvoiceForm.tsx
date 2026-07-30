@@ -9,6 +9,7 @@ import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Select } from '../../../components/ui/Select'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 
 interface Vendor {
   id: string
@@ -461,6 +462,103 @@ export default function VendorInvoiceForm() {
 
   const vendorPOs = pos.filter((p) => !form.vendor_id || p.vendor_id === form.vendor_id)
 
+  const lineFields: LineItemField<LineForm>[] = [
+    {
+      key: 'po_line_id',
+      label: 'PO line',
+      width: '160px',
+      render: (line) => (
+        <SearchableSelect
+          value={line.po_line_id}
+          onChange={(v) => {
+            setLine(line._key, 'po_line_id', v)
+          }}
+          placeholder="None"
+          options={poLines.map((pl) => ({
+            value: pl.id,
+            label: pl.description?.slice(0, 30) ?? pl.id,
+          }))}
+        />
+      ),
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      width: '220px',
+      render: (line) => (
+        <input
+          value={line.description}
+          onChange={(e) => {
+            setLine(line._key, 'description', e.target.value)
+          }}
+          placeholder="Description…"
+          style={inputStyle(theme as unknown as Record<string, string>)}
+        />
+      ),
+    },
+    {
+      key: 'qty',
+      label: 'Qty',
+      width: '90px',
+      render: (line) => (
+        <input
+          type="number"
+          value={line.qty}
+          onChange={(e) => {
+            setLine(line._key, 'qty', e.target.value)
+          }}
+          style={inputStyle(theme as unknown as Record<string, string>)}
+        />
+      ),
+    },
+    {
+      key: 'unit_price',
+      label: 'Unit price',
+      width: '120px',
+      render: (line) => (
+        <input
+          type="number"
+          value={line.unit_price}
+          onChange={(e) => {
+            setLine(line._key, 'unit_price', e.target.value)
+          }}
+          style={inputStyle(theme as unknown as Record<string, string>)}
+        />
+      ),
+    },
+    {
+      key: 'total',
+      label: 'Total',
+      width: '110px',
+      render: (line) => {
+        const lineTotal = parseFloat(line.qty || '0') * parseFloat(line.unit_price || '0')
+        return (
+          <span style={{ color: theme.textPrimary, whiteSpace: 'nowrap' }}>
+            {form.currency_code} {lineTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>
+        )
+      },
+    },
+    {
+      key: 'account_id',
+      label: 'Account',
+      width: '180px',
+      render: (line) => (
+        <SearchableSelect
+          value={line.account_id}
+          onChange={(v) => {
+            setLine(line._key, 'account_id', v)
+          }}
+          placeholder="No account"
+          options={chartAccounts.map((a) => ({
+            value: a.id,
+            label: `${a.code} ${a.name?.slice(0, 25) ?? ''}`,
+          }))}
+        />
+      ),
+    },
+  ]
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1200px' }}>
       <PageHeader
@@ -638,128 +736,16 @@ export default function VendorInvoiceForm() {
             + Add line
           </Button>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
-                {['PO line', 'Description', 'Qty', 'Unit price', 'Total', 'Account', ''].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      style={{
-                        textAlign: 'left',
-                        padding: '7px 10px',
-                        color: theme.textMuted,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((line) => {
-                const lineTotal = parseFloat(line.qty || '0') * parseFloat(line.unit_price || '0')
-                return (
-                  <tr key={line._key} style={{ borderBottom: `1px solid ${theme.tableBorder}` }}>
-                    <td style={{ padding: '6px 10px', minWidth: '140px' }}>
-                      <SearchableSelect
-                        value={line.po_line_id}
-                        onChange={(v) => {
-                          setLine(line._key, 'po_line_id', v)
-                        }}
-                        placeholder="None"
-                        options={poLines.map((pl) => ({
-                          value: pl.id,
-                          label: pl.description?.slice(0, 30) ?? pl.id,
-                        }))}
-                      />
-                    </td>
-                    <td style={{ padding: '6px 10px', minWidth: '200px' }}>
-                      <input
-                        value={line.description}
-                        onChange={(e) => {
-                          setLine(line._key, 'description', e.target.value)
-                        }}
-                        placeholder="Description…"
-                        style={inputStyle(theme as unknown as Record<string, string>)}
-                      />
-                    </td>
-                    <td style={{ padding: '6px 10px', minWidth: '80px' }}>
-                      <input
-                        type="number"
-                        value={line.qty}
-                        onChange={(e) => {
-                          setLine(line._key, 'qty', e.target.value)
-                        }}
-                        style={{
-                          ...inputStyle(theme as unknown as Record<string, string>),
-                          width: '70px',
-                        }}
-                      />
-                    </td>
-                    <td style={{ padding: '6px 10px', minWidth: '110px' }}>
-                      <input
-                        type="number"
-                        value={line.unit_price}
-                        onChange={(e) => {
-                          setLine(line._key, 'unit_price', e.target.value)
-                        }}
-                        style={{
-                          ...inputStyle(theme as unknown as Record<string, string>),
-                          width: '100px',
-                        }}
-                      />
-                    </td>
-                    <td
-                      style={{
-                        padding: '6px 10px',
-                        color: theme.textPrimary,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {form.currency_code}{' '}
-                      {lineTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </td>
-                    <td style={{ padding: '6px 10px', minWidth: '160px' }}>
-                      <SearchableSelect
-                        value={line.account_id}
-                        onChange={(v) => {
-                          setLine(line._key, 'account_id', v)
-                        }}
-                        placeholder="No account"
-                        options={chartAccounts.map((a) => ({
-                          value: a.id,
-                          label: `${a.code} ${a.name?.slice(0, 25) ?? ''}`,
-                        }))}
-                      />
-                    </td>
-                    <td style={{ padding: '6px 10px' }}>
-                      {lines.length > 1 && (
-                        <button
-                          onClick={() => {
-                            setLines((prev) => prev.filter((l) => l._key !== line._key))
-                          }}
-                          style={{
-                            color: theme.danger,
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            fontSize: '16px',
-                            lineHeight: 1,
-                          }}
-                        >
-                          ×
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+        <div style={{ padding: '12px 16px' }}>
+          <LineItemEditor
+            fields={lineFields}
+            rows={lines}
+            rowKey={(row) => row._key}
+            onRemoveRow={(idx) => {
+              setLines((prev) => prev.filter((_, i) => i !== idx))
+            }}
+            removeDisabled={() => lines.length <= 1}
+          />
         </div>
       </Card>
 
