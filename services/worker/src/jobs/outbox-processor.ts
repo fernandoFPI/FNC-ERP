@@ -1573,8 +1573,8 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
     case 'FX_RATE_MOVEMENT_ALERT': {
-      const admins = await pool.query<{ id: string }>(
-        `SELECT DISTINCT u.id
+      const admins = await pool.query<{ id: string; company_id: string }>(
+        `SELECT DISTINCT u.id, ucr.company_id
          FROM users u
          JOIN user_company_roles ucr ON ucr.user_id = u.id
          WHERE ucr.module = 'finance'
@@ -1584,10 +1584,11 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       for (const admin of admins.rows) {
         await pool.query(
           `INSERT INTO notifications
-             (user_id, type, title, body, data)
-           VALUES ($1,'FX_RATE_MOVEMENT',$2,$3,$4::jsonb)`,
+             (user_id, company_id, type, title, body, data)
+           VALUES ($1,$2,'FX_RATE_MOVEMENT',$3,$4,$5::jsonb)`,
           [
             admin.id,
+            admin.company_id,
             `Large FX movement: ${String(p['pair'])}`,
             `${String(p['pair'])} moved ${String(p['changePct'])}% (${String(p['previousRate'])} &#8594; ${String(p['newRate'])})`,
             JSON.stringify(p),
@@ -2022,15 +2023,14 @@ async function fetchPayslipData(payrollLineId: string): Promise<PayslipData> {
        ps.gross_salary, ps.income_tax, ps.social_security,
        ps.net_salary, ps.currency_code, ps.leave_days,
        e.first_name || ' ' || e.last_name AS employee_name,
-       e.employee_number, e.email AS employee_email, e.bank_account,
+       e.employee_number, e.email AS employee_email, e.bank_account_encrypted,
        d.name AS department_name,
-       j.title AS job_title,
+       e.job_title,
        pr.period_name, pr.start_date, pr.end_date,
        c.name AS company_name, c.legal_name, c.city, c.country
      FROM payslips ps
      JOIN employees e ON e.id = ps.employee_id
      LEFT JOIN departments d ON d.id = e.department_id
-     LEFT JOIN job_positions j ON j.id = e.job_position_id
      JOIN payroll_runs pr ON pr.id = ps.payroll_run_id
      JOIN companies c ON c.id = ps.company_id
      WHERE ps.id = $1`,
@@ -2068,7 +2068,7 @@ async function fetchPayslipData(payrollLineId: string): Promise<PayslipData> {
       jobTitle: String(r['job_title'] ?? ''),
       department: String(r['department_name'] ?? ''),
       ...(r['employee_email'] ? { email: String(r['employee_email']) } : {}),
-      ...(r['bank_account'] ? { bankAccount: String(r['bank_account']) } : {}),
+      ...(r['bank_account_encrypted'] ? { bankAccount: String(r['bank_account_encrypted']) } : {}),
     },
     payrollRun: {
       name: String(r['period_name']),
@@ -2194,7 +2194,12 @@ async function fetchPOData(poId: string, companyId: string): Promise<POData> {
             c.name AS company_name, c.legal_name, c.city, c.country
      FROM purchase_orders po
      JOIN vendors v ON v.id = po.vendor_id
-     LEFT JOIN users u ON u.id = po.approved_by
+     LEFT JOIN LATERAL (
+       SELECT actor_id FROM po_approval_log
+       WHERE po_id = po.id AND action = 'approve'
+       ORDER BY created_at DESC LIMIT 1
+     ) pal ON true
+     LEFT JOIN users u ON u.id = pal.actor_id
      JOIN companies c ON c.id = po.company_id
      WHERE po.id = $1 AND po.company_id = $2`,
     [poId, companyId],

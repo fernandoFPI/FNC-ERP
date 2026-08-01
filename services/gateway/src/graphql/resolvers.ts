@@ -5172,10 +5172,12 @@ export const resolvers = {
     stockLots: async (_: unknown, args: { productId?: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
       let sql = `SELECT sl.*, p.name AS product_name, p.sku,
-                        loc.name AS current_location_name
+                        (SELECT loc.name FROM stock_moves sm2
+                           JOIN stock_locations loc ON loc.id = sm2.to_location_id
+                          WHERE sm2.lot_id = sl.id
+                          ORDER BY sm2.moved_at DESC LIMIT 1) AS current_location_name
                  FROM stock_lots sl
                  JOIN products p ON p.id=sl.product_id
-                 LEFT JOIN stock_locations loc ON loc.id=sl.current_location_id
                  WHERE p.company_id=$1`
       const params: unknown[] = [ctx.auth.companyId]
       if (args.productId) {
@@ -6141,8 +6143,8 @@ export const resolvers = {
           const entry = je.rows[0] as Record<string, unknown>
           for (const l of lines) {
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,currency_code,debit,credit,fx_rate,analytic_account_id,cost_center_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,currency_code,debit,credit,fx_rate,analytic_account_id,cost_center_id,amount_company_currency)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,ROUND(($5::numeric+$6::numeric)*$7::numeric,4))`,
               [
                 entry.id,
                 l.account_id,

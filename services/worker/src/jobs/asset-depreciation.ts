@@ -29,6 +29,9 @@ export async function runMonthlyDepreciation(): Promise<void> {
     return
   }
 
+  const systemUser = await query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
+  const createdBy = systemUser.rows[0]?.['id'] ?? null
+
   let totalPosted = 0
 
   for (const row of companies.rows) {
@@ -56,23 +59,24 @@ export async function runMonthlyDepreciation(): Promise<void> {
 
         if (depExpAcct && accumDepAcct) {
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status)
-             VALUES ($1,$2,$3,$4,'depreciation','posted') RETURNING id`,
+            `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
+             VALUES ($1,$2,$3,$4,'depreciation','posted',$5) RETURNING id`,
             [
               companyId,
               `DEP-${line['asset_number'] as string}-${period}`,
               `Auto-depreciation: ${line['asset_name'] as string} — ${period}`,
               `${period}-01`,
+              createdBy,
             ],
           )
           journalEntryId = jeRes.rows[0]!['id'] as string
 
           await client.query(
-            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,$4,0)`,
+            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
             [journalEntryId, depExpAcct, `Depreciation: ${line['asset_name'] as string}`, depAmount],
           )
           await client.query(
-            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,0,$4)`,
+            `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
             [journalEntryId, accumDepAcct, `Accumulated Dep: ${line['asset_name'] as string}`, depAmount],
           )
         }

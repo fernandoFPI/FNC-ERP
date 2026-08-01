@@ -699,21 +699,21 @@ bankRouter.post(
           if (isCredit) {
             // Money IN: DR bank, CR offset
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,$4,0)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
               [jeId, bankGlId, desc, amount],
             )
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,0,$4)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
               [jeId, d.offset_account_id, desc, amount],
             )
           } else {
             // Money OUT: DR offset, CR bank
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,$4,0)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
               [jeId, d.offset_account_id, desc, amount],
             )
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,0,$4)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
               [jeId, bankGlId, desc, amount],
             )
           }

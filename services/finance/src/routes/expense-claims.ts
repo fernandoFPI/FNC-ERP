@@ -476,13 +476,12 @@ expenseClaimsRouter.post(
         { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
         async (client) => {
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, currency_code, status, created_by)
-           VALUES ($1,NOW(),$2,$3,$4,'posted',$5) RETURNING id`,
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
+           VALUES ($1,NOW(),$2,$3,'posted',$4) RETURNING id`,
             [
               req.auth!.companyId,
               claim['claim_number'],
               `Expense claim: ${claim['employee_name']}`,
-              claim['currency_code'],
               req.auth!.userId,
             ],
           )
@@ -492,11 +491,10 @@ expenseClaimsRouter.post(
           for (const line of lines) {
             if (!line.gl_account_id) continue
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-             VALUES ($1,$2,$3,$4,$5,0,$6)`,
+              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+             VALUES ($1,$2,$3,$4,0,$5,$4)`,
               [
                 jeId,
-                req.auth!.companyId,
                 line.gl_account_id,
                 claim['currency_code'],
                 line.amount,
@@ -506,11 +504,10 @@ expenseClaimsRouter.post(
           }
           // CR Accrued Reimbursement (total)
           await client.query(
-            `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-           VALUES ($1,$2,$3,$4,0,$5,$6)`,
+            `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+           VALUES ($1,$2,$3,0,$4,$5,$4)`,
             [
               jeId,
-              req.auth!.companyId,
               reimbAccId,
               claim['currency_code'],
               claim['total_amount'],

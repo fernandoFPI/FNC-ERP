@@ -177,14 +177,13 @@ revaluationRouter.post(
         async (client) => {
           // Create journal entry
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, currency_code, status, created_by)
-           VALUES ($1,$2,$3,$4,$5,'posted',$6) RETURNING id`,
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
+           VALUES ($1,$2,$3,$4,'posted',$5) RETURNING id`,
             [
               req.auth!.companyId,
               d.run_date,
               `REVAL-${d.period}`,
               `FX Revaluation ${d.period}`,
-              d.functional_currency,
               req.auth!.userId,
             ],
           )
@@ -198,12 +197,11 @@ revaluationRouter.post(
             if (isGain) {
               // DR asset (or CR liability) → CR Unrealized FX Gain
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-               VALUES ($1,$2,$3,$4,$5,0,$6),
-                      ($1,$2,$7,$4,0,$5,$6)`,
+                `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+               VALUES ($1,$2,$3,$4,0,$5,$4),
+                      ($1,$6,$3,0,$4,$5,$4)`,
                 [
                   jeId,
-                  req.auth!.companyId,
                   line.account_id,
                   d.functional_currency,
                   absGL,
@@ -214,12 +212,11 @@ revaluationRouter.post(
             } else {
               // CR asset (or DR liability) → DR Unrealized FX Loss
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-               VALUES ($1,$2,$3,$4,0,$5,$6),
-                      ($1,$2,$7,$4,$5,0,$6)`,
+                `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+               VALUES ($1,$2,$3,0,$4,$5,$4),
+                      ($1,$6,$3,$4,0,$5,$4)`,
                 [
                   jeId,
-                  req.auth!.companyId,
                   line.account_id,
                   d.functional_currency,
                   absGL,
@@ -318,14 +315,13 @@ revaluationRouter.post(
         async (client) => {
           // Create reversal JE (opposite of original)
           const jeRes = await client.query(
-            `INSERT INTO journal_entries (company_id, entry_date, reference, description, currency_code, status, created_by)
-           VALUES ($1,$2,$3,$4,$5,'posted',$6) RETURNING id`,
+            `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
+           VALUES ($1,$2,$3,$4,'posted',$5) RETURNING id`,
             [
               req.auth!.companyId,
               reversal_date,
               `REVAL-REV-${run['period']}`,
               `Reversal: FX Revaluation ${run['period']}`,
-              'IQD',
               req.auth!.userId,
             ],
           )
@@ -334,8 +330,8 @@ revaluationRouter.post(
           // Flip each line
           for (const line of linesRes.rows) {
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-             SELECT $1, company_id, account_id, currency_code, credit, debit, 'Reversal: ' || description
+              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+             SELECT $1, account_id, currency_code, credit, debit, 'Reversal: ' || description, amount_company_currency
              FROM journal_lines WHERE journal_entry_id=$2 AND account_id=$3`,
               [jeId, run['journal_entry_id'], line['account_id']],
             )

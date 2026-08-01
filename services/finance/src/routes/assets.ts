@@ -523,7 +523,7 @@ assetsRouter.post(
               )
               journalEntryId = jeRes.rows[0]!.id as string
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,$4,0)`,
+                `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
                 [
                   journalEntryId,
                   depExpAccount,
@@ -532,7 +532,7 @@ assetsRouter.post(
                 ],
               )
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,0,$4)`,
+                `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
                 [
                   journalEntryId,
                   accumDepAccount,
@@ -626,7 +626,7 @@ assetsRouter.post(
             )
             const jeId = jeRes.rows[0]!.id as string
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,$4,0)`,
+              `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
               [
                 jeId,
                 asset['accum_dep_account_id'],
@@ -635,7 +635,7 @@ assetsRouter.post(
               ],
             )
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,0,$4)`,
+              `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
               [
                 jeId,
                 asset['asset_account_id'],
@@ -645,7 +645,7 @@ assetsRouter.post(
             )
             if (proceeds > 0 && d.cash_account_id) {
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,$4,0)`,
+                `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
                 [
                   jeId,
                   d.cash_account_id,
@@ -657,7 +657,7 @@ assetsRouter.post(
             if (gainLoss !== 0 && d.gain_loss_account_id) {
               if (gainLoss > 0) {
                 await client.query(
-                  `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,0,$4)`,
+                  `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
                   [
                     jeId,
                     d.gain_loss_account_id,
@@ -667,7 +667,7 @@ assetsRouter.post(
                 )
               } else {
                 await client.query(
-                  `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit) VALUES ($1,$2,$3,$4,0)`,
+                  `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
                   [
                     jeId,
                     d.gain_loss_account_id,

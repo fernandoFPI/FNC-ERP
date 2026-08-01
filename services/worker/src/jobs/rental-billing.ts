@@ -35,8 +35,10 @@ async function autoGenerateRentalInvoice(contract: ContractRow, lines: LineRow[]
 
   const daysBilled = Math.round((periodEnd.getTime() - periodStart.getTime()) / 86_400_000) + 1
   let totalAmount = 0
+  let rateAmount = 0
   for (const line of lines) {
     totalAmount += daysBilled * Number(line.daily_rate) * Number(line.qty)
+    rateAmount += Number(line.daily_rate) * Number(line.qty)
   }
 
   const seq = await pool.query<{ count: string }>(
@@ -46,9 +48,20 @@ async function autoGenerateRentalInvoice(contract: ContractRow, lines: LineRow[]
   const invoiceNumber = `INV-${contract.id.slice(0, 8).toUpperCase()}-${String(parseInt(seq.rows[0]?.['count'] ?? '0') + 1).padStart(3, '0')}`
 
   const invoiceResult = await pool.query<{ id: string }>(
-    `INSERT INTO rental_invoices (contract_id, invoice_number, billing_period_start, billing_period_end,
-       days_billed, amount, currency_code) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [contract.id, invoiceNumber, startStr, endStr, daysBilled, totalAmount, contract.currency_code],
+    `INSERT INTO rental_invoices (contract_id, company_id, invoice_number, billing_period_start, billing_period_end,
+       days_billed, amount, total_amount, rate_amount, currency_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    [
+      contract.id,
+      contract.company_id,
+      invoiceNumber,
+      startStr,
+      endStr,
+      daysBilled,
+      totalAmount,
+      totalAmount,
+      rateAmount,
+      contract.currency_code,
+    ],
   )
 
   await pool.query(

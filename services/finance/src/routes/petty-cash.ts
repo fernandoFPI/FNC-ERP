@@ -237,23 +237,16 @@ pettyCashRouter.post(
           // Post JE if GL account provided
           if (d.gl_account_id && float_['gl_account_id']) {
             const jeRes = await client.query(
-              `INSERT INTO journal_entries (company_id, entry_date, reference, description, currency_code, status, created_by)
-             VALUES ($1,$2,'PETTY','Petty cash spend: '||$3,$4,'posted',$5) RETURNING id`,
-              [
-                req.auth!.companyId,
-                d.transaction_date,
-                d.description,
-                float_['currency_code'],
-                req.auth!.userId,
-              ],
+              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
+             VALUES ($1,$2,'PETTY','Petty cash spend: '||$3,'posted',$4) RETURNING id`,
+              [req.auth!.companyId, d.transaction_date, d.description, req.auth!.userId],
             )
             const jeId = jeRes.rows[0]!.id as string
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-             VALUES ($1,$2,$3,$4,$5,0,$6),($1,$2,$7,$4,0,$5,$6)`,
+              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+             VALUES ($1,$2,$3,$4,0,$5,$4),($1,$6,$3,0,$4,$5,$4)`,
               [
                 jeId,
-                req.auth!.companyId,
                 d.gl_account_id,
                 float_['currency_code'],
                 d.amount,
@@ -351,23 +344,17 @@ pettyCashRouter.post(
           let jeId: string | null = null
           if (rep['float_gl_account_id'] && offset_account_id) {
             const jeRes = await client.query(
-              `INSERT INTO journal_entries (company_id, entry_date, reference, description, currency_code, status, created_by)
-             VALUES ($1,NOW(),$2,'Petty cash replenishment',$3,'posted',$4) RETURNING id`,
-              [
-                req.auth!.companyId,
-                rep['replenishment_number'],
-                rep['currency_code'],
-                req.auth!.userId,
-              ],
+              `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, created_by)
+             VALUES ($1,NOW(),$2,'Petty cash replenishment','posted',$3) RETURNING id`,
+              [req.auth!.companyId, rep['replenishment_number'], req.auth!.userId],
             )
             jeId = jeRes.rows[0]!.id as string
             // DR Petty Cash / CR Bank (offset)
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, company_id, account_id, currency_code, debit, credit, description)
-             VALUES ($1,$2,$3,$4,$5,0,'Petty cash top-up'),($1,$2,$6,$4,0,$5,'Petty cash top-up')`,
+              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
+             VALUES ($1,$2,$3,$4,0,'Petty cash top-up',$4),($1,$5,$3,0,$4,'Petty cash top-up',$4)`,
               [
                 jeId,
-                req.auth!.companyId,
                 rep['float_gl_account_id'],
                 rep['currency_code'],
                 approved_amount,

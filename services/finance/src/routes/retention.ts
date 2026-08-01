@@ -224,21 +224,21 @@ retentionRouter.post('/', requirePermission('finance.retention.edit', 'edit'), a
           if (d.retention_type === 'ar') {
             // DR Retention Receivable / CR Accounts Receivable
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,$4,0)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
               [jeId, d.retention_account_id, desc, retentionAmount],
             )
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,0,$4)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
               [jeId, d.offset_account_id, desc, retentionAmount],
             )
           } else {
             // DR Accounts Payable / CR Retention Payable
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,$4,0)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
               [jeId, d.offset_account_id, desc, retentionAmount],
             )
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,0,$4)`,
+              `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
               [jeId, d.retention_account_id, desc, retentionAmount],
             )
           }
@@ -330,21 +330,21 @@ retentionRouter.post(
             if (rec['retention_type'] === 'ar') {
               // Release AR retention: DR AR (offset) / CR Retention Receivable
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,$4,0)`,
+                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
                 [journalEntryId, offsetAcctId, desc, d.amount],
               )
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,0,$4)`,
+                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
                 [journalEntryId, retAcctId, desc, d.amount],
               )
             } else {
               // Release AP retention: DR Retention Payable / CR AP (offset)
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,$4,0)`,
+                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,$4,0,$4)`,
                 [journalEntryId, retAcctId, desc, d.amount],
               )
               await client.query(
-                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit) VALUES ($1,$2,$3,0,$4)`,
+                `INSERT INTO journal_lines (journal_entry_id,account_id,description,debit,credit,amount_company_currency) VALUES ($1,$2,$3,0,$4,$4)`,
                 [journalEntryId, offsetAcctId, desc, d.amount],
               )
             }
