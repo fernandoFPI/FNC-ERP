@@ -6225,11 +6225,11 @@ export const resolvers = {
       await requirePermGW(ctx.auth, 'finance.fx_rates.edit', 'edit')
       const { from_currency, to_currency, rate, rate_date, source } = args.input
       const r = await query(
-        `INSERT INTO fx_rates (from_currency,to_currency,rate,rate_date,source,created_by)
-         VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (from_currency,to_currency,rate_date) DO UPDATE SET rate=$3, source=$5, created_by=$6, updated_at=NOW()
+        `INSERT INTO fx_rates (from_currency,to_currency,rate,rate_date,source)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (from_currency,to_currency,rate_date) DO UPDATE SET rate=$3, source=$5
          RETURNING *`,
-        [from_currency, to_currency, rate, rate_date, source ?? 'manual', ctx.auth.userId],
+        [from_currency, to_currency, rate, rate_date, source ?? 'manual'],
       )
       return r.rows[0]
     },
@@ -16925,7 +16925,7 @@ export const resolvers = {
       const i = args.input
       const r = await query(
         `UPDATE work_centers SET name=COALESCE($3,name), capacity_hours_per_day=COALESCE($4,capacity_hours_per_day),
-           cost_per_hour=COALESCE($5,cost_per_hour), is_active=COALESCE($6,is_active), updated_at=NOW()
+           cost_per_hour=COALESCE($5,cost_per_hour), is_active=COALESCE($6,is_active)
          WHERE id=$1 AND company_id=$2 RETURNING *`,
         [
           args.id,
@@ -17423,7 +17423,12 @@ export const resolvers = {
     cancelMO: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const r = await query(
-        `UPDATE manufacturing_orders SET status='cancelled', cancel_notes=$3, updated_at=NOW() WHERE id=$1 AND company_id=$2 RETURNING *`,
+        `UPDATE manufacturing_orders
+         SET status='cancelled', updated_at=NOW(),
+             notes = CASE WHEN $3::text IS NOT NULL
+                       THEN COALESCE(notes || E'\n', '') || 'Cancelled: ' || $3
+                       ELSE notes END
+         WHERE id=$1 AND company_id=$2 RETURNING *`,
         [args.id, ctx.auth.companyId, args.notes ?? null],
       )
       if (!r.rows[0]) throw new Error('MO not found')
@@ -18597,25 +18602,36 @@ export const resolvers = {
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           const rec = await client.query(
-            `INSERT INTO maintenance_records (company_id,asset_id,maintenance_type,performed_date,description,cost,performed_by,next_due_date,notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+            `INSERT INTO maintenance_records (company_id,asset_id,status,completed_at,actual_cost,performed_by,findings,next_service_notes,created_by)
+           VALUES ($1,$2,'completed',$3,$4,$5,$6,$7,$8) RETURNING *`,
             [
               ctx.auth!.companyId,
               i.asset_id,
-              i.maintenance_type,
               i.performed_date,
-              i.description,
               i.cost ?? 0,
               i.performed_by,
-              i.next_due_date ?? null,
+              i.description,
               i.notes ?? null,
+              ctx.auth!.userId,
             ],
           )
           await client.query(
             `UPDATE equipment_assets SET last_maintenance_date=$2, maintenance_status='ok', updated_at=NOW() WHERE id=$1`,
             [i.asset_id, i.performed_date],
           )
-          return rec.rows[0]
+          // maintenance_records (migration 029) no longer has maintenance_type/performed_date/
+          // description/cost/next_due_date columns — the GraphQL contract still does, so echo
+          // the submitted input back alongside the real row for those display-only fields.
+          return {
+            ...rec.rows[0],
+            maintenance_type: i.maintenance_type,
+            performed_date: i.performed_date,
+            description: i.description,
+            cost: i.cost ?? 0,
+            performed_by: i.performed_by,
+            next_due_date: i.next_due_date ?? null,
+            notes: i.notes ?? null,
+          }
         },
       )
     },
