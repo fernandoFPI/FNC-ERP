@@ -26,6 +26,29 @@ export interface SessionTokens {
   sessionId: string
 }
 
+interface QueryExecutor {
+  query: (text: string, params?: unknown[]) => Promise<{ rowCount: number | null }>
+}
+
+export interface RevokeSessionsParams {
+  executor: QueryExecutor
+  userId: string
+  /** Revoke a single session by id; omit to revoke every session for the user. */
+  sessionId?: string | undefined
+}
+
+/** Deletes session(s) and publishes the same live-update signal createSession() does. */
+export async function revokeSessions(params: RevokeSessionsParams): Promise<number> {
+  const result = params.sessionId
+    ? await params.executor.query(`DELETE FROM sessions WHERE id=$1 AND user_id=$2`, [
+        params.sessionId,
+        params.userId,
+      ])
+    : await params.executor.query(`DELETE FROM sessions WHERE user_id=$1`, [params.userId])
+  notifySessionsChanged(params.userId)
+  return result.rowCount ?? 0
+}
+
 export async function createSession(params: CreateSessionParams): Promise<SessionTokens> {
   const accessExpiresInMs = parseExpiry(env.JWT_ACCESS_EXPIRES_IN)
   const refreshExpiresInMs = parseExpiry(env.JWT_REFRESH_EXPIRES_IN)

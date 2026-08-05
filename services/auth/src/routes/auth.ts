@@ -19,7 +19,7 @@ import {
 } from '@fnc-erp/auth'
 import { HTTP_STATUS, ERROR_CODES, AUTH_CONSTANTS, ROLES, env } from '@fnc-erp/config'
 import { logAudit } from '@fnc-erp/audit'
-import { createSession, hashToken } from '../lib/session.js'
+import { createSession, hashToken, revokeSessions } from '../lib/session.js'
 import { sendError, sendValidationError, sendInternalError } from '../lib/errors.js'
 
 export const authRouter: IRouter = Router()
@@ -201,7 +201,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       const sessionIds = sessionCountResult.rows[0]?.session_ids ?? []
 
       if (sessionCount >= env.MAX_SESSIONS_PER_USER && sessionIds[0]) {
-        await client.query(`DELETE FROM sessions WHERE id=$1`, [sessionIds[0]])
+        await revokeSessions({ executor: client, userId: user.id, sessionId: sessionIds[0] })
       }
 
       // ── New device detection ────────────────────────────────────
@@ -629,7 +629,7 @@ authRouter.post('/logout', requireAuth(), async (req: Request, res: Response): P
 
   try {
     await withSystemTransaction(async (client) => {
-      await client.query(`DELETE FROM sessions WHERE id = $1`, [auth.sessionId])
+      await revokeSessions({ executor: client, userId: auth.userId, sessionId: auth.sessionId })
       await logAudit({
         userId: auth.userId,
         companyId: auth.companyId,
@@ -661,7 +661,7 @@ authRouter.post(
 
     try {
       await withSystemTransaction(async (client) => {
-        await client.query(`DELETE FROM sessions WHERE user_id = $1`, [auth.userId])
+        await revokeSessions({ executor: client, userId: auth.userId })
         await logAudit({
           userId: auth.userId,
           companyId: auth.companyId,

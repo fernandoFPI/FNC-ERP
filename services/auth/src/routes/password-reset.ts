@@ -2,12 +2,13 @@ import { Router, type IRouter, type Request, type Response } from 'express'
 import crypto from 'crypto'
 import { createClient } from 'redis'
 import { z } from 'zod'
-import { query, withSystemTransaction } from '@fnc-erp/db'
+import { pool, query, withSystemTransaction } from '@fnc-erp/db'
 import { hashPassword, validatePasswordStrength, requireAuth } from '@fnc-erp/auth'
 import { env, HTTP_STATUS } from '@fnc-erp/config'
 import { logAudit } from '@fnc-erp/audit'
 import { createServiceLogger } from '@fnc-erp/logger'
 import { sendError } from '../lib/errors.js'
+import { revokeSessions } from '../lib/session.js'
 
 const logger = createServiceLogger('auth')
 
@@ -183,7 +184,7 @@ passwordResetRouter.post('/reset-password', async (req: Request, res: Response) 
       )
 
       // Invalidate ALL existing sessions
-      await client.query(`DELETE FROM sessions WHERE user_id=$1`, [userId])
+      await revokeSessions({ executor: client, userId })
 
       // One-time use: delete token from Redis
       await r.del(tokenKey)
@@ -289,11 +290,8 @@ passwordResetRouter.delete(
     }
 
     try {
-      const result = await query(`DELETE FROM sessions WHERE id=$1 AND user_id=$2 RETURNING id`, [
-        sessionId,
-        auth.userId,
-      ])
-      if (!result.rows[0]) {
+      const deletedCount = await revokeSessions({ executor: pool, userId: auth.userId, sessionId })
+      if (deletedCount === 0) {
         sendError(res, HTTP_STATUS.NOT_FOUND, 'NOT_FOUND', 'Session not found')
         return
       }

@@ -1,12 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from 'express'
 import { randomBytes } from 'crypto'
-import { query, withSystemTransaction } from '@fnc-erp/db'
+import { pool, query, withSystemTransaction } from '@fnc-erp/db'
 import { hashPassword, validatePasswordStrength, requireAuth, requireRole } from '@fnc-erp/auth'
 import { logAudit } from '@fnc-erp/audit'
 import { createServiceLogger } from '@fnc-erp/logger'
 import { env } from '@fnc-erp/config'
 import { sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
+import { revokeSessions } from '../lib/session.js'
 
 export const userManagementRouter: IRouter = Router()
 
@@ -471,7 +472,7 @@ userManagementRouter.patch(
         await client.query(`UPDATE users SET ${setClauses.join(', ')} WHERE id = $${p + 1}`, values)
 
         if (is_active === false) {
-          await client.query(`DELETE FROM sessions WHERE user_id = $1`, [req.params['id']])
+          await revokeSessions({ executor: client, userId: req.params['id']! })
         }
 
         await logAudit({
@@ -560,7 +561,7 @@ userManagementRouter.post(
            WHERE id = $2`,
           [passwordHash, req.params['id']],
         )
-        await client.query(`DELETE FROM sessions WHERE user_id = $1`, [req.params['id']])
+        await revokeSessions({ executor: client, userId: req.params['id']! })
         await logAudit({
           userId: req.auth!.userId,
           companyId: undefined,
@@ -601,7 +602,7 @@ userManagementRouter.post(
           `UPDATE users SET mfa_enabled = false, mfa_secret = NULL, updated_at = NOW() WHERE id = $1`,
           [req.params['id']],
         )
-        await client.query(`DELETE FROM sessions WHERE user_id = $1`, [req.params['id']])
+        await revokeSessions({ executor: client, userId: req.params['id']! })
         await logAudit({
           userId: req.auth!.userId,
           companyId: undefined,
@@ -652,10 +653,11 @@ userManagementRouter.delete(
   requirePermission('admin.users.edit', 'edit'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      await query(`DELETE FROM sessions WHERE id = $1 AND user_id = $2`, [
-        req.params['sessionId'],
-        req.params['id'],
-      ])
+      await revokeSessions({
+        executor: pool,
+        userId: req.params['id']!,
+        sessionId: req.params['sessionId'],
+      })
       await logAudit({
         userId: req.auth!.userId,
         companyId: undefined,
@@ -681,7 +683,7 @@ userManagementRouter.delete(
   requirePermission('admin.users.edit', 'edit'),
   async (req: Request, res: Response): Promise<void> => {
     try {
-      await query(`DELETE FROM sessions WHERE user_id = $1`, [req.params['id']])
+      await revokeSessions({ executor: pool, userId: req.params['id']! })
       await logAudit({
         userId: req.auth!.userId,
         companyId: undefined,

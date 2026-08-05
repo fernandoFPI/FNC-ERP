@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '@fnc-erp/auth'
 import { logAudit } from '@fnc-erp/audit'
 import { sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
+import { revokeSessions } from '../lib/session.js'
 
 export const rolesRouter: IRouter = Router()
 
@@ -172,9 +173,10 @@ rolesRouter.patch(
         )
 
         if (!is_active) {
-          await client.query(`DELETE FROM sessions WHERE user_id = $1`, [
-            existing.rows[0]?.['user_id'],
-          ])
+          await revokeSessions({
+            executor: client,
+            userId: existing.rows[0]?.['user_id'] as string,
+          })
         }
 
         await logAudit({
