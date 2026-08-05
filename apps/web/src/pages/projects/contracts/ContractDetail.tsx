@@ -15,11 +15,13 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { InvoiceBuilderResult } from '../../../components/ui/InvoiceBuilder'
 import { InvoiceBuilder } from '../../../components/ui/InvoiceBuilder'
 import { useToastStore } from '../../../store/toastStore'
+import { useRecordLock } from '../../../hooks/useRecordLock'
 
 export default function ContractDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
+  const lock = useRecordLock('project_contract', id)
   const addToast = useToastStore((s) => s.addToast)
   const [showInvoiceBuilder, setShowInvoiceBuilder] = useState(false)
 
@@ -80,6 +82,7 @@ export default function ContractDetail() {
             <Button
               variant="primary"
               size="sm"
+              disabled={lock.lockedByOther}
               onClick={() => {
                 setShowInvoiceBuilder(true)
               }}
@@ -89,6 +92,7 @@ export default function ContractDetail() {
             <Button
               variant="ghost"
               size="sm"
+              disabled={lock.lockedByOther}
               onClick={() => {
                 navigate(`/projects/contracts/${id}/edit`)
               }}
@@ -98,6 +102,35 @@ export default function ContractDetail() {
           </div>
         }
       />
+
+      {lock.lockedByOther && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            marginTop: '16px',
+            background: `${theme.warning}1a`,
+            border: `1px solid ${theme.warning}`,
+            borderRadius: '8px',
+            fontSize: '13px',
+            color: theme.textPrimary,
+          }}
+        >
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: theme.warning,
+              flexShrink: 0,
+            }}
+          />
+          <strong>{lock.lockedByName}</strong>&nbsp;is currently working on this contract — actions
+          are disabled until they finish.
+        </div>
+      )}
 
       {/* Summary */}
       <div
@@ -174,6 +207,7 @@ export default function ContractDetail() {
                   <Button
                     variant="ghost"
                     size="sm"
+                    disabled={lock.lockedByOther}
                     onClick={async () => {
                       await reachMilestone({ variables: { contractId: id, milestoneId: m.id } })
                       refetch()

@@ -61,3 +61,28 @@ export async function publishEntityChanged(
     updatedAt: new Date().toISOString(),
   })
 }
+
+// Record locking ("someone else is editing this") — one channel per
+// (entityType, entityId), same free-form-string convention as entityChanged
+// above. Payload carries the full current lock state (or null when released/
+// expired) since, unlike entityChanged, there's nothing to refetch here —
+// the lock state itself IS the payload.
+export function lockChangedChannel(entityType: string, entityId: string): string {
+  return `LOCK_CHANGED:${entityType}:${entityId}`
+}
+
+export interface LockState {
+  entityType: string
+  entityId: string
+  lockedBy: string
+  lockedByName: string
+  lockedAt: string
+}
+
+export async function publishLockChanged(
+  entityType: string,
+  entityId: string,
+  lock: LockState | null,
+): Promise<void> {
+  await pubsub.publish(lockChangedChannel(entityType, entityId), { entityType, entityId, lock })
+}

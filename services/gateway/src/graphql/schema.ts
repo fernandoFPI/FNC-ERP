@@ -4958,6 +4958,37 @@
     updatedAt: String!
   }
 
+  # ─── Record locking ("someone else is editing this") ────────────────────────
+
+  type RecordLock {
+    entityType: String!
+    entityId: ID!
+    lockedBy: ID!
+    lockedByName: String!
+    lockedAt: String!
+    lockedByMe: Boolean!
+  }
+
+  type LockChangedEvent {
+    entityType: String!
+    entityId: ID!
+    lock: RecordLock
+  }
+
+  extend type Query {
+    "Current lock on a record, or null if unlocked/expired. entityType is free-form (e.g. 'journal_entry', 'purchase_order', 'project_contract', 'project_variation_order')."
+    recordLock(entityType: String!, entityId: ID!): RecordLock
+  }
+
+  extend type Mutation {
+    "Acquire the edit lock. Fails if someone else already holds a non-expired lock; succeeds (taking over) if the record is unlocked or the existing lock is stale."
+    acquireLock(entityType: String!, entityId: ID!): RecordLock!
+    "Keep an already-held lock alive. Call every ~20s while the editor stays open."
+    heartbeatLock(entityType: String!, entityId: ID!): Boolean!
+    "Explicitly release a lock you hold (navigating away, closing the editor, saving)."
+    releaseLock(entityType: String!, entityId: ID!): Boolean!
+  }
+
   type Subscription {
     "Fires when a session is created or revoked. Pass userId to scope to one user; omit to hear about all users (e.g. an admin list view)."
     sessionsChanged(userId: ID): SessionsChangedEvent!
@@ -4967,5 +4998,7 @@
     permissionsChanged(userId: ID!): PermissionsChangedEvent!
     "Generic live-update signal for a given company + entity type (e.g. 'purchase_order', 'project', 'vendor'). Payload is signal-only — clients refetch their own query on receipt."
     entityChanged(companyId: ID!, entityType: String!): EntityChangedEvent!
+    "Fires when a record's edit lock is acquired, released, or expires. lock is null when the record just became unlocked."
+    lockChanged(entityType: String!, entityId: ID!): LockChangedEvent!
   }
 `

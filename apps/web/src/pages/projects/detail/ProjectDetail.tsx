@@ -241,6 +241,7 @@ import { resolveProjectCapability } from '../../../hooks/useProjectCapability'
 import { TAB_TO_MODULE, type ProjectModule } from '../../../lib/projectCapabilityMatrix'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { useRecordLock } from '../../../hooks/useRecordLock'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -34890,6 +34891,19 @@ function VariationOrdersTab(props: VariationOrdersProps) {
     notes: '',
   })
 
+  // Lock scope: whichever VO is currently open in the edit/approve/reject
+  // modal (mutually exclusive dialog states) — covers the main "two people
+  // editing the same VO" collision; cost-item/correspondence/drawing sub-
+  // dialogs are nested edits of an already-open VO, not separately locked.
+  const activeVOId = voModal.open
+    ? voModal.item.id
+    : approveModal.open
+      ? approveModal.voId
+      : rejectModal.open
+        ? rejectModal.voId
+        : undefined
+  const voLock = useRecordLock('project_variation_order', activeVOId)
+
   const [confirmDel, setConfirmDel] = React.useState<{
     message: string
     onConfirm: () => void
@@ -34991,7 +35005,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       {t}
     </div>
   )
-  const mBtnsVO = (onSave: () => void, onClose: () => void) => (
+  const mBtnsVO = (onSave: () => void, onClose: () => void, saveDisabled = false) => (
     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
       <button
         style={vbtn({
@@ -35003,7 +35017,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
       >
         Cancel
       </button>
-      <button style={vbtn()} onClick={onSave}>
+      <button style={vbtn()} disabled={saveDisabled} onClick={onSave}>
         Save
       </button>
     </div>
@@ -36356,6 +36370,13 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 setVOModal((m) => ({ ...m, open: false }))
               },
               () => setVOModal((m) => ({ ...m, open: false })),
+              voLock.lockedByOther,
+            )}
+            {voLock.lockedByOther && (
+              <div style={{ fontSize: '12px', color: th.warning, marginTop: '8px' }}>
+                <strong>{voLock.lockedByName}</strong> is currently working on this VO — saving is
+                disabled until they finish.
+              </div>
             )}
           </div>
         </div>
@@ -36427,6 +36448,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 setApproveModal((m) => ({ ...m, open: false }))
               },
               () => setApproveModal((m) => ({ ...m, open: false })),
+              voLock.lockedByOther,
             )}
           </div>
         </div>
@@ -36458,6 +36480,7 @@ function VariationOrdersTab(props: VariationOrdersProps) {
                 setRejectModal((m) => ({ ...m, open: false }))
               },
               () => setRejectModal((m) => ({ ...m, open: false })),
+              voLock.lockedByOther,
             )}
           </div>
         </div>

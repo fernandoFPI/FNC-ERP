@@ -28,6 +28,9 @@ import {
   publishPermissionsChanged,
   entityChangedChannel,
   publishEntityChanged,
+  lockChangedChannel,
+  publishLockChanged,
+  type LockState,
 } from './pubsub.js'
 import { invalidatePermissionCache, loadPermissions, meetsLevel } from '@fnc-erp/permissions'
 import type { POStatus, POAction } from '@fnc-erp/workflow'
@@ -467,7 +470,11 @@ function isPermissionBypassGW(role: string): boolean {
 // (user/module_admin/company_admin/system_admin), so this was previously
 // unreachable by anyone but admins. Mirrors hasFinanceApproval in
 // services/procurement/src/routes/orders.ts.
-async function hasFinanceApprovalGW(userId: string, companyId: string, role: string): Promise<boolean> {
+async function hasFinanceApprovalGW(
+  userId: string,
+  companyId: string,
+  role: string,
+): Promise<boolean> {
   if (isPermissionBypassGW(role)) return true
   const perms = await loadPermissions(userId, companyId)
   return meetsLevel(perms['finance.ap.approve'], 'approve')
@@ -534,9 +541,10 @@ async function notifyPositionHoldersGW(
   const po = poResult.rows[0]
   if (!po) return
 
-  const deptResult = await query(`SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1`, [
-    po.organizer_user_id,
-  ])
+  const deptResult = await query(
+    `SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1`,
+    [po.organizer_user_id],
+  )
   const departmentId = (deptResult.rows[0]?.department_id as string | null) ?? null
 
   const holders = await query(
@@ -553,10 +561,10 @@ async function notifyPositionHoldersGW(
     [position, po.project_id ?? null, departmentId],
   )
   for (const holder of holders.rows) {
-    await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
-      notification.type,
-      JSON.stringify({ userId: holder.user_id, poId, ...notification }),
-    ])
+    await query(
+      `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+      [notification.type, JSON.stringify({ userId: holder.user_id, poId, ...notification })],
+    )
   }
 }
 
@@ -565,10 +573,10 @@ async function notifyUserGW(
   companyId: string,
   notification: POAuthGWNotification & { poId?: string; poNumber?: string },
 ): Promise<void> {
-  await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
-    notification.type,
-    JSON.stringify({ userId, companyId, ...notification }),
-  ])
+  await query(
+    `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+    [notification.type, JSON.stringify({ userId, companyId, ...notification })],
+  )
 }
 
 async function notifyFinanceTeamGW(
@@ -586,15 +594,20 @@ async function notifyFinanceTeamGW(
     [companyId],
   )
   for (const user of users.rows) {
-    await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
-      notification.type,
-      JSON.stringify({ userId: user.user_id, companyId, ...notification }),
-    ])
+    await query(
+      `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+      [notification.type, JSON.stringify({ userId: user.user_id, companyId, ...notification })],
+    )
   }
 }
 
-async function notifyDeptHeadsAndAdminsGW(poId: string, notification: POAuthGWNotification): Promise<void> {
-  const poResult = await query(`SELECT po.organizer_id FROM purchase_orders po WHERE po.id = $1`, [poId])
+async function notifyDeptHeadsAndAdminsGW(
+  poId: string,
+  notification: POAuthGWNotification,
+): Promise<void> {
+  const poResult = await query(`SELECT po.organizer_id FROM purchase_orders po WHERE po.id = $1`, [
+    poId,
+  ])
   const organizerId = poResult.rows[0]?.organizer_id as string | undefined
   if (!organizerId) return
 
@@ -614,10 +627,10 @@ async function notifyDeptHeadsAndAdminsGW(poId: string, notification: POAuthGWNo
     [],
   )
   for (const r of [...deptHeads.rows, ...admins.rows]) {
-    await query(`INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`, [
-      notification.type,
-      JSON.stringify({ userId: r.user_id, poId, ...notification }),
-    ])
+    await query(
+      `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+      [notification.type, JSON.stringify({ userId: r.user_id, poId, ...notification })],
+    )
   }
 }
 
@@ -2468,7 +2481,11 @@ export const resolvers = {
         const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
         const departmentId: string | null =
           (empResult.rows[0]?.department_id as string | null) ?? null
-        const hasFinance = await hasFinanceApprovalGW(ctx.auth.userId, ctx.auth.companyId, ctx.auth.role)
+        const hasFinance = await hasFinanceApprovalGW(
+          ctx.auth.userId,
+          ctx.auth.companyId,
+          ctx.auth.role,
+        )
 
         const result = await query(
           `SELECT DISTINCT po.*, v.name AS vendor_name
@@ -2510,7 +2527,14 @@ export const resolvers = {
                ))
              )
            ORDER BY po.created_at DESC`,
-          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role, hasFinance],
+          [
+            ctx.auth.companyId,
+            ctx.auth.userId,
+            employeeId,
+            departmentId,
+            ctx.auth.role,
+            hasFinance,
+          ],
         )
         return result.rows
       } catch {
@@ -4999,7 +5023,11 @@ export const resolvers = {
       const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
       const departmentId: string | null =
         (empResult.rows[0]?.department_id as string | null) ?? null
-      const hasFinance = await hasFinanceApprovalGW(ctx.auth.userId, ctx.auth.companyId, ctx.auth.role)
+      const hasFinance = await hasFinanceApprovalGW(
+        ctx.auth.userId,
+        ctx.auth.companyId,
+        ctx.auth.role,
+      )
       return (
         await query(
           `SELECT DISTINCT po.*, v.name AS vendor_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS assigned_to_email,
@@ -5037,7 +5065,14 @@ export const resolvers = {
                      'finance_audit','invoiced'))
              )
            ORDER BY po.created_at DESC`,
-          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role, hasFinance],
+          [
+            ctx.auth.companyId,
+            ctx.auth.userId,
+            employeeId,
+            departmentId,
+            ctx.auth.role,
+            hasFinance,
+          ],
         )
       ).rows
     },
@@ -9037,7 +9072,14 @@ export const resolvers = {
          FROM engineering_documents ed, projects p
          WHERE ed.id=dc.document_id AND p.id=ed.project_id AND p.company_id=$6 AND dc.id=$5
          RETURNING dc.*`,
-        [args.responseText, ctx.auth.userId, responseName, args.resolution, args.id, ctx.auth.companyId],
+        [
+          args.responseText,
+          ctx.auth.userId,
+          responseName,
+          args.resolution,
+          args.id,
+          ctx.auth.companyId,
+        ],
       )
       if (!r.rows[0]) throw new Error('Comment not found')
       return docCommentToGQL(r.rows[0] as Record<string, unknown>)
@@ -18189,7 +18231,12 @@ export const resolvers = {
          VALUES ($1,$2,$3,$4,'draft',0,0,0,$5) RETURNING *`,
         [ctx.auth.companyId, i.period_name, i.start_date, i.end_date, ctx.auth.userId],
       )
-      void publishEntityChanged(ctx.auth.companyId, 'payroll_run', r.rows[0].id as string, 'created')
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'payroll_run',
+        r.rows[0].id as string,
+        'created',
+      )
       return r.rows[0]
     },
 
@@ -18485,7 +18532,12 @@ export const resolvers = {
           i.status ?? 'available',
         ],
       )
-      void publishEntityChanged(ctx.auth.companyId, 'equipment_asset', r.rows[0].id as string, 'created')
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'equipment_asset',
+        r.rows[0].id as string,
+        'created',
+      )
       return r.rows[0]
     },
 
@@ -18697,7 +18749,12 @@ export const resolvers = {
           ctx.auth.userId,
         ],
       )
-      void publishEntityChanged(ctx.auth.companyId, 'rental_contract', r.rows[0].id as string, 'created')
+      void publishEntityChanged(
+        ctx.auth.companyId,
+        'rental_contract',
+        r.rows[0].id as string,
+        'created',
+      )
       return r.rows[0]
     },
 
@@ -22683,9 +22740,10 @@ const phase5MutationResolvers = {
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to approve this PO')
-    const poRow = await query(`SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`, [
-      args.id,
-    ])
+    const poRow = await query(
+      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'pending_approval')
       throw new Error(`Cannot approve PO in status '${poRow.rows[0].status as string}'`)
@@ -22728,7 +22786,9 @@ const phase5MutationResolvers = {
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
-    const poRow = await query(`SELECT status, organizer_id FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(`SELECT status, organizer_id FROM purchase_orders WHERE id=$1`, [
+      args.id,
+    ])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'pending_approval')
       throw new Error(`Cannot reject PO in status '${poRow.rows[0].status as string}'`)
@@ -22754,7 +22814,13 @@ const phase5MutationResolvers = {
     if (poRow.rows[0].organizer_id) {
       void query(
         `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','PO_REJECTED_NOTIFICATION',$1)`,
-        [JSON.stringify({ userId: poRow.rows[0].organizer_id, poId: args.id, reason: args.reason })],
+        [
+          JSON.stringify({
+            userId: poRow.rows[0].organizer_id,
+            poId: args.id,
+            reason: args.reason,
+          }),
+        ],
       )
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
@@ -22848,7 +22914,9 @@ const phase5MutationResolvers = {
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can send a PO to finance audit')
-    const poRow = await query(`SELECT status, po_number FROM purchase_orders WHERE id=$1`, [args.id])
+    const poRow = await query(`SELECT status, po_number FROM purchase_orders WHERE id=$1`, [
+      args.id,
+    ])
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'goods_received')
       throw new Error(`PO must be in goods_received status to send to audit`)
@@ -23660,7 +23728,9 @@ const phase5MutationResolvers = {
       `SELECT method, cost_plus_markup_pct FROM interco_pricing_configs WHERE company_id=$1`,
       [args.companyId],
     )
-    const prevRow = prev.rows[0] as { method: string; cost_plus_markup_pct: string | null } | undefined
+    const prevRow = prev.rows[0] as
+      | { method: string; cost_plus_markup_pct: string | null }
+      | undefined
     await query(
       `INSERT INTO interco_pricing_configs (company_id, method, cost_plus_markup_pct, updated_at, updated_by)
        VALUES ($1,$2,$3,NOW(),$4)
@@ -24375,6 +24445,150 @@ Object.assign(resolvers, {
         updatedAt: string
       }) => payload,
     },
+    lockChanged: {
+      subscribe: (_: unknown, args: { entityType: string; entityId: string }) =>
+        pubsub.asyncIterator(lockChangedChannel(args.entityType, args.entityId)),
+      // lockedByMe is per-subscriber (the same published event means "you" to
+      // the lock holder and "someone else" to everyone else watching), so it
+      // can't be baked into the published payload — compute it here against
+      // this connection's own auth context instead. Publishing a lock object
+      // without it would leave a required (non-null) field unresolved, which
+      // GraphQL responds to by nulling the whole (nullable) `lock` object —
+      // confirmed live: every event arrived with `lock: null` before this fix.
+      resolve: (
+        payload: { entityType: string; entityId: string; lock: LockState | null },
+        _args: unknown,
+        ctx: GQLContext,
+      ) => ({
+        entityType: payload.entityType,
+        entityId: payload.entityId,
+        lock: payload.lock
+          ? { ...payload.lock, lockedByMe: payload.lock.lockedBy === ctx.auth?.userId }
+          : null,
+      }),
+    },
+  },
+})
+
+// ── Record locking ("someone else is editing this") ──────────────────────────
+// A lock is "live" while last_heartbeat_at is within this window; past it, the
+// editing client's tab is assumed closed/crashed and the lock is up for grabs.
+const LOCK_HEARTBEAT_TIMEOUT = "INTERVAL '75 seconds'"
+
+function shapeLock(
+  row: Record<string, unknown>,
+  lockedByName: string,
+  currentUserId: string,
+): {
+  entityType: string
+  entityId: string
+  lockedBy: string
+  lockedByName: string
+  lockedAt: string
+  lockedByMe: boolean
+} {
+  return {
+    entityType: row['entity_type'] as string,
+    entityId: row['entity_id'] as string,
+    lockedBy: row['locked_by'] as string,
+    lockedByName,
+    lockedAt: row['locked_at'] as string,
+    lockedByMe: row['locked_by'] === currentUserId,
+  }
+}
+
+Object.assign(resolvers.Query, {
+  recordLock: async (
+    _: unknown,
+    args: { entityType: string; entityId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) return null
+    const r = await query(
+      `SELECT rl.*, u.first_name || ' ' || u.last_name AS locked_by_name
+       FROM record_locks rl JOIN users u ON u.id = rl.locked_by
+       WHERE rl.entity_type=$1 AND rl.entity_id=$2 AND rl.last_heartbeat_at > NOW() - ${LOCK_HEARTBEAT_TIMEOUT}`,
+      [args.entityType, args.entityId],
+    )
+    const row = r.rows[0] as Record<string, unknown> | undefined
+    if (!row) return null
+    return shapeLock(row, row['locked_by_name'] as string, ctx.auth.userId)
+  },
+})
+
+Object.assign(resolvers.Mutation, {
+  acquireLock: async (
+    _: unknown,
+    args: { entityType: string; entityId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const upsert = await query(
+      `INSERT INTO record_locks (entity_type, entity_id, company_id, locked_by)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (entity_type, entity_id) DO UPDATE
+         SET locked_by = EXCLUDED.locked_by, company_id = EXCLUDED.company_id,
+             locked_at = NOW(), last_heartbeat_at = NOW()
+         WHERE record_locks.last_heartbeat_at < NOW() - ${LOCK_HEARTBEAT_TIMEOUT}
+            OR record_locks.locked_by = EXCLUDED.locked_by
+       RETURNING *`,
+      [args.entityType, args.entityId, ctx.auth.companyId, ctx.auth.userId],
+    )
+    let row = upsert.rows[0] as Record<string, unknown> | undefined
+    const iAcquired = !!row
+    if (!row) {
+      const existing = await query(
+        `SELECT * FROM record_locks WHERE entity_type=$1 AND entity_id=$2`,
+        [args.entityType, args.entityId],
+      )
+      row = existing.rows[0] as Record<string, unknown>
+    }
+    const nameRes = await query<{ name: string }>(
+      `SELECT first_name || ' ' || last_name AS name FROM users WHERE id=$1`,
+      [row['locked_by']],
+    )
+    const shaped = shapeLock(row, nameRes.rows[0]?.name ?? 'Unknown', ctx.auth.userId)
+    if (iAcquired) {
+      await publishLockChanged(args.entityType, args.entityId, {
+        entityType: shaped.entityType,
+        entityId: shaped.entityId,
+        lockedBy: shaped.lockedBy,
+        lockedByName: shaped.lockedByName,
+        lockedAt: shaped.lockedAt,
+      })
+    }
+    return shaped
+  },
+
+  heartbeatLock: async (
+    _: unknown,
+    args: { entityType: string; entityId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `UPDATE record_locks SET last_heartbeat_at=NOW()
+       WHERE entity_type=$1 AND entity_id=$2 AND locked_by=$3 RETURNING id`,
+      [args.entityType, args.entityId, ctx.auth.userId],
+    )
+    return !!r.rows[0]
+  },
+
+  releaseLock: async (
+    _: unknown,
+    args: { entityType: string; entityId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const r = await query(
+      `DELETE FROM record_locks WHERE entity_type=$1 AND entity_id=$2 AND locked_by=$3 RETURNING id`,
+      [args.entityType, args.entityId, ctx.auth.userId],
+    )
+    const released = !!r.rows[0]
+    if (released) {
+      await publishLockChanged(args.entityType, args.entityId, null)
+    }
+    return released
   },
 })
 

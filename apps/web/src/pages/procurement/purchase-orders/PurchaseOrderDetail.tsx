@@ -35,6 +35,7 @@ import { usePermission } from '../../../hooks/usePermission'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
+import { useRecordLock } from '../../../hooks/useRecordLock'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -177,6 +178,7 @@ export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
+  const lock = useRecordLock('purchase_order', id)
   const { isPhone } = useBreakpoint()
   const pagePadding = usePagePadding()
   const [activeTab, setActiveTab] = useState<Tab>('lines')
@@ -630,7 +632,7 @@ export default function PurchaseOrderDetail() {
                     return (
                       <button
                         key={p.key}
-                        disabled={settingPriority}
+                        disabled={settingPriority || lock.lockedByOther}
                         onClick={() => {
                           if (!active)
                             void setPriority({ variables: { id: po.id, priority: p.key } })
@@ -713,6 +715,7 @@ export default function PurchaseOrderDetail() {
               <Button
                 variant="danger"
                 size="sm"
+                disabled={lock.lockedByOther}
                 onClick={() => {
                   setConfirmDeletePO(true)
                 }}
@@ -724,6 +727,7 @@ export default function PurchaseOrderDetail() {
             {(!['cancelled', 'deleted'].includes(po.status) || isSystemLevel) && (
               <div style={{ position: 'relative' }}>
                 <button
+                  disabled={lock.lockedByOther}
                   onClick={() => {
                     setShowActionsPanel((v) => !v)
                   }}
@@ -979,6 +983,35 @@ export default function PurchaseOrderDetail() {
         }
       />
 
+      {lock.lockedByOther && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            marginTop: '16px',
+            background: `${theme.warning}1a`,
+            border: `1px solid ${theme.warning}`,
+            borderRadius: '8px',
+            fontSize: '13px',
+            color: theme.textPrimary,
+          }}
+        >
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: theme.warning,
+              flexShrink: 0,
+            }}
+          />
+          <strong>{lock.lockedByName}</strong>&nbsp;is currently working on this purchase order —
+          actions are disabled until they finish.
+        </div>
+      )}
+
       {/* Status bar */}
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <StatusBar
@@ -1067,52 +1100,72 @@ export default function PurchaseOrderDetail() {
             borderLeft: `3px solid ${theme.accent}`,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={theme.accent}
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          {/* This panel covers every PO lifecycle stage's actions in one place —
+              wrapping it all in a fieldset is a single, guaranteed-complete way
+              to hard-block every mutating action while someone else holds the
+              edit lock, instead of hand-tagging dozens of scattered buttons. */}
+          <fieldset disabled={lock.lockedByOther} style={{ border: 'none', padding: 0, margin: 0 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}
             >
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-            <span
-              style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: theme.accent,
-                textTransform: 'uppercase',
-                letterSpacing: '0.07em',
-              }}
-            >
-              Next step
-            </span>
-            <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
-          </div>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke={theme.accent}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: theme.accent,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.07em',
+                }}
+              >
+                Next step
+              </span>
+              <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
+            </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {po.status === 'draft' &&
-              (po.priority === 'emergency' ? (
-                <>
-                  <div
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: '8px',
-                      background: '#fff7ed',
-                      border: '1px solid #fdba74',
-                      fontSize: '13px',
-                      color: '#9a3412',
-                    }}
-                  >
-                    Emergency PO — skips inventory check, store pricing, and market pricing.
-                    Submitting will send directly for approval.
-                  </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {po.status === 'draft' &&
+                (po.priority === 'emergency' ? (
+                  <>
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: '#fff7ed',
+                        border: '1px solid #fdba74',
+                        fontSize: '13px',
+                        color: '#9a3412',
+                      }}
+                    >
+                      Emergency PO — skips inventory check, store pricing, and market pricing.
+                      Submitting will send directly for approval.
+                    </div>
+                    <Button
+                      variant="primary"
+                      loading={anyLoading}
+                      onClick={() =>
+                        void submitToInventory({
+                          variables: { id: po.id, notes: actionNotes || undefined },
+                        })
+                      }
+                    >
+                      Submit for Approval
+                    </Button>
+                  </>
+                ) : (
                   <Button
                     variant="primary"
                     loading={anyLoading}
@@ -1122,317 +1175,123 @@ export default function PurchaseOrderDetail() {
                       })
                     }
                   >
-                    Submit for Approval
+                    Submit for inventory check
                   </Button>
-                </>
-              ) : (
-                <Button
-                  variant="primary"
-                  loading={anyLoading}
-                  onClick={() =>
-                    void submitToInventory({
-                      variables: { id: po.id, notes: actionNotes || undefined },
-                    })
-                  }
-                >
-                  Submit for inventory check
-                </Button>
-              ))}
+                ))}
 
-            {po.status === 'inventory_check' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div
-                  style={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    color: theme.textMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  Stock availability — enter quantity to take from stock
-                </div>
-                {stockAvailability.length === 0 && (
-                  <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                    Loading stock levels…
+              {po.status === 'inventory_check' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: theme.textMuted,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    Stock availability — enter quantity to take from stock
                   </div>
-                )}
-                {stockAvailability.map((avail) => {
-                  const fromStock = lineStockQtys[avail.lineId] ?? 0
-                  const toPurchase = Math.max(avail.qtyRequired - fromStock, 0)
-                  const statusColor = avail.isAvailable
-                    ? '#16a34a'
-                    : avail.qtyOnHand > 0
-                      ? '#d97706'
-                      : '#dc2626'
-                  const statusLabel = avail.isAvailable
-                    ? 'In stock'
-                    : avail.qtyOnHand > 0
-                      ? 'Partial'
-                      : 'Out of stock'
-                  return (
-                    <div
-                      key={avail.lineId}
-                      style={{
-                        padding: '12px 14px',
-                        borderRadius: '7px',
-                        border: `1px solid ${theme.border}`,
-                        background: theme.bgSurface,
-                      }}
-                    >
-                      <div
-                        style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '6px' }}
-                      >
-                        {avail.description || avail.productName || '—'}
-                      </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: '16px',
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                          flexWrap: 'wrap',
-                          marginBottom: '8px',
-                        }}
-                      >
-                        <span>
-                          Required:{' '}
-                          <strong style={{ color: theme.textPrimary }}>{avail.qtyRequired}</strong>
-                        </span>
-                        <span>
-                          On hand:{' '}
-                          <strong style={{ color: theme.textPrimary }}>
-                            {avail.qtyOnHand.toFixed(2)}
-                          </strong>
-                        </span>
-                        <span>
-                          Available:{' '}
-                          <strong style={{ color: theme.textPrimary }}>
-                            {avail.qtyAvailable.toFixed(2)}
-                          </strong>
-                        </span>
-                        <span style={{ color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
-                      </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: '12px',
-                          alignItems: 'flex-end',
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <div>
-                          <label
-                            style={{
-                              fontSize: '11px',
-                              color: theme.textMuted,
-                              display: 'block',
-                              marginBottom: '4px',
-                            }}
-                          >
-                            From stock
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            max={avail.qtyRequired}
-                            value={fromStock}
-                            onChange={(e) => {
-                              const v = Math.max(
-                                0,
-                                Math.min(avail.qtyRequired, parseFloat(e.target.value) || 0),
-                              )
-                              setLineStockQtys((p) => ({ ...p, [avail.lineId]: v }))
-                            }}
-                            style={{
-                              width: '120px',
-                              padding: '6px 10px',
-                              borderRadius: '6px',
-                              border: `1px solid ${theme.border}`,
-                              background: theme.bgCanvas,
-                              color: theme.textPrimary,
-                              fontSize: '13px',
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              fontSize: '11px',
-                              color: theme.textMuted,
-                              display: 'block',
-                              marginBottom: '4px',
-                            }}
-                          >
-                            To purchase
-                          </label>
-                          <div
-                            style={{
-                              width: '120px',
-                              padding: '6px 10px',
-                              borderRadius: '6px',
-                              border: `1px solid ${theme.border}`,
-                              background: theme.bgCanvas,
-                              color: theme.textMuted,
-                              fontSize: '13px',
-                            }}
-                          >
-                            {toPurchase}
-                          </div>
-                        </div>
-                      </div>
+                  {stockAvailability.length === 0 && (
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      Loading stock levels…
                     </div>
-                  )
-                })}
-                <Button
-                  variant="primary"
-                  loading={anyLoading}
-                  onClick={() =>
-                    void confirmInventory({
-                      variables: {
-                        id: po.id,
-                        lineStockQtys: stockAvailability.map((avail) => ({
-                          lineId: avail.lineId,
-                          qtyFromStock: lineStockQtys[avail.lineId] ?? 0,
-                        })),
-                        notes: actionNotes || undefined,
-                      },
-                    })
-                  }
-                >
-                  Confirm inventory check
-                </Button>
-              </div>
-            )}
-
-            {po.status === 'ready_to_issue' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '7px',
-                    background: '#f0fdf4',
-                    border: '1px solid #16a34a',
-                    fontSize: '13px',
-                    color: '#166534',
-                  }}
-                >
-                  All items confirmed in stock. Approve to issue directly from inventory.
-                </div>
-                {po.lines
-                  .filter((l) => l.qty_from_stock > 0)
-                  .map((line) => (
-                    <div
-                      key={line.id}
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '7px',
-                        border: `1px solid ${theme.border}`,
-                        background: theme.bgSurface,
-                        fontSize: '13px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span style={{ color: theme.textPrimary }}>
-                        {line.description || line.product_name || '—'}
-                      </span>
-                      <span style={{ color: theme.textMuted }}>
-                        Issue {line.qty_from_stock} {line.uom} from stock
-                      </span>
-                    </div>
-                  ))}
-                <Button
-                  variant="primary"
-                  loading={anyLoading}
-                  onClick={() =>
-                    void approveIssuance({
-                      variables: { id: po.id, notes: actionNotes || undefined },
-                    })
-                  }
-                >
-                  Approve &amp; Issue from Stock
-                </Button>
-              </div>
-            )}
-
-            {po.status === 'store_pricing' &&
-              (() => {
-                const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
-                const stockCovered = po.lines.length - purchaseLines.length
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Enter store prices
-                    </div>
-                    {stockCovered > 0 && (
+                  )}
+                  {stockAvailability.map((avail) => {
+                    const fromStock = lineStockQtys[avail.lineId] ?? 0
+                    const toPurchase = Math.max(avail.qtyRequired - fromStock, 0)
+                    const statusColor = avail.isAvailable
+                      ? '#16a34a'
+                      : avail.qtyOnHand > 0
+                        ? '#d97706'
+                        : '#dc2626'
+                    const statusLabel = avail.isAvailable
+                      ? 'In stock'
+                      : avail.qtyOnHand > 0
+                        ? 'Partial'
+                        : 'Out of stock'
+                    return (
                       <div
+                        key={avail.lineId}
                         style={{
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          background: theme.bgSurface,
+                          padding: '12px 14px',
+                          borderRadius: '7px',
                           border: `1px solid ${theme.border}`,
+                          background: theme.bgSurface,
                         }}
                       >
-                        {stockCovered} line(s) covered from stock — showing only lines to be
-                        purchased
-                      </div>
-                    )}
-                    {purchaseLines.map((line) => {
-                      const purchaseQty = line.qty - (line.qty_from_stock || 0)
-                      const defaultSp = {
-                        price: String(line.store_price ?? ''),
-                        currency: line.store_price_currency ?? po.currency_code,
-                      }
-                      const sp = storePrices[line.id] ?? defaultSp
-                      return (
                         <div
-                          key={line.id}
                           style={{
-                            padding: '10px 14px',
-                            borderRadius: '7px',
-                            border: `1px solid ${theme.border}`,
-                            background: theme.bgSurface,
+                            fontSize: '13px',
+                            color: theme.textPrimary,
+                            marginBottom: '6px',
                           }}
                         >
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              color: theme.textPrimary,
-                              marginBottom: '8px',
-                            }}
-                          >
-                            {line.description || line.product_name || '—'}{' '}
-                            <span style={{ color: theme.textMuted }}>
-                              × {purchaseQty} {line.uom}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
+                          {avail.description || avail.productName || '—'}
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '16px',
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            flexWrap: 'wrap',
+                            marginBottom: '8px',
+                          }}
+                        >
+                          <span>
+                            Required:{' '}
+                            <strong style={{ color: theme.textPrimary }}>
+                              {avail.qtyRequired}
+                            </strong>
+                          </span>
+                          <span>
+                            On hand:{' '}
+                            <strong style={{ color: theme.textPrimary }}>
+                              {avail.qtyOnHand.toFixed(2)}
+                            </strong>
+                          </span>
+                          <span>
+                            Available:{' '}
+                            <strong style={{ color: theme.textPrimary }}>
+                              {avail.qtyAvailable.toFixed(2)}
+                            </strong>
+                          </span>
+                          <span style={{ color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '12px',
+                            alignItems: 'flex-end',
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <div>
+                            <label
+                              style={{
+                                fontSize: '11px',
+                                color: theme.textMuted,
+                                display: 'block',
+                                marginBottom: '4px',
+                              }}
+                            >
+                              From stock
+                            </label>
                             <input
                               type="number"
-                              step="any"
-                              min="0"
-                              placeholder="Store price"
-                              value={sp.price}
+                              min={0}
+                              max={avail.qtyRequired}
+                              value={fromStock}
                               onChange={(e) => {
-                                const val = e.target.value
-                                setStorePrices((p) => {
-                                  const cur = p[line.id] ?? defaultSp
-                                  return { ...p, [line.id]: { ...cur, price: val } }
-                                })
+                                const v = Math.max(
+                                  0,
+                                  Math.min(avail.qtyRequired, parseFloat(e.target.value) || 0),
+                                )
+                                setLineStockQtys((p) => ({ ...p, [avail.lineId]: v }))
                               }}
                               style={{
-                                flex: 1,
+                                width: '120px',
                                 padding: '6px 10px',
                                 borderRadius: '6px',
                                 border: `1px solid ${theme.border}`,
@@ -1441,214 +1300,74 @@ export default function PurchaseOrderDetail() {
                                 fontSize: '13px',
                               }}
                             />
-                            <SearchableSelect
-                              value={sp.currency}
-                              onChange={(v) => {
-                                setStorePrices((p) => {
-                                  const cur = p[line.id] ?? defaultSp
-                                  return { ...p, [line.id]: { ...cur, currency: v } }
-                                })
-                              }}
-                              options={[
-                                { value: 'IQD', label: 'IQD' },
-                                { value: 'USD', label: 'USD' },
-                                { value: 'EUR', label: 'EUR' },
-                              ]}
-                            />
                           </div>
-                        </div>
-                      )
-                    })}
-                    <Button
-                      variant="primary"
-                      loading={anyLoading}
-                      onClick={() =>
-                        void submitStorePricing({
-                          variables: {
-                            id: po.id,
-                            linePrices: purchaseLines.map((line) => {
-                              const sp = storePrices[line.id] ?? {
-                                price: String(line.store_price ?? '0'),
-                                currency: line.store_price_currency ?? po.currency_code,
-                              }
-                              return {
-                                lineId: line.id,
-                                storePrice: parseFloat(sp.price) || 0,
-                                currencyCode: sp.currency,
-                              }
-                            }),
-                          },
-                        })
-                      }
-                    >
-                      Submit store pricing
-                    </Button>
-                  </div>
-                )
-              })()}
-
-            {po.status === 'market_pricing' &&
-              (() => {
-                const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
-                const stockCovered = po.lines.length - purchaseLines.length
-                const allPricesEntered = purchaseLines.every((l) => {
-                  const mp = marketPrices[l.id] ?? { price: String(l.market_price ?? '') }
-                  return parseFloat(mp.price) > 0
-                })
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Enter market prices
-                    </div>
-                    {stockCovered > 0 && (
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          background: theme.bgSurface,
-                          border: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        {stockCovered} line(s) covered from stock — showing only lines to be
-                        purchased
-                      </div>
-                    )}
-                    {purchaseLines.map((line) => {
-                      const defaultMp = {
-                        price: String(line.market_price ?? ''),
-                        currency: line.market_price_currency ?? po.currency_code,
-                        quoteRef: '',
-                      }
-                      const mp = marketPrices[line.id] ?? defaultMp
-                      const priceEmpty = !parseFloat(mp.price)
-                      return (
-                        <div
-                          key={line.id}
-                          style={{
-                            padding: '10px 14px',
-                            borderRadius: '7px',
-                            border: `1px solid ${priceEmpty ? '#ef4444' : theme.border}`,
-                            background: theme.bgSurface,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              color: theme.textPrimary,
-                              marginBottom: '8px',
-                            }}
-                          >
-                            {line.description || line.product_name || '—'}{' '}
-                            <span style={{ color: theme.textMuted }}>
-                              × {line.qty} {line.uom}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            <input
-                              type="number"
-                              step="any"
-                              min="0"
-                              placeholder="Market price *"
-                              value={mp.price}
-                              onChange={(e) => {
-                                const val = e.target.value
-                                setMarketPrices((p) => {
-                                  const cur = p[line.id] ?? defaultMp
-                                  return { ...p, [line.id]: { ...cur, price: val } }
-                                })
-                              }}
+                          <div>
+                            <label
                               style={{
-                                flex: 1,
-                                minWidth: '120px',
+                                fontSize: '11px',
+                                color: theme.textMuted,
+                                display: 'block',
+                                marginBottom: '4px',
+                              }}
+                            >
+                              To purchase
+                            </label>
+                            <div
+                              style={{
+                                width: '120px',
                                 padding: '6px 10px',
                                 borderRadius: '6px',
-                                border: `1px solid ${priceEmpty ? '#ef4444' : theme.border}`,
+                                border: `1px solid ${theme.border}`,
                                 background: theme.bgCanvas,
-                                color: theme.textPrimary,
+                                color: theme.textMuted,
                                 fontSize: '13px',
                               }}
-                            />
-                            <SearchableSelect
-                              value={mp.currency}
-                              onChange={(v) => {
-                                setMarketPrices((p) => {
-                                  const cur = p[line.id] ?? defaultMp
-                                  return { ...p, [line.id]: { ...cur, currency: v } }
-                                })
-                              }}
-                              options={[
-                                { value: 'IQD', label: 'IQD' },
-                                { value: 'USD', label: 'USD' },
-                                { value: 'EUR', label: 'EUR' },
-                              ]}
-                            />
+                            >
+                              {toPurchase}
+                            </div>
                           </div>
                         </div>
-                      )
-                    })}
-                    {!allPricesEntered && (
-                      <div style={{ fontSize: '12px', color: '#ef4444' }}>
-                        All lines require a price greater than 0 before submitting.
                       </div>
-                    )}
-                    <Button
-                      variant="primary"
-                      loading={anyLoading}
-                      disabled={!allPricesEntered}
-                      onClick={() =>
-                        void submitMarketPricing({
-                          variables: {
-                            id: po.id,
-                            vendorId: po.vendor_id || undefined,
-                            linePrices: purchaseLines.map((line) => {
-                              const mp = marketPrices[line.id] ?? {
-                                price: String(line.market_price ?? ''),
-                                currency: line.market_price_currency ?? po.currency_code,
-                                quoteRef: '',
-                              }
-                              return {
-                                lineId: line.id,
-                                marketPrice: parseFloat(mp.price) || 0,
-                                currencyCode: mp.currency,
-                              }
-                            }),
-                          },
-                        })
-                      }
-                    >
-                      Submit market pricing
-                    </Button>
-                  </div>
-                )
-              })()}
+                    )
+                  })}
+                  <Button
+                    variant="primary"
+                    loading={anyLoading}
+                    onClick={() =>
+                      void confirmInventory({
+                        variables: {
+                          id: po.id,
+                          lineStockQtys: stockAvailability.map((avail) => ({
+                            lineId: avail.lineId,
+                            qtyFromStock: lineStockQtys[avail.lineId] ?? 0,
+                          })),
+                          notes: actionNotes || undefined,
+                        },
+                      })
+                    }
+                  >
+                    Confirm inventory check
+                  </Button>
+                </div>
+              )}
 
-            {po.status === 'price_verification' &&
-              (() => {
-                const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Verify prices then submit for approval
-                    </div>
-                    {purchaseLines.map((line) => (
+              {po.status === 'ready_to_issue' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '7px',
+                      background: '#f0fdf4',
+                      border: '1px solid #16a34a',
+                      fontSize: '13px',
+                      color: '#166534',
+                    }}
+                  >
+                    All items confirmed in stock. Approve to issue directly from inventory.
+                  </div>
+                  {po.lines
+                    .filter((l) => l.qty_from_stock > 0)
+                    .map((line) => (
                       <div
                         key={line.id}
                         style={{
@@ -1656,1176 +1375,1380 @@ export default function PurchaseOrderDetail() {
                           borderRadius: '7px',
                           border: `1px solid ${theme.border}`,
                           background: theme.bgSurface,
+                          fontSize: '13px',
                           display: 'flex',
                           justifyContent: 'space-between',
-                          alignItems: 'center',
-                          fontSize: '13px',
                         }}
                       >
                         <span style={{ color: theme.textPrimary }}>
-                          {line.description || line.product_name || '—'}{' '}
-                          <span style={{ color: theme.textMuted }}>
-                            × {line.qty} {line.uom}
-                          </span>
+                          {line.description || line.product_name || '—'}
                         </span>
-                        <span
-                          style={{
-                            color: line.unit_price > 0 ? theme.textPrimary : '#ef4444',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {line.unit_price > 0
-                            ? `${line.unit_price.toLocaleString()} ${line.market_price_currency ?? po.currency_code}`
-                            : 'No price set'}
+                        <span style={{ color: theme.textMuted }}>
+                          Issue {line.qty_from_stock} {line.uom} from stock
                         </span>
                       </div>
                     ))}
-                    {purchaseLines.some((l) => !(l.unit_price > 0)) && (
+                  <Button
+                    variant="primary"
+                    loading={anyLoading}
+                    onClick={() =>
+                      void approveIssuance({
+                        variables: { id: po.id, notes: actionNotes || undefined },
+                      })
+                    }
+                  >
+                    Approve &amp; Issue from Stock
+                  </Button>
+                </div>
+              )}
+
+              {po.status === 'store_pricing' &&
+                (() => {
+                  const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
+                  const stockCovered = po.lines.length - purchaseLines.length
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
                         style={{
                           fontSize: '12px',
-                          color: '#ef4444',
-                          padding: '8px 12px',
-                          borderRadius: '6px',
-                          background: '#fef2f2',
-                          border: '1px solid #fecaca',
+                          fontWeight: 600,
+                          color: theme.textMuted,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
                         }}
                       >
-                        Warning: one or more lines have no price. Go back to market pricing to set
-                        them.
+                        Enter store prices
                       </div>
-                    )}
-                    <Button
-                      variant="primary"
-                      loading={anyLoading}
-                      onClick={() =>
-                        void submitPriceVerification({
-                          variables: {
-                            id: po.id,
-                            verificationNotes: actionNotes || undefined,
-                            lineAdjustments: [],
-                          },
-                        })
-                      }
-                    >
-                      Submit for approval
-                    </Button>
-                  </div>
-                )
-              })()}
-
-            {po.status === 'pending_approval' &&
-              (() => {
-                const fmtN = (n: number | string) =>
-                  parseFloat(String(n)).toLocaleString('en-US', {
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 2,
-                  })
-                return (
-                  <>
-                    {/* ── Line review panel ─────────────────────────────────────── */}
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        marginBottom: '8px',
-                      }}
-                    >
-                      Review Lines
-                      {hasFlaggedLines && (
-                        <span
+                      {stockCovered > 0 && (
+                        <div
                           style={{
-                            marginLeft: '8px',
-                            padding: '2px 8px',
-                            borderRadius: '10px',
-                            background: theme.warningBg,
-                            border: `1px solid ${theme.warningBorder}`,
-                            color: theme.warning,
-                            fontWeight: 600,
-                            fontSize: '10px',
-                            textTransform: 'none',
-                            letterSpacing: 0,
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            background: theme.bgSurface,
+                            border: `1px solid ${theme.border}`,
                           }}
                         >
-                          {flaggedLineIds.length} flagged
-                        </span>
+                          {stockCovered} line(s) covered from stock — showing only lines to be
+                          purchased
+                        </div>
                       )}
-                    </div>
-
-                    <div
-                      style={{
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '10px',
-                        overflow: 'hidden',
-                        marginBottom: '14px',
-                      }}
-                    >
-                      {/* Table header */}
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
-                          padding: '7px 12px',
-                          background: theme.bgCanvas,
-                          borderBottom: `1px solid ${theme.border}`,
-                        }}
-                      >
-                        {['Item', 'Qty', 'Market Price', 'Store Price', 'Total', ''].map((h, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              fontSize: '10px',
-                              fontWeight: 600,
-                              color: theme.textMuted,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.06em',
-                            }}
-                          >
-                            {h}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Lines */}
-                      {po.lines.map((line) => {
-                        const isFlagged = lineFlagNotes[line.id] !== undefined
-                        const rowBg = isFlagged ? theme.warningBg : 'transparent'
-                        const rowBorder = isFlagged ? theme.warningBorder : theme.border
-                        const _fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                        const _totalQty = parseFloat(String(line.qty ?? 0))
-                        const _toBuy = Math.max(0, _totalQty - _fromStock)
-                        const _sp = parseFloat(String(line.store_price ?? 0))
-                        const _mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
-                        const _stockCost = _fromStock > 0 && _sp > 0 ? _fromStock * _sp : 0
-                        const _buyCost = _toBuy * (_mp || parseFloat(String(line.unit_price ?? 0)))
-                        const lineEffectiveTotal =
-                          _stockCost + _buyCost || parseFloat(String(line.total ?? 0))
+                      {purchaseLines.map((line) => {
+                        const purchaseQty = line.qty - (line.qty_from_stock || 0)
+                        const defaultSp = {
+                          price: String(line.store_price ?? ''),
+                          currency: line.store_price_currency ?? po.currency_code,
+                        }
+                        const sp = storePrices[line.id] ?? defaultSp
                         return (
                           <div
                             key={line.id}
                             style={{
-                              borderBottom: `1px solid ${rowBorder}`,
-                              background: rowBg,
-                              transition: 'background 0.15s',
-                            }}
-                          >
-                            {/* Main row */}
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
-                                padding: '10px 12px',
-                                alignItems: 'center',
-                              }}
-                            >
-                              <div>
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    color: theme.textPrimary,
-                                    fontWeight: isFlagged ? 600 : 400,
-                                  }}
-                                >
-                                  {line.description || line.product_name || '—'}
-                                </div>
-                                {isFlagged && (
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      marginTop: '2px',
-                                    }}
-                                  >
-                                    <svg
-                                      width="10"
-                                      height="10"
-                                      viewBox="0 0 24 24"
-                                      fill={theme.warning}
-                                      stroke="none"
-                                    >
-                                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
-                                    </svg>
-                                    <span
-                                      style={{
-                                        fontSize: '10px',
-                                        color: theme.warning,
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      Flagged
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  color: theme.textSecondary,
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}
-                              >
-                                {fmtN(line.qty)} {line.uom}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  color: theme.textSecondary,
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}
-                              >
-                                {fmtN(line.unit_price)} {po.currency_code}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  color: _sp > 0 ? theme.success : theme.textMuted,
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}
-                              >
-                                {_sp > 0
-                                  ? `${fmtN(_sp)} ${line.store_price_currency ?? po.currency_code}`
-                                  : '—'}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '13px',
-                                  fontWeight: 600,
-                                  color: theme.textPrimary,
-                                  fontVariantNumeric: 'tabular-nums',
-                                }}
-                              >
-                                {fmtN(lineEffectiveTotal)} {po.currency_code}
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                {isFlagged ? (
-                                  <button
-                                    onClick={() => {
-                                      clearFlag(line.id)
-                                    }}
-                                    title="Clear flag"
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      padding: '4px 8px',
-                                      borderRadius: '5px',
-                                      border: `1px solid ${theme.warningBorder}`,
-                                      background: 'transparent',
-                                      color: theme.warning,
-                                      cursor: 'pointer',
-                                      fontSize: '11px',
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    <svg
-                                      width="10"
-                                      height="10"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2.5"
-                                    >
-                                      <path d="M18 6L6 18M6 6l12 12" />
-                                    </svg>
-                                    Clear
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      flagLine(line.id)
-                                    }}
-                                    title="Flag this line"
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      padding: '4px 8px',
-                                      borderRadius: '5px',
-                                      border: `1px solid ${theme.border}`,
-                                      background: 'transparent',
-                                      color: theme.textMuted,
-                                      cursor: 'pointer',
-                                      fontSize: '11px',
-                                      fontWeight: 500,
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.borderColor = theme.warning
-                                      e.currentTarget.style.color = theme.warning
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.borderColor = theme.border
-                                      e.currentTarget.style.color = theme.textMuted
-                                    }}
-                                  >
-                                    <svg
-                                      width="10"
-                                      height="10"
-                                      viewBox="0 0 24 24"
-                                      fill="currentColor"
-                                      stroke="none"
-                                    >
-                                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
-                                    </svg>
-                                    Flag
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Pricing & stock breakdown strip */}
-                            {(() => {
-                              const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                              const totalQty = parseFloat(String(line.qty ?? 0))
-                              const toBuy = Math.max(0, totalQty - fromStock)
-                              const hasStock = fromStock > 0
-                              const hasBuy = toBuy > 0
-                              const sp = parseFloat(String(line.store_price ?? 0))
-                              const mp = parseFloat(String(line.market_price ?? 0))
-                              if (!hasStock && !hasBuy && sp === 0 && mp === 0) return null
-                              const chipBase: React.CSSProperties = {
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '2px 8px',
-                                borderRadius: '10px',
-                                fontSize: '11px',
-                                fontWeight: 500,
-                                fontVariantNumeric: 'tabular-nums',
-                                whiteSpace: 'nowrap',
-                              }
-                              return (
-                                <div
-                                  style={{
-                                    padding: '0 12px 10px',
-                                    display: 'flex',
-                                    gap: '6px',
-                                    flexWrap: 'wrap',
-                                  }}
-                                >
-                                  {hasStock && (
-                                    <span
-                                      style={{
-                                        ...chipBase,
-                                        background: theme.successBg,
-                                        border: `1px solid ${theme.successBorder}`,
-                                        color: theme.success,
-                                      }}
-                                    >
-                                      <svg
-                                        width="9"
-                                        height="9"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.5"
-                                      >
-                                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                                      </svg>
-                                      {fmtN(fromStock)} {line.uom} from inventory
-                                    </span>
-                                  )}
-                                  {hasBuy && (
-                                    <span
-                                      style={{
-                                        ...chipBase,
-                                        background: theme.infoBg,
-                                        border: `1px solid ${theme.infoBorder}`,
-                                        color: theme.info,
-                                      }}
-                                    >
-                                      <svg
-                                        width="9"
-                                        height="9"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.5"
-                                      >
-                                        <circle cx="9" cy="21" r="1" />
-                                        <circle cx="20" cy="21" r="1" />
-                                        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-                                      </svg>
-                                      {fmtN(toBuy)} {line.uom} to purchase
-                                    </span>
-                                  )}
-                                  {mp > 0 && (
-                                    <span
-                                      style={{
-                                        ...chipBase,
-                                        background: theme.bgCanvas,
-                                        border: `1px solid ${theme.border}`,
-                                        color: theme.textSecondary,
-                                      }}
-                                    >
-                                      Market price: {fmtN(mp)}{' '}
-                                      {line.market_price_currency ?? po.currency_code}
-                                    </span>
-                                  )}
-                                </div>
-                              )
-                            })()}
-
-                            {/* Flag note input — only shown when flagged */}
-                            {isFlagged && (
-                              <div style={{ padding: '0 12px 10px' }}>
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                    marginBottom: '4px',
-                                  }}
-                                >
-                                  <svg
-                                    width="11"
-                                    height="11"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke={theme.warning}
-                                    strokeWidth="2"
-                                  >
-                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                                  </svg>
-                                  <span
-                                    style={{
-                                      fontSize: '11px',
-                                      color: theme.warning,
-                                      fontWeight: 600,
-                                    }}
-                                  >
-                                    Reason for flagging (will appear in rejection note)
-                                  </span>
-                                </div>
-                                <textarea
-                                  value={lineFlagNotes[line.id]}
-                                  onChange={(e) => {
-                                    setFlagNote(line.id, e.target.value)
-                                  }}
-                                  placeholder={`e.g. Price is higher than market rate, quantity exceeds project requirement…`}
-                                  rows={2}
-                                  autoFocus
-                                  style={{
-                                    width: '100%',
-                                    padding: '8px 10px',
-                                    fontSize: '12px',
-                                    resize: 'vertical',
-                                    border: `1px solid ${theme.warningBorder}`,
-                                    borderRadius: '6px',
-                                    background: 'transparent',
-                                    color: theme.textPrimary,
-                                    fontFamily: 'inherit',
-                                    outline: 'none',
-                                    boxSizing: 'border-box',
-                                  }}
-                                  onFocus={(e) => {
-                                    e.currentTarget.style.borderColor = theme.warning
-                                  }}
-                                  onBlur={(e) => {
-                                    e.currentTarget.style.borderColor = theme.warningBorder
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-
-                      {/* Totals footer */}
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
-                          padding: '8px 12px',
-                          background: theme.bgCanvas,
-                        }}
-                      >
-                        <div
-                          style={{ gridColumn: '1 / 5', fontSize: '11px', color: theme.textMuted }}
-                        >
-                          {po.lines.length} line{po.lines.length !== 1 ? 's' : ''}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: '13px',
-                            fontWeight: 700,
-                            color: theme.textPrimary,
-                            fontVariantNumeric: 'tabular-nums',
-                          }}
-                        >
-                          {fmtN(
-                            po.lines.reduce((sum, l) => {
-                              const fs = parseFloat(String(l.qty_from_stock ?? 0))
-                              const tb = Math.max(0, parseFloat(String(l.qty ?? 0)) - fs)
-                              const sp = parseFloat(String(l.store_price ?? 0))
-                              const mp = parseFloat(String(l.market_price ?? l.unit_price ?? 0))
-                              return (
-                                sum +
-                                (fs > 0 && sp > 0 ? fs * sp : 0) +
-                                tb * (mp || parseFloat(String(l.unit_price ?? 0)))
-                              )
-                            }, 0) || po.total_amount,
-                          )}{' '}
-                          {po.currency_code}
-                        </div>
-                        <div />
-                      </div>
-                    </div>
-
-                    {/* Flagged banner */}
-                    {hasFlaggedLines && (
-                      <div
-                        style={{
-                          padding: '10px 14px',
-                          borderRadius: '8px',
-                          background: theme.warningBg,
-                          border: `1px solid ${theme.warningBorder}`,
-                          marginBottom: '14px',
-                          fontSize: '12px',
-                          color: theme.warning,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {flaggedLineIds.length} line{flaggedLineIds.length !== 1 ? 's' : ''} flagged
-                        — clear all flags to approve, or reject with the reason below.
-                      </div>
-                    )}
-
-                    {/* ── Approve ───────────────────────────────────────────────── */}
-                    <Button
-                      variant="primary"
-                      loading={anyLoading}
-                      disabled={hasFlaggedLines}
-                      onClick={() => void approvePO({ variables: { id: po.id } })}
-                    >
-                      Approve PO
-                    </Button>
-
-                    {/* ── Reject ────────────────────────────────────────────────── */}
-                    <div style={{ paddingTop: '12px', borderTop: `1px dashed ${theme.border}` }}>
-                      <label
-                        style={{
-                          fontSize: '12px',
-                          color: theme.textMuted,
-                          display: 'block',
-                          marginBottom: '4px',
-                        }}
-                      >
-                        Rejection reason{' '}
-                        {hasFlaggedLines
-                          ? '(pre-filled from flags — edit as needed)'
-                          : '(required to reject)'}
-                      </label>
-                      <textarea
-                        value={effectiveRejectReason}
-                        onChange={(e) => {
-                          setRejectReason(e.target.value)
-                        }}
-                        placeholder="Enter reason…"
-                        rows={hasFlaggedLines ? 3 : 2}
-                        style={{
-                          width: '100%',
-                          padding: '8px',
-                          borderRadius: '6px',
-                          resize: 'vertical',
-                          border: `1px solid ${effectiveRejectReason ? theme.warningBorder : theme.border}`,
-                          background: theme.bgSurface,
-                          color: theme.textPrimary,
-                          fontSize: '13px',
-                          fontFamily: 'inherit',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                        }}
-                        onFocus={(e) => {
-                          e.currentTarget.style.borderColor = theme.accent
-                        }}
-                        onBlur={(e) => {
-                          e.currentTarget.style.borderColor = effectiveRejectReason
-                            ? theme.warningBorder
-                            : theme.border
-                        }}
-                      />
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        <Button
-                          variant="danger"
-                          disabled={!effectiveRejectReason}
-                          onClick={() =>
-                            void rejectPO({
-                              variables: { id: po.id, reason: effectiveRejectReason },
-                            })
-                          }
-                        >
-                          Reject PO
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          disabled={!effectiveRejectReason}
-                          onClick={() =>
-                            void rejectToMarket({
-                              variables: { id: po.id, reason: effectiveRejectReason },
-                            })
-                          }
-                        >
-                          Reject to market pricing
-                        </Button>
-                      </div>
-                    </div>
-                  </>
-                )
-              })()}
-
-            {po.status === 'approved' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: '#f0fdf4',
-                    border: '1px solid #16a34a',
-                    fontSize: '13px',
-                    color: '#166534',
-                  }}
-                >
-                  PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    navigate(`/procurement/purchase-orders/${po.id}/receive`)
-                  }}
-                >
-                  Record Receipt
-                </Button>
-              </div>
-            )}
-
-            {po.status === 'goods_received' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: '#f0fdf4',
-                    border: '1px solid #16a34a',
-                    fontSize: '13px',
-                    color: '#166534',
-                  }}
-                >
-                  Goods received. Review receipts below, then send to finance for three-way match
-                  audit.
-                </div>
-                {/* Qty summary per line */}
-                <div
-                  style={{
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '7px',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 90px 90px 80px',
-                      padding: '6px 12px',
-                      background: theme.bgSurface,
-                      borderBottom: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    {['Item', 'Ordered', 'Received', 'Coverage'].map((h) => (
-                      <span
-                        key={h}
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {h}
-                      </span>
-                    ))}
-                  </div>
-                  {po.lines.map((line) => {
-                    const fmtQ = (n: number | string) =>
-                      parseFloat(String(n)).toLocaleString('en-US', {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 2,
-                      })
-                    const rcv = parseFloat(String(line.qty_received ?? 0))
-                    const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
-                    const ord = parseFloat(String(line.qty ?? 0))
-                    const fulfilled = Math.min(ord, rcv + fromStk)
-                    const pct = ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
-                    const color =
-                      fulfilled >= ord ? '#16a34a' : fulfilled > 0 ? '#d97706' : '#dc2626'
-                    return (
-                      <div
-                        key={line.id}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '1fr 90px 90px 80px',
-                          padding: '8px 12px',
-                          borderBottom: `1px solid ${theme.border}`,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                          {line.description || line.product_name || '—'}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: '13px',
-                            color: theme.textMuted,
-                            fontFamily: 'monospace',
-                          }}
-                        >
-                          {fmtQ(ord)} {line.uom}
-                        </span>
-                        <div>
-                          <span
-                            style={{
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              color,
-                              fontFamily: 'monospace',
-                            }}
-                          >
-                            {fmtQ(fulfilled)} {line.uom}
-                          </span>
-                          {fromStk > 0 && (
-                            <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '1px' }}>
-                              {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <div
-                            style={{
-                              flex: 1,
-                              height: '6px',
-                              borderRadius: '3px',
-                              background: theme.border,
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: '100%',
-                                width: `${pct}%`,
-                                background: color,
-                                borderRadius: '3px',
-                              }}
-                            />
-                          </div>
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color,
-                              fontWeight: 600,
-                              minWidth: '32px',
-                              textAlign: 'right',
-                            }}
-                          >
-                            {pct}%
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <Button
-                  variant="primary"
-                  loading={lAudit}
-                  onClick={() => void sendToAudit({ variables: { id: po.id } })}
-                >
-                  Send to Finance Audit
-                </Button>
-              </div>
-            )}
-
-            {po.status === 'finance_audit' &&
-              (() => {
-                const flaggedCount = po.lines.filter((l) => l.audit_status === 'flagged').length
-                const pendingCount = po.lines.filter(
-                  (l) => !l.audit_status || l.audit_status === 'pending',
-                ).length
-                const canPass = flaggedCount === 0 && pendingCount === 0
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
-                      }}
-                    >
-                      Finance Audit — mark each line OK or Flagged
-                    </div>
-                    {po.lines.map((line) => {
-                      const auditStatus = line.audit_status ?? 'pending'
-                      const bgOk = auditStatus === 'ok' ? '#f0fdf4' : 'transparent'
-                      const bgFlag = auditStatus === 'flagged' ? '#fef2f2' : 'transparent'
-                      const borderColor =
-                        auditStatus === 'ok'
-                          ? '#16a34a'
-                          : auditStatus === 'flagged'
-                            ? '#ef4444'
-                            : theme.border
-                      return (
-                        <div
-                          key={line.id}
-                          style={{
-                            padding: '10px 14px',
-                            borderRadius: '7px',
-                            border: `1px solid ${borderColor}`,
-                            background:
-                              auditStatus === 'ok'
-                                ? bgOk
-                                : auditStatus === 'flagged'
-                                  ? bgFlag
-                                  : theme.bgSurface,
-                          }}
-                        >
-                          {/* Top row: name + OK/Flag buttons */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'flex-start',
-                              gap: '8px',
-                              flexWrap: 'wrap',
+                              padding: '10px 14px',
+                              borderRadius: '7px',
+                              border: `1px solid ${theme.border}`,
+                              background: theme.bgSurface,
                             }}
                           >
                             <div
                               style={{
                                 fontSize: '13px',
                                 color: theme.textPrimary,
-                                fontWeight: 500,
+                                marginBottom: '8px',
                               }}
                             >
-                              {line.description || line.product_name || '—'}
+                              {line.description || line.product_name || '—'}{' '}
+                              <span style={{ color: theme.textMuted }}>
+                                × {purchaseQty} {line.uom}
+                              </span>
                             </div>
-                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
-                              <button
-                                onClick={() =>
-                                  void setLineAuditStatus({
-                                    variables: { poId: po.id, lineId: line.id, auditStatus: 'ok' },
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                placeholder="Store price"
+                                value={sp.price}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setStorePrices((p) => {
+                                    const cur = p[line.id] ?? defaultSp
+                                    return { ...p, [line.id]: { ...cur, price: val } }
                                   })
-                                }
-                                style={{
-                                  padding: '5px 12px',
-                                  borderRadius: '5px',
-                                  border: `1px solid ${auditStatus === 'ok' ? '#16a34a' : theme.border}`,
-                                  background: auditStatus === 'ok' ? '#16a34a' : 'transparent',
-                                  color: auditStatus === 'ok' ? '#fff' : theme.textMuted,
-                                  cursor: 'pointer',
-                                  fontSize: '12px',
-                                  fontWeight: 600,
-                                  transition: 'all 0.1s',
-                                }}
-                              >
-                                ✓ OK
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setFlaggingLines((p) => ({
-                                    ...p,
-                                    [line.id]: line.audit_note ?? '',
-                                  }))
                                 }}
                                 style={{
-                                  padding: '5px 12px',
-                                  borderRadius: '5px',
-                                  border: `1px solid ${auditStatus === 'flagged' ? '#ef4444' : theme.border}`,
-                                  background: auditStatus === 'flagged' ? '#ef4444' : 'transparent',
-                                  color: auditStatus === 'flagged' ? '#fff' : theme.textMuted,
-                                  cursor: 'pointer',
-                                  fontSize: '12px',
-                                  fontWeight: 600,
-                                  transition: 'all 0.1s',
+                                  flex: 1,
+                                  padding: '6px 10px',
+                                  borderRadius: '6px',
+                                  border: `1px solid ${theme.border}`,
+                                  background: theme.bgCanvas,
+                                  color: theme.textPrimary,
+                                  fontSize: '13px',
                                 }}
-                              >
-                                ⚑ Flag
-                              </button>
+                              />
+                              <SearchableSelect
+                                value={sp.currency}
+                                onChange={(v) => {
+                                  setStorePrices((p) => {
+                                    const cur = p[line.id] ?? defaultSp
+                                    return { ...p, [line.id]: { ...cur, currency: v } }
+                                  })
+                                }}
+                                options={[
+                                  { value: 'IQD', label: 'IQD' },
+                                  { value: 'USD', label: 'USD' },
+                                  { value: 'EUR', label: 'EUR' },
+                                ]}
+                              />
                             </div>
                           </div>
+                        )
+                      })}
+                      <Button
+                        variant="primary"
+                        loading={anyLoading}
+                        onClick={() =>
+                          void submitStorePricing({
+                            variables: {
+                              id: po.id,
+                              linePrices: purchaseLines.map((line) => {
+                                const sp = storePrices[line.id] ?? {
+                                  price: String(line.store_price ?? '0'),
+                                  currency: line.store_price_currency ?? po.currency_code,
+                                }
+                                return {
+                                  lineId: line.id,
+                                  storePrice: parseFloat(sp.price) || 0,
+                                  currencyCode: sp.currency,
+                                }
+                              }),
+                            },
+                          })
+                        }
+                      >
+                        Submit store pricing
+                      </Button>
+                    </div>
+                  )
+                })()}
 
-                          {/* Qty fulfilled vs ordered (received + from stock) */}
-                          {(() => {
-                            const fmtQ = (n: number | string) =>
-                              parseFloat(String(n)).toLocaleString('en-US', {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 2,
-                              })
-                            const rcv = parseFloat(String(line.qty_received ?? 0))
-                            const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
-                            const ord = parseFloat(String(line.qty ?? 0))
-                            const fulfilled = Math.min(ord, rcv + fromStk)
-                            const pct =
-                              ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
-                            const short = fulfilled < ord
-                            const over = rcv > ord
-                            const qtyColor = over ? '#d97706' : short ? '#dc2626' : '#16a34a'
-                            return (
-                              <div style={{ marginTop: '8px' }}>
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center',
-                                    marginBottom: '4px',
-                                  }}
-                                >
-                                  <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                                    Fulfilled / ordered
-                                  </span>
-                                  <div style={{ textAlign: 'right' }}>
-                                    <span
-                                      style={{
-                                        fontSize: '13px',
-                                        fontWeight: 700,
-                                        color: qtyColor,
-                                        fontFamily: 'monospace',
-                                      }}
-                                    >
-                                      {fmtQ(fulfilled)} / {fmtQ(ord)} {line.uom}
-                                      {short && (
-                                        <span
-                                          style={{
-                                            fontSize: '11px',
-                                            fontWeight: 400,
-                                            marginLeft: '6px',
-                                            color: '#dc2626',
-                                          }}
-                                        >
-                                          ({fmtQ(ord - fulfilled)} short)
-                                        </span>
-                                      )}
-                                      {over && (
-                                        <span
-                                          style={{
-                                            fontSize: '11px',
-                                            fontWeight: 400,
-                                            marginLeft: '6px',
-                                            color: '#d97706',
-                                          }}
-                                        >
-                                          (over by {fmtQ(rcv - ord)})
-                                        </span>
-                                      )}
-                                    </span>
-                                    {fromStk > 0 && (
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          color: '#16a34a',
-                                          marginTop: '1px',
-                                        }}
-                                      >
-                                        {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                <div
-                                  style={{
-                                    height: '6px',
-                                    borderRadius: '3px',
-                                    background: theme.border,
-                                    overflow: 'hidden',
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      height: '100%',
-                                      width: `${pct}%`,
-                                      borderRadius: '3px',
-                                      background: qtyColor,
-                                      transition: 'width 0.3s',
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            )
-                          })()}
-
-                          {/* Price comparison */}
-                          {(() => {
-                            const fmtN = (n: number | string) =>
-                              parseFloat(String(n)).toLocaleString('en-US', {
-                                minimumFractionDigits: 0,
-                                maximumFractionDigits: 2,
-                              })
-                            const poPrice = parseFloat(String(line.unit_price ?? 0))
-                            const actualPrice =
-                              line.actual_unit_price != null
-                                ? parseFloat(String(line.actual_unit_price))
-                                : null
-                            const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                            const totalQty = parseFloat(String(line.qty ?? 0))
-                            const toBuy = Math.max(0, totalQty - fromStock)
-                            const variance =
-                              actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
-                            const variancePct =
-                              variance != null && poPrice > 0 ? (variance / poPrice) * 100 : null
-                            const varColor =
-                              variance == null || variance === 0
-                                ? theme.textMuted
-                                : variance > 0
-                                  ? '#dc2626'
-                                  : '#16a34a'
-                            const purchaseTotal = toBuy * (actualPrice ?? poPrice)
-                            return (
-                              <div
+              {po.status === 'market_pricing' &&
+                (() => {
+                  const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
+                  const stockCovered = po.lines.length - purchaseLines.length
+                  const allPricesEntered = purchaseLines.every((l) => {
+                    const mp = marketPrices[l.id] ?? { price: String(l.market_price ?? '') }
+                    return parseFloat(mp.price) > 0
+                  })
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: theme.textMuted,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        Enter market prices
+                      </div>
+                      {stockCovered > 0 && (
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            background: theme.bgSurface,
+                            border: `1px solid ${theme.border}`,
+                          }}
+                        >
+                          {stockCovered} line(s) covered from stock — showing only lines to be
+                          purchased
+                        </div>
+                      )}
+                      {purchaseLines.map((line) => {
+                        const defaultMp = {
+                          price: String(line.market_price ?? ''),
+                          currency: line.market_price_currency ?? po.currency_code,
+                          quoteRef: '',
+                        }
+                        const mp = marketPrices[line.id] ?? defaultMp
+                        const priceEmpty = !parseFloat(mp.price)
+                        return (
+                          <div
+                            key={line.id}
+                            style={{
+                              padding: '10px 14px',
+                              borderRadius: '7px',
+                              border: `1px solid ${priceEmpty ? '#ef4444' : theme.border}`,
+                              background: theme.bgSurface,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: '13px',
+                                color: theme.textPrimary,
+                                marginBottom: '8px',
+                              }}
+                            >
+                              {line.description || line.product_name || '—'}{' '}
+                              <span style={{ color: theme.textMuted }}>
+                                × {line.qty} {line.uom}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                placeholder="Market price *"
+                                value={mp.price}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setMarketPrices((p) => {
+                                    const cur = p[line.id] ?? defaultMp
+                                    return { ...p, [line.id]: { ...cur, price: val } }
+                                  })
+                                }}
                                 style={{
-                                  marginTop: '10px',
-                                  display: 'grid',
-                                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                                  gap: '8px',
+                                  flex: 1,
+                                  minWidth: '120px',
+                                  padding: '6px 10px',
+                                  borderRadius: '6px',
+                                  border: `1px solid ${priceEmpty ? '#ef4444' : theme.border}`,
+                                  background: theme.bgCanvas,
+                                  color: theme.textPrimary,
+                                  fontSize: '13px',
+                                }}
+                              />
+                              <SearchableSelect
+                                value={mp.currency}
+                                onChange={(v) => {
+                                  setMarketPrices((p) => {
+                                    const cur = p[line.id] ?? defaultMp
+                                    return { ...p, [line.id]: { ...cur, currency: v } }
+                                  })
+                                }}
+                                options={[
+                                  { value: 'IQD', label: 'IQD' },
+                                  { value: 'USD', label: 'USD' },
+                                  { value: 'EUR', label: 'EUR' },
+                                ]}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {!allPricesEntered && (
+                        <div style={{ fontSize: '12px', color: '#ef4444' }}>
+                          All lines require a price greater than 0 before submitting.
+                        </div>
+                      )}
+                      <Button
+                        variant="primary"
+                        loading={anyLoading}
+                        disabled={!allPricesEntered}
+                        onClick={() =>
+                          void submitMarketPricing({
+                            variables: {
+                              id: po.id,
+                              vendorId: po.vendor_id || undefined,
+                              linePrices: purchaseLines.map((line) => {
+                                const mp = marketPrices[line.id] ?? {
+                                  price: String(line.market_price ?? ''),
+                                  currency: line.market_price_currency ?? po.currency_code,
+                                  quoteRef: '',
+                                }
+                                return {
+                                  lineId: line.id,
+                                  marketPrice: parseFloat(mp.price) || 0,
+                                  currencyCode: mp.currency,
+                                }
+                              }),
+                            },
+                          })
+                        }
+                      >
+                        Submit market pricing
+                      </Button>
+                    </div>
+                  )
+                })()}
+
+              {po.status === 'price_verification' &&
+                (() => {
+                  const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: theme.textMuted,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        Verify prices then submit for approval
+                      </div>
+                      {purchaseLines.map((line) => (
+                        <div
+                          key={line.id}
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '7px',
+                            border: `1px solid ${theme.border}`,
+                            background: theme.bgSurface,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            fontSize: '13px',
+                          }}
+                        >
+                          <span style={{ color: theme.textPrimary }}>
+                            {line.description || line.product_name || '—'}{' '}
+                            <span style={{ color: theme.textMuted }}>
+                              × {line.qty} {line.uom}
+                            </span>
+                          </span>
+                          <span
+                            style={{
+                              color: line.unit_price > 0 ? theme.textPrimary : '#ef4444',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {line.unit_price > 0
+                              ? `${line.unit_price.toLocaleString()} ${line.market_price_currency ?? po.currency_code}`
+                              : 'No price set'}
+                          </span>
+                        </div>
+                      ))}
+                      {purchaseLines.some((l) => !(l.unit_price > 0)) && (
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: '#ef4444',
+                            padding: '8px 12px',
+                            borderRadius: '6px',
+                            background: '#fef2f2',
+                            border: '1px solid #fecaca',
+                          }}
+                        >
+                          Warning: one or more lines have no price. Go back to market pricing to set
+                          them.
+                        </div>
+                      )}
+                      <Button
+                        variant="primary"
+                        loading={anyLoading}
+                        onClick={() =>
+                          void submitPriceVerification({
+                            variables: {
+                              id: po.id,
+                              verificationNotes: actionNotes || undefined,
+                              lineAdjustments: [],
+                            },
+                          })
+                        }
+                      >
+                        Submit for approval
+                      </Button>
+                    </div>
+                  )
+                })()}
+
+              {po.status === 'pending_approval' &&
+                (() => {
+                  const fmtN = (n: number | string) =>
+                    parseFloat(String(n)).toLocaleString('en-US', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })
+                  return (
+                    <>
+                      {/* ── Line review panel ─────────────────────────────────────── */}
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: theme.textMuted,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                          marginBottom: '8px',
+                        }}
+                      >
+                        Review Lines
+                        {hasFlaggedLines && (
+                          <span
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              borderRadius: '10px',
+                              background: theme.warningBg,
+                              border: `1px solid ${theme.warningBorder}`,
+                              color: theme.warning,
+                              fontWeight: 600,
+                              fontSize: '10px',
+                              textTransform: 'none',
+                              letterSpacing: 0,
+                            }}
+                          >
+                            {flaggedLineIds.length} flagged
+                          </span>
+                        )}
+                      </div>
+
+                      <div
+                        style={{
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          marginBottom: '14px',
+                        }}
+                      >
+                        {/* Table header */}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
+                            padding: '7px 12px',
+                            background: theme.bgCanvas,
+                            borderBottom: `1px solid ${theme.border}`,
+                          }}
+                        >
+                          {['Item', 'Qty', 'Market Price', 'Store Price', 'Total', ''].map(
+                            (h, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  fontSize: '10px',
+                                  fontWeight: 600,
+                                  color: theme.textMuted,
+                                  textTransform: 'uppercase',
+                                  letterSpacing: '0.06em',
                                 }}
                               >
-                                {/* PO Price (market price per unit) */}
-                                <div
-                                  style={{
-                                    padding: '8px 10px',
-                                    borderRadius: '6px',
-                                    background: theme.bgSurface,
-                                    border: `1px solid ${theme.border}`,
-                                  }}
-                                >
+                                {h}
+                              </div>
+                            ),
+                          )}
+                        </div>
+
+                        {/* Lines */}
+                        {po.lines.map((line) => {
+                          const isFlagged = lineFlagNotes[line.id] !== undefined
+                          const rowBg = isFlagged ? theme.warningBg : 'transparent'
+                          const rowBorder = isFlagged ? theme.warningBorder : theme.border
+                          const _fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+                          const _totalQty = parseFloat(String(line.qty ?? 0))
+                          const _toBuy = Math.max(0, _totalQty - _fromStock)
+                          const _sp = parseFloat(String(line.store_price ?? 0))
+                          const _mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
+                          const _stockCost = _fromStock > 0 && _sp > 0 ? _fromStock * _sp : 0
+                          const _buyCost =
+                            _toBuy * (_mp || parseFloat(String(line.unit_price ?? 0)))
+                          const lineEffectiveTotal =
+                            _stockCost + _buyCost || parseFloat(String(line.total ?? 0))
+                          return (
+                            <div
+                              key={line.id}
+                              style={{
+                                borderBottom: `1px solid ${rowBorder}`,
+                                background: rowBg,
+                                transition: 'background 0.15s',
+                              }}
+                            >
+                              {/* Main row */}
+                              <div
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
+                                  padding: '10px 12px',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <div>
                                   <div
                                     style={{
-                                      fontSize: '10px',
-                                      fontWeight: 700,
-                                      color: theme.textMuted,
-                                      textTransform: 'uppercase',
-                                      letterSpacing: '0.05em',
-                                      marginBottom: '3px',
-                                    }}
-                                  >
-                                    PO Price
-                                  </div>
-                                  <div
-                                    style={{
-                                      fontSize: '14px',
-                                      fontWeight: 700,
+                                      fontSize: '13px',
                                       color: theme.textPrimary,
-                                      fontFamily: 'monospace',
+                                      fontWeight: isFlagged ? 600 : 400,
                                     }}
                                   >
-                                    {poPrice > 0 ? fmtN(poPrice) : '—'}
+                                    {line.description || line.product_name || '—'}
                                   </div>
-                                  {toBuy > 0 && (
+                                  {isFlagged && (
                                     <div
                                       style={{
-                                        fontSize: '11px',
-                                        color: theme.textMuted,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
                                         marginTop: '2px',
                                       }}
                                     >
-                                      for {fmtN(toBuy)} {line.uom} to buy
+                                      <svg
+                                        width="10"
+                                        height="10"
+                                        viewBox="0 0 24 24"
+                                        fill={theme.warning}
+                                        stroke="none"
+                                      >
+                                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
+                                      </svg>
+                                      <span
+                                        style={{
+                                          fontSize: '10px',
+                                          color: theme.warning,
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        Flagged
+                                      </span>
                                     </div>
                                   )}
                                 </div>
-                                {/* Actual Price — for purchased qty only */}
-                                {toBuy > 0 && (
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    color: theme.textSecondary,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  {fmtN(line.qty)} {line.uom}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    color: theme.textSecondary,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  {fmtN(line.unit_price)} {po.currency_code}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    color: _sp > 0 ? theme.success : theme.textMuted,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  {_sp > 0
+                                    ? `${fmtN(_sp)} ${line.store_price_currency ?? po.currency_code}`
+                                    : '—'}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: theme.textPrimary,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  {fmtN(lineEffectiveTotal)} {po.currency_code}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                  {isFlagged ? (
+                                    <button
+                                      onClick={() => {
+                                        clearFlag(line.id)
+                                      }}
+                                      title="Clear flag"
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 8px',
+                                        borderRadius: '5px',
+                                        border: `1px solid ${theme.warningBorder}`,
+                                        background: 'transparent',
+                                        color: theme.warning,
+                                        cursor: 'pointer',
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      <svg
+                                        width="10"
+                                        height="10"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2.5"
+                                      >
+                                        <path d="M18 6L6 18M6 6l12 12" />
+                                      </svg>
+                                      Clear
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        flagLine(line.id)
+                                      }}
+                                      title="Flag this line"
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '4px 8px',
+                                        borderRadius: '5px',
+                                        border: `1px solid ${theme.border}`,
+                                        background: 'transparent',
+                                        color: theme.textMuted,
+                                        cursor: 'pointer',
+                                        fontSize: '11px',
+                                        fontWeight: 500,
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.borderColor = theme.warning
+                                        e.currentTarget.style.color = theme.warning
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.borderColor = theme.border
+                                        e.currentTarget.style.color = theme.textMuted
+                                      }}
+                                    >
+                                      <svg
+                                        width="10"
+                                        height="10"
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        stroke="none"
+                                      >
+                                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
+                                      </svg>
+                                      Flag
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Pricing & stock breakdown strip */}
+                              {(() => {
+                                const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+                                const totalQty = parseFloat(String(line.qty ?? 0))
+                                const toBuy = Math.max(0, totalQty - fromStock)
+                                const hasStock = fromStock > 0
+                                const hasBuy = toBuy > 0
+                                const sp = parseFloat(String(line.store_price ?? 0))
+                                const mp = parseFloat(String(line.market_price ?? 0))
+                                if (!hasStock && !hasBuy && sp === 0 && mp === 0) return null
+                                const chipBase: React.CSSProperties = {
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  padding: '2px 8px',
+                                  borderRadius: '10px',
+                                  fontSize: '11px',
+                                  fontWeight: 500,
+                                  fontVariantNumeric: 'tabular-nums',
+                                  whiteSpace: 'nowrap',
+                                }
+                                return (
                                   <div
                                     style={{
+                                      padding: '0 12px 10px',
+                                      display: 'flex',
+                                      gap: '6px',
+                                      flexWrap: 'wrap',
+                                    }}
+                                  >
+                                    {hasStock && (
+                                      <span
+                                        style={{
+                                          ...chipBase,
+                                          background: theme.successBg,
+                                          border: `1px solid ${theme.successBorder}`,
+                                          color: theme.success,
+                                        }}
+                                      >
+                                        <svg
+                                          width="9"
+                                          height="9"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2.5"
+                                        >
+                                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                                        </svg>
+                                        {fmtN(fromStock)} {line.uom} from inventory
+                                      </span>
+                                    )}
+                                    {hasBuy && (
+                                      <span
+                                        style={{
+                                          ...chipBase,
+                                          background: theme.infoBg,
+                                          border: `1px solid ${theme.infoBorder}`,
+                                          color: theme.info,
+                                        }}
+                                      >
+                                        <svg
+                                          width="9"
+                                          height="9"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2.5"
+                                        >
+                                          <circle cx="9" cy="21" r="1" />
+                                          <circle cx="20" cy="21" r="1" />
+                                          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                                        </svg>
+                                        {fmtN(toBuy)} {line.uom} to purchase
+                                      </span>
+                                    )}
+                                    {mp > 0 && (
+                                      <span
+                                        style={{
+                                          ...chipBase,
+                                          background: theme.bgCanvas,
+                                          border: `1px solid ${theme.border}`,
+                                          color: theme.textSecondary,
+                                        }}
+                                      >
+                                        Market price: {fmtN(mp)}{' '}
+                                        {line.market_price_currency ?? po.currency_code}
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+
+                              {/* Flag note input — only shown when flagged */}
+                              {isFlagged && (
+                                <div style={{ padding: '0 12px 10px' }}>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      marginBottom: '4px',
+                                    }}
+                                  >
+                                    <svg
+                                      width="11"
+                                      height="11"
+                                      viewBox="0 0 24 24"
+                                      fill="none"
+                                      stroke={theme.warning}
+                                      strokeWidth="2"
+                                    >
+                                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                    </svg>
+                                    <span
+                                      style={{
+                                        fontSize: '11px',
+                                        color: theme.warning,
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      Reason for flagging (will appear in rejection note)
+                                    </span>
+                                  </div>
+                                  <textarea
+                                    value={lineFlagNotes[line.id]}
+                                    onChange={(e) => {
+                                      setFlagNote(line.id, e.target.value)
+                                    }}
+                                    placeholder={`e.g. Price is higher than market rate, quantity exceeds project requirement…`}
+                                    rows={2}
+                                    autoFocus
+                                    style={{
+                                      width: '100%',
                                       padding: '8px 10px',
+                                      fontSize: '12px',
+                                      resize: 'vertical',
+                                      border: `1px solid ${theme.warningBorder}`,
                                       borderRadius: '6px',
-                                      background:
-                                        actualPrice == null
-                                          ? '#fff7ed'
-                                          : variance === 0
-                                            ? '#f0fdf4'
-                                            : variance! > 0
-                                              ? '#fef2f2'
-                                              : '#f0fdf4',
-                                      border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`,
+                                      background: 'transparent',
+                                      color: theme.textPrimary,
+                                      fontFamily: 'inherit',
+                                      outline: 'none',
+                                      boxSizing: 'border-box',
+                                    }}
+                                    onFocus={(e) => {
+                                      e.currentTarget.style.borderColor = theme.warning
+                                    }}
+                                    onBlur={(e) => {
+                                      e.currentTarget.style.borderColor = theme.warningBorder
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+
+                        {/* Totals footer */}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
+                            padding: '8px 12px',
+                            background: theme.bgCanvas,
+                          }}
+                        >
+                          <div
+                            style={{
+                              gridColumn: '1 / 5',
+                              fontSize: '11px',
+                              color: theme.textMuted,
+                            }}
+                          >
+                            {po.lines.length} line{po.lines.length !== 1 ? 's' : ''}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              fontWeight: 700,
+                              color: theme.textPrimary,
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {fmtN(
+                              po.lines.reduce((sum, l) => {
+                                const fs = parseFloat(String(l.qty_from_stock ?? 0))
+                                const tb = Math.max(0, parseFloat(String(l.qty ?? 0)) - fs)
+                                const sp = parseFloat(String(l.store_price ?? 0))
+                                const mp = parseFloat(String(l.market_price ?? l.unit_price ?? 0))
+                                return (
+                                  sum +
+                                  (fs > 0 && sp > 0 ? fs * sp : 0) +
+                                  tb * (mp || parseFloat(String(l.unit_price ?? 0)))
+                                )
+                              }, 0) || po.total_amount,
+                            )}{' '}
+                            {po.currency_code}
+                          </div>
+                          <div />
+                        </div>
+                      </div>
+
+                      {/* Flagged banner */}
+                      {hasFlaggedLines && (
+                        <div
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: theme.warningBg,
+                            border: `1px solid ${theme.warningBorder}`,
+                            marginBottom: '14px',
+                            fontSize: '12px',
+                            color: theme.warning,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {flaggedLineIds.length} line{flaggedLineIds.length !== 1 ? 's' : ''}{' '}
+                          flagged — clear all flags to approve, or reject with the reason below.
+                        </div>
+                      )}
+
+                      {/* ── Approve ───────────────────────────────────────────────── */}
+                      <Button
+                        variant="primary"
+                        loading={anyLoading}
+                        disabled={hasFlaggedLines}
+                        onClick={() => void approvePO({ variables: { id: po.id } })}
+                      >
+                        Approve PO
+                      </Button>
+
+                      {/* ── Reject ────────────────────────────────────────────────── */}
+                      <div style={{ paddingTop: '12px', borderTop: `1px dashed ${theme.border}` }}>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            display: 'block',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Rejection reason{' '}
+                          {hasFlaggedLines
+                            ? '(pre-filled from flags — edit as needed)'
+                            : '(required to reject)'}
+                        </label>
+                        <textarea
+                          value={effectiveRejectReason}
+                          onChange={(e) => {
+                            setRejectReason(e.target.value)
+                          }}
+                          placeholder="Enter reason…"
+                          rows={hasFlaggedLines ? 3 : 2}
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            borderRadius: '6px',
+                            resize: 'vertical',
+                            border: `1px solid ${effectiveRejectReason ? theme.warningBorder : theme.border}`,
+                            background: theme.bgSurface,
+                            color: theme.textPrimary,
+                            fontSize: '13px',
+                            fontFamily: 'inherit',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = theme.accent
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = effectiveRejectReason
+                              ? theme.warningBorder
+                              : theme.border
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <Button
+                            variant="danger"
+                            disabled={!effectiveRejectReason}
+                            onClick={() =>
+                              void rejectPO({
+                                variables: { id: po.id, reason: effectiveRejectReason },
+                              })
+                            }
+                          >
+                            Reject PO
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={!effectiveRejectReason}
+                            onClick={() =>
+                              void rejectToMarket({
+                                variables: { id: po.id, reason: effectiveRejectReason },
+                              })
+                            }
+                          >
+                            Reject to market pricing
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
+
+              {po.status === 'approved' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: '#f0fdf4',
+                      border: '1px solid #16a34a',
+                      fontSize: '13px',
+                      color: '#166534',
+                    }}
+                  >
+                    PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      navigate(`/procurement/purchase-orders/${po.id}/receive`)
+                    }}
+                  >
+                    Record Receipt
+                  </Button>
+                </div>
+              )}
+
+              {po.status === 'goods_received' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: '#f0fdf4',
+                      border: '1px solid #16a34a',
+                      fontSize: '13px',
+                      color: '#166534',
+                    }}
+                  >
+                    Goods received. Review receipts below, then send to finance for three-way match
+                    audit.
+                  </div>
+                  {/* Qty summary per line */}
+                  <div
+                    style={{
+                      border: `1px solid ${theme.border}`,
+                      borderRadius: '7px',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 90px 90px 80px',
+                        padding: '6px 12px',
+                        background: theme.bgSurface,
+                        borderBottom: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      {['Item', 'Ordered', 'Received', 'Coverage'].map((h) => (
+                        <span
+                          key={h}
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: theme.textMuted,
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                    {po.lines.map((line) => {
+                      const fmtQ = (n: number | string) =>
+                        parseFloat(String(n)).toLocaleString('en-US', {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })
+                      const rcv = parseFloat(String(line.qty_received ?? 0))
+                      const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
+                      const ord = parseFloat(String(line.qty ?? 0))
+                      const fulfilled = Math.min(ord, rcv + fromStk)
+                      const pct = ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
+                      const color =
+                        fulfilled >= ord ? '#16a34a' : fulfilled > 0 ? '#d97706' : '#dc2626'
+                      return (
+                        <div
+                          key={line.id}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 90px 90px 80px',
+                            padding: '8px 12px',
+                            borderBottom: `1px solid ${theme.border}`,
+                            alignItems: 'center',
+                          }}
+                        >
+                          <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                            {line.description || line.product_name || '—'}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '13px',
+                              color: theme.textMuted,
+                              fontFamily: 'monospace',
+                            }}
+                          >
+                            {fmtQ(ord)} {line.uom}
+                          </span>
+                          <div>
+                            <span
+                              style={{
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color,
+                                fontFamily: 'monospace',
+                              }}
+                            >
+                              {fmtQ(fulfilled)} {line.uom}
+                            </span>
+                            {fromStk > 0 && (
+                              <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '1px' }}>
+                                {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div
+                              style={{
+                                flex: 1,
+                                height: '6px',
+                                borderRadius: '3px',
+                                background: theme.border,
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  height: '100%',
+                                  width: `${pct}%`,
+                                  background: color,
+                                  borderRadius: '3px',
+                                }}
+                              />
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                color,
+                                fontWeight: 600,
+                                minWidth: '32px',
+                                textAlign: 'right',
+                              }}
+                            >
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <Button
+                    variant="primary"
+                    loading={lAudit}
+                    onClick={() => void sendToAudit({ variables: { id: po.id } })}
+                  >
+                    Send to Finance Audit
+                  </Button>
+                </div>
+              )}
+
+              {po.status === 'finance_audit' &&
+                (() => {
+                  const flaggedCount = po.lines.filter((l) => l.audit_status === 'flagged').length
+                  const pendingCount = po.lines.filter(
+                    (l) => !l.audit_status || l.audit_status === 'pending',
+                  ).length
+                  const canPass = flaggedCount === 0 && pendingCount === 0
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: theme.textMuted,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        Finance Audit — mark each line OK or Flagged
+                      </div>
+                      {po.lines.map((line) => {
+                        const auditStatus = line.audit_status ?? 'pending'
+                        const bgOk = auditStatus === 'ok' ? '#f0fdf4' : 'transparent'
+                        const bgFlag = auditStatus === 'flagged' ? '#fef2f2' : 'transparent'
+                        const borderColor =
+                          auditStatus === 'ok'
+                            ? '#16a34a'
+                            : auditStatus === 'flagged'
+                              ? '#ef4444'
+                              : theme.border
+                        return (
+                          <div
+                            key={line.id}
+                            style={{
+                              padding: '10px 14px',
+                              borderRadius: '7px',
+                              border: `1px solid ${borderColor}`,
+                              background:
+                                auditStatus === 'ok'
+                                  ? bgOk
+                                  : auditStatus === 'flagged'
+                                    ? bgFlag
+                                    : theme.bgSurface,
+                            }}
+                          >
+                            {/* Top row: name + OK/Flag buttons */}
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'flex-start',
+                                gap: '8px',
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  fontSize: '13px',
+                                  color: theme.textPrimary,
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {line.description || line.product_name || '—'}
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                <button
+                                  onClick={() =>
+                                    void setLineAuditStatus({
+                                      variables: {
+                                        poId: po.id,
+                                        lineId: line.id,
+                                        auditStatus: 'ok',
+                                      },
+                                    })
+                                  }
+                                  style={{
+                                    padding: '5px 12px',
+                                    borderRadius: '5px',
+                                    border: `1px solid ${auditStatus === 'ok' ? '#16a34a' : theme.border}`,
+                                    background: auditStatus === 'ok' ? '#16a34a' : 'transparent',
+                                    color: auditStatus === 'ok' ? '#fff' : theme.textMuted,
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    transition: 'all 0.1s',
+                                  }}
+                                >
+                                  ✓ OK
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setFlaggingLines((p) => ({
+                                      ...p,
+                                      [line.id]: line.audit_note ?? '',
+                                    }))
+                                  }}
+                                  style={{
+                                    padding: '5px 12px',
+                                    borderRadius: '5px',
+                                    border: `1px solid ${auditStatus === 'flagged' ? '#ef4444' : theme.border}`,
+                                    background:
+                                      auditStatus === 'flagged' ? '#ef4444' : 'transparent',
+                                    color: auditStatus === 'flagged' ? '#fff' : theme.textMuted,
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: 600,
+                                    transition: 'all 0.1s',
+                                  }}
+                                >
+                                  ⚑ Flag
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Qty fulfilled vs ordered (received + from stock) */}
+                            {(() => {
+                              const fmtQ = (n: number | string) =>
+                                parseFloat(String(n)).toLocaleString('en-US', {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 2,
+                                })
+                              const rcv = parseFloat(String(line.qty_received ?? 0))
+                              const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
+                              const ord = parseFloat(String(line.qty ?? 0))
+                              const fulfilled = Math.min(ord, rcv + fromStk)
+                              const pct =
+                                ord > 0 ? Math.min(100, Math.round((fulfilled / ord) * 100)) : 0
+                              const short = fulfilled < ord
+                              const over = rcv > ord
+                              const qtyColor = over ? '#d97706' : short ? '#dc2626' : '#16a34a'
+                              return (
+                                <div style={{ marginTop: '8px' }}>
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      justifyContent: 'space-between',
+                                      alignItems: 'center',
+                                      marginBottom: '4px',
+                                    }}
+                                  >
+                                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                                      Fulfilled / ordered
+                                    </span>
+                                    <div style={{ textAlign: 'right' }}>
+                                      <span
+                                        style={{
+                                          fontSize: '13px',
+                                          fontWeight: 700,
+                                          color: qtyColor,
+                                          fontFamily: 'monospace',
+                                        }}
+                                      >
+                                        {fmtQ(fulfilled)} / {fmtQ(ord)} {line.uom}
+                                        {short && (
+                                          <span
+                                            style={{
+                                              fontSize: '11px',
+                                              fontWeight: 400,
+                                              marginLeft: '6px',
+                                              color: '#dc2626',
+                                            }}
+                                          >
+                                            ({fmtQ(ord - fulfilled)} short)
+                                          </span>
+                                        )}
+                                        {over && (
+                                          <span
+                                            style={{
+                                              fontSize: '11px',
+                                              fontWeight: 400,
+                                              marginLeft: '6px',
+                                              color: '#d97706',
+                                            }}
+                                          >
+                                            (over by {fmtQ(rcv - ord)})
+                                          </span>
+                                        )}
+                                      </span>
+                                      {fromStk > 0 && (
+                                        <div
+                                          style={{
+                                            fontSize: '11px',
+                                            color: '#16a34a',
+                                            marginTop: '1px',
+                                          }}
+                                        >
+                                          {fmtQ(rcv)} received + {fmtQ(fromStk)} from stock
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div
+                                    style={{
+                                      height: '6px',
+                                      borderRadius: '3px',
+                                      background: theme.border,
+                                      overflow: 'hidden',
                                     }}
                                   >
                                     <div
                                       style={{
-                                        fontSize: '10px',
-                                        fontWeight: 700,
-                                        color: theme.textMuted,
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        marginBottom: '4px',
-                                      }}
-                                    >
-                                      Actual Price{' '}
-                                      <span
-                                        style={{
-                                          fontWeight: 400,
-                                          textTransform: 'none',
-                                          fontSize: '10px',
-                                        }}
-                                      >
-                                        ({fmtN(toBuy)} {line.uom} purchased)
-                                      </span>
-                                    </div>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      placeholder="Enter actual price…"
-                                      value={
-                                        actualPrices[line.id] ??
-                                        (actualPrice != null ? String(actualPrice) : '')
-                                      }
-                                      onChange={(e) => {
-                                        setActualPrices((p) => ({
-                                          ...p,
-                                          [line.id]: e.target.value,
-                                        }))
-                                      }}
-                                      onBlur={(e) => {
-                                        const val = parseFloat(e.target.value)
-                                        void setLineActualPrice({
-                                          variables: {
-                                            poId: po.id,
-                                            lineId: line.id,
-                                            actualUnitPrice: isNaN(val) ? null : val,
-                                          },
-                                        })
-                                      }}
-                                      style={{
-                                        width: '100%',
-                                        padding: '4px 6px',
-                                        borderRadius: '4px',
-                                        border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`,
-                                        background: 'transparent',
-                                        color: varColor,
-                                        fontSize: '14px',
-                                        fontFamily: 'monospace',
-                                        fontWeight: 700,
-                                        boxSizing: 'border-box' as const,
-                                        outline: 'none',
+                                        height: '100%',
+                                        width: `${pct}%`,
+                                        borderRadius: '3px',
+                                        background: qtyColor,
+                                        transition: 'width 0.3s',
                                       }}
                                     />
-                                    {variancePct != null && Math.abs(variancePct) > 0.01 && (
-                                      <div
-                                        style={{
-                                          fontSize: '11px',
-                                          fontWeight: 600,
-                                          color: varColor,
-                                          marginTop: '3px',
-                                        }}
-                                      >
-                                        {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
-                                        {variancePct.toFixed(1)}% vs PO
-                                      </div>
-                                    )}
                                   </div>
-                                )}
-                                {/* Purchase Total (only purchased qty) */}
-                                {toBuy > 0 && (
+                                </div>
+                              )
+                            })()}
+
+                            {/* Price comparison */}
+                            {(() => {
+                              const fmtN = (n: number | string) =>
+                                parseFloat(String(n)).toLocaleString('en-US', {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 2,
+                                })
+                              const poPrice = parseFloat(String(line.unit_price ?? 0))
+                              const actualPrice =
+                                line.actual_unit_price != null
+                                  ? parseFloat(String(line.actual_unit_price))
+                                  : null
+                              const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+                              const totalQty = parseFloat(String(line.qty ?? 0))
+                              const toBuy = Math.max(0, totalQty - fromStock)
+                              const variance =
+                                actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
+                              const variancePct =
+                                variance != null && poPrice > 0 ? (variance / poPrice) * 100 : null
+                              const varColor =
+                                variance == null || variance === 0
+                                  ? theme.textMuted
+                                  : variance > 0
+                                    ? '#dc2626'
+                                    : '#16a34a'
+                              const purchaseTotal = toBuy * (actualPrice ?? poPrice)
+                              return (
+                                <div
+                                  style={{
+                                    marginTop: '10px',
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                                    gap: '8px',
+                                  }}
+                                >
+                                  {/* PO Price (market price per unit) */}
                                   <div
                                     style={{
                                       padding: '8px 10px',
@@ -2844,7 +2767,7 @@ export default function PurchaseOrderDetail() {
                                         marginBottom: '3px',
                                       }}
                                     >
-                                      Purchase Total
+                                      PO Price
                                     </div>
                                     <div
                                       style={{
@@ -2854,393 +2777,534 @@ export default function PurchaseOrderDetail() {
                                         fontFamily: 'monospace',
                                       }}
                                     >
-                                      {fmtN(purchaseTotal)}
+                                      {poPrice > 0 ? fmtN(poPrice) : '—'}
                                     </div>
-                                    <div
-                                      style={{
-                                        fontSize: '11px',
-                                        color: theme.textMuted,
-                                        marginTop: '2px',
-                                      }}
-                                    >
-                                      {fmtN(toBuy)} {line.uom} × {fmtN(actualPrice ?? poPrice)}
-                                    </div>
+                                    {toBuy > 0 && (
+                                      <div
+                                        style={{
+                                          fontSize: '11px',
+                                          color: theme.textMuted,
+                                          marginTop: '2px',
+                                        }}
+                                      >
+                                        for {fmtN(toBuy)} {line.uom} to buy
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                                {/* From Stock */}
-                                {fromStock > 0 && (
-                                  <div
-                                    style={{
-                                      padding: '8px 10px',
-                                      borderRadius: '6px',
-                                      background: '#f0fdf4',
-                                      border: '1px solid #86efac',
-                                    }}
-                                  >
+                                  {/* Actual Price — for purchased qty only */}
+                                  {toBuy > 0 && (
                                     <div
                                       style={{
-                                        fontSize: '10px',
-                                        fontWeight: 700,
-                                        color: '#166534',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        marginBottom: '3px',
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        background:
+                                          actualPrice == null
+                                            ? '#fff7ed'
+                                            : variance === 0
+                                              ? '#f0fdf4'
+                                              : variance! > 0
+                                                ? '#fef2f2'
+                                                : '#f0fdf4',
+                                        border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`,
                                       }}
                                     >
-                                      From Inventory
+                                      <div
+                                        style={{
+                                          fontSize: '10px',
+                                          fontWeight: 700,
+                                          color: theme.textMuted,
+                                          textTransform: 'uppercase',
+                                          letterSpacing: '0.05em',
+                                          marginBottom: '4px',
+                                        }}
+                                      >
+                                        Actual Price{' '}
+                                        <span
+                                          style={{
+                                            fontWeight: 400,
+                                            textTransform: 'none',
+                                            fontSize: '10px',
+                                          }}
+                                        >
+                                          ({fmtN(toBuy)} {line.uom} purchased)
+                                        </span>
+                                      </div>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        placeholder="Enter actual price…"
+                                        value={
+                                          actualPrices[line.id] ??
+                                          (actualPrice != null ? String(actualPrice) : '')
+                                        }
+                                        onChange={(e) => {
+                                          setActualPrices((p) => ({
+                                            ...p,
+                                            [line.id]: e.target.value,
+                                          }))
+                                        }}
+                                        onBlur={(e) => {
+                                          const val = parseFloat(e.target.value)
+                                          void setLineActualPrice({
+                                            variables: {
+                                              poId: po.id,
+                                              lineId: line.id,
+                                              actualUnitPrice: isNaN(val) ? null : val,
+                                            },
+                                          })
+                                        }}
+                                        style={{
+                                          width: '100%',
+                                          padding: '4px 6px',
+                                          borderRadius: '4px',
+                                          border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`,
+                                          background: 'transparent',
+                                          color: varColor,
+                                          fontSize: '14px',
+                                          fontFamily: 'monospace',
+                                          fontWeight: 700,
+                                          boxSizing: 'border-box' as const,
+                                          outline: 'none',
+                                        }}
+                                      />
+                                      {variancePct != null && Math.abs(variancePct) > 0.01 && (
+                                        <div
+                                          style={{
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            color: varColor,
+                                            marginTop: '3px',
+                                          }}
+                                        >
+                                          {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
+                                          {variancePct.toFixed(1)}% vs PO
+                                        </div>
+                                      )}
                                     </div>
+                                  )}
+                                  {/* Purchase Total (only purchased qty) */}
+                                  {toBuy > 0 && (
                                     <div
                                       style={{
-                                        fontSize: '14px',
-                                        fontWeight: 700,
-                                        color: '#166534',
-                                        fontFamily: 'monospace',
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        background: theme.bgSurface,
+                                        border: `1px solid ${theme.border}`,
                                       }}
                                     >
-                                      {fmtN(fromStock)} {line.uom}
+                                      <div
+                                        style={{
+                                          fontSize: '10px',
+                                          fontWeight: 700,
+                                          color: theme.textMuted,
+                                          textTransform: 'uppercase',
+                                          letterSpacing: '0.05em',
+                                          marginBottom: '3px',
+                                        }}
+                                      >
+                                        Purchase Total
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '14px',
+                                          fontWeight: 700,
+                                          color: theme.textPrimary,
+                                          fontFamily: 'monospace',
+                                        }}
+                                      >
+                                        {fmtN(purchaseTotal)}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '11px',
+                                          color: theme.textMuted,
+                                          marginTop: '2px',
+                                        }}
+                                      >
+                                        {fmtN(toBuy)} {line.uom} × {fmtN(actualPrice ?? poPrice)}
+                                      </div>
                                     </div>
+                                  )}
+                                  {/* From Stock */}
+                                  {fromStock > 0 && (
                                     <div
                                       style={{
-                                        fontSize: '11px',
-                                        color: '#16a34a',
-                                        marginTop: '2px',
+                                        padding: '8px 10px',
+                                        borderRadius: '6px',
+                                        background: '#f0fdf4',
+                                        border: '1px solid #86efac',
                                       }}
                                     >
-                                      No cost — issued from stock
+                                      <div
+                                        style={{
+                                          fontSize: '10px',
+                                          fontWeight: 700,
+                                          color: '#166534',
+                                          textTransform: 'uppercase',
+                                          letterSpacing: '0.05em',
+                                          marginBottom: '3px',
+                                        }}
+                                      >
+                                        From Inventory
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '14px',
+                                          fontWeight: 700,
+                                          color: '#166534',
+                                          fontFamily: 'monospace',
+                                        }}
+                                      >
+                                        {fmtN(fromStock)} {line.uom}
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: '11px',
+                                          color: '#16a34a',
+                                          marginTop: '2px',
+                                        }}
+                                      >
+                                        No cost — issued from stock
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })()}
+                                  )}
+                                </div>
+                              )
+                            })()}
 
-                          {flaggingLines[line.id] !== undefined ? (
-                            <div
-                              style={{
-                                marginTop: '10px',
-                                padding: '10px',
-                                borderRadius: '6px',
-                                background: '#fef2f2',
-                                border: '1px solid #fca5a5',
-                              }}
-                            >
+                            {flaggingLines[line.id] !== undefined ? (
                               <div
                                 style={{
-                                  fontSize: '12px',
-                                  color: '#991b1b',
-                                  fontWeight: 600,
-                                  marginBottom: '6px',
+                                  marginTop: '10px',
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  background: '#fef2f2',
+                                  border: '1px solid #fca5a5',
                                 }}
                               >
-                                ⚑ Flag reason (required)
+                                <div
+                                  style={{
+                                    fontSize: '12px',
+                                    color: '#991b1b',
+                                    fontWeight: 600,
+                                    marginBottom: '6px',
+                                  }}
+                                >
+                                  ⚑ Flag reason (required)
+                                </div>
+                                <textarea
+                                  autoFocus
+                                  value={flaggingLines[line.id]}
+                                  onChange={(e) => {
+                                    setFlaggingLines((p) => ({ ...p, [line.id]: e.target.value }))
+                                  }}
+                                  placeholder="Describe the issue with this line…"
+                                  rows={2}
+                                  style={{
+                                    width: '100%',
+                                    padding: '6px 8px',
+                                    borderRadius: '5px',
+                                    border: '1px solid #fca5a5',
+                                    background: '#fff',
+                                    color: '#991b1b',
+                                    fontSize: '12px',
+                                    resize: 'vertical',
+                                    boxSizing: 'border-box',
+                                  }}
+                                />
+                                <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                                  <button
+                                    disabled={!flaggingLines[line.id].trim()}
+                                    onClick={() => {
+                                      if (!flaggingLines[line.id].trim()) return
+                                      void setLineAuditStatus({
+                                        variables: {
+                                          poId: po.id,
+                                          lineId: line.id,
+                                          auditStatus: 'flagged',
+                                          auditNote: flaggingLines[line.id].trim(),
+                                        },
+                                      })
+                                      setFlaggingLines((p) => {
+                                        const n = { ...p }
+                                        delete n[line.id]
+                                        return n
+                                      })
+                                    }}
+                                    style={{
+                                      padding: '5px 14px',
+                                      borderRadius: '5px',
+                                      border: 'none',
+                                      background: flaggingLines[line.id].trim()
+                                        ? '#ef4444'
+                                        : '#fca5a5',
+                                      color: '#fff',
+                                      cursor: flaggingLines[line.id].trim()
+                                        ? 'pointer'
+                                        : 'not-allowed',
+                                      fontSize: '12px',
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    Save Flag
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setFlaggingLines((p) => {
+                                        const n = { ...p }
+                                        delete n[line.id]
+                                        return n
+                                      })
+                                    }}
+                                    style={{
+                                      padding: '5px 12px',
+                                      borderRadius: '5px',
+                                      border: `1px solid ${theme.border}`,
+                                      background: 'transparent',
+                                      color: theme.textMuted,
+                                      cursor: 'pointer',
+                                      fontSize: '12px',
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
                               </div>
-                              <textarea
-                                autoFocus
-                                value={flaggingLines[line.id]}
-                                onChange={(e) => {
-                                  setFlaggingLines((p) => ({ ...p, [line.id]: e.target.value }))
-                                }}
-                                placeholder="Describe the issue with this line…"
-                                rows={2}
+                            ) : auditStatus === 'flagged' && line.audit_note ? (
+                              <div
                                 style={{
-                                  width: '100%',
-                                  padding: '6px 8px',
+                                  marginTop: '8px',
+                                  padding: '6px 10px',
                                   borderRadius: '5px',
+                                  background: '#fef2f2',
                                   border: '1px solid #fca5a5',
-                                  background: '#fff',
                                   color: '#991b1b',
                                   fontSize: '12px',
-                                  resize: 'vertical',
-                                  boxSizing: 'border-box',
                                 }}
-                              />
-                              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
-                                <button
-                                  disabled={!flaggingLines[line.id].trim()}
-                                  onClick={() => {
-                                    if (!flaggingLines[line.id].trim()) return
-                                    void setLineAuditStatus({
-                                      variables: {
-                                        poId: po.id,
-                                        lineId: line.id,
-                                        auditStatus: 'flagged',
-                                        auditNote: flaggingLines[line.id].trim(),
-                                      },
-                                    })
-                                    setFlaggingLines((p) => {
-                                      const n = { ...p }
-                                      delete n[line.id]
-                                      return n
-                                    })
-                                  }}
-                                  style={{
-                                    padding: '5px 14px',
-                                    borderRadius: '5px',
-                                    border: 'none',
-                                    background: flaggingLines[line.id].trim()
-                                      ? '#ef4444'
-                                      : '#fca5a5',
-                                    color: '#fff',
-                                    cursor: flaggingLines[line.id].trim()
-                                      ? 'pointer'
-                                      : 'not-allowed',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                  }}
-                                >
-                                  Save Flag
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setFlaggingLines((p) => {
-                                      const n = { ...p }
-                                      delete n[line.id]
-                                      return n
-                                    })
-                                  }}
-                                  style={{
-                                    padding: '5px 12px',
-                                    borderRadius: '5px',
-                                    border: `1px solid ${theme.border}`,
-                                    background: 'transparent',
-                                    color: theme.textMuted,
-                                    cursor: 'pointer',
-                                    fontSize: '12px',
-                                  }}
-                                >
-                                  Cancel
-                                </button>
+                              >
+                                ⚑ {line.audit_note}
                               </div>
-                            </div>
-                          ) : auditStatus === 'flagged' && line.audit_note ? (
-                            <div
-                              style={{
-                                marginTop: '8px',
-                                padding: '6px 10px',
-                                borderRadius: '5px',
-                                background: '#fef2f2',
-                                border: '1px solid #fca5a5',
-                                color: '#991b1b',
-                                fontSize: '12px',
-                              }}
-                            >
-                              ⚑ {line.audit_note}
-                            </div>
-                          ) : null}
-                        </div>
-                      )
-                    })}
-                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                      <Button
-                        variant="primary"
-                        loading={lPass}
-                        disabled={!canPass}
-                        onClick={() => void passAudit({ variables: { id: po.id } })}
-                      >
-                        {canPass
-                          ? 'Pass Audit → Invoiced'
-                          : `Pass Audit (${pendingCount > 0 ? `${pendingCount} pending` : `${flaggedCount} flagged`})`}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() =>
-                          void failAudit({
-                            variables: { id: po.id, notes: actionNotes || undefined },
-                          })
-                        }
-                      >
-                        Return for Correction
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })()}
-
-            {po.status === 'invoiced' &&
-              (can('finance.ap.view') ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {apInvoice ? (
-                    <div
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: theme.accentBg,
-                        border: `1px solid ${theme.accent}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>
-                          Vendor Invoice Created
-                        </div>
-                        <div
-                          style={{ fontSize: '11px', color: theme.textSecondary, marginTop: '2px' }}
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                        <Button
+                          variant="primary"
+                          loading={lPass}
+                          disabled={!canPass}
+                          onClick={() => void passAudit({ variables: { id: po.id } })}
                         >
-                          {apInvoice.invoice_number} —{' '}
-                          <span style={{ textTransform: 'capitalize' }}>{apInvoice.status}</span>
-                        </div>
+                          {canPass
+                            ? 'Pass Audit → Invoiced'
+                            : `Pass Audit (${pendingCount > 0 ? `${pendingCount} pending` : `${flaggedCount} flagged`})`}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() =>
+                            void failAudit({
+                              variables: { id: po.id, notes: actionNotes || undefined },
+                            })
+                          }
+                        >
+                          Return for Correction
+                        </Button>
                       </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          navigate(`/finance/ap/${apInvoice.id}`)
+                    </div>
+                  )
+                })()}
+
+              {po.status === 'invoiced' &&
+                (can('finance.ap.view') ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {apInvoice ? (
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: theme.accentBg,
+                          border: `1px solid ${theme.accent}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
                         }}
                       >
-                        View in AP
-                      </Button>
-                    </div>
-                  ) : can('finance.ap.edit') ? (
-                    <div
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: theme.dangerBg,
-                        border: `1px solid ${theme.dangerBorder}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.danger }}>
-                          No vendor invoice in AP yet
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>
+                            Vendor Invoice Created
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: theme.textSecondary,
+                              marginTop: '2px',
+                            }}
+                          >
+                            {apInvoice.invoice_number} —{' '}
+                            <span style={{ textTransform: 'capitalize' }}>{apInvoice.status}</span>
+                          </div>
                         </div>
-                        <div
-                          style={{
-                            fontSize: '11px',
-                            color: theme.danger,
-                            opacity: 0.8,
-                            marginTop: '2px',
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            navigate(`/finance/ap/${apInvoice.id}`)
                           }}
                         >
-                          Create a vendor invoice in AP to trigger the journal entry and payment
-                          flow.
-                        </div>
+                          View in AP
+                        </Button>
                       </div>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => {
-                          navigate(`/finance/ap/new?po_id=${po.id}`)
+                    ) : can('finance.ap.edit') ? (
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: theme.dangerBg,
+                          border: `1px solid ${theme.dangerBorder}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
                         }}
                       >
-                        Create in AP
-                      </Button>
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        background: theme.bgSurface,
-                        border: `1px solid ${theme.border}`,
-                        fontSize: '12px',
-                        color: theme.textSecondary,
-                      }}
-                    >
-                      No vendor invoice created yet.
-                    </div>
-                  )}
-                  {can('finance.ap.approve', 'approve') && (
-                    <>
-                      <Button
-                        variant={apInvoice?.status === 'paid' ? 'primary' : 'secondary'}
-                        loading={anyLoading}
-                        disabled={apInvoice?.status !== 'paid' && apInvoice !== null}
-                        onClick={() => void completePO({ variables: { id: po.id } })}
-                      >
-                        Mark as Completed
-                      </Button>
-                      {apInvoice && apInvoice.status !== 'paid' && (
-                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                          "Mark as Completed" will be enabled once the vendor invoice is fully paid.
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 600, color: theme.danger }}>
+                            No vendor invoice in AP yet
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: theme.danger,
+                              opacity: 0.8,
+                              marginTop: '2px',
+                            }}
+                          >
+                            Create a vendor invoice in AP to trigger the journal entry and payment
+                            flow.
+                          </div>
                         </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: theme.bgSurface,
-                    border: `1px solid ${theme.border}`,
-                  }}
-                >
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
-                    Awaiting Finance
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => {
+                            navigate(`/finance/ap/new?po_id=${po.id}`)
+                          }}
+                        >
+                          Create in AP
+                        </Button>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: theme.bgSurface,
+                          border: `1px solid ${theme.border}`,
+                          fontSize: '12px',
+                          color: theme.textSecondary,
+                        }}
+                      >
+                        No vendor invoice created yet.
+                      </div>
+                    )}
+                    {can('finance.ap.approve', 'approve') && (
+                      <>
+                        <Button
+                          variant={apInvoice?.status === 'paid' ? 'primary' : 'secondary'}
+                          loading={anyLoading}
+                          disabled={apInvoice?.status !== 'paid' && apInvoice !== null}
+                          onClick={() => void completePO({ variables: { id: po.id } })}
+                        >
+                          Mark as Completed
+                        </Button>
+                        {apInvoice && apInvoice.status !== 'paid' && (
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            "Mark as Completed" will be enabled once the vendor invoice is fully
+                            paid.
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                    This PO has been invoiced and is now with the Finance team for vendor invoice
-                    processing and payment. No action required from you.
+                ) : (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: theme.bgSurface,
+                      border: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
+                      Awaiting Finance
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                      This PO has been invoiced and is now with the Finance team for vendor invoice
+                      processing and payment. No action required from you.
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
-            {po.status === 'rejected' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: '#fef2f2',
-                    border: '1px solid #ef4444',
-                    fontSize: '13px',
-                    color: '#991b1b',
-                  }}
-                >
-                  This PO was rejected. Revise and reopen it as a draft to restart the workflow.
+              {po.status === 'rejected' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      background: '#fef2f2',
+                      border: '1px solid #ef4444',
+                      fontSize: '13px',
+                      color: '#991b1b',
+                    }}
+                  >
+                    This PO was rejected. Revise and reopen it as a draft to restart the workflow.
+                  </div>
+                  <Button
+                    variant="secondary"
+                    loading={anyLoading}
+                    onClick={() => void reopenPO({ variables: { id: po.id } })}
+                  >
+                    Reopen as Draft
+                  </Button>
                 </div>
-                <Button
-                  variant="secondary"
-                  loading={anyLoading}
-                  onClick={() => void reopenPO({ variables: { id: po.id } })}
-                >
-                  Reopen as Draft
-                </Button>
-              </div>
-            )}
+              )}
 
-            {!['rejected', 'goods_received', 'finance_audit', 'pending_approval'].includes(
-              po.status,
-            ) && (
-              <div style={{ paddingTop: '8px', borderTop: `1px dashed ${theme.border}` }}>
-                <label
-                  style={{
-                    fontSize: '12px',
-                    color: theme.textMuted,
-                    display: 'block',
-                    marginBottom: '4px',
-                  }}
-                >
-                  Action notes (optional)
-                </label>
-                <textarea
-                  value={actionNotes}
-                  onChange={(e) => {
-                    setActionNotes(e.target.value)
-                  }}
-                  rows={2}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    borderRadius: '6px',
-                    border: `1px solid ${theme.border}`,
-                    background: theme.bgSurface,
-                    color: theme.textPrimary,
-                    fontSize: '13px',
-                    resize: 'vertical',
-                  }}
-                />
-              </div>
-            )}
-          </div>
+              {!['rejected', 'goods_received', 'finance_audit', 'pending_approval'].includes(
+                po.status,
+              ) && (
+                <div style={{ paddingTop: '8px', borderTop: `1px dashed ${theme.border}` }}>
+                  <label
+                    style={{
+                      fontSize: '12px',
+                      color: theme.textMuted,
+                      display: 'block',
+                      marginBottom: '4px',
+                    }}
+                  >
+                    Action notes (optional)
+                  </label>
+                  <textarea
+                    value={actionNotes}
+                    onChange={(e) => {
+                      setActionNotes(e.target.value)
+                    }}
+                    rows={2}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      borderRadius: '6px',
+                      border: `1px solid ${theme.border}`,
+                      background: theme.bgSurface,
+                      color: theme.textPrimary,
+                      fontSize: '13px',
+                      resize: 'vertical',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </fieldset>
         </Card>
       )}
 
@@ -3948,561 +4012,570 @@ export default function PurchaseOrderDetail() {
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* ── Request edit form ── */}
-              <Card style={{ padding: '20px' }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '16px',
-                  }}
-                >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                    Request an edit
-                  </div>
-                  {hasPending && <Badge variant="warning">Pending review — submit locked</Badge>}
-                  {!editDraft && !hasPending && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setEditDraft(initDraft())
-                      }}
-                    >
-                      Start editing
-                    </Button>
-                  )}
-                  {editDraft && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setEditDraft(null)
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-
-                {!editDraft && (
-                  <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                    {hasPending
-                      ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
-                      : 'Click "Start editing" to propose changes. Changes will not apply until an admin approves them.'}
-                  </div>
-                )}
-
-                {editDraft &&
-                  (() => {
-                    const existingLineFields: LineItemField<EditDraft['lines'][number]>[] = [
-                      {
-                        key: 'description',
-                        label: 'Description',
-                        render: (line, i) => (
-                          <input
-                            value={line.description}
-                            style={inputStyle}
-                            disabled={line._removed}
-                            onChange={(e) => {
-                              const lines = [...editDraft.lines]
-                              lines[i] = { ...lines[i], description: e.target.value }
-                              setEditDraft({ ...editDraft, lines })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'qty',
-                        label: 'Qty',
-                        width: '80px',
-                        render: (line, i) => (
-                          <input
-                            type="number"
-                            value={line.qty}
-                            style={inputStyle}
-                            disabled={line._removed}
-                            onChange={(e) => {
-                              const lines = [...editDraft.lines]
-                              lines[i] = { ...lines[i], qty: Number(e.target.value) }
-                              setEditDraft({ ...editDraft, lines })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'unit_price',
-                        label: 'Unit price',
-                        width: '110px',
-                        render: (line, i) => (
-                          <input
-                            type="number"
-                            value={line.unit_price}
-                            style={inputStyle}
-                            disabled={line._removed}
-                            onChange={(e) => {
-                              const lines = [...editDraft.lines]
-                              lines[i] = { ...lines[i], unit_price: Number(e.target.value) }
-                              setEditDraft({ ...editDraft, lines })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'uom',
-                        label: 'UOM',
-                        width: '70px',
-                        render: (line, i) => (
-                          <input
-                            value={line.uom}
-                            style={inputStyle}
-                            disabled={line._removed}
-                            onChange={(e) => {
-                              const lines = [...editDraft.lines]
-                              lines[i] = { ...lines[i], uom: e.target.value }
-                              setEditDraft({ ...editDraft, lines })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'actions',
-                        label: '',
-                        width: '70px',
-                        render: (line, i) => (
-                          <button
-                            onClick={() => {
-                              const lines = [...editDraft.lines]
-                              lines[i] = { ...lines[i], _removed: !lines[i]._removed }
-                              setEditDraft({ ...editDraft, lines })
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: line._removed ? theme.accent : theme.danger,
-                              fontSize: '12px',
-                            }}
-                          >
-                            {line._removed ? 'Restore' : 'Remove'}
-                          </button>
-                        ),
-                      },
-                    ]
-
-                    const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
-                      {
-                        key: 'description',
-                        label: 'Description',
-                        render: (line, i) => (
-                          <input
-                            placeholder="Description"
-                            value={line.description}
-                            style={inputStyle}
-                            onChange={(e) => {
-                              const a = [...editDraft.linesAdded]
-                              a[i] = { ...a[i], description: e.target.value }
-                              setEditDraft({ ...editDraft, linesAdded: a })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'qty',
-                        label: 'Qty',
-                        width: '80px',
-                        render: (line, i) => (
-                          <input
-                            type="number"
-                            value={line.qty}
-                            style={inputStyle}
-                            onChange={(e) => {
-                              const a = [...editDraft.linesAdded]
-                              a[i] = { ...a[i], qty: Number(e.target.value) }
-                              setEditDraft({ ...editDraft, linesAdded: a })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'unit_price',
-                        label: 'Unit price',
-                        width: '110px',
-                        render: (line, i) => (
-                          <input
-                            type="number"
-                            value={line.unit_price}
-                            style={inputStyle}
-                            onChange={(e) => {
-                              const a = [...editDraft.linesAdded]
-                              a[i] = { ...a[i], unit_price: Number(e.target.value) }
-                              setEditDraft({ ...editDraft, linesAdded: a })
-                            }}
-                          />
-                        ),
-                      },
-                      {
-                        key: 'uom',
-                        label: 'UOM',
-                        width: '70px',
-                        render: (line, i) => (
-                          <input
-                            value={line.uom}
-                            style={inputStyle}
-                            onChange={(e) => {
-                              const a = [...editDraft.linesAdded]
-                              a[i] = { ...a[i], uom: e.target.value }
-                              setEditDraft({ ...editDraft, linesAdded: a })
-                            }}
-                          />
-                        ),
-                      },
-                    ]
-
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                        {/* Header fields */}
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                            gap: '12px',
-                          }}
-                        >
-                          <div>
-                            <label style={labelStyle}>Notes</label>
-                            <textarea
-                              value={editDraft.notes}
-                              rows={2}
-                              style={{ ...inputStyle, resize: 'vertical' }}
-                              onChange={(e) => {
-                                setEditDraft({ ...editDraft, notes: e.target.value })
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <label style={labelStyle}>Expected delivery</label>
-                            <input
-                              type="date"
-                              value={editDraft.expected_delivery_date}
-                              style={inputStyle}
-                              onChange={(e) => {
-                                setEditDraft({
-                                  ...editDraft,
-                                  expected_delivery_date: e.target.value,
-                                })
-                              }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Lines */}
-                        <div>
-                          <div
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: theme.textMuted,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.05em',
-                              marginBottom: '8px',
-                            }}
-                          >
-                            Line items
-                          </div>
-                          <LineItemEditor
-                            fields={existingLineFields}
-                            rows={editDraft.lines}
-                            rowKey={(line) => line.id}
-                            getRowStyle={(line) => ({ opacity: line._removed ? 0.4 : 1 })}
-                          />
-                          <div style={{ marginTop: '10px' }}>
-                            <LineItemEditor
-                              fields={addedLineFields}
-                              rows={editDraft.linesAdded}
-                              rowKey={(_, i) => `new-${i}`}
-                              getRowStyle={() => ({ background: theme.accentBg + '44' })}
-                              onRemoveRow={(idx) => {
-                                const a = editDraft.linesAdded.filter((_, j) => j !== idx)
-                                setEditDraft({ ...editDraft, linesAdded: a })
-                              }}
-                              onAddRow={() => {
-                                setEditDraft({
-                                  ...editDraft,
-                                  linesAdded: [
-                                    ...editDraft.linesAdded,
-                                    { description: '', qty: 1, unit_price: 0, uom: 'unit' },
-                                  ],
-                                })
-                              }}
-                              addLabel="+ Add line"
-                              emptyMessage="No new lines added"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Submit */}
-                        <div>
-                          <label style={labelStyle}>Reason for changes (optional)</label>
-                          <input
-                            value={editRequestNotes}
-                            style={inputStyle}
-                            placeholder="Explain why these changes are needed..."
-                            onChange={(e) => {
-                              setEditRequestNotes(e.target.value)
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <Button
-                            variant="primary"
-                            loading={leR}
-                            onClick={() => {
-                              const changes = buildChanges(editDraft)
-                              void submitEditRequest({
-                                variables: {
-                                  id: po.id,
-                                  changes: JSON.stringify(changes),
-                                  notes: editRequestNotes || undefined,
-                                },
-                              })
-                            }}
-                          >
-                            Submit edit request
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })()}
-              </Card>
-
-              {/* ── Edit request history ── */}
-              <Card>
-                <div
-                  style={{
-                    padding: '16px 20px',
-                    borderBottom: `1px solid ${theme.border}`,
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: theme.textPrimary,
-                  }}
-                >
-                  Edit request history
-                </div>
-                {(po.edit_requests ?? []).length === 0 && (
+              <fieldset
+                disabled={lock.lockedByOther}
+                style={{ border: 'none', padding: 0, margin: 0 }}
+              >
+                {/* ── Request edit form ── */}
+                <Card style={{ padding: '20px' }}>
                   <div
                     style={{
-                      padding: '32px',
-                      textAlign: 'center',
-                      fontSize: '13px',
-                      color: theme.textMuted,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '16px',
                     }}
                   >
-                    No edit requests yet.
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                      Request an edit
+                    </div>
+                    {hasPending && <Badge variant="warning">Pending review — submit locked</Badge>}
+                    {!editDraft && !hasPending && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setEditDraft(initDraft())
+                        }}
+                      >
+                        Start editing
+                      </Button>
+                    )}
+                    {editDraft && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setEditDraft(null)
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    )}
                   </div>
-                )}
-                {(po.edit_requests ?? []).map((er) => {
-                  let parsed: {
-                    header?: Record<string, { from: unknown; to: unknown }>
-                    lines?: { edited?: unknown[]; added?: unknown[]; removed?: string[] }
-                  } = {}
-                  try {
-                    parsed = JSON.parse(er.changes)
-                  } catch {
-                    /* ignore */
-                  }
-                  const headerChanges = Object.entries(parsed.header ?? {})
-                  const editedLines = parsed.lines?.edited ?? []
-                  const addedLines = parsed.lines?.added ?? []
-                  const removedLines = parsed.lines?.removed ?? []
-                  const totalChanges =
-                    headerChanges.length +
-                    editedLines.length +
-                    addedLines.length +
-                    removedLines.length
 
-                  return (
+                  {!editDraft && (
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      {hasPending
+                        ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
+                        : 'Click "Start editing" to propose changes. Changes will not apply until an admin approves them.'}
+                    </div>
+                  )}
+
+                  {editDraft &&
+                    (() => {
+                      const existingLineFields: LineItemField<EditDraft['lines'][number]>[] = [
+                        {
+                          key: 'description',
+                          label: 'Description',
+                          render: (line, i) => (
+                            <input
+                              value={line.description}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], description: e.target.value }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'qty',
+                          label: 'Qty',
+                          width: '80px',
+                          render: (line, i) => (
+                            <input
+                              type="number"
+                              value={line.qty}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], qty: Number(e.target.value) }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'unit_price',
+                          label: 'Unit price',
+                          width: '110px',
+                          render: (line, i) => (
+                            <input
+                              type="number"
+                              value={line.unit_price}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], unit_price: Number(e.target.value) }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'uom',
+                          label: 'UOM',
+                          width: '70px',
+                          render: (line, i) => (
+                            <input
+                              value={line.uom}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], uom: e.target.value }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'actions',
+                          label: '',
+                          width: '70px',
+                          render: (line, i) => (
+                            <button
+                              onClick={() => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], _removed: !lines[i]._removed }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: line._removed ? theme.accent : theme.danger,
+                                fontSize: '12px',
+                              }}
+                            >
+                              {line._removed ? 'Restore' : 'Remove'}
+                            </button>
+                          ),
+                        },
+                      ]
+
+                      const addedLineFields: LineItemField<EditDraft['linesAdded'][number]>[] = [
+                        {
+                          key: 'description',
+                          label: 'Description',
+                          render: (line, i) => (
+                            <input
+                              placeholder="Description"
+                              value={line.description}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const a = [...editDraft.linesAdded]
+                                a[i] = { ...a[i], description: e.target.value }
+                                setEditDraft({ ...editDraft, linesAdded: a })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'qty',
+                          label: 'Qty',
+                          width: '80px',
+                          render: (line, i) => (
+                            <input
+                              type="number"
+                              value={line.qty}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const a = [...editDraft.linesAdded]
+                                a[i] = { ...a[i], qty: Number(e.target.value) }
+                                setEditDraft({ ...editDraft, linesAdded: a })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'unit_price',
+                          label: 'Unit price',
+                          width: '110px',
+                          render: (line, i) => (
+                            <input
+                              type="number"
+                              value={line.unit_price}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const a = [...editDraft.linesAdded]
+                                a[i] = { ...a[i], unit_price: Number(e.target.value) }
+                                setEditDraft({ ...editDraft, linesAdded: a })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'uom',
+                          label: 'UOM',
+                          width: '70px',
+                          render: (line, i) => (
+                            <input
+                              value={line.uom}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const a = [...editDraft.linesAdded]
+                                a[i] = { ...a[i], uom: e.target.value }
+                                setEditDraft({ ...editDraft, linesAdded: a })
+                              }}
+                            />
+                          ),
+                        },
+                      ]
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                          {/* Header fields */}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                              gap: '12px',
+                            }}
+                          >
+                            <div>
+                              <label style={labelStyle}>Notes</label>
+                              <textarea
+                                value={editDraft.notes}
+                                rows={2}
+                                style={{ ...inputStyle, resize: 'vertical' }}
+                                onChange={(e) => {
+                                  setEditDraft({ ...editDraft, notes: e.target.value })
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label style={labelStyle}>Expected delivery</label>
+                              <input
+                                type="date"
+                                value={editDraft.expected_delivery_date}
+                                style={inputStyle}
+                                onChange={(e) => {
+                                  setEditDraft({
+                                    ...editDraft,
+                                    expected_delivery_date: e.target.value,
+                                  })
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Lines */}
+                          <div>
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: theme.textMuted,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                marginBottom: '8px',
+                              }}
+                            >
+                              Line items
+                            </div>
+                            <LineItemEditor
+                              fields={existingLineFields}
+                              rows={editDraft.lines}
+                              rowKey={(line) => line.id}
+                              getRowStyle={(line) => ({ opacity: line._removed ? 0.4 : 1 })}
+                            />
+                            <div style={{ marginTop: '10px' }}>
+                              <LineItemEditor
+                                fields={addedLineFields}
+                                rows={editDraft.linesAdded}
+                                rowKey={(_, i) => `new-${i}`}
+                                getRowStyle={() => ({ background: theme.accentBg + '44' })}
+                                onRemoveRow={(idx) => {
+                                  const a = editDraft.linesAdded.filter((_, j) => j !== idx)
+                                  setEditDraft({ ...editDraft, linesAdded: a })
+                                }}
+                                onAddRow={() => {
+                                  setEditDraft({
+                                    ...editDraft,
+                                    linesAdded: [
+                                      ...editDraft.linesAdded,
+                                      { description: '', qty: 1, unit_price: 0, uom: 'unit' },
+                                    ],
+                                  })
+                                }}
+                                addLabel="+ Add line"
+                                emptyMessage="No new lines added"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Submit */}
+                          <div>
+                            <label style={labelStyle}>Reason for changes (optional)</label>
+                            <input
+                              value={editRequestNotes}
+                              style={inputStyle}
+                              placeholder="Explain why these changes are needed..."
+                              onChange={(e) => {
+                                setEditRequestNotes(e.target.value)
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <Button
+                              variant="primary"
+                              loading={leR}
+                              onClick={() => {
+                                const changes = buildChanges(editDraft)
+                                void submitEditRequest({
+                                  variables: {
+                                    id: po.id,
+                                    changes: JSON.stringify(changes),
+                                    notes: editRequestNotes || undefined,
+                                  },
+                                })
+                              }}
+                            >
+                              Submit edit request
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                </Card>
+
+                {/* ── Edit request history ── */}
+                <Card>
+                  <div
+                    style={{
+                      padding: '16px 20px',
+                      borderBottom: `1px solid ${theme.border}`,
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: theme.textPrimary,
+                    }}
+                  >
+                    Edit request history
+                  </div>
+                  {(po.edit_requests ?? []).length === 0 && (
                     <div
-                      key={er.id}
-                      style={{ borderBottom: `1px solid ${theme.border}22`, padding: '16px 20px' }}
+                      style={{
+                        padding: '32px',
+                        textAlign: 'center',
+                        fontSize: '13px',
+                        color: theme.textMuted,
+                      }}
                     >
+                      No edit requests yet.
+                    </div>
+                  )}
+                  {(po.edit_requests ?? []).map((er) => {
+                    let parsed: {
+                      header?: Record<string, { from: unknown; to: unknown }>
+                      lines?: { edited?: unknown[]; added?: unknown[]; removed?: string[] }
+                    } = {}
+                    try {
+                      parsed = JSON.parse(er.changes)
+                    } catch {
+                      /* ignore */
+                    }
+                    const headerChanges = Object.entries(parsed.header ?? {})
+                    const editedLines = parsed.lines?.edited ?? []
+                    const addedLines = parsed.lines?.added ?? []
+                    const removedLines = parsed.lines?.removed ?? []
+                    const totalChanges =
+                      headerChanges.length +
+                      editedLines.length +
+                      addedLines.length +
+                      removedLines.length
+
+                    return (
                       <div
+                        key={er.id}
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          marginBottom: '10px',
-                          flexWrap: 'wrap',
+                          borderBottom: `1px solid ${theme.border}22`,
+                          padding: '16px 20px',
                         }}
                       >
-                        <Badge
-                          variant={
-                            er.status === 'approved'
-                              ? 'success'
-                              : er.status === 'rejected'
-                                ? 'danger'
-                                : 'warning'
-                          }
-                        >
-                          {er.status}
-                        </Badge>
-                        <span style={{ fontSize: '13px', color: theme.textPrimary }}>
-                          {er.requested_by_email}
-                        </span>
-                        <span style={{ fontSize: '12px', color: theme.textMuted }}>
-                          {er.created_at.slice(0, 16).replace('T', ' ')}
-                        </span>
-                        <span
-                          style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}
-                        >
-                          {totalChanges} change{totalChanges !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-
-                      {/* Diff summary */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px',
-                          fontSize: '12px',
-                          marginBottom: '10px',
-                        }}
-                      >
-                        {headerChanges.map(([field, diff]) => (
-                          <div
-                            key={field}
-                            style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                          >
-                            <span style={{ color: theme.textMuted, minWidth: '140px' }}>
-                              {field.replace(/_/g, ' ')}
-                            </span>
-                            <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
-                              {String(diff.from || '—')}
-                            </span>
-                            <span style={{ color: theme.textMuted }}>→</span>
-                            <span style={{ color: theme.accent }}>{String(diff.to || '—')}</span>
-                          </div>
-                        ))}
-                        {(
-                          editedLines as {
-                            id: string
-                            field: string
-                            from: unknown
-                            to: unknown
-                          }[]
-                        ).map((e, i) => (
-                          <div
-                            key={i}
-                            style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
-                          >
-                            <span style={{ color: theme.textMuted, minWidth: '140px' }}>
-                              line {e.field.replace(/_/g, ' ')}
-                            </span>
-                            <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
-                              {String(e.from ?? '—')}
-                            </span>
-                            <span style={{ color: theme.textMuted }}>→</span>
-                            <span style={{ color: theme.accent }}>{String(e.to ?? '—')}</span>
-                          </div>
-                        ))}
-                        {addedLines.length > 0 && (
-                          <div style={{ color: theme.accent }}>
-                            + {addedLines.length} line{addedLines.length !== 1 ? 's' : ''} added
-                          </div>
-                        )}
-                        {removedLines.length > 0 && (
-                          <div style={{ color: theme.danger }}>
-                            − {removedLines.length} line{removedLines.length !== 1 ? 's' : ''}{' '}
-                            removed
-                          </div>
-                        )}
-                      </div>
-
-                      {er.request_notes && (
-                        <div
-                          style={{
-                            fontSize: '12px',
-                            color: theme.textMuted,
-                            fontStyle: 'italic',
-                            marginBottom: '8px',
-                          }}
-                        >
-                          "{er.request_notes}"
-                        </div>
-                      )}
-
-                      {/* Reviewed info */}
-                      {er.status !== 'pending' && (
-                        <div
-                          style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '0' }}
-                        >
-                          {er.status === 'approved' ? 'Approved' : 'Rejected'} by{' '}
-                          {er.reviewed_by_email} on {er.reviewed_at?.slice(0, 16).replace('T', ' ')}
-                          {er.review_notes && ` — "${er.review_notes}"`}
-                        </div>
-                      )}
-
-                      {/* Admin approve/reject */}
-                      {er.status === 'pending' && (
                         <div
                           style={{
                             display: 'flex',
-                            gap: '8px',
-                            alignItems: 'flex-start',
+                            alignItems: 'center',
+                            gap: '10px',
+                            marginBottom: '10px',
                             flexWrap: 'wrap',
                           }}
                         >
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            loading={leA}
-                            onClick={() =>
-                              void approveEditRequest({
-                                variables: {
-                                  id: po.id,
-                                  requestId: er.id,
-                                  reviewNotes: reviewNotes[er.id] || undefined,
-                                },
-                              })
+                          <Badge
+                            variant={
+                              er.status === 'approved'
+                                ? 'success'
+                                : er.status === 'rejected'
+                                  ? 'danger'
+                                  : 'warning'
                             }
                           >
-                            Approve
-                          </Button>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            <input
-                              value={reviewNotes[er.id] ?? ''}
-                              onChange={(e) => {
-                                setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))
-                              }}
-                              placeholder="Rejection reason (required)"
-                              style={{ ...inputStyle, width: '240px' }}
-                            />
+                            {er.status}
+                          </Badge>
+                          <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                            {er.requested_by_email}
+                          </span>
+                          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                            {er.created_at.slice(0, 16).replace('T', ' ')}
+                          </span>
+                          <span
+                            style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}
+                          >
+                            {totalChanges} change{totalChanges !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+
+                        {/* Diff summary */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                            fontSize: '12px',
+                            marginBottom: '10px',
+                          }}
+                        >
+                          {headerChanges.map(([field, diff]) => (
+                            <div
+                              key={field}
+                              style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
+                            >
+                              <span style={{ color: theme.textMuted, minWidth: '140px' }}>
+                                {field.replace(/_/g, ' ')}
+                              </span>
+                              <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
+                                {String(diff.from || '—')}
+                              </span>
+                              <span style={{ color: theme.textMuted }}>→</span>
+                              <span style={{ color: theme.accent }}>{String(diff.to || '—')}</span>
+                            </div>
+                          ))}
+                          {(
+                            editedLines as {
+                              id: string
+                              field: string
+                              from: unknown
+                              to: unknown
+                            }[]
+                          ).map((e, i) => (
+                            <div
+                              key={i}
+                              style={{ display: 'flex', gap: '8px', alignItems: 'center' }}
+                            >
+                              <span style={{ color: theme.textMuted, minWidth: '140px' }}>
+                                line {e.field.replace(/_/g, ' ')}
+                              </span>
+                              <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
+                                {String(e.from ?? '—')}
+                              </span>
+                              <span style={{ color: theme.textMuted }}>→</span>
+                              <span style={{ color: theme.accent }}>{String(e.to ?? '—')}</span>
+                            </div>
+                          ))}
+                          {addedLines.length > 0 && (
+                            <div style={{ color: theme.accent }}>
+                              + {addedLines.length} line{addedLines.length !== 1 ? 's' : ''} added
+                            </div>
+                          )}
+                          {removedLines.length > 0 && (
+                            <div style={{ color: theme.danger }}>
+                              − {removedLines.length} line{removedLines.length !== 1 ? 's' : ''}{' '}
+                              removed
+                            </div>
+                          )}
+                        </div>
+
+                        {er.request_notes && (
+                          <div
+                            style={{
+                              fontSize: '12px',
+                              color: theme.textMuted,
+                              fontStyle: 'italic',
+                              marginBottom: '8px',
+                            }}
+                          >
+                            "{er.request_notes}"
+                          </div>
+                        )}
+
+                        {/* Reviewed info */}
+                        {er.status !== 'pending' && (
+                          <div
+                            style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '0' }}
+                          >
+                            {er.status === 'approved' ? 'Approved' : 'Rejected'} by{' '}
+                            {er.reviewed_by_email} on{' '}
+                            {er.reviewed_at?.slice(0, 16).replace('T', ' ')}
+                            {er.review_notes && ` — "${er.review_notes}"`}
+                          </div>
+                        )}
+
+                        {/* Admin approve/reject */}
+                        {er.status === 'pending' && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: '8px',
+                              alignItems: 'flex-start',
+                              flexWrap: 'wrap',
+                            }}
+                          >
                             <Button
                               size="sm"
-                              variant="danger"
-                              loading={leJ}
-                              disabled={!reviewNotes[er.id]?.trim()}
+                              variant="primary"
+                              loading={leA}
                               onClick={() =>
-                                void rejectEditRequest({
+                                void approveEditRequest({
                                   variables: {
                                     id: po.id,
                                     requestId: er.id,
-                                    reviewNotes: reviewNotes[er.id] ?? '',
+                                    reviewNotes: reviewNotes[er.id] || undefined,
                                   },
                                 })
                               }
                             >
-                              Reject
+                              Approve
                             </Button>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <input
+                                value={reviewNotes[er.id] ?? ''}
+                                onChange={(e) => {
+                                  setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))
+                                }}
+                                placeholder="Rejection reason (required)"
+                                style={{ ...inputStyle, width: '240px' }}
+                              />
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                loading={leJ}
+                                disabled={!reviewNotes[er.id]?.trim()}
+                                onClick={() =>
+                                  void rejectEditRequest({
+                                    variables: {
+                                      id: po.id,
+                                      requestId: er.id,
+                                      reviewNotes: reviewNotes[er.id] ?? '',
+                                    },
+                                  })
+                                }
+                              >
+                                Reject
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </Card>
+                        )}
+                      </div>
+                    )
+                  })}
+                </Card>
+              </fieldset>
             </div>
           )
         })()}

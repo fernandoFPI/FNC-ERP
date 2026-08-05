@@ -20,6 +20,7 @@ import { useState, useRef, useMemo } from 'react'
 import { useToastStore } from '../../../store/toastStore'
 import type { JournalPrintLine } from '../../../lib/voucherHtml'
 import { buildGeneralJournalHTML } from '../../../lib/voucherHtml'
+import { useRecordLock } from '../../../hooks/useRecordLock'
 
 interface JournalLine {
   id: string
@@ -45,6 +46,7 @@ export default function JournalDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
+  const lock = useRecordLock('journal_entry', id)
   const addToast = useToastStore((s) => s.addToast)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [showAuditDialog, setShowAuditDialog] = useState(false)
@@ -162,12 +164,19 @@ export default function JournalDetail() {
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {entry.status === 'draft' && (
               <>
-                <Button variant="primary" size="sm" onClick={handlePost} loading={posting}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handlePost}
+                  loading={posting}
+                  disabled={lock.lockedByOther}
+                >
                   Post
                 </Button>
                 <Button
                   variant="danger"
                   size="sm"
+                  disabled={lock.lockedByOther}
                   onClick={() => {
                     setShowCancelDialog(true)
                   }}
@@ -180,6 +189,7 @@ export default function JournalDetail() {
               <Button
                 variant="secondary"
                 size="sm"
+                disabled={lock.lockedByOther}
                 onClick={() => {
                   setShowAuditDialog(true)
                 }}
@@ -195,6 +205,7 @@ export default function JournalDetail() {
                 <Button
                   variant="danger"
                   size="sm"
+                  disabled={lock.lockedByOther}
                   onClick={() => {
                     setShowCancelDialog(true)
                   }}
@@ -206,6 +217,35 @@ export default function JournalDetail() {
           </div>
         }
       />
+
+      {lock.lockedByOther && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            marginTop: '16px',
+            background: `${theme.warning}1a`,
+            border: `1px solid ${theme.warning}`,
+            borderRadius: '8px',
+            fontSize: '13px',
+            color: theme.textPrimary,
+          }}
+        >
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: theme.warning,
+              flexShrink: 0,
+            }}
+          />
+          <strong>{lock.lockedByName}</strong>&nbsp;is currently working on this entry — actions are
+          disabled until they finish.
+        </div>
+      )}
 
       <div
         style={{
