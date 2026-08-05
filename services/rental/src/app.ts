@@ -25,7 +25,6 @@ export function createApp(): express.Express {
   // ── Existing routes ────────────────────────────────────────
   app.use('/rental/assets', assetsRouter)
   app.use('/rental/contracts', contractsRouter)
-  app.use('/rental', contractsRouter)
   app.use('/rental/contracts', rentalContractAttachmentsRouter)
 
   // ── Static fleet/dashboard routes BEFORE parameterised :id routes ──

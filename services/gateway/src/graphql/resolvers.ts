@@ -6820,7 +6820,7 @@ export const resolvers = {
           )
           if (!r.rows[0]) throw new Error('PO not found or not in draft')
           await client.query(
-            `INSERT INTO po_approval_log (po_id,action,user_id) VALUES ($1,'submitted',$2)`,
+            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'submitted',$2)`,
             [args.id, ctx.auth!.userId],
           )
           return r.rows[0]
@@ -6839,7 +6839,7 @@ export const resolvers = {
           )
           if (!r.rows[0]) throw new Error('PO not found or invalid status for L1 approval')
           await client.query(
-            `INSERT INTO po_approval_log (po_id,action,user_id) VALUES ($1,'approved_l1',$2)`,
+            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'approved_l1',$2)`,
             [args.id, ctx.auth!.userId],
           )
           return r.rows[0]
@@ -6858,7 +6858,7 @@ export const resolvers = {
           )
           if (!r.rows[0]) throw new Error('PO not found or not at L1 approval')
           await client.query(
-            `INSERT INTO po_approval_log (po_id,action,user_id) VALUES ($1,'approved_l2',$2)`,
+            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'approved_l2',$2)`,
             [args.id, ctx.auth!.userId],
           )
           return r.rows[0]
@@ -6915,7 +6915,7 @@ export const resolvers = {
           )
           if (!r.rows[0]) throw new Error('PO not found or not approved')
           await client.query(
-            `INSERT INTO po_approval_log (po_id,action,user_id) VALUES ($1,'ordered',$2)`,
+            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'ordered',$2)`,
             [args.id, ctx.auth!.userId],
           )
           return r.rows[0]
@@ -7250,16 +7250,8 @@ export const resolvers = {
               ],
             )
             lastMove = mv.rows[0] as Record<string, unknown>
-            await client.query(
-              `UPDATE stock_balances SET qty_on_hand=qty_on_hand-$1, updated_at=NOW() WHERE product_id=$2 AND location_id=$3`,
-              [l.qty, l.product_id, i.from_location_id],
-            )
-            await client.query(
-              `INSERT INTO stock_balances (product_id,location_id,qty_on_hand,qty_reserved,average_cost)
-             VALUES ($1,$2,$3,0,$4)
-             ON CONFLICT (product_id,location_id) DO UPDATE SET qty_on_hand=stock_balances.qty_on_hand+$3, updated_at=NOW()`,
-              [l.product_id, i.to_location_id, l.qty, l.unit_cost ?? 0],
-            )
+            // stock_balances is maintained by the trg_update_stock_balance trigger on
+            // stock_moves (packages/db/migrations/008/050) — no manual update needed here.
           }
           return lastMove
         },
@@ -22338,17 +22330,8 @@ const phase5MutationResolvers = {
           ],
         )
 
-        // Update stock balances
-        await client.query(
-          `UPDATE stock_balances SET qty_on_hand=qty_on_hand-$1, updated_at=NOW() WHERE product_id=$2 AND location_id=$3`,
-          [qty, line.product_id, fromLocationId],
-        )
-        await client.query(
-          `INSERT INTO stock_balances (product_id, location_id, qty_on_hand, qty_reserved, average_cost)
-           VALUES ($1,$2,$3,0,0)
-           ON CONFLICT (product_id,location_id) DO UPDATE SET qty_on_hand=stock_balances.qty_on_hand+$3, updated_at=NOW()`,
-          [line.product_id, toLocationId, qty],
-        )
+        // stock_balances is maintained by the trg_update_stock_balance trigger on
+        // stock_moves (packages/db/migrations/008/050) — no manual update needed here.
 
         // If linked to MO, update mo_consumptions
         if (po.linked_mo_id) {
