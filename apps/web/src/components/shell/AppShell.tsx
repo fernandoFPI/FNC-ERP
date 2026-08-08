@@ -7,6 +7,7 @@ import { BottomNav } from './BottomNav'
 import { Toast } from '../ui/Toast'
 import { HelpDrawer } from '../help/HelpDrawer'
 import { TourModeBanner } from '../help/TourModeBanner'
+import { ImpersonationBanner } from './ImpersonationBanner'
 import { SearchPalette } from '../search/SearchPalette'
 import { useTheme } from '../../theme/ThemeContext'
 import { useWebSocket } from '../../hooks/useWebSocket'
@@ -222,6 +223,7 @@ export function AppShell() {
         <BottomNav />
         <Toast />
         <TourModeBanner />
+        <ImpersonationBanner />
         <HelpDrawer
           open={helpOpen}
           onClose={() => {
@@ -290,6 +292,7 @@ export function AppShell() {
 
         <Toast />
         <TourModeBanner />
+        <ImpersonationBanner />
         <HelpDrawer
           open={helpOpen}
           onClose={() => {
@@ -347,6 +350,7 @@ export function AppShell() {
 
       <Toast />
       <TourModeBanner />
+      <ImpersonationBanner />
       <HelpDrawer
         open={helpOpen}
         onClose={() => {

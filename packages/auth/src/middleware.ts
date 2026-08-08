@@ -78,6 +78,7 @@ export function requireAuth(): RequestHandler {
       sessionId: payload.sessionId,
       ipAddress: req.ip ?? req.socket.remoteAddress ?? '',
       userAgent: req.headers['user-agent'] ?? '',
+      ...(payload.impersonatedBy ? { impersonatedBy: payload.impersonatedBy } : {}),
     }
 
     next()

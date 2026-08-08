@@ -6,6 +6,8 @@ export interface AuthContext {
   sessionId: string
   ipAddress: string
   userAgent: string
+  /** Set when this session was started via impersonateUser — the system_admin who's really driving. */
+  impersonatedBy?: string
 }
 
 export interface JwtAccessPayload {
@@ -15,6 +17,8 @@ export interface JwtAccessPayload {
   role: string
   module: string
   type: 'access'
+  /** Set when this session was started via impersonateUser — the system_admin who's really driving. */
+  impersonatedBy?: string
 }
 
 export interface JwtRefreshPayload {

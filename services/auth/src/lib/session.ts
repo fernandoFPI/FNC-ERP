@@ -18,6 +18,8 @@ export interface CreateSessionParams {
   platform?: 'web' | 'mobile' | undefined
   ipAddress?: string | undefined
   userAgent?: string | undefined
+  /** Set only for impersonation sessions — the system_admin who's really driving. */
+  impersonatedBy?: string | undefined
 }
 
 export interface SessionTokens {
@@ -61,6 +63,7 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
     companyId: params.companyId,
     role: params.role,
     module: params.module,
+    ...(params.impersonatedBy ? { impersonatedBy: params.impersonatedBy } : {}),
   })
   const refreshToken = signRefreshToken({ userId: params.userId, sessionId })
 
@@ -70,8 +73,8 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
   await params.client.query(
     `INSERT INTO sessions
        (id, user_id, token_hash, refresh_token_hash, device_id, device_name,
-        platform, ip_address, user_agent, expires_at, refresh_expires_at, company_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::inet, $9, $10, $11, $12)`,
+        platform, ip_address, user_agent, expires_at, refresh_expires_at, company_id, impersonated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::inet, $9, $10, $11, $12, $13)`,
     [
       sessionId,
       params.userId,
@@ -85,6 +88,7 @@ export async function createSession(params: CreateSessionParams): Promise<Sessio
       expiresAt,
       refreshExpiresAt,
       params.companyId,
+      params.impersonatedBy ?? null,
     ],
   )
 

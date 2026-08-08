@@ -7,6 +7,8 @@ export interface JWTPayload {
   type: string
   exp: number
   iat: number
+  /** Set only on impersonation sessions — the system_admin who's really driving. */
+  impersonatedBy?: string
 }
 
 export function decodeJWT(token: string): JWTPayload | null {

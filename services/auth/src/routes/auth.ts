@@ -16,6 +16,7 @@ import {
   generateMFASecret,
   verifyMFAToken,
   requireAuth,
+  requireRole,
 } from '@fnc-erp/auth'
 import { HTTP_STATUS, ERROR_CODES, AUTH_CONSTANTS, ROLES, env } from '@fnc-erp/config'
 import { logAudit } from '@fnc-erp/audit'
@@ -545,8 +546,9 @@ authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> =
       user_id: string
       company_id: string | null
       refresh_expires_at: Date
+      impersonated_by: string | null
     }>(
-      `SELECT s.id, s.user_id, s.company_id, s.refresh_expires_at
+      `SELECT s.id, s.user_id, s.company_id, s.refresh_expires_at, s.impersonated_by
        FROM sessions s
        WHERE s.refresh_token_hash = $1
        AND s.refresh_expires_at > NOW()`,
@@ -603,6 +605,7 @@ authRouter.post('/refresh', async (req: Request, res: Response): Promise<void> =
       companyId: role.company_id,
       role: role.role,
       module: role.module,
+      ...(session.impersonated_by ? { impersonatedBy: session.impersonated_by } : {}),
     })
 
     // Update stored access token hash, active company, and last_active timestamp
@@ -818,6 +821,7 @@ authRouter.post(
         companyId: role.company_id,
         role: role.role,
         module: role.module,
+        ...(auth.impersonatedBy ? { impersonatedBy: auth.impersonatedBy } : {}),
       })
 
       // Update the session token hash, active company, and last_active timestamp
@@ -838,6 +842,136 @@ authRouter.post(
       res.status(HTTP_STATUS.OK).json({ success: true, data: { accessToken: newAccessToken } })
     } catch (err) {
       console.error('[auth] company/switch error:', err)
+      sendInternalError(res)
+    }
+  },
+)
+
+// ── POST /auth/impersonate ────────────────────────────────────────────────────
+// system_admin only. Mints a fresh session for the target user without their
+// password or 2FA — Odoo.sh-style "login as." impersonated_by is recorded on
+// the new session/JWT so every audit/GL entry the target user's session
+// creates during this window can still be traced back to the real actor.
+// Blocked from an already-impersonated session — an impersonated session can
+// never itself impersonate someone else, so the trail always points at the
+// real originating admin, not a chain of "previous impersonator."
+
+const impersonateSchema = z.object({
+  userId: z.string().uuid(),
+  companyId: z.string().uuid(),
+})
+
+authRouter.post(
+  '/impersonate',
+  requireAuth(),
+  requireRole('system_admin'),
+  async (req: Request, res: Response): Promise<void> => {
+    const auth = req.auth
+    if (!auth) {
+      sendError(res, HTTP_STATUS.UNAUTHORIZED, ERROR_CODES.UNAUTHORIZED, 'Not authenticated')
+      return
+    }
+    if (auth.impersonatedBy) {
+      sendError(
+        res,
+        HTTP_STATUS.FORBIDDEN,
+        ERROR_CODES.FORBIDDEN,
+        'Cannot start impersonation from an already-impersonated session',
+      )
+      return
+    }
+
+    const parsed = impersonateSchema.safeParse(req.body)
+    if (!parsed.success) {
+      sendValidationError(res, parsed.error)
+      return
+    }
+    const { userId: targetUserId, companyId } = parsed.data
+
+    try {
+      const userResult = await query<UserRow>(
+        `SELECT id, email, mfa_enabled, profile_completed, employee_id, is_active
+         FROM users WHERE id = $1`,
+        [targetUserId],
+      )
+      const targetUser = userResult.rows[0]
+      if (!targetUser || !targetUser.is_active) {
+        sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'User not found or inactive')
+        return
+      }
+
+      const roleResult = await query<RoleRow>(
+        `SELECT company_id, role, module FROM user_company_roles
+         WHERE user_id = $1 AND company_id = $2 AND is_active = true LIMIT 1`,
+        [targetUserId, companyId],
+      )
+      const role = roleResult.rows[0]
+      if (!role) {
+        sendError(
+          res,
+          HTTP_STATUS.FORBIDDEN,
+          ERROR_CODES.FORBIDDEN,
+          'That user has no active access to this company',
+        )
+        return
+      }
+
+      const companyResult = await query<CompanyRow>(
+        `SELECT id, name, currency_code FROM companies WHERE id = $1 AND is_active = true`,
+        [companyId],
+      )
+      if (!companyResult.rows[0]) {
+        sendError(res, HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, 'Company not found')
+        return
+      }
+
+      const ipAddress = req.ip ?? req.socket.remoteAddress ?? ''
+      const userAgent = req.headers['user-agent'] ?? ''
+
+      const tokens = await withSystemTransaction(async (client) => {
+        const session = await createSession({
+          client,
+          userId: targetUser.id,
+          companyId: role.company_id,
+          role: role.role,
+          module: role.module,
+          platform: 'web',
+          ipAddress,
+          userAgent,
+          impersonatedBy: auth.userId,
+        })
+
+        await logAudit({
+          userId: auth.userId,
+          companyId: role.company_id,
+          action: 'IMPERSONATION_STARTED',
+          recordId: targetUser.id,
+          newValues: { targetUserId: targetUser.id, targetEmail: targetUser.email },
+          ipAddress,
+          userAgent,
+          client,
+        })
+
+        return session
+      })
+
+      res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          user: {
+            id: targetUser.id,
+            email: targetUser.email,
+            mfaEnabled: targetUser.mfa_enabled,
+            profileCompleted: targetUser.profile_completed,
+            employeeId: targetUser.employee_id,
+          },
+          companies: companyResult.rows,
+        },
+      })
+    } catch (err) {
+      console.error('[auth] impersonate error:', err)
       sendInternalError(res)
     }
   },

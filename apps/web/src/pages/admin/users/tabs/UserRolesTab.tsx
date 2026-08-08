@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
+import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../../theme/ThemeContext'
 import { useToastStore } from '../../../../store/toastStore'
+import { useAuthStore } from '../../../../store/authStore'
+import { useAuth } from '../../../../hooks/useAuth'
 import { Button } from '../../../../components/ui/Button'
 import { Badge } from '../../../../components/ui/Badge'
 import { Card } from '../../../../components/ui/Card'
@@ -73,6 +76,11 @@ interface UserRolesTabProps {
 export default function UserRolesTab({ userId }: UserRolesTabProps) {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
+  const navigate = useNavigate()
+  const { impersonate } = useAuth()
+  const callerRole = useAuthStore((s) => s.user?.role)
+  const callerId = useAuthStore((s) => s.user?.id)
+  const alreadyImpersonating = useAuthStore((s) => !!s.impersonatedBy)
 
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('')
   const [pendingPerms, setPendingPerms] = useState<Record<string, AccessLevel>>({})
@@ -84,6 +92,21 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
     scopeId: '',
   })
   const [applyingTemplate, setApplyingTemplate] = useState(false)
+  const [impersonating, setImpersonating] = useState(false)
+
+  async function handleLoginAs() {
+    if (!selectedCompanyId) return
+    setImpersonating(true)
+    try {
+      await impersonate(userId, selectedCompanyId)
+      navigate('/dashboard')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start impersonation'
+      addToast({ type: 'error', message })
+    } finally {
+      setImpersonating(false)
+    }
+  }
 
   const { data: companiesData, loading: loadingCompanies } = useQuery<{ userCompanies: Company[] }>(
     GET_USER_COMPANIES,
@@ -298,6 +321,17 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {isDirty && (
             <span style={{ fontSize: '12px', color: theme.warning }}>Unsaved changes</span>
+          )}
+          {callerRole === 'system_admin' && userId !== callerId && !alreadyImpersonating && (
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={impersonating}
+              disabled={!selectedCompanyId}
+              onClick={() => void handleLoginAs()}
+            >
+              Login as this user
+            </Button>
           )}
           <Button
             variant="primary"

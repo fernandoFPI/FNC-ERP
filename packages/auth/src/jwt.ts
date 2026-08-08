@@ -11,6 +11,7 @@ export function signAccessToken(payload: {
   companyId: string
   role: string
   module: string
+  impersonatedBy?: string
 }): string {
   const data: Omit<JwtAccessPayload, 'sub'> & { sub: string } = {
     sub: payload.userId,
@@ -19,6 +20,7 @@ export function signAccessToken(payload: {
     role: payload.role,
     module: payload.module,
     type: 'access',
+    ...(payload.impersonatedBy ? { impersonatedBy: payload.impersonatedBy } : {}),
   }
   return jwt.sign(data, env.JWT_SECRET, {
     expiresIn: env.JWT_ACCESS_EXPIRES_IN as ExpiresIn,
