@@ -890,8 +890,10 @@ authRouter.post(
 
     try {
       const userResult = await query<UserRow>(
-        `SELECT id, email, mfa_enabled, profile_completed, employee_id, is_active
-         FROM users WHERE id = $1`,
+        `SELECT u.id, u.email, u.mfa_enabled, u.profile_completed, u.is_active, e.id AS employee_id
+         FROM users u
+         LEFT JOIN employees e ON e.user_id = u.id
+         WHERE u.id = $1`,
         [targetUserId],
       )
       const targetUser = userResult.rows[0]
