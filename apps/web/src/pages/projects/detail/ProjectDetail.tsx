@@ -6007,12 +6007,7 @@ export default function ProjectDetail() {
             )}
 
             {tab === 'attachments' && id && (
-              <AttachmentsTab
-                projectId={id}
-                theme={theme}
-                isAdmin={canEdit.attachments}
-                userTeamRole={myTeamEntry?.member_type ?? myTeamEntry?.role ?? null}
-              />
+              <AttachmentsTab projectId={id} theme={theme} isAdmin={canEdit.attachments} />
             )}
 
             {tab === 'history' &&
@@ -8198,14 +8193,6 @@ function parseFileCategory(label: string): { category: DocCategory; name: string
   return { category: 'General', name: label }
 }
 
-const ROLE_VISIBLE: Record<string, DocCategory[]> = {
-  technical: ['General', 'Technical', 'HSE'],
-  commercial: ['General', 'Commercial', 'Financial', 'Legal'],
-  pm: ['General', 'Technical', 'Commercial', 'Financial', 'Legal', 'HSE'],
-  planning: ['General', 'Technical'],
-  finance: ['General', 'Commercial', 'Financial', 'Legal'],
-}
-
 // ── Client Documents Tab ─────────────────────────────────────────────────
 
 const CD_CATEGORIES = [
@@ -8267,6 +8254,7 @@ function ClientDocumentsTab({
   const [reviseDoc, setReviseDoc] = useState<ClientDoc | null>(null)
   const [editDoc, setEditDoc] = useState<ClientDoc | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [dropTarget, setDropTarget] = useState<'new' | 'revise' | null>(null)
   const [form, setForm] = useState({
     title: '',
     documentNumber: '',
@@ -8321,35 +8309,52 @@ function ClientDocumentsTab({
     return true
   })
 
+  const uploadFile = async (
+    file: File,
+    onPicked: (fileId: string, filename: string) => void,
+  ) => {
+    setUploading(true)
+    try {
+      const { data: urlRes } = await api.post('/files/upload-url', {
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        category: 'attachment',
+      })
+      const { fileId } = urlRes as { fileId: string }
+      const buf = await file.arrayBuffer()
+      await api.post(`/files/${fileId}/content`, buf, {
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        timeout: 120_000,
+      })
+      onPicked(fileId, file.name)
+    } catch {
+      addToast({ type: 'error', message: 'File upload failed' })
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const pickFile = async (onPicked: (fileId: string, filename: string) => void) => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '*/*'
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0]
-      if (!file) return
-      setUploading(true)
-      try {
-        const { data: urlRes } = await api.post('/files/upload-url', {
-          filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-          category: 'attachment',
-        })
-        const { fileId } = urlRes as { fileId: string }
-        const buf = await file.arrayBuffer()
-        await api.post(`/files/${fileId}/content`, buf, {
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          timeout: 120_000,
-        })
-        onPicked(fileId, file.name)
-      } catch {
-        addToast({ type: 'error', message: 'File upload failed' })
-      } finally {
-        setUploading(false)
-      }
+      if (file) void uploadFile(file, onPicked)
     }
     input.click()
+  }
+
+  const dropFile = (
+    e: React.DragEvent<HTMLDivElement>,
+    onPicked: (fileId: string, filename: string) => void,
+  ) => {
+    e.preventDefault()
+    setDropTarget(null)
+    if (uploading) return
+    const file = e.dataTransfer.files?.[0]
+    if (file) void uploadFile(file, onPicked)
   }
 
   const handleSubmit = async () => {
@@ -9447,13 +9452,26 @@ function ClientDocumentsTab({
                   !uploading &&
                   pickFile((fid, fn) => setForm((f) => ({ ...f, fileId: fid, filename: fn })))
                 }
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  if (!uploading) setDropTarget('new')
+                }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={(e) =>
+                  dropFile(e, (fid, fn) => setForm((f) => ({ ...f, fileId: fid, filename: fn })))
+                }
                 style={{
-                  border: `2px dashed ${form.fileId ? theme.accent : theme.border}`,
+                  border: `2px dashed ${dropTarget === 'new' ? theme.accent : form.fileId ? theme.accent : theme.border}`,
                   borderRadius: 10,
                   padding: '24px 16px',
                   textAlign: 'center',
                   cursor: uploading ? 'not-allowed' : 'pointer',
-                  background: form.fileId ? theme.accentBg : 'transparent',
+                  background:
+                    dropTarget === 'new'
+                      ? theme.accentBg
+                      : form.fileId
+                        ? theme.accentBg
+                        : 'transparent',
                   transition: 'all 0.15s',
                 }}
               >
@@ -9623,13 +9641,28 @@ function ClientDocumentsTab({
                   !uploading &&
                   pickFile((fid, fn) => setRevForm((f) => ({ ...f, fileId: fid, filename: fn })))
                 }
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  if (!uploading) setDropTarget('revise')
+                }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={(e) =>
+                  dropFile(e, (fid, fn) =>
+                    setRevForm((f) => ({ ...f, fileId: fid, filename: fn })),
+                  )
+                }
                 style={{
-                  border: `2px dashed ${revForm.fileId ? theme.accent : theme.border}`,
+                  border: `2px dashed ${dropTarget === 'revise' ? theme.accent : revForm.fileId ? theme.accent : theme.border}`,
                   borderRadius: 10,
                   padding: '20px 16px',
                   textAlign: 'center',
                   cursor: uploading ? 'not-allowed' : 'pointer',
-                  background: revForm.fileId ? theme.accentBg : 'transparent',
+                  background:
+                    dropTarget === 'revise'
+                      ? theme.accentBg
+                      : revForm.fileId
+                        ? theme.accentBg
+                        : 'transparent',
                 }}
               >
                 {uploading ? (
@@ -13056,6 +13089,7 @@ function EngineeringTab({
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   const [showModal, setShowModal] = React.useState(false)
   const [reviseDoc, setReviseDoc] = React.useState<EngDoc | null>(null)
+  const docLock = useRecordLock('engineering_document', reviseDoc?.id)
   const [uploading, setUploading] = React.useState(false)
   const [form, setForm] = React.useState({
     title: '',
@@ -13101,6 +13135,7 @@ function EngineeringTab({
   // distribution state
   const [showDDMModal, setShowDDMModal] = React.useState(false)
   const [editDDM, setEditDDM] = React.useState<DDMEntry | null>(null)
+  const ddmLock = useRecordLock('doc_distribution_entry', editDDM?.id)
   const emptyDDM: {
     companyName: string
     contactName: string
@@ -17528,22 +17563,34 @@ function EngineeringTab({
                 Cancel
               </button>
               <button
-                disabled={!revForm.revision || uploading}
+                disabled={!revForm.revision || uploading || docLock.lockedByOther}
                 onClick={() => void handleRevise()}
                 style={{
                   padding: '8px 22px',
                   borderRadius: 8,
-                  background: revForm.revision && !uploading ? theme.accent : theme.border,
+                  background:
+                    revForm.revision && !uploading && !docLock.lockedByOther
+                      ? theme.accent
+                      : theme.border,
                   color: '#fff',
                   border: 'none',
                   fontSize: 13,
                   fontWeight: 600,
-                  cursor: revForm.revision && !uploading ? 'pointer' : 'not-allowed',
+                  cursor:
+                    revForm.revision && !uploading && !docLock.lockedByOther
+                      ? 'pointer'
+                      : 'not-allowed',
                 }}
               >
                 Issue Revision
               </button>
             </div>
+            {docLock.lockedByOther && (
+              <div style={{ fontSize: 12, color: theme.warning }}>
+                <strong>{docLock.lockedByName}</strong> is currently working on this document —
+                issuing a revision is disabled until they finish.
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -18333,22 +18380,29 @@ function EngineeringTab({
                 Cancel
               </button>
               <button
-                disabled={!ddmForm.companyName}
+                disabled={!ddmForm.companyName || ddmLock.lockedByOther}
                 onClick={() => void handleSaveDDM()}
                 style={{
                   padding: '8px 22px',
                   borderRadius: 8,
-                  background: ddmForm.companyName ? theme.accent : theme.border,
+                  background:
+                    ddmForm.companyName && !ddmLock.lockedByOther ? theme.accent : theme.border,
                   color: '#fff',
                   border: 'none',
                   fontSize: 13,
                   fontWeight: 600,
-                  cursor: ddmForm.companyName ? 'pointer' : 'not-allowed',
+                  cursor: ddmForm.companyName && !ddmLock.lockedByOther ? 'pointer' : 'not-allowed',
                 }}
               >
                 {editDDM ? 'Update Entry' : 'Add Entry'}
               </button>
             </div>
+            {ddmLock.lockedByOther && (
+              <div style={{ fontSize: 12, color: theme.warning }}>
+                <strong>{ddmLock.lockedByName}</strong> is currently working on this distribution
+                entry — saving is disabled until they finish.
+              </div>
+            )}
           </div>
         </Modal>
       )}
@@ -21135,12 +21189,10 @@ function AttachmentsTab({
   projectId,
   theme,
   isAdmin,
-  userTeamRole,
 }: {
   projectId: string
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
-  userTeamRole?: string | null
 }) {
   const addToast = useToastStore((s) => s.addToast)
   const fileRef = React.useRef<HTMLInputElement>(null)
@@ -21154,13 +21206,10 @@ function AttachmentsTab({
 
   const ACCEPT = '.xlsx,.xls,.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.zip,.rar'
 
-  // Determine which categories this user can see
-  const visibleCategories: Set<DocCategory> = React.useMemo(() => {
-    if (isAdmin) return new Set(DOC_CATEGORIES)
-    const roleKey = (userTeamRole ?? '').toLowerCase()
-    const allowed = ROLE_VISIBLE[roleKey] ?? ['General']
-    return new Set(allowed)
-  }, [isAdmin, userTeamRole])
+  // Reaching this tab at all already requires attachments.view — no further
+  // category-hiding on top of that. isAdmin (edit-level) still gates
+  // uploading/deleting below.
+  const visibleCategories: Set<DocCategory> = React.useMemo(() => new Set(DOC_CATEGORIES), [])
 
   React.useEffect(() => {
     setLoading(true)
@@ -21316,47 +21365,7 @@ function AttachmentsTab({
               )}
           </button>
         ))}
-        {!isAdmin && (
-          <span style={{ marginLeft: 'auto', fontSize: '11px', color: theme.textMuted }}>
-            Showing documents for your role
-          </span>
-        )}
       </div>
-
-      {/* ── Role info banner ── */}
-      {!isAdmin && userTeamRole && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            background: theme.accentBg,
-            border: `1px solid ${theme.accentBorder}`,
-            fontSize: '12px',
-            color: theme.textPrimary,
-          }}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={theme.accent}
-            strokeWidth="2"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="16" x2="12" y2="12" />
-            <line x1="12" y1="8" x2="12.01" y2="8" />
-          </svg>
-          You are viewing as{' '}
-          <strong style={{ marginLeft: '4px', textTransform: 'capitalize' }}>
-            {userTeamRole.replace(/_/g, ' ')}
-          </strong>{' '}
-          — some categories may be restricted.
-        </div>
-      )}
 
       {/* File list */}
       {loading ? (
@@ -21526,7 +21535,7 @@ function AttachmentsTab({
         </div>
         {/* Category selector */}
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-          {(isAdmin ? DOC_CATEGORIES : DOC_CATEGORIES.filter((c) => visibleCategories.has(c))).map(
+          {DOC_CATEGORIES.map(
             (cat) => (
               <button
                 key={cat}

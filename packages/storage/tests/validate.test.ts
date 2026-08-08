@@ -38,6 +38,31 @@ describe('File validation', () => {
     expect(result.reason).toMatch(/does not match/)
   })
 
+  it('accepts AutoCAD files for attachment category (not in the fixed allowlist)', () => {
+    const dwg = validateFile('drawing.dwg', 'application/acad', 1024, 'attachment', MAX_50MB)
+    expect(dwg.valid).toBe(true)
+    const dxf = validateFile('drawing.dxf', 'image/vnd.dxf', 1024, 'attachment', MAX_50MB)
+    expect(dxf.valid).toBe(true)
+  })
+
+  it('accepts email files for attachment category (not in the fixed allowlist)', () => {
+    const eml = validateFile('message.eml', 'message/rfc822', 1024, 'attachment', MAX_50MB)
+    expect(eml.valid).toBe(true)
+    const msg = validateFile('message.msg', 'application/vnd.ms-outlook', 1024, 'attachment', MAX_50MB)
+    expect(msg.valid).toBe(true)
+  })
+
+  it('still blocks dangerous extensions for attachment category even though it is blocklist-only', () => {
+    const result = validateFile('payload.exe', 'application/acad', 1024, 'attachment', MAX_50MB)
+    expect(result.valid).toBe(false)
+    expect(result.reason).toMatch(/\.exe/)
+  })
+
+  it('identity category is unaffected by the attachment-category loosening — still rejects AutoCAD', () => {
+    const result = validateFile('drawing.dwg', 'application/acad', 1024, 'identity', MAX_50MB)
+    expect(result.valid).toBe(false)
+  })
+
   it('identity category only allows PDF and images — rejects xlsx', () => {
     const result = validateFile(
       'data.xlsx',

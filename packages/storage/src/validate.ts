@@ -67,6 +67,13 @@ export interface ValidationResult {
   reason?: string
 }
 
+// 'attachment' covers general project/client document exchange (emails,
+// CAD drawings, and anything else a client or vendor might send) — too
+// open-ended for a fixed mime allowlist, so it's blocklist-only: reject
+// known-dangerous extensions, allow everything else. Other categories
+// (contract, identity, receipt photos, ...) keep their tighter allowlist.
+const BLOCKLIST_ONLY_CATEGORIES = ['attachment']
+
 export function validateFile(
   filename: string,
   mimeType: string,
@@ -86,16 +93,24 @@ export function validateFile(
     return { valid: false, reason: `File type ${ext} is not allowed` }
   }
 
-  const allowed = ALLOWED_TYPES[category] ?? []
-  if (!allowed.includes(mimeType)) {
-    return {
-      valid: false,
-      reason: `File type ${mimeType} is not allowed for ${category} documents. Allowed: ${allowed.join(', ')}`,
+  if (!BLOCKLIST_ONLY_CATEGORIES.includes(category)) {
+    const allowed = ALLOWED_TYPES[category] ?? []
+    if (!allowed.includes(mimeType)) {
+      return {
+        valid: false,
+        reason: `File type ${mimeType} is not allowed for ${category} documents. Allowed: ${allowed.join(', ')}`,
+      }
     }
   }
 
+  // Cross-check extension vs. declared content-type wherever we have a
+  // known mapping — a spoofing defense (e.g. "fake.pdf" sent as
+  // image/jpeg), independent of the category allowlist above and enforced
+  // even for blocklist-only categories. Extensions with no entry here
+  // (.dwg, .eml, .msg, ...) have nothing to cross-check, so they pass
+  // through rather than being rejected as "unrecognized".
   const mimeAllowedForExt = EXTENSION_MIME_MAP[ext]
-  if (!mimeAllowedForExt?.includes(mimeType)) {
+  if (mimeAllowedForExt && !mimeAllowedForExt.includes(mimeType)) {
     return {
       valid: false,
       reason: `File extension ${ext} does not match content type ${mimeType}`,

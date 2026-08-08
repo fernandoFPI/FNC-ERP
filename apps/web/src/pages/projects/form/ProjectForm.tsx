@@ -184,7 +184,6 @@ export default function ProjectForm() {
     const e: typeof errors = {}
     if (!form.name.trim()) e.name = 'Required'
     if (!form.projectType) e.projectType = 'Required'
-    if (!form.currencyCode) e.currencyCode = 'Required'
     if (form.projectValue && isNaN(Number(form.projectValue))) e.projectValue = 'Must be a number'
     if (form.budgetAmount && isNaN(Number(form.budgetAmount))) e.budgetAmount = 'Must be a number'
     if (!form.receivingDate) e.receivingDate = 'Required'
@@ -532,7 +531,7 @@ export default function ProjectForm() {
               )}
             </div>
             <SearchableSelect
-              label="Currency *"
+              label="Currency"
               value={form.currencyCode}
               onChange={(v) => {
                 setForm((f) => ({ ...f, currencyCode: v }))
