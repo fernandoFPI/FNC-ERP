@@ -19460,6 +19460,7 @@ const phase5QueryResolvers = {
 
   dashboardKPIs: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'reporting.executive.view', 'view')
     const cid = ctx.auth.companyId
 
     const [revenueRes, revenueLastRes, openPOsRes, openPOsLastRes, projectsRes, headcountRes] =
@@ -19516,6 +19517,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'procurement.po.view', 'view')
     const cid = ctx.auth.companyId
     const limit = args.limit ?? 5
     const r = await query(
@@ -19540,12 +19542,18 @@ const phase5QueryResolvers = {
     }))
   },
 
+  // Company-wide audit_log spans every module (permission changes, other
+  // users' financial postings, etc.) — no single permission key represents
+  // "can see the whole trail," so this is admin-only rather than
+  // requirePermGW'd against one key. Regular users get myActivityFeed
+  // (their own actions only) on the personal dashboard instead.
   activityFeed: async (
     _: unknown,
     args: { companyId: string; limit?: number },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    if (!isPermissionBypassGW(ctx.auth.role)) throw new Error('Requires admin access')
     const cid = ctx.auth.companyId
     const limit = args.limit ?? 8
     const r = await query(
@@ -19566,8 +19574,62 @@ const phase5QueryResolvers = {
     }))
   },
 
+  // Same shape as activityFeed but scoped to the caller's own actions —
+  // safe for any authenticated user regardless of permissions, since it
+  // never exposes what anyone else did.
+  myActivityFeed: async (
+    _: unknown,
+    args: { companyId: string; limit?: number },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = ctx.auth.companyId
+    const limit = args.limit ?? 8
+    const r = await query(
+      `SELECT al.id, al.action, al.table_name AS entity,
+              COALESCE(u.first_name || ' ' || u.last_name, u.email, 'system') AS "user", al.created_at AS timestamp
+       FROM audit_log al
+       LEFT JOIN users u ON u.id = al.user_id
+       WHERE al.company_id=$1 AND al.user_id=$2
+       ORDER BY al.created_at DESC LIMIT $3`,
+      [cid, ctx.auth.userId, limit],
+    )
+    return r.rows.map((row) => ({
+      id: String(row.id),
+      action: String(row.action),
+      entity: String(row.entity),
+      user: String(row.user),
+      timestamp: String(row.timestamp),
+    }))
+  },
+
+  // A user's own assigned projects — joins through employees since
+  // project_members links by employee_id, not user_id directly (same join
+  // shape used for employeeId resolution at login).
+  myProjects: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = ctx.auth.companyId
+    const r = await query(
+      `SELECT DISTINCT p.id, p.code, p.name, p.status, p.project_type
+       FROM projects p
+       JOIN project_members pm ON pm.project_id = p.id
+       JOIN employees e ON e.id = pm.employee_id
+       WHERE e.user_id = $1 AND p.company_id = $2
+       ORDER BY p.name LIMIT 10`,
+      [ctx.auth.userId, cid],
+    )
+    return r.rows.map((row) => ({
+      id: String(row.id),
+      code: String(row.code),
+      name: String(row.name),
+      status: String(row.status),
+      projectType: String(row.project_type),
+    }))
+  },
+
   spendByCategory: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = ctx.auth.companyId
     const r = await query(
       `SELECT COALESCE(aa.name, 'Unallocated') AS category,
@@ -19587,6 +19649,7 @@ const phase5QueryResolvers = {
 
   revenueVsTarget: async (_: unknown, _args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = ctx.auth.companyId
     const r = await query(
       `SELECT TO_CHAR(date_trunc('month', invoice_date), 'Mon YYYY') AS month,

@@ -3237,6 +3237,8 @@
     dashboardKPIs(companyId: ID!): DashboardKPIs!
     recentPurchaseOrders(companyId: ID!, limit: Int): [DashboardPO!]!
     activityFeed(companyId: ID!, limit: Int): [ActivityEvent!]!
+    myActivityFeed(companyId: ID!, limit: Int): [ActivityEvent!]!
+    myProjects(companyId: ID!): [MyProjectSummary!]!
     spendByCategory(companyId: ID!): [SpendCategory!]!
     revenueVsTarget(companyId: ID!): [RevenueMonth!]!
   }
@@ -3276,6 +3278,14 @@
   type RevenueMonth {
     month: String!
     revenue: Float!
+  }
+
+  type MyProjectSummary {
+    id: ID!
+    code: String!
+    name: String!
+    status: String!
+    projectType: String!
   }
 
   input IntercoStockTransferLineInput {
