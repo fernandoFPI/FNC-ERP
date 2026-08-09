@@ -8272,6 +8272,7 @@ function ClientDocumentsTab({
   const [editDoc, setEditDoc] = useState<ClientDoc | null>(null)
   const [uploading, setUploading] = useState(false)
   const [dropTarget, setDropTarget] = useState<'new' | 'revise' | null>(null)
+  const [pendingFiles, setPendingFiles] = useState<{ fileId: string; filename: string }[]>([])
   const [form, setForm] = useState({
     title: '',
     documentNumber: '',
@@ -8280,8 +8281,6 @@ function ClientDocumentsTab({
     receivedFrom: '',
     transmissionDate: '',
     description: '',
-    fileId: '',
-    filename: '',
   })
   const [revForm, setRevForm] = useState({
     revision: '',
@@ -8371,26 +8370,85 @@ function ClientDocumentsTab({
     if (file) void uploadFile(file, onPicked)
   }
 
+  // Multi-file variants for the "New Document" upload zone — each file becomes
+  // its own client document record (own auto-generated number, own title), so
+  // uploads happen sequentially and each success is appended to pendingFiles
+  // as it completes rather than waiting for the whole batch.
+  const uploadFiles = async (files: File[]) => {
+    for (const file of files) {
+      await uploadFile(file, (fileId, filename) => {
+        setPendingFiles((p) => [...p, { fileId, filename }])
+      })
+    }
+  }
+
+  const pickFiles = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '*/*'
+    input.multiple = true
+    input.onchange = () => {
+      const files = Array.from(input.files ?? [])
+      if (files.length > 0) void uploadFiles(files)
+    }
+    input.click()
+  }
+
+  const dropFiles = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDropTarget(null)
+    if (uploading) return
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) void uploadFiles(files)
+  }
+
+  const removePendingFile = (fileId: string) => {
+    setPendingFiles((p) => p.filter((f) => f.fileId !== fileId))
+  }
+
   const handleSubmit = async () => {
-    if (!form.title || !form.fileId) {
-      addToast({ type: 'error', message: 'Title and file are required' })
+    if (!form.title || pendingFiles.length === 0) {
+      addToast({ type: 'error', message: 'Title and at least one file are required' })
       return
     }
-    try {
-      await uploadDoc({
-        variables: {
-          projectId,
-          fileId: form.fileId,
-          category: form.category,
-          title: form.title,
-          documentNumber: form.documentNumber || null,
-          revision: form.revision || null,
-          description: form.description || null,
-          receivedFrom: form.receivedFrom || null,
-          transmissionDate: form.transmissionDate || null,
-        },
+    // Multiple files become multiple document records (each with its own
+    // auto-generated number) sharing the same category/received-from/etc. —
+    // with more than one file, the title alone can't be reused verbatim for
+    // each without colliding, so each gets the file's own name appended.
+    const multi = pendingFiles.length > 1
+    let failed = 0
+    for (const f of pendingFiles) {
+      const nameNoExt = f.filename.replace(/\.[^./\\]+$/, '')
+      try {
+        await uploadDoc({
+          variables: {
+            projectId,
+            fileId: f.fileId,
+            category: form.category,
+            title: multi ? `${form.title} — ${nameNoExt}` : form.title,
+            documentNumber: form.documentNumber || null,
+            revision: form.revision || null,
+            description: form.description || null,
+            receivedFrom: form.receivedFrom || null,
+            transmissionDate: form.transmissionDate || null,
+          },
+        })
+      } catch (e: unknown) {
+        failed++
+        addToast({ type: 'error', message: `${f.filename}: ${(e as Error).message}` })
+      }
+    }
+    const succeeded = pendingFiles.length - failed
+    if (succeeded > 0) {
+      addToast({
+        type: failed > 0 ? 'warning' : 'success',
+        message:
+          succeeded === 1 && failed === 0
+            ? 'Document uploaded'
+            : `${succeeded} document${succeeded > 1 ? 's' : ''} uploaded${failed > 0 ? `, ${failed} failed` : ''}`,
       })
-      addToast({ type: 'success', message: 'Document uploaded' })
+    }
+    if (failed === 0) {
       setShowModal(false)
       setForm({
         title: '',
@@ -8400,13 +8458,10 @@ function ClientDocumentsTab({
         receivedFrom: '',
         transmissionDate: '',
         description: '',
-        fileId: '',
-        filename: '',
       })
-      void refetch()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
+      setPendingFiles([])
     }
+    void refetch()
   }
 
   const handleRevise = async () => {
@@ -9067,9 +9122,8 @@ function ClientDocumentsTab({
       receivedFrom: '',
       transmissionDate: '',
       description: '',
-      fileId: '',
-      filename: '',
     })
+    setPendingFiles([])
   }
 
   return (
@@ -9361,7 +9415,10 @@ function ClientDocumentsTab({
           open={true}
           size="lg"
           title="Upload Client Document"
-          onClose={() => setShowModal(false)}
+          onClose={() => {
+            setShowModal(false)
+            setPendingFiles([])
+          }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div
@@ -9462,57 +9519,87 @@ function ClientDocumentsTab({
               />
             </div>
 
-            {/* File picker zone */}
+            {/* File picker zone — multiple files allowed; each becomes its own
+                document record sharing this form's category/received-from/etc. */}
             <div>
-              {lbl('File', true)}
+              {lbl('Files', true)}
+              {pendingFiles.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                  {pendingFiles.map((f) => (
+                    <div
+                      key={f.fileId}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 10px',
+                        border: `1px solid ${theme.border}`,
+                        borderRadius: 7,
+                        fontSize: 12,
+                        color: theme.textSecondary,
+                      }}
+                    >
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                        }}
+                      >
+                        ✓ {f.filename}
+                      </span>
+                      <button
+                        onClick={() => {
+                          removePendingFile(f.fileId)
+                        }}
+                        style={{
+                          border: 'none',
+                          background: 'none',
+                          color: '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          flexShrink: 0,
+                          marginLeft: 8,
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div
-                onClick={() =>
-                  !uploading &&
-                  pickFile((fid, fn) => setForm((f) => ({ ...f, fileId: fid, filename: fn })))
-                }
+                onClick={() => {
+                  if (!uploading) pickFiles()
+                }}
                 onDragOver={(e) => {
                   e.preventDefault()
                   if (!uploading) setDropTarget('new')
                 }}
                 onDragLeave={() => setDropTarget(null)}
-                onDrop={(e) =>
-                  dropFile(e, (fid, fn) => setForm((f) => ({ ...f, fileId: fid, filename: fn })))
-                }
+                onDrop={dropFiles}
                 style={{
-                  border: `2px dashed ${dropTarget === 'new' ? theme.accent : form.fileId ? theme.accent : theme.border}`,
+                  border: `2px dashed ${dropTarget === 'new' ? theme.accent : theme.border}`,
                   borderRadius: 10,
-                  padding: '24px 16px',
+                  padding: '20px 16px',
                   textAlign: 'center',
                   cursor: uploading ? 'not-allowed' : 'pointer',
-                  background:
-                    dropTarget === 'new'
-                      ? theme.accentBg
-                      : form.fileId
-                        ? theme.accentBg
-                        : 'transparent',
+                  background: dropTarget === 'new' ? theme.accentBg : 'transparent',
                   transition: 'all 0.15s',
                 }}
               >
                 {uploading ? (
                   <div style={{ color: theme.textMuted, fontSize: 13 }}>Uploading…</div>
-                ) : form.fileId ? (
-                  <div>
-                    <div style={{ fontSize: 22, marginBottom: 4 }}>✓</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: theme.accent }}>
-                      {form.filename}
-                    </div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                      Click to replace
-                    </div>
-                  </div>
                 ) : (
                   <div>
                     <svg
-                      width="28"
-                      height="28"
+                      width="24"
+                      height="24"
                       viewBox="0 0 24 24"
                       fill="none"
-                      style={{ color: theme.textMuted, margin: '0 auto 8px' }}
+                      style={{ color: theme.textMuted, margin: '0 auto 6px' }}
                     >
                       <path
                         d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
@@ -9539,10 +9626,10 @@ function ClientDocumentsTab({
                       />
                     </svg>
                     <div style={{ fontSize: 13, fontWeight: 500, color: theme.textSecondary }}>
-                      Click to select a file
+                      {pendingFiles.length > 0 ? 'Click to add more files' : 'Click to select files'}
                     </div>
                     <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
-                      PDF, DWG, XLSX, DOCX, images — any format
+                      PDF, DWG, XLSX, DOCX, images — any format. Select or drop multiple at once.
                     </div>
                   </div>
                 )}
@@ -9560,7 +9647,10 @@ function ClientDocumentsTab({
               }}
             >
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false)
+                  setPendingFiles([])
+                }}
                 style={{
                   padding: '8px 18px',
                   borderRadius: 8,
@@ -9574,17 +9664,21 @@ function ClientDocumentsTab({
                 Cancel
               </button>
               <button
-                disabled={!form.title || !form.fileId || uploading}
+                disabled={!form.title || pendingFiles.length === 0 || uploading}
                 onClick={() => void handleSubmit()}
                 style={{
                   padding: '8px 22px',
                   borderRadius: 8,
-                  background: form.title && form.fileId && !uploading ? theme.accent : theme.border,
+                  background:
+                    form.title && pendingFiles.length > 0 && !uploading
+                      ? theme.accent
+                      : theme.border,
                   color: '#fff',
                   border: 'none',
                   fontSize: 13,
                   fontWeight: 600,
-                  cursor: form.title && form.fileId && !uploading ? 'pointer' : 'not-allowed',
+                  cursor:
+                    form.title && pendingFiles.length > 0 && !uploading ? 'pointer' : 'not-allowed',
                 }}
               >
                 Upload Document
