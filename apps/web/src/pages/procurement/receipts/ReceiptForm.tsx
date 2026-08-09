@@ -46,6 +46,7 @@ export default function ReceiptForm() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const currentUser = useAuthStore((s) => s.user)
 
   const [form, setForm] = useState({
@@ -155,6 +156,7 @@ export default function ReceiptForm() {
     }))
     setPendingPhotos((prev) => [...prev, ...newPhotos])
     if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
 
   function removePhoto(idx: number) {
@@ -521,6 +523,28 @@ export default function ReceiptForm() {
             ))}
             <button
               type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              style={{
+                width: '140px',
+                height: '100px',
+                border: `2px dashed ${theme.accent}`,
+                borderRadius: '6px',
+                cursor: 'pointer',
+                background: 'transparent',
+                color: theme.accent,
+                fontSize: '13px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+              }}
+            >
+              <span style={{ fontSize: '24px' }}>📷</span>
+              <span>Take Photo</span>
+            </button>
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               style={{
                 width: '140px',
@@ -542,6 +566,14 @@ export default function ReceiptForm() {
               <span>Add Photo</span>
             </button>
           </div>
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
           <input
             ref={fileInputRef}
             type="file"
