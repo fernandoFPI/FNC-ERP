@@ -2072,6 +2072,7 @@ function handoverItemToGQL(r: Record<string, unknown>): Record<string, unknown> 
 function handoverCertToGQL(
   r: Record<string, unknown>,
   items: Record<string, unknown>[],
+  files: Record<string, unknown>[],
 ): Record<string, unknown> {
   const gqlItems = items.map(handoverItemToGQL)
   return {
@@ -2096,19 +2097,57 @@ function handoverCertToGQL(
     completedItemCount: gqlItems.filter((i) => i.status === 'completed' || i.status === 'waived')
       .length,
     totalItemCount: gqlItems.length,
+    files,
   }
 }
 
-async function refetchHandoverCert(id: string): Promise<Record<string, unknown>> {
+async function handoverCertFiles(
+  certificateId: string,
+  companyId: string,
+): Promise<Record<string, unknown>[]> {
+  const files = await query(
+    `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='handover_cert' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
+    [certificateId, companyId],
+  )
+  return Promise.all(
+    files.rows.map(async (f: Record<string, unknown>) => {
+      let dl: string | null = null
+      try {
+        const r2 = await generateDownloadUrl(f.file_key as string, f.original_filename as string)
+        dl = r2.downloadUrl
+      } catch {
+        /**/
+      }
+      return {
+        id: f.id,
+        fileId: f.file_id,
+        filename: f.original_filename,
+        mimeType: f.mime_type,
+        sizeBytes: f.size_bytes,
+        title: f.label ?? f.original_filename,
+        description: null,
+        createdAt: f.created_at,
+        downloadUrl: dl,
+      }
+    }),
+  )
+}
+
+async function refetchHandoverCert(
+  id: string,
+  companyId: string,
+): Promise<Record<string, unknown>> {
   const cRes = await query(`SELECT * FROM project_handover_certificates WHERE id=$1`, [id])
   if (!cRes.rows[0]) throw new Error('Certificate not found')
   const iRes = await query(
     `SELECT * FROM project_handover_items WHERE certificate_id=$1 ORDER BY sequence`,
     [id],
   )
+  const files = await handoverCertFiles(id, companyId)
   return handoverCertToGQL(
     cRes.rows[0] as Record<string, unknown>,
     iRes.rows as Record<string, unknown>[],
+    files,
   )
 }
 
@@ -5610,10 +5649,14 @@ export const resolvers = {
         `SELECT * FROM project_handover_items WHERE certificate_id = ANY($1) ORDER BY sequence`,
         [ids],
       )
-      return cRes.rows.map((c) =>
-        handoverCertToGQL(
-          c as Record<string, unknown>,
-          (iRes.rows as Record<string, unknown>[]).filter((i) => i.certificate_id === c.id),
+      const companyId = ctx.auth.companyId
+      return Promise.all(
+        cRes.rows.map(async (c) =>
+          handoverCertToGQL(
+            c as Record<string, unknown>,
+            (iRes.rows as Record<string, unknown>[]).filter((i) => i.certificate_id === c.id),
+            await handoverCertFiles(String(c.id), companyId),
+          ),
         ),
       )
     },
@@ -25728,7 +25771,7 @@ Object.assign(resolvers.Mutation, {
         ctx.auth.userId,
       ],
     )
-    return handoverCertToGQL(res.rows[0] as Record<string, unknown>, [])
+    return handoverCertToGQL(res.rows[0] as Record<string, unknown>, [], [])
   },
 
   updateHandoverCertificate: async (_: unknown, args: Record<string, unknown>, ctx: GQLContext) => {
@@ -25758,7 +25801,7 @@ Object.assign(resolvers.Mutation, {
       vals,
     )
     if (!r.rows[0]) throw new Error('Handover certificate not found')
-    return refetchHandoverCert(String(args.id))
+    return refetchHandoverCert(String(args.id), ctx.auth.companyId)
   },
 
   issueHandoverCertificate: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -25770,7 +25813,7 @@ Object.assign(resolvers.Mutation, {
       [args.id, ctx.auth.companyId],
     )
     if (!r.rows[0]) throw new Error('Handover certificate not found')
-    return refetchHandoverCert(args.id)
+    return refetchHandoverCert(args.id, ctx.auth.companyId)
   },
 
   acceptHandoverCertificate: async (
@@ -25787,7 +25830,7 @@ Object.assign(resolvers.Mutation, {
       [args.id, args.acceptedDate ?? null, args.clientRep ?? null, ctx.auth.companyId],
     )
     if (!r.rows[0]) throw new Error('Handover certificate not found')
-    return refetchHandoverCert(args.id)
+    return refetchHandoverCert(args.id, ctx.auth.companyId)
   },
 
   rejectHandoverCertificate: async (
@@ -25804,7 +25847,7 @@ Object.assign(resolvers.Mutation, {
       [args.id, args.notes ?? null, ctx.auth.companyId],
     )
     if (!r.rows[0]) throw new Error('Handover certificate not found')
-    return refetchHandoverCert(args.id)
+    return refetchHandoverCert(args.id, ctx.auth.companyId)
   },
 
   deleteHandoverCertificate: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -25813,6 +25856,45 @@ Object.assign(resolvers.Mutation, {
     await query(
       `DELETE FROM project_handover_certificates phc USING projects p WHERE p.id=phc.project_id AND p.company_id=$2 AND phc.id=$1`,
       [args.id, ctx.auth.companyId],
+    )
+    return true
+  },
+
+  uploadHandoverCertFile: async (
+    _: unknown,
+    args: { certificateId: string; fileId: string; title?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
+    const certR = await query(
+      `SELECT phc.id FROM project_handover_certificates phc JOIN projects p ON p.id=phc.project_id WHERE phc.id=$1 AND p.company_id=$2`,
+      [args.certificateId, ctx.auth.companyId],
+    )
+    if (!certR.rows[0]) throw new Error('Handover certificate not found')
+    const fileR = await query(
+      `SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
+      [args.fileId, ctx.auth.companyId],
+    )
+    if (!fileR.rows[0]) throw new Error('File not found')
+    const f = fileR.rows[0] as Record<string, unknown>
+    await query(
+      `INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'handover_cert',$2,$3,$4)`,
+      [args.fileId, args.certificateId, args.title ?? f.original_filename, ctx.auth.userId],
+    )
+    return refetchHandoverCert(args.certificateId, ctx.auth.companyId)
+  },
+
+  deleteHandoverCertFile: async (
+    _: unknown,
+    args: { attachmentId: string; certificateId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
+    await query(
+      `DELETE FROM document_attachments da USING project_handover_certificates phc JOIN projects p ON p.id=phc.project_id WHERE phc.id=da.entity_id AND da.entity_type='handover_cert' AND p.company_id=$1 AND da.id=$2`,
+      [ctx.auth.companyId, args.attachmentId],
     )
     return true
   },

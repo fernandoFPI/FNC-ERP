@@ -4883,6 +4883,7 @@
     items:                [HandoverItem!]!
     completedItemCount:   Int!
     totalItemCount:       Int!
+    files:                [RFQPhaseFile!]!
   }
 
   extend type Query {
@@ -4918,6 +4919,8 @@
     acceptHandoverCertificate(id: ID!, acceptedDate: String, clientRep: String): HandoverCertificate!
     rejectHandoverCertificate(id: ID!, notes: String): HandoverCertificate!
     deleteHandoverCertificate(id: ID!): Boolean!
+    uploadHandoverCertFile(certificateId: ID!, fileId: ID!, title: String): HandoverCertificate!
+    deleteHandoverCertFile(attachmentId: ID!, certificateId: ID!): Boolean!
 
     createHandoverItem(
       certificateId: ID!

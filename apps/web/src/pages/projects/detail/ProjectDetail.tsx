@@ -221,6 +221,8 @@ import {
   ACCEPT_HANDOVER_CERT,
   REJECT_HANDOVER_CERT,
   DELETE_HANDOVER_CERT,
+  UPLOAD_HANDOVER_CERT_FILE,
+  DELETE_HANDOVER_CERT_FILE,
   CREATE_HANDOVER_ITEM,
   UPDATE_HANDOVER_ITEM,
   VERIFY_HANDOVER_ITEM,
@@ -21098,6 +21100,7 @@ interface HandoverCertType {
   items: HandoverItemType[]
   completedItemCount: number
   totalItemCount: number
+  files: ExecFile[]
 }
 
 const HANDOVER_STATUS: Record<
@@ -21134,6 +21137,11 @@ const HANDOVER_ITEM_STATUS_COLOR: Record<string, { bg: string; color: string }> 
   completed: { bg: '#f0fdf4', color: '#166534' },
   waived: { bg: '#f5f3ff', color: '#6d28d9' },
 }
+
+const HANDOVER_SUB_TABS = [
+  { key: 'certificates', label: 'Certificates' },
+  { key: 'punch_list', label: 'Punch List' },
+]
 
 function HandoverTab({
   projectId,
@@ -21189,6 +21197,14 @@ function HandoverTab({
     onError,
   })
   const [deleteCert] = useMutation(DELETE_HANDOVER_CERT, { onCompleted: refresh, onError })
+  const [uploadCertFile] = useMutation(UPLOAD_HANDOVER_CERT_FILE, {
+    onCompleted: refresh,
+    onError,
+  })
+  const [deleteCertFile] = useMutation(DELETE_HANDOVER_CERT_FILE, {
+    onCompleted: refresh,
+    onError,
+  })
   const [createItem] = useMutation(CREATE_HANDOVER_ITEM, { onCompleted: refresh, onError })
   const [updateItem] = useMutation(UPDATE_HANDOVER_ITEM, { onCompleted: refresh, onError })
   const [verifyItem] = useMutation(VERIFY_HANDOVER_ITEM, {
@@ -21203,6 +21219,7 @@ function HandoverTab({
   const today = new Date().toISOString().slice(0, 10)
 
   // ── State ─────────────────────────────────────────────────────────────────
+  const [sub, setSub] = React.useState('certificates')
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   const [certModal, setCertModal] = React.useState<{
     mode: 'create' | 'edit'
@@ -21236,6 +21253,47 @@ function HandoverTab({
   const [acceptForm, setAcceptForm] = React.useState({ acceptedDate: today, clientRep: '' })
   const [rejectModal, setRejectModal] = React.useState<{ cert: HandoverCertType } | null>(null)
   const [rejectNotes, setRejectNotes] = React.useState('')
+  const [pendingFiles, setPendingFiles] = React.useState<{ fileId: string; filename: string }[]>(
+    [],
+  )
+  const [uploading, setUploading] = React.useState(false)
+
+  const uploadFile = async (file: File, onPicked: (fileId: string, filename: string) => void) => {
+    setUploading(true)
+    try {
+      const { data: urlRes } = await api.post('/files/upload-url', {
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        category: 'attachment',
+      })
+      const { fileId } = urlRes as { fileId: string }
+      const buf = await file.arrayBuffer()
+      await api.post(`/files/${fileId}/content`, buf, {
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        timeout: 120_000,
+      })
+      onPicked(fileId, file.name)
+    } catch {
+      addToast({ type: 'error', message: 'File upload failed' })
+    } finally {
+      setUploading(false)
+    }
+  }
+  const pickFile = (onPicked: (fileId: string, filename: string) => void) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '*/*'
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (file) void uploadFile(file, onPicked)
+    }
+    input.click()
+  }
+  const addPendingFile = () =>
+    pickFile((fileId, filename) => setPendingFiles((p) => [...p, { fileId, filename }]))
+  const removePendingFile = (fileId: string) =>
+    setPendingFiles((p) => p.filter((f) => f.fileId !== fileId))
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const totalCerts = certs.length
@@ -21272,11 +21330,60 @@ function HandoverTab({
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
   }
+  const attachmentRowSt: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 10px',
+    marginBottom: '6px',
+    border: `1px solid ${th.border}`,
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: th.textSecondary,
+  }
+  const attachmentNameSt: React.CSSProperties = {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    flex: 1,
+    minWidth: 0,
+  }
+  const attachmentRemoveSt: React.CSSProperties = {
+    border: 'none',
+    background: 'none',
+    color: '#ef4444',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 600,
+    flexShrink: 0,
+    marginLeft: '8px',
+  }
   const field = (label: string, ctrl: React.ReactNode) => (
     <div style={{ marginBottom: '12px' }}>
       <label style={labelSt}>{label}</label>
       {ctrl}
     </div>
+  )
+
+  const navBtn = (key: string, label: string, activeKey: string, setKey: (k: string) => void) => (
+    <button
+      key={key}
+      onClick={() => setKey(key)}
+      style={{
+        padding: '8px 16px',
+        border: 'none',
+        background: 'none',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontWeight: activeKey === key ? 600 : 400,
+        color: activeKey === key ? th.accent : th.textSecondary,
+        borderBottom: `2px solid ${activeKey === key ? th.accent : 'transparent'}`,
+        marginBottom: '-1px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
   )
 
   const statusBadge = (status: string) => {
@@ -21311,6 +21418,7 @@ function HandoverTab({
       defectLiabilityEnd: '',
       notes: '',
     })
+    setPendingFiles([])
     setCertModal({ mode: 'create' })
   }
   const openEditCert = (c: HandoverCertType) => {
@@ -21324,9 +21432,10 @@ function HandoverTab({
       defectLiabilityEnd: c.defectLiabilityEnd ?? '',
       notes: c.notes ?? '',
     })
+    setPendingFiles([])
     setCertModal({ mode: 'edit', cert: c })
   }
-  const saveCert = () => {
+  const saveCert = async () => {
     if (!certModal) return
     const vars = {
       ...certForm,
@@ -21338,9 +21447,38 @@ function HandoverTab({
       defectLiabilityEnd: certForm.defectLiabilityEnd || undefined,
       notes: certForm.notes || undefined,
     }
-    if (certModal.mode === 'create') void createCert({ variables: { projectId, ...vars } })
-    else if (certModal.cert) void updateCert({ variables: { id: certModal.cert.id, ...vars } })
+    if (certModal.mode === 'create') {
+      let newId: string | undefined
+      try {
+        const result = await createCert({ variables: { projectId, ...vars } })
+        newId = result.data?.createHandoverCertificate?.id as string | undefined
+      } catch {
+        // onError already toasted; keep the modal open (with pendingFiles intact) so
+        // the user can retry without risking a duplicate certificate on re-submit.
+        return
+      }
+      if (newId && pendingFiles.length) {
+        const certId = newId
+        const results = await Promise.allSettled(
+          pendingFiles.map((f) =>
+            uploadCertFile({
+              variables: { certificateId: certId, fileId: f.fileId, title: f.filename },
+            }),
+          ),
+        )
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0) {
+          addToast({
+            type: 'error',
+            message: `Certificate created, but ${failed} file${failed > 1 ? 's' : ''} failed to attach`,
+          })
+        }
+      }
+    } else if (certModal.cert) {
+      void updateCert({ variables: { id: certModal.cert.id, ...vars } })
+    }
     setCertModal(null)
+    setPendingFiles([])
   }
 
   const openCreateItem = (certificateId: string, cert: HandoverCertType) => {
@@ -21551,17 +21689,36 @@ function HandoverTab({
 
   return (
     <div style={{ padding: '24px 0', fontFamily: 'system-ui, sans-serif' }}>
-      {/* ── KPI Row ── */}
+      {/* ── Sub-navigation ── */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5,1fr)',
-          gap: '12px',
+          display: 'flex',
+          gap: '0',
+          borderBottom: `1px solid ${th.border}`,
           marginBottom: '24px',
+          flexWrap: 'wrap',
         }}
       >
-        {[
-          { label: 'Certificates', value: totalCerts, color: th.accent },
+        {HANDOVER_SUB_TABS.map((t) => navBtn(t.key, t.label, sub, setSub))}
+      </div>
+
+      {sub === 'punch_list' && (
+        <PunchListTab projectId={projectId} theme={theme} isAdmin={isAdmin} />
+      )}
+
+      {sub === 'certificates' && (
+        <>
+          {/* ── KPI Row ── */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5,1fr)',
+              gap: '12px',
+              marginBottom: '24px',
+            }}
+          >
+            {[
+              { label: 'Certificates', value: totalCerts, color: th.accent },
           { label: 'Accepted', value: acceptedCerts, color: '#16a34a' },
           { label: 'Pending Acceptance', value: pendingCerts, color: '#d97706' },
           { label: 'DLP Active', value: dlpActive, color: '#7c3aed' },
@@ -21777,6 +21934,21 @@ function HandoverTab({
                           }}
                         >
                           DLP ACTIVE
+                        </span>
+                      )}
+                      {cert.files.length > 0 && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            background: th.bgCanvas,
+                            color: th.textSecondary,
+                            border: `1px solid ${th.border}`,
+                            fontWeight: 600,
+                          }}
+                        >
+                          📎 {cert.files.length}
                         </span>
                       )}
                     </div>
@@ -22057,6 +22229,8 @@ function HandoverTab({
           })}
         </div>
       )}
+        </>
+      )}
 
       {/* ── Certificate Modal ── */}
       {certModal && (
@@ -22183,6 +22357,82 @@ function HandoverTab({
                 style={{ ...inputSt, height: '72px', resize: 'vertical' }}
                 placeholder="Any additional notes…"
               />,
+            )}
+            {field(
+              'Attachments',
+              <div>
+                {certModal.mode === 'create'
+                  ? pendingFiles.map((f) => (
+                      <div key={f.fileId} style={attachmentRowSt}>
+                        <span style={attachmentNameSt}>{f.filename}</span>
+                        <button
+                          onClick={() => removePendingFile(f.fileId)}
+                          style={attachmentRemoveSt}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  : (
+                      // Read from the live, refetched certs list rather than the
+                      // certModal.cert snapshot — otherwise add/remove here would
+                      // succeed on the server but the modal would keep showing the
+                      // stale file list until it's closed and reopened.
+                      certs.find((c) => c.id === certModal.cert?.id)?.files ?? []
+                    ).map((f) => (
+                      <div key={f.id} style={attachmentRowSt}>
+                        {f.downloadUrl ? (
+                          <a
+                            href={f.downloadUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ ...attachmentNameSt, color: th.accent }}
+                          >
+                            {f.title || f.filename}
+                          </a>
+                        ) : (
+                          <span style={attachmentNameSt}>{f.title || f.filename}</span>
+                        )}
+                        <button
+                          onClick={() =>
+                            certModal.cert &&
+                            void deleteCertFile({
+                              variables: { attachmentId: f.id, certificateId: certModal.cert.id },
+                            })
+                          }
+                          style={attachmentRemoveSt}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                <button
+                  disabled={uploading}
+                  onClick={() =>
+                    certModal.mode === 'create'
+                      ? addPendingFile()
+                      : certModal.cert &&
+                        pickFile((fileId, filename) => {
+                          if (!certModal.cert) return
+                          void uploadCertFile({
+                            variables: { certificateId: certModal.cert.id, fileId, title: filename },
+                          })
+                        })
+                  }
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: `1px dashed ${th.border}`,
+                    background: 'transparent',
+                    color: th.textSecondary,
+                    fontSize: '12px',
+                    cursor: uploading ? 'default' : 'pointer',
+                    opacity: uploading ? 0.6 : 1,
+                  }}
+                >
+                  {uploading ? 'Uploading…' : '+ Add File'}
+                </button>
+              </div>,
             )}
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}
@@ -25603,7 +25853,6 @@ const EXEC_SUB_TABS = [
   { key: 'site_instructions', label: 'Site Instructions' },
   { key: 'qa_qc', label: 'QA/QC' },
   { key: 'hse', label: 'HSE' },
-  { key: 'punch_list', label: 'Punch List' },
 ]
 const QA_SUB_TABS = [
   { key: 'itps', label: 'ITPs' },
@@ -28605,15 +28854,6 @@ function ExecutionTab({
             ))}
           </div>
         </div>
-      )}
-
-      {/* ── Punch List ── */}
-      {sub === 'punch_list' && (
-        <PunchListTab
-          projectId={projectId}
-          theme={th as unknown as ReturnType<typeof useTheme>['theme']}
-          isAdmin={isAdmin}
-        />
       )}
 
       {/* ── RFI Modal ── */}

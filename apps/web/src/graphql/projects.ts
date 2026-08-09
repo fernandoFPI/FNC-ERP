@@ -4890,20 +4890,29 @@ const HANDOVER_ITEM_FIELDS = `
   id certificateId sequence category description status verifiedBy verifiedAt notes createdAt
 `
 
+const HANDOVER_CERT_FILE_FIELDS = `
+  fragment HandoverCertFileFields on RFQPhaseFile {
+    id fileId filename mimeType sizeBytes title createdAt downloadUrl
+  }
+`
+
 const HANDOVER_CERT_FIELDS = `
   id projectId certificateNo title areaZone handoverDate acceptedDate
   contractorRep clientRep status defectLiabilityStart defectLiabilityEnd
   notes createdAt updatedAt completedItemCount totalItemCount
   items { ${HANDOVER_ITEM_FIELDS} }
+  files { ...HandoverCertFileFields }
 `
 
 export const PROJECT_HANDOVER_QUERY = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
   query ProjectHandover($projectId: ID!) {
     projectHandoverCertificates(projectId: $projectId) { ${HANDOVER_CERT_FIELDS} }
   }
 `
 
 export const CREATE_HANDOVER_CERT = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
   mutation CreateHandoverCertificate(
     $projectId: ID! $title: String! $areaZone: String
     $handoverDate: String $contractorRep: String $clientRep: String
@@ -4918,6 +4927,7 @@ export const CREATE_HANDOVER_CERT = gql`
 `
 
 export const UPDATE_HANDOVER_CERT = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
   mutation UpdateHandoverCertificate(
     $id: ID! $title: String $areaZone: String
     $handoverDate: String $contractorRep: String $clientRep: String
@@ -4932,18 +4942,21 @@ export const UPDATE_HANDOVER_CERT = gql`
 `
 
 export const ISSUE_HANDOVER_CERT = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
   mutation IssueHandoverCertificate($id: ID!) {
     issueHandoverCertificate(id: $id) { ${HANDOVER_CERT_FIELDS} }
   }
 `
 
 export const ACCEPT_HANDOVER_CERT = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
   mutation AcceptHandoverCertificate($id: ID! $acceptedDate: String $clientRep: String) {
     acceptHandoverCertificate(id: $id acceptedDate: $acceptedDate clientRep: $clientRep) { ${HANDOVER_CERT_FIELDS} }
   }
 `
 
 export const REJECT_HANDOVER_CERT = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
   mutation RejectHandoverCertificate($id: ID! $notes: String) {
     rejectHandoverCertificate(id: $id notes: $notes) { ${HANDOVER_CERT_FIELDS} }
   }
@@ -4952,6 +4965,19 @@ export const REJECT_HANDOVER_CERT = gql`
 export const DELETE_HANDOVER_CERT = gql`
   mutation DeleteHandoverCertificate($id: ID!) {
     deleteHandoverCertificate(id: $id)
+  }
+`
+
+export const UPLOAD_HANDOVER_CERT_FILE = gql`
+  ${HANDOVER_CERT_FILE_FIELDS}
+  mutation UploadHandoverCertFile($certificateId: ID! $fileId: ID! $title: String) {
+    uploadHandoverCertFile(certificateId: $certificateId fileId: $fileId title: $title) { ${HANDOVER_CERT_FIELDS} }
+  }
+`
+
+export const DELETE_HANDOVER_CERT_FILE = gql`
+  mutation DeleteHandoverCertFile($attachmentId: ID! $certificateId: ID!) {
+    deleteHandoverCertFile(attachmentId: $attachmentId certificateId: $certificateId)
   }
 `
 
