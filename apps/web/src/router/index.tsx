@@ -538,12 +538,17 @@ export const router = createBrowserRouter([
       // Projects
       {
         path: '/projects',
-        element: withPerm('projects.view', <ProjectsLayout />),
+        // No blanket permission gate on the layout shell itself — every child
+        // route below already declares its own. A single project's detail page
+        // additionally allows its creator/PM/team even without the company-wide
+        // projects.view grant (see requireProjectViewGW on the gateway), which a
+        // parent-level gate here would block before that check ever ran.
+        element: withSuspense(<ProjectsLayout />),
         children: [
           { index: true, element: withPerm('projects.view', <ProjectsPage />) },
           { path: 'list', element: <Navigate to="/projects" replace /> },
           { path: 'new', element: withPerm('projects.edit', <ProjectForm />, 'edit') },
-          { path: ':id', element: withPerm('projects.view', <ProjectDetail />) },
+          { path: ':id', element: withSuspense(<ProjectDetail />) },
           { path: ':id/edit', element: withPerm('projects.edit', <ProjectForm />, 'edit') },
           { path: 'contracts', element: withPerm('projects.view', <ContractsPage />) },
           { path: 'contracts/new', element: withPerm('projects.edit', <ContractForm />, 'edit') },

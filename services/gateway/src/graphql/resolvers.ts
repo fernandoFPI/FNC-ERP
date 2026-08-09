@@ -876,6 +876,52 @@ async function requirePermGW(
   }
 }
 
+// The one place "can this user view project X" is decided for single-project
+// read resolvers (project, projectCompletionBlockers, projectTeamMembers, ...):
+// either the company-wide projects.view registry permission, or a direct
+// relationship to the project itself (its creator, PM, or an active team
+// member) — regardless of that project's status. This intentionally differs
+// from the `projects` list query's row filter, which additionally hides
+// 'pending' projects from anyone but their creator to keep the general browse
+// list decluttered — that's a list-declutter choice, not a real access
+// restriction, so it doesn't apply once you already have a project's id (e.g.
+// a PM opening a pending project via a direct link should still get in).
+// Throws on failure, matching requirePermGW's contract.
+async function requireProjectViewGW(
+  auth: { userId: string; companyId: string; role: string },
+  projectId: string,
+): Promise<void> {
+  if (isPermissionBypassGW(auth.role)) return
+  // Creator always gets in — regardless of status or the projects.view registry
+  // grant. Same "you can always find what you made" principle already applied
+  // to the project list, and it's what actually needed fixing here.
+  const creatorCheck = await query(
+    `SELECT 1 FROM projects WHERE id=$1 AND company_id=$2 AND created_by=$3`,
+    [projectId, auth.companyId, auth.userId],
+  )
+  if (creatorCheck.rows[0]) return
+  // Otherwise: unchanged from how this worked before — projects.view is a
+  // necessary prerequisite but not sufficient on its own; the caller must also
+  // be the project's PM or an active team member, and the project must not be
+  // pending (pending stays hidden from everyone but its creator).
+  await requirePermGW(auth, 'projects.view', 'view')
+  const assigned = await query(
+    `SELECT 1 FROM projects p
+     WHERE p.id=$1 AND p.company_id=$2 AND p.status != 'pending'
+       AND (
+         p.project_manager_id IN (SELECT id FROM employees WHERE user_id=$3)
+         OR EXISTS (
+           SELECT 1 FROM project_members pm
+           JOIN employees emp ON emp.id=pm.employee_id
+           WHERE pm.project_id=p.id AND emp.user_id=$3 AND pm.is_active=true
+         )
+       )
+     LIMIT 1`,
+    [projectId, auth.companyId, auth.userId],
+  )
+  if (!assigned.rows[0]) throw new Error(`Requires 'view' access to 'projects.view'`)
+}
+
 // A handful of report/lookup resolvers accept an optional companyId argument
 // that overrides the caller's own company (a convenience for admin-facing
 // screens). Without this guard any authenticated user could pass an
@@ -3686,7 +3732,7 @@ export const resolvers = {
 
     project: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      await requirePermGW(ctx.auth, 'projects.view', 'view')
+      await requireProjectViewGW(ctx.auth, args.id)
       const result = await query(
         `SELECT p.*,
           e.first_name || ' ' || e.last_name AS manager_name,
@@ -3833,19 +3879,6 @@ export const resolvers = {
         [args.id, ctx.auth.companyId],
       )
       if (!result.rows[0]) return null
-      // Non-admins cannot see pending projects or unassigned projects
-      if (!isPermissionBypassGW(ctx.auth.role)) {
-        const row0 = result.rows[0] as Record<string, unknown>
-        if (row0.status === 'pending') return null
-        const isAssigned = await query(
-          `SELECT 1 FROM employees e WHERE e.user_id = $1 AND (
-            e.id = (SELECT project_manager_id FROM projects WHERE id = $2)
-            OR EXISTS (SELECT 1 FROM project_members pm JOIN employees emp ON emp.id = pm.employee_id WHERE pm.project_id = $2 AND emp.user_id = $1 AND pm.is_active = true)
-          )`,
-          [ctx.auth.userId, args.id],
-        )
-        if (!isAssigned.rows[0]) return null
-      }
       const row = result.rows[0] as Record<string, unknown>
       return {
         ...projectRowToGQL(row),
@@ -3859,7 +3892,7 @@ export const resolvers = {
 
     projectCompletionBlockers: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'projects.view', 'view')
+      await requireProjectViewGW(ctx.auth, args.id)
       await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
         args.id,
         ctx.auth.companyId,
@@ -20945,7 +20978,11 @@ const phase5QueryResolvers = {
 
   lifecycleConfig: async (_: unknown, __: unknown, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    await requirePermGW(ctx.auth, 'projects.view', 'view')
+    // Company-wide UI configuration (phase labels, per-module minimum phase) —
+    // not project data, and every project page fetches this unconditionally to
+    // render its lifecycle stepper. Gating it behind projects.view specifically
+    // was the same kind of overly-narrow check as the ones above; anyone
+    // authenticated in this company can read it.
     return fetchLifecycleConfig(ctx.auth.companyId)
   },
 
@@ -22292,7 +22329,7 @@ const phase5QueryResolvers = {
 
   projectTeamMembers: async (_: unknown, args: { projectId: string }, ctx: GQLContext) => {
     if (!ctx.auth) return []
-    await requirePermGW(ctx.auth, 'projects.view', 'view')
+    await requireProjectViewGW(ctx.auth, args.projectId)
     const r = await query(
       `SELECT ptm.*, e.first_name||' '||e.last_name AS employee_name
        FROM project_members ptm
