@@ -3,8 +3,6 @@ import { useTheme } from '../../theme/ThemeContext'
 import { PERMISSION_REGISTRY } from '../../lib/permissionRegistry'
 import type { AccessLevel } from '../../lib/permissionRegistry'
 
-const ALL_LEVELS: AccessLevel[] = ['view', 'edit', 'approve', 'admin']
-
 const LEVEL_LABELS: Record<AccessLevel, string> = {
   none: 'None',
   view: 'View',
@@ -19,6 +17,20 @@ const LEVEL_COLORS: Record<AccessLevel, string> = {
   edit: '#8b5cf6',
   approve: '#f59e0b',
   admin: '#ef4444',
+}
+
+// Every permission key's own suffix already says what it grants
+// (`finance.ap.edit` IS the edit grant) — there is no independent "level" to
+// pick separately. The one key with no view/edit/approve/admin suffix
+// (`projects.cancel`) is treated as the most severe tier, matching how other
+// single-word dangerous actions (e.g. rental.contracts.admin = "Terminate
+// Contracts") use 'admin' rather than inventing a new level.
+function impliedLevel(key: string): AccessLevel {
+  const suffix = key.split('.').pop()
+  if (suffix === 'view' || suffix === 'edit' || suffix === 'approve' || suffix === 'admin') {
+    return suffix
+  }
+  return 'admin'
 }
 
 interface PermissionTreeProps {
@@ -66,6 +78,7 @@ function SubmoduleSection({
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {permissions.map((perm) => {
+          const level = impliedLevel(perm.key)
           const current = value[perm.key] ?? 'none'
           const isEnabled = current !== 'none'
           return (
@@ -78,7 +91,7 @@ function SubmoduleSection({
                 checked={isEnabled}
                 disabled={disabled}
                 onChange={(e) => {
-                  onChange(perm.key, e.target.checked ? 'view' : 'none')
+                  onChange(perm.key, e.target.checked ? level : 'none')
                 }}
                 style={{ cursor: disabled ? 'default' : 'pointer', flexShrink: 0 }}
               />
@@ -92,32 +105,20 @@ function SubmoduleSection({
               >
                 {perm.label}
               </span>
-              {isEnabled && (
-                <div style={{ display: 'flex', gap: '4px' }}>
-                  {ALL_LEVELS.map((level) => (
-                    <button
-                      key={level}
-                      disabled={disabled}
-                      onClick={() => {
-                        onChange(perm.key, level)
-                      }}
-                      style={{
-                        padding: '2px 8px',
-                        fontSize: '11px',
-                        fontWeight: current === level ? 600 : 400,
-                        borderRadius: '4px',
-                        border: `1px solid ${current === level ? LEVEL_COLORS[level] : theme.border}`,
-                        background: current === level ? `${LEVEL_COLORS[level]}20` : 'transparent',
-                        color: current === level ? LEVEL_COLORS[level] : theme.textMuted,
-                        cursor: disabled ? 'default' : 'pointer',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {LEVEL_LABELS[level]}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <span
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  borderRadius: '4px',
+                  border: `1px solid ${isEnabled ? LEVEL_COLORS[level] : theme.border}`,
+                  background: isEnabled ? `${LEVEL_COLORS[level]}20` : 'transparent',
+                  color: isEnabled ? LEVEL_COLORS[level] : theme.textMuted,
+                  opacity: isEnabled ? 1 : 0.6,
+                }}
+              >
+                {LEVEL_LABELS[level]}
+              </span>
             </div>
           )
         })}
