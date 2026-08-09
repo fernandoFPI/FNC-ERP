@@ -5849,6 +5849,7 @@ export default function ProjectDetail() {
                 isEditable={isRfqPhase || canEdit.bidding}
                 isAdmin={isAdmin}
                 canApprove={canApprove.bidding}
+                viewerRole={projectRole}
                 theme={theme}
                 teamMembers={liveTeam.map((m) => ({ id: m.employee_id, name: m.employee_name }))}
                 simpleBidMode={simpleBidMode}
@@ -6007,7 +6008,12 @@ export default function ProjectDetail() {
             )}
 
             {tab === 'attachments' && id && (
-              <AttachmentsTab projectId={id} theme={theme} isAdmin={canEdit.attachments} />
+              <AttachmentsTab
+                projectId={id}
+                theme={theme}
+                isAdmin={canEdit.attachments}
+                viewerRole={projectRole}
+              />
             )}
 
             {tab === 'history' &&
@@ -8309,10 +8315,7 @@ function ClientDocumentsTab({
     return true
   })
 
-  const uploadFile = async (
-    file: File,
-    onPicked: (fileId: string, filename: string) => void,
-  ) => {
+  const uploadFile = async (file: File, onPicked: (fileId: string, filename: string) => void) => {
     setUploading(true)
     try {
       const { data: urlRes } = await api.post('/files/upload-url', {
@@ -9647,9 +9650,7 @@ function ClientDocumentsTab({
                 }}
                 onDragLeave={() => setDropTarget(null)}
                 onDrop={(e) =>
-                  dropFile(e, (fid, fn) =>
-                    setRevForm((f) => ({ ...f, fileId: fid, filename: fn })),
-                  )
+                  dropFile(e, (fid, fn) => setRevForm((f) => ({ ...f, fileId: fid, filename: fn })))
                 }
                 style={{
                   border: `2px dashed ${dropTarget === 'revise' ? theme.accent : revForm.fileId ? theme.accent : theme.border}`,
@@ -10097,6 +10098,7 @@ function BiddingTab({
   isEditable,
   isAdmin,
   canApprove,
+  viewerRole,
   theme,
   teamMembers,
   simpleBidMode,
@@ -10133,6 +10135,10 @@ function BiddingTab({
   isEditable: boolean
   isAdmin: boolean
   canApprove?: boolean
+  // Project-team role of the person viewing this tab (technical/commercial/both/pm/admin/none) —
+  // distinct from isAdmin/isEditable, which come from the company-wide permission registry.
+  // Used only to hide the Commercial Bid section from technical members; never widens access.
+  viewerRole: 'admin' | 'pm' | 'technical' | 'commercial' | 'both' | 'none'
   theme: ReturnType<typeof useTheme>['theme']
   teamMembers: { id: string; name: string }[]
   simpleBidMode: boolean
@@ -10220,6 +10226,8 @@ function BiddingTab({
   const [bidSub, setBidSub] = React.useState<'technical' | 'commercial' | 'clarifications'>(
     'technical',
   )
+  // Technical members read their own bid work but not commercial pricing/margins.
+  const canSeeCommercialBid = isAdmin || viewerRole !== 'technical'
 
   // ── Technical state ────────────────────────────────────────────────────
   const [showAddDeliverable, setShowAddDeliverable] = React.useState(false)
@@ -10819,29 +10827,31 @@ function BiddingTab({
           borderBottom: `1px solid ${theme.border}`,
         }}
       >
-        {(['technical', 'commercial', 'clarifications'] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setBidSub(s)}
-            style={{
-              padding: '8px 24px',
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
-              color: bidSub === s ? theme.accent : theme.textMuted,
-              borderBottom: bidSub === s ? `2px solid ${theme.accent}` : '2px solid transparent',
-              marginBottom: '-1px',
-            }}
-          >
-            {s === 'technical'
-              ? 'Technical Bid'
-              : s === 'commercial'
-                ? 'Commercial Bid'
-                : 'Clarifications Bid'}
-          </button>
-        ))}
+        {(['technical', 'commercial', 'clarifications'] as const)
+          .filter((s) => s !== 'commercial' || canSeeCommercialBid)
+          .map((s) => (
+            <button
+              key={s}
+              onClick={() => setBidSub(s)}
+              style={{
+                padding: '8px 24px',
+                border: 'none',
+                background: 'none',
+                cursor: 'pointer',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: bidSub === s ? theme.accent : theme.textMuted,
+                borderBottom: bidSub === s ? `2px solid ${theme.accent}` : '2px solid transparent',
+                marginBottom: '-1px',
+              }}
+            >
+              {s === 'technical'
+                ? 'Technical Bid'
+                : s === 'commercial'
+                  ? 'Commercial Bid'
+                  : 'Clarifications Bid'}
+            </button>
+          ))}
       </div>
 
       {/* Shared hidden input for bid package (ZIP) uploads — used by both Technical and Commercial zones */}
@@ -11411,7 +11421,7 @@ function BiddingTab({
       )}
 
       {/* ═══ COMMERCIAL BID ══════════════════════════════════════════ */}
-      {bidSub === 'commercial' && (
+      {bidSub === 'commercial' && canSeeCommercialBid && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {simpleBidMode ? (
             renderPackageUploadZone('commercial')
@@ -21189,10 +21199,14 @@ function AttachmentsTab({
   projectId,
   theme,
   isAdmin,
+  viewerRole,
 }: {
   projectId: string
   theme: ReturnType<typeof useTheme>['theme']
   isAdmin?: boolean
+  // Project-team role of the viewer — used only to hide the Commercial category
+  // from technical members; unrelated to isAdmin (company-wide edit permission).
+  viewerRole?: 'admin' | 'pm' | 'technical' | 'commercial' | 'both' | 'none'
 }) {
   const addToast = useToastStore((s) => s.addToast)
   const fileRef = React.useRef<HTMLInputElement>(null)
@@ -21206,10 +21220,15 @@ function AttachmentsTab({
 
   const ACCEPT = '.xlsx,.xls,.pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.zip,.rar'
 
-  // Reaching this tab at all already requires attachments.view — no further
-  // category-hiding on top of that. isAdmin (edit-level) still gates
-  // uploading/deleting below.
-  const visibleCategories: Set<DocCategory> = React.useMemo(() => new Set(DOC_CATEGORIES), [])
+  // Reaching this tab at all already requires attachments.view — the only
+  // further restriction is hiding Commercial-tagged documents from technical
+  // project-team members. isAdmin (edit-level) still gates uploading/deleting
+  // below, and also bypasses this hiding, same as elsewhere in this file.
+  const visibleCategories: Set<DocCategory> = React.useMemo(() => {
+    const cats = new Set<DocCategory>(DOC_CATEGORIES)
+    if (!isAdmin && viewerRole === 'technical') cats.delete('Commercial')
+    return cats
+  }, [isAdmin, viewerRole])
 
   React.useEffect(() => {
     setLoading(true)
@@ -21535,26 +21554,24 @@ function AttachmentsTab({
         </div>
         {/* Category selector */}
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-          {DOC_CATEGORIES.map(
-            (cat) => (
-              <button
-                key={cat}
-                onClick={() => setUploadCategory(cat)}
-                style={{
-                  padding: '4px 12px',
-                  borderRadius: '999px',
-                  border: `1px solid ${uploadCategory === cat ? CAT_COLOR[cat].color : theme.border}`,
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  background: uploadCategory === cat ? CAT_COLOR[cat].bg : 'transparent',
-                  color: uploadCategory === cat ? CAT_COLOR[cat].color : theme.textMuted,
-                }}
-              >
-                {cat}
-              </button>
-            ),
-          )}
+          {DOC_CATEGORIES.filter((cat) => visibleCategories.has(cat)).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setUploadCategory(cat)}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '999px',
+                border: `1px solid ${uploadCategory === cat ? CAT_COLOR[cat].color : theme.border}`,
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 600,
+                background: uploadCategory === cat ? CAT_COLOR[cat].bg : 'transparent',
+                color: uploadCategory === cat ? CAT_COLOR[cat].color : theme.textMuted,
+              }}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
 
         <input
