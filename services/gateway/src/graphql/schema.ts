@@ -1736,6 +1736,8 @@
     purpose: String
     linkedProjectId: ID
     linkedMoId: ID
+    projectCode: String
+    projectName: String
     lines: [POLine!]
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]

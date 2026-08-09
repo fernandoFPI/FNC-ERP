@@ -100,6 +100,8 @@ interface PO {
   purpose?: string
   linkedProjectId?: string
   linkedMoId?: string
+  projectCode?: string | null
+  projectName?: string | null
   expected_delivery_date?: string
   notes?: string
   created_by_email?: string
@@ -585,7 +587,11 @@ export default function PurchaseOrderDetail() {
     >
       <PageHeader
         title={po.po_number}
-        subtitle={`${po.vendor_name ?? 'No vendor'} • Created ${po.created_at?.slice(0, 10) ?? ''}`}
+        subtitle={`${po.vendor_name ?? 'No vendor'} • Created ${po.created_at?.slice(0, 10) ?? ''}${
+          po.project_id
+            ? ` • Project: ${[po.projectCode, po.projectName].filter(Boolean).join(' — ')}`
+            : ''
+        }`}
         backPath="/procurement/purchase-orders"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>

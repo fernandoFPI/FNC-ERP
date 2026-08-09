@@ -4956,6 +4956,7 @@ export const resolvers = {
             `SELECT po.*, v.name AS vendor_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_email,
                     aa.name AS analytic_account_name, COALESCE(au.first_name || ' ' || au.last_name, au.email) AS assigned_to_email,
                     po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
+                    proj.code AS "projectCode", proj.name AS "projectName",
                     COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name
              FROM purchase_orders po
              LEFT JOIN vendors v ON v.id=po.vendor_id
@@ -4963,6 +4964,7 @@ export const resolvers = {
              LEFT JOIN analytic_accounts aa ON aa.id=po.analytic_account_id
              LEFT JOIN users au ON au.id=po.assigned_to
              LEFT JOIN employees re ON re.id=po.assigned_receiver_id
+             LEFT JOIN projects proj ON proj.id=po.project_id
              WHERE po.id=$1 AND po.company_id=$2`,
             [args.id, ctx.auth.companyId],
           ),

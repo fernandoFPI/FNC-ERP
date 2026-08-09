@@ -298,6 +298,8 @@ export const PO_LIFECYCLE_QUERY = gql`
       purpose
       linkedProjectId
       linkedMoId
+      projectCode
+      projectName
       expected_delivery_date
       notes
       created_by_email
