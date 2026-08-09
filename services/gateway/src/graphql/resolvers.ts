@@ -3602,17 +3602,27 @@ export const resolvers = {
             'view',
           ))
       if (!isAdmin && !canIncludeAll) {
-        // Regular users: exclude pending projects and only see projects they're assigned to
-        conditions.push(`p.status != 'pending'`)
+        // Regular users see: anything they created themselves, regardless of
+        // status — a creator should always be able to find their own RFQ/project
+        // even while it's still pending — or non-pending projects they're the PM
+        // or an active team member on. Pending projects stay hidden from anyone
+        // who didn't create them.
         conditions.push(`(
-          p.project_manager_id IN (SELECT id FROM employees WHERE user_id = $${idx++})
-          OR EXISTS (
-            SELECT 1 FROM project_members pm_check
-            JOIN employees emp_check ON emp_check.id = pm_check.employee_id
-            WHERE pm_check.project_id = p.id AND emp_check.user_id = $${idx - 1} AND pm_check.is_active = true
+          p.created_by = $${idx}
+          OR (
+            p.status != 'pending'
+            AND (
+              p.project_manager_id IN (SELECT id FROM employees WHERE user_id = $${idx})
+              OR EXISTS (
+                SELECT 1 FROM project_members pm_check
+                JOIN employees emp_check ON emp_check.id = pm_check.employee_id
+                WHERE pm_check.project_id = p.id AND emp_check.user_id = $${idx} AND pm_check.is_active = true
+              )
+            )
           )
         )`)
         params.push(ctx.auth.userId)
+        idx++
       }
 
       if (args.status && (Array.isArray(args.status) ? args.status.length > 0 : args.status)) {
