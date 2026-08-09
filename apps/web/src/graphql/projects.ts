@@ -45,6 +45,9 @@ const PROJECT_FIELDS = gql`
     lifecyclePhase
     clientDocCount
     rfqLineCount
+    openOverdueRfiCount
+    openSafetyIncidentCount
+    overdueCorrectiveActionCount
     isRfq
     rfqEstimatedCost
     rfqOutcome

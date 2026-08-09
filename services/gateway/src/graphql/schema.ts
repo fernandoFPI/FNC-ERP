@@ -717,6 +717,9 @@
     lifecyclePhase: String
     clientDocCount: Int
     rfqLineCount: Int
+    openOverdueRfiCount: Int
+    openSafetyIncidentCount: Int
+    overdueCorrectiveActionCount: Int
 
     isRfq: Boolean!
     rfqEstimatedCost: Float

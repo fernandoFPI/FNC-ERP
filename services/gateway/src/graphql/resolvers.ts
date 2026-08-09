@@ -1962,6 +1962,14 @@ function projectRowToGQL(row: Record<string, unknown>): Record<string, unknown> 
     lifecyclePhase: row.lifecycle_phase ?? 'enquiry',
     clientDocCount: row.client_doc_count != null ? parseInt(String(row.client_doc_count)) : 0,
     rfqLineCount: row.rfq_line_count != null ? parseInt(String(row.rfq_line_count)) : 0,
+    openOverdueRfiCount:
+      row.open_overdue_rfi_count != null ? parseInt(String(row.open_overdue_rfi_count)) : 0,
+    openSafetyIncidentCount:
+      row.open_safety_incident_count != null ? parseInt(String(row.open_safety_incident_count)) : 0,
+    overdueCorrectiveActionCount:
+      row.overdue_corrective_action_count != null
+        ? parseInt(String(row.overdue_corrective_action_count))
+        : 0,
     isRfq: row.is_rfq === true || row.is_rfq === 't' || row.is_rfq === 'true',
     rfqEstimatedCost:
       row.rfq_estimated_cost != null ? parseFloat(String(row.rfq_estimated_cost)) : null,
@@ -3744,6 +3752,9 @@ export const resolvers = {
           (SELECT COUNT(*) FROM purchase_orders po2 WHERE po2.project_id = p.id AND po2.status NOT IN ('completed','deleted'))::integer AS open_po_count,
           (SELECT COUNT(*) FROM project_client_documents pcd WHERE pcd.project_id = p.id)::integer AS client_doc_count,
           (SELECT COUNT(*) FROM rfq_lines rl WHERE rl.project_id = p.id)::integer AS rfq_line_count,
+          (SELECT COUNT(*) FROM project_rfis pr WHERE pr.project_id = p.id AND pr.status = 'open' AND pr.required_date < CURRENT_DATE)::integer AS open_overdue_rfi_count,
+          (SELECT COUNT(*) FROM project_hse_records phr WHERE phr.project_id = p.id AND phr.record_type = 'incident' AND phr.status = 'open' AND phr.severity IN ('high','critical'))::integer AS open_safety_incident_count,
+          (SELECT COUNT(*) FROM project_hse_records phr2 WHERE phr2.project_id = p.id AND phr2.record_type = 'incident' AND phr2.status = 'open' AND phr2.corrective_due_date < CURRENT_DATE)::integer AS overdue_corrective_action_count,
           COALESCE(
             json_agg(json_build_object(
               'id', ps.id, 'name', ps.name, 'sequence', ps.sequence,

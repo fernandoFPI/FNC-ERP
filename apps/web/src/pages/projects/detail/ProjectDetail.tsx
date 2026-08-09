@@ -2632,13 +2632,24 @@ export default function ProjectDetail() {
                   0,
                 )
 
-                // Health score
+                // Health score — Engineering is driven by overdue open RFIs
+                // (unanswered past their required date blocks engineering
+                // progress); Safety by open high/critical incidents and
+                // overdue corrective actions. Both come straight off the
+                // project record (see openOverdueRfiCount /
+                // openSafetyIncidentCount / overdueCorrectiveActionCount on
+                // the gateway's project resolver) — no more static stand-ins.
+                const ovOverdueRfis = p.openOverdueRfiCount ?? 0
+                const ovOpenIncidents = p.openSafetyIncidentCount ?? 0
+                const ovOverdueCorrective = p.overdueCorrectiveActionCount ?? 0
+                const ovSafetyIssues = ovOpenIncidents + ovOverdueCorrective
+
                 const hBudget = ovUtilPct < 50 ? 30 : ovUtilPct < 80 ? 25 : ovUtilPct < 95 ? 12 : 4
                 const hSched =
                   ovCompletion >= ovElapsedPct - 5 ? 20 : ovCompletion >= ovElapsedPct - 20 ? 13 : 5
                 const hProcure = (p.openPoCount ?? 0) < 5 ? 20 : (p.openPoCount ?? 0) < 15 ? 14 : 7
-                const hEng = (p.teamCount ?? team.length ?? 0) > 0 ? 15 : 0
-                const hSafety = 15
+                const hEng = ovOverdueRfis === 0 ? 15 : ovOverdueRfis <= 2 ? 8 : 0
+                const hSafety = ovSafetyIssues === 0 ? 15 : ovSafetyIssues <= 2 ? 7 : 0
                 const healthScore = hBudget + hSched + hProcure + hEng + hSafety
                 const healthLabel =
                   healthScore >= 80 ? 'Good' : healthScore >= 55 ? 'Fair' : 'At Risk'
@@ -2651,8 +2662,8 @@ export default function ProjectDetail() {
                     ok: execStatus === 'On Schedule' || execStatus === 'Completed',
                   },
                   { label: 'Procurement', ok: (p.openPoCount ?? 0) < 10 },
-                  { label: 'Engineering', ok: (p.teamCount ?? team.length) > 0 },
-                  { label: 'Safety', ok: true },
+                  { label: 'Engineering', ok: ovOverdueRfis === 0 },
+                  { label: 'Safety', ok: ovSafetyIssues === 0 },
                 ]
 
                 // Alerts
