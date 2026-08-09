@@ -70,6 +70,11 @@ interface POLine {
   verified_price_currency?: string
   in_stock?: boolean
   qty_from_stock: number
+  source_location_id?: string | null
+  source_location_name?: string | null
+  source_company_id?: string | null
+  source_company_name?: string | null
+  source_average_cost?: number | null
   unit_price: number
   total: number
   audit_status?: 'pending' | 'ok' | 'flagged' | null
@@ -419,7 +424,17 @@ export default function PurchaseOrderDetail() {
     qtyOnHand: number
     qtyAvailable: number
     isAvailable: boolean
+    byLocation: {
+      companyId: string
+      companyName: string
+      locationId: string
+      locationName: string
+      qtyOnHand: number
+      qtyAvailable: number
+      averageCost: number | null
+    }[]
   }[] = stockData?.poStockAvailability ?? []
+  const [lineSourceLocation, setLineSourceLocation] = useState<Record<string, string>>({})
 
   const onErr = (e: { message: string }) => {
     addToast({ type: 'error', message: e.message })
@@ -428,6 +443,7 @@ export default function PurchaseOrderDetail() {
     onCompleted: () => {
       setActionNotes('')
       setLineStockQtys({})
+      setLineSourceLocation({})
       void refetch()
     },
     onError: onErr,
@@ -1206,6 +1222,12 @@ export default function PurchaseOrderDetail() {
                   {stockAvailability.map((avail) => {
                     const fromStock = lineStockQtys[avail.lineId] ?? 0
                     const toPurchase = Math.max(avail.qtyRequired - fromStock, 0)
+                    const selectedLoc = avail.byLocation.find(
+                      (l) => l.locationId === lineSourceLocation[avail.lineId],
+                    )
+                    const maxFromStock = selectedLoc
+                      ? Math.min(avail.qtyRequired, selectedLoc.qtyAvailable)
+                      : avail.qtyRequired
                     const statusColor = avail.isAvailable
                       ? '#16a34a'
                       : avail.qtyOnHand > 0
@@ -1265,6 +1287,56 @@ export default function PurchaseOrderDetail() {
                           </span>
                           <span style={{ color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
                         </div>
+                        {avail.byLocation.length > 0 && (
+                          <div
+                            style={{
+                              marginBottom: '10px',
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '6px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr 90px',
+                                padding: '5px 10px',
+                                background: theme.bgCanvas,
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                color: theme.textMuted,
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.04em',
+                              }}
+                            >
+                              <span>Company</span>
+                              <span>Location</span>
+                              <span>Available</span>
+                            </div>
+                            {avail.byLocation.map((loc) => (
+                              <div
+                                key={loc.locationId}
+                                style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: '1fr 1fr 90px',
+                                  padding: '5px 10px',
+                                  fontSize: '12px',
+                                  borderTop: `1px solid ${theme.border}`,
+                                  color:
+                                    lineSourceLocation[avail.lineId] === loc.locationId
+                                      ? theme.accent
+                                      : theme.textSecondary,
+                                  fontWeight:
+                                    lineSourceLocation[avail.lineId] === loc.locationId ? 600 : 400,
+                                }}
+                              >
+                                <span>{loc.companyName}</span>
+                                <span>{loc.locationName}</span>
+                                <span>{loc.qtyAvailable.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div
                           style={{
                             display: 'flex',
@@ -1282,17 +1354,65 @@ export default function PurchaseOrderDetail() {
                                 marginBottom: '4px',
                               }}
                             >
+                              Source location
+                            </label>
+                            <select
+                              value={lineSourceLocation[avail.lineId] ?? ''}
+                              onChange={(e) => {
+                                const newLocId = e.target.value
+                                setLineSourceLocation((p) => ({ ...p, [avail.lineId]: newLocId }))
+                                const newCap = avail.byLocation.find(
+                                  (l) => l.locationId === newLocId,
+                                )?.qtyAvailable
+                                if (newCap !== undefined && fromStock > newCap) {
+                                  setLineStockQtys((p) => ({
+                                    ...p,
+                                    [avail.lineId]: Math.max(0, newCap),
+                                  }))
+                                }
+                              }}
+                              disabled={avail.byLocation.length === 0}
+                              style={{
+                                width: '220px',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: `1px solid ${theme.border}`,
+                                background: theme.bgCanvas,
+                                color: theme.textPrimary,
+                                fontSize: '13px',
+                              }}
+                            >
+                              <option value="">
+                                {avail.byLocation.length === 0 ? 'No stock available' : 'Choose…'}
+                              </option>
+                              {avail.byLocation.map((loc) => (
+                                <option key={loc.locationId} value={loc.locationId}>
+                                  {loc.companyName} — {loc.locationName} (
+                                  {loc.qtyAvailable.toFixed(2)} avail.)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label
+                              style={{
+                                fontSize: '11px',
+                                color: theme.textMuted,
+                                display: 'block',
+                                marginBottom: '4px',
+                              }}
+                            >
                               From stock
                             </label>
                             <input
                               type="number"
                               min={0}
-                              max={avail.qtyRequired}
+                              max={maxFromStock}
                               value={fromStock}
                               onChange={(e) => {
                                 const v = Math.max(
                                   0,
-                                  Math.min(avail.qtyRequired, parseFloat(e.target.value) || 0),
+                                  Math.min(maxFromStock, parseFloat(e.target.value) || 0),
                                 )
                                 setLineStockQtys((p) => ({ ...p, [avail.lineId]: v }))
                               }}
@@ -1346,6 +1466,7 @@ export default function PurchaseOrderDetail() {
                           lineStockQtys: stockAvailability.map((avail) => ({
                             lineId: avail.lineId,
                             qtyFromStock: lineStockQtys[avail.lineId] ?? 0,
+                            sourceLocationId: lineSourceLocation[avail.lineId] || undefined,
                           })),
                           notes: actionNotes || undefined,
                         },
@@ -1410,8 +1531,10 @@ export default function PurchaseOrderDetail() {
 
               {po.status === 'store_pricing' &&
                 (() => {
-                  const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
-                  const stockCovered = po.lines.length - purchaseLines.length
+                  // Store price now values whatever quantity is being pulled from stock —
+                  // including lines that are 100% stock-covered, which never reach market
+                  // pricing at all, so this is the only place their total gets set.
+                  const stockLines = po.lines.filter((l) => (l.qty_from_stock || 0) > 0)
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
@@ -1423,27 +1546,12 @@ export default function PurchaseOrderDetail() {
                           letterSpacing: '0.05em',
                         }}
                       >
-                        Enter store prices
+                        Enter store prices for from-stock quantities
                       </div>
-                      {stockCovered > 0 && (
-                        <div
-                          style={{
-                            fontSize: '12px',
-                            color: theme.textMuted,
-                            padding: '8px 12px',
-                            borderRadius: '6px',
-                            background: theme.bgSurface,
-                            border: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {stockCovered} line(s) covered from stock — showing only lines to be
-                          purchased
-                        </div>
-                      )}
-                      {purchaseLines.map((line) => {
-                        const purchaseQty = line.qty - (line.qty_from_stock || 0)
+                      {stockLines.map((line) => {
+                        const stockQty = line.qty_from_stock || 0
                         const defaultSp = {
-                          price: String(line.store_price ?? ''),
+                          price: String(line.store_price ?? line.source_average_cost ?? ''),
                           currency: line.store_price_currency ?? po.currency_code,
                         }
                         const sp = storePrices[line.id] ?? defaultSp
@@ -1466,8 +1574,16 @@ export default function PurchaseOrderDetail() {
                             >
                               {line.description || line.product_name || '—'}{' '}
                               <span style={{ color: theme.textMuted }}>
-                                × {purchaseQty} {line.uom}
+                                × {stockQty} {line.uom}
                               </span>
+                              {line.source_location_name && (
+                                <span style={{ color: theme.textMuted }}>
+                                  {' '}
+                                  · from {line.source_company_name} — {line.source_location_name}
+                                  {line.source_average_cost != null &&
+                                    ` (avg. cost ${line.source_average_cost.toFixed(2)})`}
+                                </span>
+                              )}
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
                               <input
@@ -1518,9 +1634,9 @@ export default function PurchaseOrderDetail() {
                           void submitStorePricing({
                             variables: {
                               id: po.id,
-                              linePrices: purchaseLines.map((line) => {
+                              linePrices: stockLines.map((line) => {
                                 const sp = storePrices[line.id] ?? {
-                                  price: String(line.store_price ?? '0'),
+                                  price: String(line.store_price ?? line.source_average_cost ?? '0'),
                                   currency: line.store_price_currency ?? po.currency_code,
                                 }
                                 return {

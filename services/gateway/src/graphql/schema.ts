@@ -253,6 +253,17 @@
     qtyOnHand: Float!
     qtyAvailable: Float!
     isAvailable: Boolean!
+    byLocation: [POLineLocationAvailability!]!
+  }
+
+  type POLineLocationAvailability {
+    companyId: ID!
+    companyName: String!
+    locationId: ID!
+    locationName: String!
+    qtyOnHand: Float!
+    qtyAvailable: Float!
+    averageCost: Float
   }
 
   type Vendor {
@@ -1662,6 +1673,11 @@
     verified_price_currency: String
     in_stock: Boolean
     qty_from_stock: String
+    source_location_id: ID
+    source_location_name: String
+    source_company_id: ID
+    source_company_name: String
+    source_average_cost: Float
     audit_status: String
     audit_note: String
     audit_flagged_by_email: String
@@ -1747,6 +1763,7 @@
   input StockConfirmLineInput {
     lineId: ID!
     qtyFromStock: Float!
+    sourceLocationId: ID
   }
 
   type MOComponentStatus {

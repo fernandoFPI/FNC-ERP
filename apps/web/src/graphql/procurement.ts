@@ -325,6 +325,11 @@ export const PO_LIFECYCLE_QUERY = gql`
         verified_price_currency
         in_stock
         qty_from_stock
+        source_location_id
+        source_location_name
+        source_company_id
+        source_company_name
+        source_average_cost
         unit_price
         total
         audit_status
@@ -424,6 +429,15 @@ export const PO_STOCK_AVAILABILITY_QUERY = gql`
       qtyOnHand
       qtyAvailable
       isAvailable
+      byLocation {
+        companyId
+        companyName
+        locationId
+        locationName
+        qtyOnHand
+        qtyAvailable
+        averageCost
+      }
     }
   }
 `

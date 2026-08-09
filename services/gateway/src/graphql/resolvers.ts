@@ -7,6 +7,7 @@
   withTransaction,
   nextDocumentNumber,
 } from '@fnc-erp/db'
+import type { PoolClient } from '@fnc-erp/db'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -166,6 +167,87 @@ function buildEditChangeSummary(changes: EditChanges): string {
   return parts.join(' | ')
 }
 
+// A PO is editable directly (no edit-request approval needed) up until it's been
+// approved — the state machine has no transition back from these statuses to an
+// earlier stage, so this is a reliable, one-way gate. 'ready_to_issue' is included
+// because 100%-stock-covered POs skip 'approved' entirely (inventory_check →
+// ready_to_issue → completed via approve_stock_issuance) — that transition is
+// itself the approval for that fast path.
+const POST_APPROVAL_PO_STATUSES = [
+  'approved',
+  'ready_to_issue',
+  'goods_received',
+  'finance_audit',
+  'invoiced',
+  'completed',
+]
+
+async function applyPOEditChanges(
+  client: PoolClient,
+  poId: string,
+  changes: EditChanges,
+): Promise<void> {
+  const allowed = [
+    'notes',
+    'expected_delivery_date',
+    'vendor_id',
+    'analytic_account_id',
+    'currency_code',
+  ]
+  if (changes.header && Object.keys(changes.header).length > 0) {
+    const sets: string[] = []
+    const vals: unknown[] = []
+    for (const [field, diff] of Object.entries(changes.header)) {
+      if (!allowed.includes(field)) continue
+      sets.push(`${field}=$${vals.length + 1}`)
+      vals.push(diff.to)
+    }
+    if (sets.length > 0) {
+      vals.push(poId)
+      await client.query(
+        `UPDATE purchase_orders SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length}`,
+        vals,
+      )
+    }
+  }
+  const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+  for (const e of changes.lines?.edited ?? []) {
+    if (!lineAllowed.includes(e.field)) continue
+    await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND po_id=$3`, [
+      e.to,
+      e.id,
+      poId,
+    ])
+  }
+  for (const line of changes.lines?.added ?? []) {
+    const qty = Number(line.qty_ordered ?? 0),
+      price = Number(line.unit_price ?? 0)
+    await client.query(
+      `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,currency_code,uom,total_price)
+       VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        poId,
+        line.description,
+        line.product_id ?? null,
+        qty,
+        price,
+        line.currency_code ?? 'IQD',
+        line.uom ?? 'unit',
+        qty * price,
+      ],
+    )
+  }
+  for (const lineId of changes.lines?.removed ?? []) {
+    await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
+  }
+  if (changes.lines) {
+    await client.query(
+      `UPDATE purchase_orders SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),updated_at=NOW() WHERE id=$1`,
+      [poId],
+    )
+  }
+}
+
 async function poTransition(
   client: import('@fnc-erp/db').PoolClient,
   poId: string,
@@ -322,6 +404,297 @@ async function postPOCompletionJournal(
       amountCompanyCurrency,
     ],
   )
+}
+
+// Deducts stock for every po_lines row with qty_from_stock > 0 on a PO, and
+// auto-creates the matching Store Out. Used both by the 100%-stock-covered fast
+// path (approveStockIssuance, ready_to_issue → completed) and by the normal
+// approval path for mixed POs (approvePO) — a PO with no from-stock lines is a
+// safe no-op either way. Each line sources from its own po_lines.source_location_id
+// if one was picked (falling back to the requesting company's own warehouse for
+// older/unpicked lines); if that location belongs to a different company, the
+// deduction is done as a same-cost (AVCO) interco stock transfer rather than a
+// plain same-company move, mirroring createIntercoStockTransfer's own pattern.
+async function issueStockForPOLines(
+  client: PoolClient,
+  po: Record<string, unknown>,
+  companyId: string,
+  userId: string,
+): Promise<void> {
+  const poId = String(po.id)
+  const linesRes = await client.query(
+    `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
+    [poId],
+  )
+  const lines = linesRes.rows as Record<string, unknown>[]
+  if (lines.length === 0) return
+
+  const warehouseRes = await client.query(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+    [companyId],
+  )
+  const fallbackRes = await client.query(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
+    [companyId],
+  )
+  const defaultFromLocationId = (warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id) as
+    | string
+    | undefined
+  if (!defaultFromLocationId) throw new Error('No warehouse location found for company')
+
+  const destRes = await client.query(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual' AND is_active=true LIMIT 1`,
+    [companyId],
+  )
+  const ownDestLocationId = (destRes.rows[0]?.id ?? defaultFromLocationId) as string
+  const poNumber = String(po.po_number ?? poId)
+
+  for (const line of lines) {
+    if (!line.product_id) continue
+    const qty = parseFloat(String(line.qty_from_stock ?? 0))
+    if (qty <= 0) continue
+
+    const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
+    const fromLocRes = await client.query(`SELECT company_id FROM stock_locations WHERE id=$1`, [
+      fromLocationId,
+    ])
+    const fromCompanyId = fromLocRes.rows[0]?.company_id as string | undefined
+    if (!fromCompanyId) throw new Error('Source stock location not found')
+
+    if (fromCompanyId === companyId) {
+      await client.query(
+        `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+         VALUES ($1,$2,$3,$4,NOW(),$5,
+           (SELECT average_cost FROM stock_balances WHERE product_id=$2 AND location_id=$3 LIMIT 1),
+           $5 * COALESCE((SELECT average_cost FROM stock_balances WHERE product_id=$2 AND location_id=$3 LIMIT 1), 0),
+           'po_stock_issuance',$6,$7,$8)`,
+        [
+          companyId,
+          line.product_id,
+          fromLocationId,
+          ownDestLocationId,
+          qty,
+          poId,
+          `PO ${poNumber} stock issuance`,
+          userId,
+        ],
+      )
+    } else {
+      const avcoRes = await client.query(
+        `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 LIMIT 1`,
+        [line.product_id, fromLocationId],
+      )
+      const avco = parseFloat(String(avcoRes.rows[0]?.average_cost ?? 0))
+
+      const vOutRes = await client.query(
+        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
+        [fromCompanyId],
+      )
+      const virtualOutId: string = (vOutRes.rows[0]?.id ??
+        (
+          await client.query(
+            `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Consumption','virtual_out',true) RETURNING id`,
+            [fromCompanyId],
+          )
+        ).rows[0].id) as string
+
+      const vInRes = await client.query(
+        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+        [companyId],
+      )
+      const virtualInId: string = (vInRes.rows[0]?.id ??
+        (
+          await client.query(
+            `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
+            [companyId],
+          )
+        ).rows[0].id) as string
+
+      const fromMove = await client.query(
+        `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+         VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_stock_issuance',$8,$9,$10) RETURNING id`,
+        [
+          fromCompanyId,
+          line.product_id,
+          fromLocationId,
+          virtualOutId,
+          qty,
+          avco,
+          qty * avco,
+          poId,
+          `PO ${poNumber} stock issuance to company ${companyId}`,
+          userId,
+        ],
+      )
+      const toMove = await client.query(
+        `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+         VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_stock_issuance',$8,$9,$10) RETURNING id`,
+        [
+          companyId,
+          line.product_id,
+          virtualInId,
+          ownDestLocationId,
+          qty,
+          avco,
+          qty * avco,
+          poId,
+          `PO ${poNumber} stock issuance from company ${fromCompanyId}`,
+          userId,
+        ],
+      )
+
+      const transferNum = `IST-PO-${Date.now()}-${String(line.line_number ?? '0')}`
+      const transfer = await client.query(
+        `INSERT INTO interco_stock_transfers
+         (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
+         VALUES ($1,$2,'manual',$3,$4,CURRENT_DATE,'avco','posted',$5,$6,NOW()) RETURNING id`,
+        [
+          fromCompanyId,
+          companyId,
+          poId,
+          transferNum,
+          userId,
+          `Auto-created from PO ${poNumber} stock issuance`,
+        ],
+      )
+      const transferId = transfer.rows[0].id as string
+      await client.query(
+        `INSERT INTO interco_stock_transfer_lines
+         (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$6,$7,'IQD',$8,$9)`,
+        [
+          transferId,
+          line.product_id,
+          fromLocationId,
+          ownDestLocationId,
+          qty,
+          avco,
+          qty * avco,
+          fromMove.rows[0].id,
+          toMove.rows[0].id,
+        ],
+      )
+    }
+
+    if (po.linked_mo_id) {
+      await client.query(
+        `UPDATE mo_consumptions SET qty_consumed=LEAST(qty_planned, qty_consumed+$1)
+         WHERE mo_id=$2 AND component_product_id=$3`,
+        [qty, po.linked_mo_id, line.product_id],
+      )
+    }
+  }
+
+  if (po.linked_mo_id) {
+    const moCheck = await client.query(
+      `SELECT COUNT(*) FILTER (WHERE qty_consumed < qty_planned) AS unsatisfied
+       FROM mo_consumptions WHERE mo_id=$1`,
+      [po.linked_mo_id],
+    )
+    if (parseInt(String(moCheck.rows[0]?.unsatisfied ?? '1')) === 0) {
+      await client.query(
+        `UPDATE manufacturing_orders SET status='confirmed', updated_at=NOW() WHERE id=$1 AND status='draft'`,
+        [po.linked_mo_id],
+      )
+    }
+  }
+
+  // Auto-create and immediately issue a Store Out for all items leaving stock
+  const cntRes = await client.query(
+    `SELECT COUNT(*) FROM project_material_issues WHERE company_id=$1`,
+    [companyId],
+  )
+  const seq = parseInt(String(cntRes.rows[0]?.count ?? '0')) + 1
+  const issueNumber = `SI-${String(seq).padStart(5, '0')}`
+
+  const issueRes = await client.query(
+    `INSERT INTO project_material_issues
+       (project_id, company_id, po_id, issue_number, issue_date, status,
+        issued_by, issued_at, created_by, notes)
+     VALUES ($1,$2,$3,$4,NOW()::date,'issued',$5,NOW(),$5,
+             'Auto-created from PO stock issuance')
+     RETURNING id`,
+    [po.project_id, companyId, poId, issueNumber, userId],
+  )
+  const issueId = issueRes.rows[0]?.id as string
+  let totalAmount = 0
+
+  for (const line of lines) {
+    if (!line.product_id) continue
+    const qty = parseFloat(String(line.qty_from_stock ?? 0))
+    if (qty <= 0) continue
+    const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
+
+    // Use store_price if set on the line; fall back to average_cost from stock
+    const costRes = await client.query(
+      `SELECT COALESCE(
+         NULLIF(pol.store_price, 0),
+         (SELECT sb.average_cost FROM stock_balances sb
+          WHERE sb.product_id=pol.product_id AND sb.location_id=$2 LIMIT 1),
+         0
+       ) AS unit_cost
+       FROM po_lines pol WHERE pol.id=$1`,
+      [line.id, fromLocationId],
+    )
+    const unitCost = parseFloat(String(costRes.rows[0]?.unit_cost ?? 0))
+    const lineCost = qty * unitCost
+
+    await client.query(
+      `INSERT INTO project_material_issue_lines
+         (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost,
+          from_location_id, to_location_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [issueId, line.product_id, line.id, qty, unitCost, lineCost, fromLocationId, ownDestLocationId],
+    )
+    totalAmount += lineCost
+  }
+
+  if (totalAmount > 0 && po.project_id) {
+    await client.query(
+      `INSERT INTO project_cost_actuals
+         (project_id, source_type, source_id, amount, currency_code, entry_date)
+       VALUES ($1,'stock_issue',$2,$3,'IQD',NOW()::date)
+       ON CONFLICT (source_id) WHERE source_type = 'stock_issue' AND source_id IS NOT NULL
+       DO UPDATE SET amount=EXCLUDED.amount`,
+      [po.project_id, issueId, totalAmount],
+    )
+  }
+}
+
+// Returns to inventory whatever issueStockForPOLines previously deducted for this
+// PO, by inserting the mirror-image stock_moves row for each move it made (same
+// product/qty/cost, from/to swapped) — a no-op if nothing was ever deducted (e.g.
+// the PO was cancelled before reaching the point stock actually moves). Restores
+// only the physical stock; it deliberately does not unwind the Store Out record
+// or its project cost-actuals entry, which stay as a historical record of what
+// happened.
+async function reverseStockIssuanceForPO(
+  client: PoolClient,
+  poId: string,
+  userId: string,
+): Promise<void> {
+  const movesRes = await client.query(
+    `SELECT * FROM stock_moves WHERE source_type='po_stock_issuance' AND source_id=$1 ORDER BY moved_at`,
+    [poId],
+  )
+  for (const move of movesRes.rows as Record<string, unknown>[]) {
+    await client.query(
+      `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+       VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_stock_issuance',$8,$9,$10)`,
+      [
+        move.company_id,
+        move.product_id,
+        move.to_location_id,
+        move.from_location_id,
+        move.qty,
+        move.unit_cost,
+        move.total_cost,
+        poId,
+        'Reversal — PO cancelled',
+        userId,
+      ],
+    )
+  }
 }
 
 // ── Manufacturing Request helpers ────────────────────────────────
@@ -2428,12 +2801,53 @@ export const resolvers = {
          ORDER BY pol.line_number`,
         [args.poId, ctx.auth.companyId],
       )
+
+      // Cross-company breakdown — scoped to companies the caller actually belongs
+      // to (system_admin sees every company), never the whole tenant base, so this
+      // can't be used to snoop on a company the user has no relationship with.
+      const isSysAdmin = ctx.auth.role === 'system_admin'
+      const byLocationRes = await query(
+        `SELECT
+           pol.id AS "lineId", c.id AS "companyId", c.name AS "companyName",
+           sl.id AS "locationId", sl.name AS "locationName",
+           COALESCE(sb.qty_on_hand, 0) AS "qtyOnHand",
+           GREATEST(COALESCE(sb.qty_on_hand, 0) - COALESCE(sb.qty_reserved, 0), 0) AS "qtyAvailable",
+           sb.average_cost AS "averageCost"
+         FROM po_lines pol
+         JOIN stock_balances sb ON sb.product_id = pol.product_id AND sb.qty_on_hand > 0
+         JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
+         JOIN companies c ON c.id = sl.company_id
+         WHERE pol.po_id = $1
+           AND ($2 OR EXISTS (
+             SELECT 1 FROM user_company_roles ucr
+             WHERE ucr.user_id = $3 AND ucr.company_id = sl.company_id AND ucr.is_active = true
+           ))
+         ORDER BY pol.id, "qtyOnHand" DESC`,
+        [args.poId, isSysAdmin, ctx.auth.userId],
+      )
+      const byLocationByLine = new Map<string, Record<string, unknown>[]>()
+      for (const row of byLocationRes.rows as Record<string, unknown>[]) {
+        const lineId = String(row.lineId)
+        const list = byLocationByLine.get(lineId) ?? []
+        list.push({
+          companyId: row.companyId,
+          companyName: row.companyName,
+          locationId: row.locationId,
+          locationName: row.locationName,
+          qtyOnHand: parseFloat(String(row.qtyOnHand ?? 0)),
+          qtyAvailable: parseFloat(String(row.qtyAvailable ?? 0)),
+          averageCost: row.averageCost != null ? parseFloat(String(row.averageCost)) : null,
+        })
+        byLocationByLine.set(lineId, list)
+      }
+
       return result.rows.map((r: Record<string, unknown>) => ({
         ...r,
         qtyRequired: parseFloat(String(r.qtyRequired ?? 0)),
         qtyOnHand: parseFloat(String(r.qtyOnHand ?? 0)),
         qtyAvailable: parseFloat(String(r.qtyAvailable ?? 0)),
         isAvailable: Boolean(r.isAvailable),
+        byLocation: byLocationByLine.get(String(r.lineId)) ?? [],
       }))
     },
 
@@ -4978,9 +5392,16 @@ export const resolvers = {
                     pol.store_price, pol.store_price_currency,
                     pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
                     pol.in_stock, pol.qty_from_stock,
+                    pol.source_location_id, sl.name AS source_location_name,
+                    sl.company_id AS source_company_id, sc.name AS source_company_name,
+                    sb.average_cost AS source_average_cost,
                     pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
                     pol.line_number, p.name AS product_name
-             FROM po_lines pol LEFT JOIN products p ON p.id=pol.product_id
+             FROM po_lines pol
+             LEFT JOIN products p ON p.id=pol.product_id
+             LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
+             LEFT JOIN companies sc ON sc.id=sl.company_id
+             LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
              WHERE pol.po_id=$1 ORDER BY pol.line_number`,
             [args.id],
           ),
@@ -6962,25 +7383,6 @@ export const resolvers = {
           await client.query(
             `INSERT INTO po_approval_log (po_id,action,user_id,notes) VALUES ($1,'rejected',$2,$3)`,
             [args.id, ctx.auth!.userId, args.notes],
-          )
-          return r.rows[0]
-        },
-      )
-    },
-
-    cancelPO: async (_: unknown, args: { id: string; notes?: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      return withTransaction(
-        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
-        async (client) => {
-          const r = await client.query(
-            `UPDATE purchase_orders SET status='cancelled', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status NOT IN ('closed','cancelled') RETURNING *`,
-            [args.id, ctx.auth!.companyId],
-          )
-          if (!r.rows[0]) throw new Error('PO not found or cannot be cancelled')
-          await client.query(
-            `INSERT INTO po_approval_log (po_id,action,user_id,notes) VALUES ($1,'cancelled',$2,$3)`,
-            [args.id, ctx.auth!.userId, args.notes ?? null],
           )
           return r.rows[0]
         },
@@ -22122,6 +22524,13 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const isAdminRole = ['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)
 
+    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
+      args.id,
+      ctx.auth.companyId,
+    ])
+    if (!poRow.rows[0]) throw new Error('PO not found')
+    const poStatus = (poRow.rows[0] as { status: string }).status
+
     if (!isAdminRole) {
       const scope = await query(
         `SELECT 1 FROM purchase_orders po
@@ -22149,6 +22558,42 @@ const phase5MutationResolvers = {
       changesObj = JSON.parse(args.changes)
     } catch {
       throw new Error('changes must be valid JSON')
+    }
+
+    // A PO that hasn't been approved yet doesn't need admin sign-off to change —
+    // apply it immediately, but still record it as an (auto-approved) edit request
+    // so the "Edit requests" tab keeps a full, honest audit trail either way.
+    if (!POST_APPROVAL_PO_STATUSES.includes(poStatus)) {
+      const client = await pool.connect()
+      let row: Record<string, unknown>
+      try {
+        await client.query('BEGIN')
+        const ins = await client.query(
+          `INSERT INTO po_edit_requests (po_id, requested_by, changes, request_notes, status, reviewed_by, review_notes, reviewed_at)
+           VALUES ($1,$2,$3,$4,'approved',$2,'Auto-applied — PO not yet approved',NOW()) RETURNING *`,
+          [args.id, ctx.auth.userId, JSON.stringify(changesObj), args.notes ?? null],
+        )
+        row = ins.rows[0] as Record<string, unknown>
+        await applyPOEditChanges(client, args.id, changesObj as EditChanges)
+        const changeSummary = buildEditChangeSummary(changesObj as EditChanges)
+        await client.query(
+          `INSERT INTO po_approval_log (po_id,from_status,to_status,actor_id,action,notes) VALUES ($1,$2,$2,$3,'edit_applied',$4)`,
+          [args.id, poStatus, ctx.auth.userId, changeSummary],
+        )
+        await client.query('COMMIT')
+      } catch (e) {
+        await client.query('ROLLBACK')
+        throw e
+      } finally {
+        client.release()
+      }
+      const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
+      return {
+        ...row,
+        changes: args.changes,
+        requested_by_email: usr.rows[0]?.email ?? null,
+        reviewed_by_email: usr.rows[0]?.email ?? null,
+      }
     }
 
     const r = await query(
@@ -22181,77 +22626,12 @@ const phase5MutationResolvers = {
     )
     if (!erRow.rows[0]) throw new Error('Pending edit request not found')
 
-    const changes = (erRow.rows[0] as Record<string, unknown>).changes as {
-      header?: Record<string, { from: unknown; to: unknown }>
-      lines?: {
-        edited?: { id: string; field: string; to: unknown }[]
-        added?: Record<string, unknown>[]
-        removed?: string[]
-      }
-    }
+    const changes = (erRow.rows[0] as Record<string, unknown>).changes as EditChanges
 
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      const allowed = [
-        'notes',
-        'expected_delivery_date',
-        'vendor_id',
-        'analytic_account_id',
-        'currency_code',
-      ]
-      if (changes.header && Object.keys(changes.header).length > 0) {
-        const sets: string[] = []
-        const vals: unknown[] = []
-        for (const [field, diff] of Object.entries(changes.header)) {
-          if (!allowed.includes(field)) continue
-          sets.push(`${field}=$${vals.length + 1}`)
-          vals.push(diff.to)
-        }
-        if (sets.length > 0) {
-          vals.push(args.id)
-          await client.query(
-            `UPDATE purchase_orders SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length}`,
-            vals,
-          )
-        }
-      }
-      const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
-      for (const e of changes.lines?.edited ?? []) {
-        if (!lineAllowed.includes(e.field)) continue
-        await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND po_id=$3`, [
-          e.to,
-          e.id,
-          args.id,
-        ])
-      }
-      for (const line of changes.lines?.added ?? []) {
-        const qty = Number(line.qty_ordered ?? 0),
-          price = Number(line.unit_price ?? 0)
-        await client.query(
-          `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,currency_code,uom,total_price)
-           VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$6,$7,$8)`,
-          [
-            args.id,
-            line.description,
-            line.product_id ?? null,
-            qty,
-            price,
-            line.currency_code ?? 'IQD',
-            line.uom ?? 'unit',
-            qty * price,
-          ],
-        )
-      }
-      for (const lineId of changes.lines?.removed ?? []) {
-        await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, args.id])
-      }
-      if (changes.lines) {
-        await client.query(
-          `UPDATE purchase_orders SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),updated_at=NOW() WHERE id=$1`,
-          [args.id],
-        )
-      }
+      await applyPOEditChanges(client, args.id, changes)
       await client.query(
         `UPDATE po_edit_requests SET status='approved',reviewed_by=$1,review_notes=$2,reviewed_at=NOW() WHERE id=$3`,
         [ctx.auth.userId, args.reviewNotes ?? null, args.requestId],
@@ -22376,7 +22756,7 @@ const phase5MutationResolvers = {
     _: unknown,
     args: {
       id: string
-      lineStockQtys: { lineId: string; qtyFromStock: number }[]
+      lineStockQtys: { lineId: string; qtyFromStock: number; sourceLocationId?: string }[]
       notes?: string
     },
     ctx: GQLContext,
@@ -22392,11 +22772,11 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
 
-      // Update qty_from_stock per line
+      // Update qty_from_stock (+ chosen source location, if any) per line
       for (const lsq of args.lineStockQtys) {
         await client.query(
-          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered) WHERE id=$2 AND po_id=$3`,
-          [lsq.qtyFromStock, lsq.lineId, args.id],
+          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4 WHERE id=$2 AND po_id=$3`,
+          [lsq.qtyFromStock, lsq.lineId, args.id, lsq.sourceLocationId ?? null],
         )
       }
 
@@ -22468,7 +22848,7 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
 
-      // Get PO + lines
+      // Get PO
       const poRes = await client.query(
         `SELECT po.*, v.name AS vendor_name FROM purchase_orders po LEFT JOIN vendors v ON v.id=po.vendor_id WHERE po.id=$1`,
         [args.id],
@@ -22476,153 +22856,7 @@ const phase5MutationResolvers = {
       const po = poRes.rows[0] as Record<string, unknown>
       if (!po) throw new Error('PO not found')
 
-      const linesRes = await client.query(
-        `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
-        [args.id],
-      )
-
-      // Find warehouse location for the company
-      const warehouseRes = await client.query(
-        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
-        [auth.companyId],
-      )
-      // Fallback: find any active stock location
-      const fallbackRes = await client.query(
-        `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
-        [auth.companyId],
-      )
-      const fromLocationId = warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id
-      if (!fromLocationId) throw new Error('No warehouse location found for company')
-
-      // Find destination location (virtual), fallback to source
-      const destRes = await client.query(
-        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual' AND is_active=true LIMIT 1`,
-        [auth.companyId],
-      )
-      const toLocationId = destRes.rows[0]?.id ?? fromLocationId
-
-      for (const line of linesRes.rows as Record<string, unknown>[]) {
-        if (!line.product_id) continue // skip non-product lines
-
-        const qty = parseFloat(String(line.qty_from_stock ?? 0))
-        if (qty <= 0) continue
-
-        // Create stock move
-        await client.query(
-          `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
-           VALUES ($1,$2,$3,$4,NOW(),$5,
-             (SELECT average_cost FROM stock_balances WHERE product_id=$2 AND location_id=$3 LIMIT 1),
-             $5 * COALESCE((SELECT average_cost FROM stock_balances WHERE product_id=$2 AND location_id=$3 LIMIT 1), 0),
-             'po_stock_issuance',$6,$7)`,
-          [
-            auth.companyId,
-            line.product_id,
-            fromLocationId,
-            toLocationId,
-            qty,
-            args.id,
-            auth.userId,
-          ],
-        )
-
-        // stock_balances is maintained by the trg_update_stock_balance trigger on
-        // stock_moves (packages/db/migrations/008/050) — no manual update needed here.
-
-        // If linked to MO, update mo_consumptions
-        if (po.linked_mo_id) {
-          await client.query(
-            `UPDATE mo_consumptions SET qty_consumed=LEAST(qty_planned, qty_consumed+$1)
-             WHERE mo_id=$2 AND component_product_id=$3`,
-            [qty, po.linked_mo_id, line.product_id],
-          )
-        }
-      }
-
-      // If linked to MO, check if all components now satisfied → confirm MO
-      if (po.linked_mo_id) {
-        const moCheck = await client.query(
-          `SELECT COUNT(*) FILTER (WHERE qty_consumed < qty_planned) AS unsatisfied
-           FROM mo_consumptions WHERE mo_id=$1`,
-          [po.linked_mo_id],
-        )
-        if (parseInt(String(moCheck.rows[0]?.unsatisfied ?? '1')) === 0) {
-          await client.query(
-            `UPDATE manufacturing_orders SET status='confirmed', updated_at=NOW() WHERE id=$1 AND status='draft'`,
-            [po.linked_mo_id],
-          )
-        }
-      }
-
-      // Auto-create and immediately issue a Store Out for all items leaving stock
-      if (linesRes.rows.length > 0) {
-        const cntRes = await client.query(
-          `SELECT COUNT(*) FROM project_material_issues WHERE company_id=$1`,
-          [auth.companyId],
-        )
-        const seq = parseInt(String(cntRes.rows[0]?.count ?? '0')) + 1
-        const issueNumber = `SI-${String(seq).padStart(5, '0')}`
-
-        const issueRes = await client.query(
-          `INSERT INTO project_material_issues
-             (project_id, company_id, po_id, issue_number, issue_date, status,
-              issued_by, issued_at, created_by, notes)
-           VALUES ($1,$2,$3,$4,NOW()::date,'issued',$5,NOW(),$5,
-                   'Auto-created from PO stock issuance')
-           RETURNING id`,
-          [po.project_id, auth.companyId, args.id, issueNumber, auth.userId],
-        )
-        const issueId = issueRes.rows[0]?.id as string
-        let totalAmount = 0
-
-        for (const line of linesRes.rows as Record<string, unknown>[]) {
-          if (!line.product_id) continue
-          const qty = parseFloat(String(line.qty_from_stock ?? 0))
-          if (qty <= 0) continue
-
-          // Use store_price if set on the line; fall back to average_cost from stock
-          const costRes = await client.query(
-            `SELECT COALESCE(
-               NULLIF(pol.store_price, 0),
-               (SELECT sb.average_cost FROM stock_balances sb
-                WHERE sb.product_id=pol.product_id AND sb.location_id=$2 LIMIT 1),
-               0
-             ) AS unit_cost
-             FROM po_lines pol WHERE pol.id=$1`,
-            [line.id, fromLocationId],
-          )
-          const unitCost = parseFloat(String(costRes.rows[0]?.unit_cost ?? 0))
-          const lineCost = qty * unitCost
-
-          await client.query(
-            `INSERT INTO project_material_issue_lines
-               (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost,
-                from_location_id, to_location_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [
-              issueId,
-              line.product_id,
-              line.id,
-              qty,
-              unitCost,
-              lineCost,
-              fromLocationId,
-              toLocationId,
-            ],
-          )
-          totalAmount += lineCost
-        }
-
-        if (totalAmount > 0 && po.project_id) {
-          await client.query(
-            `INSERT INTO project_cost_actuals
-               (project_id, source_type, source_id, amount, currency_code, entry_date)
-             VALUES ($1,'stock_issue',$2,$3,'IQD',NOW()::date)
-             ON CONFLICT (source_id) WHERE source_type = 'stock_issue' AND source_id IS NOT NULL
-             DO UPDATE SET amount=EXCLUDED.amount`,
-            [po.project_id, issueId, totalAmount],
-          )
-        }
-      }
+      await issueStockForPOLines(client, po, auth.companyId, auth.userId)
 
       await poTransition(
         client,
@@ -22668,8 +22902,16 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
       for (const lp of args.linePrices ?? []) {
+        // Blend now with whatever's known so far: the from-stock portion is valued
+        // at this store price, the rest at whatever market price is already on
+        // file (or this store price, if none yet) — submitPOMarketPricing
+        // recomputes this with the real market price once that's entered. Lines
+        // that end up 100% stock-covered never reach market pricing at all, so
+        // this is the only place their total gets set.
         await client.query(
-          `UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3 AND po_id=$4`,
+          `UPDATE po_lines SET store_price=$1, store_price_currency=$2,
+             total_price = COALESCE(qty_from_stock,0)*$1 + GREATEST(qty_ordered-COALESCE(qty_from_stock,0),0)*COALESCE(market_price,$1)
+           WHERE id=$3 AND po_id=$4`,
           [lp.storePrice, lp.currencyCode, lp.lineId, args.id],
         )
       }
@@ -22678,6 +22920,7 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
+      await recalcPO(client, args.id)
       await poTransition(
         client,
         args.id,
@@ -22731,8 +22974,13 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
       for (const lp of args.linePrices ?? []) {
+        // Blended total: the from-stock portion at store price (falling back to
+        // this market price if store pricing never set one), the rest at market
+        // price — not the full qty_ordered at market price regardless of source.
         await client.query(
-          `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3, total_price=qty_ordered*$1 WHERE id=$4 AND po_id=$5`,
+          `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3,
+             total_price = COALESCE(qty_from_stock,0)*COALESCE(store_price,$1) + GREATEST(qty_ordered-COALESCE(qty_from_stock,0),0)*$1
+           WHERE id=$4 AND po_id=$5`,
           [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
         )
       }
@@ -22791,7 +23039,9 @@ const phase5MutationResolvers = {
       await client.query('BEGIN')
       for (const la of args.lineAdjustments ?? []) {
         await client.query(
-          `UPDATE po_lines SET verified_price=$1, verified_price_currency=(SELECT currency_code FROM purchase_orders WHERE id=$3), unit_price=$1, total_price=qty_ordered*$1 WHERE id=$2 AND po_id=$3`,
+          `UPDATE po_lines SET verified_price=$1, verified_price_currency=(SELECT currency_code FROM purchase_orders WHERE id=$3), unit_price=$1,
+             total_price = COALESCE(qty_from_stock,0)*COALESCE(store_price,$1) + GREATEST(qty_ordered-COALESCE(qty_from_stock,0),0)*$1
+           WHERE id=$2 AND po_id=$3`,
           [la.verifiedPrice, la.lineId, args.id],
         )
       }
@@ -22888,6 +23138,13 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      // Mixed POs (some lines from stock, some purchased) never go through the
+      // 100%-stock-covered fast path (ready_to_issue → approveStockIssuance), so
+      // their from-stock quantity has never been deducted from inventory until
+      // now — this is the point a mixed PO is actually committed to.
+      const fullPoRes = await client.query(`SELECT * FROM purchase_orders WHERE id=$1`, [args.id])
+      const fullPo = fullPoRes.rows[0] as Record<string, unknown>
+      await issueStockForPOLines(client, fullPo, auth.companyId, auth.userId)
       await poTransition(client, args.id, 'pending_approval', 'approved', 'approve', auth)
       await client.query('COMMIT')
     } catch (e) {
@@ -23022,6 +23279,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await reverseStockIssuanceForPO(client, args.id, auth.userId)
       await poTransition(client, args.id, fromStatus, 'cancelled', 'cancel', auth, args.reason)
       await client.query('COMMIT')
     } catch (e) {
