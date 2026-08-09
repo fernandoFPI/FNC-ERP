@@ -43,6 +43,16 @@ const BLOCKED_EXTENSIONS = [
   '.jar',
   '.com',
   '.scr',
+  // Renderable-markup types — blocked because 'attachment'-category uploads
+  // can now be previewed with Content-Disposition: inline (see download.ts).
+  // An uploaded .html/.svg previewed inline would execute embedded script
+  // in the storage bucket's origin — not this app's own origin, but still
+  // a real phishing/redress vector via a "trusted" document preview.
+  '.html',
+  '.htm',
+  '.xhtml',
+  '.shtml',
+  '.svg',
 ]
 
 const EXTENSION_MIME_MAP: Record<string, string[]> = {

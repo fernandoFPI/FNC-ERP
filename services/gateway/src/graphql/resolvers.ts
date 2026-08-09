@@ -7915,6 +7915,9 @@ export const resolvers = {
         (uploaderRow.rows[0] as Record<string, unknown>).full_name ?? 'Unknown',
       )
 
+      const documentNumber =
+        args.documentNumber || (await nextDocumentNumber(ctx.auth.companyId, 'client_document', 'CD'))
+
       const ins = await query(
         `INSERT INTO project_client_documents
            (project_id, file_id, category, title, document_number, revision, description, received_from, transmission_date, uploaded_by_id, uploaded_by_name)
@@ -7925,7 +7928,7 @@ export const resolvers = {
           args.fileId,
           args.category,
           args.title,
-          args.documentNumber ?? null,
+          documentNumber,
           args.revision ?? null,
           args.description ?? null,
           args.receivedFrom ?? null,
@@ -7940,7 +7943,7 @@ export const resolvers = {
         args.projectId,
         ctx.auth.userId,
         'client_document_upload',
-        `Document uploaded: "${args.title}"${args.documentNumber ? ` [${args.documentNumber}]` : ''}`,
+        `Document uploaded: "${args.title}" [${documentNumber}]`,
       )
 
       // Notify project members (in-app + email via outbox)
@@ -7988,7 +7991,7 @@ export const resolvers = {
                 projectCode,
                 documentTitle: args.title,
                 category: args.category,
-                documentNumber: args.documentNumber ?? null,
+                documentNumber,
                 revision: args.revision ?? null,
                 receivedFrom: args.receivedFrom ?? null,
                 uploadedBy: uploaderName,
@@ -8002,9 +8005,16 @@ export const resolvers = {
       }
 
       let downloadUrl: string | null = null
+      let previewUrl: string | null = null
       try {
         const dl = await generateDownloadUrl(f.file_key as string, f.original_filename as string)
         downloadUrl = dl.downloadUrl
+        const pv = await generateDownloadUrl(
+          f.file_key as string,
+          f.original_filename as string,
+          'inline',
+        )
+        previewUrl = pv.downloadUrl
       } catch {
         /* best-effort */
       }
@@ -8025,6 +8035,7 @@ export const resolvers = {
         uploadedById: row.uploaded_by_id,
         uploadedByName: row.uploaded_by_name,
         downloadUrl,
+        previewUrl,
         filename: f.original_filename,
         mimeType: null,
         sizeBytes: null,
@@ -8107,9 +8118,16 @@ export const resolvers = {
       )
 
       let downloadUrl: string | null = null
+      let previewUrl: string | null = null
       try {
         const dl = await generateDownloadUrl(f.file_key as string, f.original_filename as string)
         downloadUrl = dl.downloadUrl
+        const pv = await generateDownloadUrl(
+          f.file_key as string,
+          f.original_filename as string,
+          'inline',
+        )
+        previewUrl = pv.downloadUrl
       } catch {
         /* best-effort */
       }
@@ -8130,6 +8148,7 @@ export const resolvers = {
         uploadedById: row.uploaded_by_id,
         uploadedByName: row.uploaded_by_name,
         downloadUrl,
+        previewUrl,
         filename: f.original_filename,
         mimeType: null,
         sizeBytes: null,
@@ -20579,6 +20598,7 @@ const phase5QueryResolvers = {
 
     const toGQL = async (row: Record<string, unknown>, fetchRevisions = true) => {
       let downloadUrl: string | null = null
+      let previewUrl: string | null = null
       if (row.file_key) {
         try {
           const dl = await generateDownloadUrl(
@@ -20586,6 +20606,12 @@ const phase5QueryResolvers = {
             row.original_filename as string,
           )
           downloadUrl = dl.downloadUrl
+          const pv = await generateDownloadUrl(
+            row.file_key as string,
+            row.original_filename as string,
+            'inline',
+          )
+          previewUrl = pv.downloadUrl
         } catch {
           /* best-effort */
         }
@@ -20620,6 +20646,7 @@ const phase5QueryResolvers = {
         uploadedById: row.uploaded_by_id ?? null,
         uploadedByName: row.uploaded_by_name ?? null,
         downloadUrl,
+        previewUrl,
         filename: row.original_filename ?? null,
         mimeType: row.mime_type ?? null,
         sizeBytes: row.size_bytes ? parseInt(String(row.size_bytes)) : null,

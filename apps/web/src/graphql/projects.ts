@@ -1003,6 +1003,7 @@ const CLIENT_DOCUMENT_FIELDS = gql`
     uploadedById
     uploadedByName
     downloadUrl
+    previewUrl
     filename
     mimeType
     sizeBytes
@@ -1020,6 +1021,7 @@ const CLIENT_DOCUMENT_FIELDS = gql`
       status
       uploadedByName
       downloadUrl
+      previewUrl
       filename
       createdAt
     }

@@ -52,6 +52,13 @@ describe('File validation', () => {
     expect(msg.valid).toBe(true)
   })
 
+  it('blocks renderable markup (.html/.svg) even for the blocklist-only attachment category — preview now serves inline, so these must never be uploadable', () => {
+    const html = validateFile('page.html', 'text/html', 1024, 'attachment', MAX_50MB)
+    expect(html.valid).toBe(false)
+    const svg = validateFile('image.svg', 'image/svg+xml', 1024, 'attachment', MAX_50MB)
+    expect(svg.valid).toBe(false)
+  })
+
   it('still blocks dangerous extensions for attachment category even though it is blocklist-only', () => {
     const result = validateFile('payload.exe', 'application/acad', 1024, 'attachment', MAX_50MB)
     expect(result.valid).toBe(false)

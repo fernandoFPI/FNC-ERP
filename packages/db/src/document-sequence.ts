@@ -8,6 +8,7 @@ export const DOC_TYPES = [
   { key: 'project_invoice', label: 'Project Invoice', defaultPrefix: 'INV' },
   { key: 'rental_contract', label: 'Rental Contract', defaultPrefix: 'RC' },
   { key: 'rental_invoice', label: 'Rental Invoice', defaultPrefix: 'RI' },
+  { key: 'client_document', label: 'Client Document', defaultPrefix: 'CD' },
 ] as const
 
 export type DocType = (typeof DOC_TYPES)[number]['key']

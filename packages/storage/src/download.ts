@@ -15,11 +15,13 @@ export interface DownloadUrlResponse {
 export async function generateDownloadUrl(
   fileKey: string,
   originalFilename: string,
+  disposition: 'attachment' | 'inline' = 'attachment',
 ): Promise<DownloadUrlResponse> {
   if (isDevMode()) {
     const gatewayUrl = process.env['GATEWAY_PUBLIC_URL'] ?? 'http://localhost:3000'
+    const suffix = disposition === 'inline' ? '?disposition=inline' : ''
     return {
-      downloadUrl: `${gatewayUrl}/api/v1/files/dev-uploads/${fileKey}`,
+      downloadUrl: `${gatewayUrl}/api/v1/files/dev-uploads/${fileKey}${suffix}`,
       expiresInSeconds: 86400,
       filename: originalFilename,
     }
@@ -30,7 +32,7 @@ export async function generateDownloadUrl(
   const command = new GetObjectCommand({
     Bucket: getBucket(),
     Key: fileKey,
-    ResponseContentDisposition: `attachment; filename="${originalFilename}"`,
+    ResponseContentDisposition: `${disposition}; filename="${originalFilename}"`,
   })
 
   const downloadUrl = await getSignedUrl(getB2Client(), command, { expiresIn: ttl })

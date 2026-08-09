@@ -2452,6 +2452,7 @@
     uploadedById:     ID
     uploadedByName:   String
     downloadUrl:      String
+    previewUrl:       String
     filename:         String
     mimeType:         String
     sizeBytes:        Int

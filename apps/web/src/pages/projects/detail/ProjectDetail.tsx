@@ -28,9 +28,6 @@ import {
   ADD_DOC_COMMENT,
   RESPOND_TO_COMMENT,
   DELETE_DOC_COMMENT,
-  DOC_DISTRIBUTION_QUERY,
-  UPSERT_DISTRIBUTION_ENTRY,
-  DELETE_DISTRIBUTION_ENTRY,
   PROJECT_TQS_QUERY,
   CREATE_TQ,
   UPDATE_TQ,
@@ -8236,6 +8233,7 @@ interface ClientDoc {
   parentDocumentId: string | null
   uploadedByName: string | null
   downloadUrl: string | null
+  previewUrl: string | null
   filename: string | null
   mimeType: string | null
   sizeBytes: number | null
@@ -8692,7 +8690,6 @@ function ClientDocumentsTab({
             background: isRevision
               ? theme.bgSurface + (theme.bgSurface.length === 7 ? '88' : '')
               : 'transparent',
-            opacity: doc.status === 'archived' ? 0.55 : 1,
             gap: 16,
           }}
         >
@@ -8848,8 +8845,9 @@ function ClientDocumentsTab({
           <div
             style={{ display: 'flex', gap: 2, alignItems: 'center', justifyContent: 'flex-end' }}
           >
-            {/* Preview */}
-            {doc.downloadUrl &&
+            {/* Preview — works on archived documents too, deliberately not
+                gated by doc.status; only whether a file exists. */}
+            {(doc.previewUrl ?? doc.downloadUrl) &&
               iconActionBtn(
                 'Preview',
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -8863,7 +8861,8 @@ function ClientDocumentsTab({
                   <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
                 </svg>,
                 () => {
-                  if (doc.downloadUrl) window.open(doc.downloadUrl, '_blank')
+                  const url = doc.previewUrl ?? doc.downloadUrl
+                  if (url) window.open(url, '_blank')
                 },
               )}
             {/* Download */}
@@ -9352,6 +9351,18 @@ function ClientDocumentsTab({
           onClose={() => setShowModal(false)}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              style={{
+                padding: '8px 12px',
+                background: theme.accentBg,
+                border: `1px solid ${theme.accentBorder}`,
+                borderRadius: 7,
+                fontSize: 12,
+                color: theme.textMuted,
+              }}
+            >
+              Document number is auto-generated on save.
+            </div>
             <div>
               {lbl('Document Title', true)}
               {inp(
@@ -9398,14 +9409,6 @@ function ClientDocumentsTab({
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               <div>
-                {lbl('Document Number')}
-                {inp(
-                  form.documentNumber,
-                  (v) => setForm((f) => ({ ...f, documentNumber: v })),
-                  'e.g. RFQ-2024-001',
-                )}
-              </div>
-              <div>
                 {lbl('Transmission Date')}
                 {inp(
                   form.transmissionDate,
@@ -9414,15 +9417,14 @@ function ClientDocumentsTab({
                   'date',
                 )}
               </div>
-            </div>
-
-            <div>
-              {lbl('Received From')}
-              {inp(
-                form.receivedFrom,
-                (v) => setForm((f) => ({ ...f, receivedFrom: v })),
-                'Client name or organisation',
-              )}
+              <div>
+                {lbl('Received From')}
+                {inp(
+                  form.receivedFrom,
+                  (v) => setForm((f) => ({ ...f, receivedFrom: v })),
+                  'Client name or organisation',
+                )}
+              </div>
             </div>
 
             <div>
@@ -12936,22 +12938,6 @@ interface DocComment {
   createdAt: string
 }
 
-interface DDMEntry {
-  id: string
-  projectId: string
-  companyName: string
-  contactName: string | null
-  contactEmail: string | null
-  discipline: string | null
-  docType: string | null
-  statusTrigger: string
-  copies: number
-  format: 'PDF' | 'DWG' | 'Native' | 'Hard Copy'
-  autoTransmit: boolean
-  notes: string | null
-  createdAt: string
-}
-
 // ── Engineering Documents constants ──────────────────────────────────────
 const ENG_DISCIPLINES = [
   { key: 'overview', label: 'Overview', code: null },
@@ -13090,7 +13076,7 @@ function EngineeringTab({
   const addToast = useToastStore((s) => s.addToast)
 
   // sub-view
-  const [engView, setEngView] = React.useState<'register' | 'review' | 'distribution'>('register')
+  const [engView, setEngView] = React.useState<'register' | 'review'>('register')
 
   // register state
   const [discipline, setDiscipline] = React.useState<string>('overview')
@@ -13142,35 +13128,6 @@ function EngineeringTab({
     resolution: 'accepted',
   })
 
-  // distribution state
-  const [showDDMModal, setShowDDMModal] = React.useState(false)
-  const [editDDM, setEditDDM] = React.useState<DDMEntry | null>(null)
-  const ddmLock = useRecordLock('doc_distribution_entry', editDDM?.id)
-  const emptyDDM: {
-    companyName: string
-    contactName: string
-    contactEmail: string
-    discipline: string
-    docType: string
-    statusTrigger: string
-    copies: number
-    format: DDMEntry['format']
-    autoTransmit: boolean
-    notes: string
-  } = {
-    companyName: '',
-    contactName: '',
-    contactEmail: '',
-    discipline: '',
-    docType: '',
-    statusTrigger: 'IFA',
-    copies: 1,
-    format: 'PDF',
-    autoTransmit: false,
-    notes: '',
-  }
-  const [ddmForm, setDDMForm] = React.useState(emptyDDM)
-
   const { data, loading, refetch } = useQuery(ENG_DOCS_QUERY, {
     variables: { projectId },
     skip: !projectId,
@@ -13181,12 +13138,6 @@ function EngineeringTab({
     skip: !reviewDocId,
     fetchPolicy: 'cache-and-network',
   })
-  const { data: ddmData, refetch: refetchDDM } = useQuery(DOC_DISTRIBUTION_QUERY, {
-    variables: { projectId },
-    skip: engView !== 'distribution',
-    fetchPolicy: 'cache-and-network',
-  })
-
   const [createDoc] = useMutation(CREATE_ENG_DOC)
   const [reviseDocM] = useMutation(REVISE_ENG_DOC)
   const [updateStatus] = useMutation(UPDATE_ENG_DOC_STATUS)
@@ -13195,8 +13146,6 @@ function EngineeringTab({
   const [addCommentM] = useMutation(ADD_DOC_COMMENT)
   const [respondM] = useMutation(RESPOND_TO_COMMENT)
   const [deleteCommentM] = useMutation(DELETE_DOC_COMMENT)
-  const [upsertDDMM] = useMutation(UPSERT_DISTRIBUTION_ENTRY)
-  const [deleteDDMM] = useMutation(DELETE_DISTRIBUTION_ENTRY)
   const [addClientCommentM] = useMutation(ADD_ENG_CLIENT_COMMENT)
   const [closeClientCommentM] = useMutation(CLOSE_ENG_CLIENT_COMMENT)
   const [reopenClientCommentM] = useMutation(REOPEN_ENG_CLIENT_COMMENT)
@@ -13207,7 +13156,6 @@ function EngineeringTab({
 
   const allDocs: EngDoc[] = data?.engineeringDocuments ?? []
   const comments: DocComment[] = commentsData?.docComments ?? []
-  const ddmEntries: DDMEntry[] = ddmData?.docDistributionMatrix ?? []
 
   const filtered = allDocs.filter((d) => {
     if (discipline !== 'overview' && d.discipline !== discipline) return false
@@ -13396,47 +13344,6 @@ function EngineeringTab({
     }
   }
 
-  const handleSaveDDM = async () => {
-    if (!ddmForm.companyName || !ddmForm.statusTrigger) {
-      addToast({ type: 'error', message: 'Company and status trigger are required' })
-      return
-    }
-    try {
-      await upsertDDMM({
-        variables: {
-          id: editDDM?.id ?? null,
-          projectId,
-          companyName: ddmForm.companyName,
-          contactName: ddmForm.contactName || null,
-          contactEmail: ddmForm.contactEmail || null,
-          discipline: ddmForm.discipline || null,
-          docType: ddmForm.docType || null,
-          statusTrigger: ddmForm.statusTrigger,
-          copies: ddmForm.copies,
-          format: ddmForm.format,
-          autoTransmit: ddmForm.autoTransmit,
-          notes: ddmForm.notes || null,
-        },
-      })
-      addToast({ type: 'success', message: editDDM ? 'Entry updated' : 'Entry added' })
-      setShowDDMModal(false)
-      setEditDDM(null)
-      setDDMForm(emptyDDM)
-      void refetchDDM()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
-    }
-  }
-
-  const handleDeleteDDM = async (id: string) => {
-    if (!window.confirm('Remove this distribution entry?')) return
-    try {
-      await deleteDDMM({ variables: { id } })
-      void refetchDDM()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
-    }
-  }
 
   const handleDelete = async (doc: EngDoc) => {
     if (!window.confirm(`Delete "${doc.title}" (${doc.refNumber})?`)) return
@@ -15435,32 +15342,6 @@ function EngineeringTab({
       />
     </svg>
   )
-  const IconDist = () => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.8" />
-      <path
-        d="M23 21v-2a4 4 0 0 0-3-3.87"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M16 3.13a4 4 0 0 1 0 7.75"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
 
   return (
     <div style={{ padding: '2px 0 20px' }}>
@@ -15482,7 +15363,6 @@ function EngineeringTab({
               Icon: IconReview,
               badge: allDocs.filter((d) => d.openCommentCount > 0).length,
             },
-            { key: 'distribution', label: 'Distribution', Icon: IconDist },
           ] as const
         ).map((tab) => {
           const active = engView === tab.key
@@ -16647,318 +16527,6 @@ function EngineeringTab({
               <div style={{ fontSize: 12 }}>
                 Choose a document from the list to view and add review comments
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════
-          DISTRIBUTION VIEW
-      ══════════════════════════════════════════════════════════════════ */}
-      {engView === 'distribution' && (
-        <div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: theme.textPrimary }}>
-                Document Distribution Matrix
-              </div>
-              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-                Defines who receives which document types at each status milestone
-              </div>
-            </div>
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  setEditDDM(null)
-                  setDDMForm(emptyDDM)
-                  setShowDDMModal(true)
-                }}
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: 8,
-                  background: theme.accent,
-                  color: '#fff',
-                  border: 'none',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 7,
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                  <line
-                    x1="12"
-                    y1="5"
-                    x2="12"
-                    y2="19"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                  <line
-                    x1="5"
-                    y1="12"
-                    x2="19"
-                    y2="12"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                Add Entry
-              </button>
-            )}
-          </div>
-
-          {ddmEntries.length === 0 ? (
-            <div
-              style={{
-                border: `2px dashed ${theme.border}`,
-                borderRadius: 16,
-                padding: '64px 32px',
-                textAlign: 'center',
-              }}
-            >
-              <svg
-                width="40"
-                height="40"
-                viewBox="0 0 24 24"
-                fill="none"
-                style={{ color: theme.textMuted, margin: '0 auto 14px', display: 'block' }}
-              >
-                <path
-                  d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="1.5" />
-                <path
-                  d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <div
-                style={{ fontSize: 14, fontWeight: 600, color: theme.textPrimary, marginBottom: 6 }}
-              >
-                No distribution entries
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  color: theme.textMuted,
-                  maxWidth: 400,
-                  margin: '0 auto 20px',
-                }}
-              >
-                Configure which companies receive which documents at each status milestone (IFA,
-                IFR, IFC, etc.).
-              </div>
-              {isAdmin && (
-                <button
-                  onClick={() => {
-                    setEditDDM(null)
-                    setDDMForm(emptyDDM)
-                    setShowDDMModal(true)
-                  }}
-                  style={{
-                    padding: '8px 20px',
-                    borderRadius: 8,
-                    background: theme.accent,
-                    color: '#fff',
-                    border: 'none',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Add First Entry
-                </button>
-              )}
-            </div>
-          ) : (
-            <div
-              style={{ border: `1px solid ${theme.border}`, borderRadius: 12, overflow: 'hidden' }}
-            >
-              {(() => {
-                const ddmColumns: Column<DDMEntry>[] = [
-                  {
-                    key: 'companyName',
-                    header: 'Company',
-                    mobilePrimary: true,
-                    render: (e) => (
-                      <span style={{ fontWeight: 600, color: theme.textPrimary }}>
-                        {e.companyName}
-                      </span>
-                    ),
-                  },
-                  {
-                    key: 'contact',
-                    header: 'Contact',
-                    mobileSecondary: true,
-                    render: (e) => (
-                      <>
-                        <div>{e.contactName ?? '—'}</div>
-                        {e.contactEmail && (
-                          <div style={{ fontSize: 11, color: theme.textMuted }}>
-                            {e.contactEmail}
-                          </div>
-                        )}
-                      </>
-                    ),
-                  },
-                  {
-                    key: 'discipline',
-                    header: 'Discipline',
-                    mobilePriority: 4,
-                    render: (e) =>
-                      e.discipline ?? <span style={{ color: theme.textMuted }}>All</span>,
-                  },
-                  {
-                    key: 'docType',
-                    header: 'Doc Type',
-                    mobilePriority: 5,
-                    render: (e) => e.docType ?? <span style={{ color: theme.textMuted }}>All</span>,
-                  },
-                  {
-                    key: 'statusTrigger',
-                    header: 'Status Trigger',
-                    mobilePriority: 1,
-                    render: (e) => {
-                      const stMeta = ENG_DOC_STATUSES[e.statusTrigger] ?? ENG_DOC_STATUSES.draft!
-                      return (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            padding: '2px 8px',
-                            borderRadius: 999,
-                            background: stMeta.bg,
-                            color: stMeta.text,
-                            fontSize: 11,
-                            fontWeight: 700,
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 5,
-                              height: 5,
-                              borderRadius: '50%',
-                              background: stMeta.dot,
-                            }}
-                          />
-                          {stMeta.label}
-                        </span>
-                      )
-                    },
-                  },
-                  {
-                    key: 'copies',
-                    header: 'Copies',
-                    mobilePriority: 3,
-                    render: (e) => e.copies,
-                  },
-                  {
-                    key: 'format',
-                    header: 'Format',
-                    mobilePriority: 2,
-                    render: (e) => e.format,
-                  },
-                  {
-                    key: 'autoTransmit',
-                    header: 'Auto',
-                    mobilePriority: 6,
-                    render: (e) =>
-                      e.autoTransmit ? (
-                        <span
-                          style={{
-                            padding: '2px 8px',
-                            borderRadius: 999,
-                            background: '#f0fdf4',
-                            color: '#15803d',
-                            fontSize: 10,
-                            fontWeight: 700,
-                          }}
-                        >
-                          Auto
-                        </span>
-                      ) : (
-                        <span style={{ color: theme.textMuted, fontSize: 12 }}>Manual</span>
-                      ),
-                  },
-                  {
-                    key: 'actions',
-                    header: 'Actions',
-                    mobileAction: true,
-                    render: (e) =>
-                      isAdmin && (
-                        <div
-                          style={{ display: 'flex', gap: 4 }}
-                          onClick={(ev) => ev.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => {
-                              setEditDDM(e)
-                              setDDMForm({
-                                companyName: e.companyName,
-                                contactName: e.contactName ?? '',
-                                contactEmail: e.contactEmail ?? '',
-                                discipline: e.discipline ?? '',
-                                docType: e.docType ?? '',
-                                statusTrigger: e.statusTrigger,
-                                copies: e.copies,
-                                format: e.format as DDMEntry['format'],
-                                autoTransmit: e.autoTransmit,
-                                notes: e.notes ?? '',
-                              })
-                              setShowDDMModal(true)
-                            }}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: 6,
-                              background: theme.bgSurface,
-                              border: `1px solid ${theme.border}`,
-                              color: theme.textSecondary,
-                              fontSize: 11,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => void handleDeleteDDM(e.id)}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: 6,
-                              background: '#fff1f2',
-                              border: '1px solid #fca5a5',
-                              color: '#dc2626',
-                              fontSize: 11,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ),
-                  },
-                ]
-                return <Table columns={ddmColumns} data={ddmEntries} rowKey="id" />
-              })()}
             </div>
           )}
         </div>
@@ -18166,253 +17734,6 @@ function EngineeringTab({
                 )
               })()}
             </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Distribution Entry Modal */}
-      {showDDMModal && (
-        <Modal
-          open={true}
-          title={editDDM ? 'Edit Distribution Entry' : 'Add Distribution Entry'}
-          onClose={() => {
-            setShowDDMModal(false)
-            setEditDDM(null)
-            setDDMForm(emptyDDM)
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Company / Recipient', true)}
-                {inp(
-                  ddmForm.companyName,
-                  (v) => setDDMForm((f) => ({ ...f, companyName: v })),
-                  'e.g. Client, EPC Contractor, Subcontractor',
-                )}
-              </div>
-              <div>
-                {lbl('Contact Name')}
-                {inp(
-                  ddmForm.contactName,
-                  (v) => setDDMForm((f) => ({ ...f, contactName: v })),
-                  'Full name',
-                )}
-              </div>
-              <div>
-                {lbl('Email')}
-                {inp(
-                  ddmForm.contactEmail,
-                  (v) => setDDMForm((f) => ({ ...f, contactEmail: v })),
-                  'email@example.com',
-                  'email',
-                )}
-              </div>
-              <div>
-                {lbl('Discipline (blank = all)')}
-                <select
-                  value={ddmForm.discipline}
-                  onChange={(e) => setDDMForm((f) => ({ ...f, discipline: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                  }}
-                >
-                  <option value="">All Disciplines</option>
-                  {ENG_DISCIPLINES.filter((d) => d.key !== 'overview').map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                {lbl('Doc Type (blank = all)')}
-                <select
-                  value={ddmForm.docType}
-                  onChange={(e) => setDDMForm((f) => ({ ...f, docType: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                  }}
-                >
-                  <option value="">All Types</option>
-                  {ENG_DOC_TYPES.filter((t) => t.key !== 'all').map((t) => (
-                    <option key={t.key} value={t.key}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                {lbl('Status Trigger', true)}
-                <select
-                  value={ddmForm.statusTrigger}
-                  onChange={(e) => setDDMForm((f) => ({ ...f, statusTrigger: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                  }}
-                >
-                  {Object.entries(ENG_DOC_STATUSES)
-                    .filter(
-                      ([k]) =>
-                        ![
-                          'preliminary',
-                          'for_review',
-                          'for_construction',
-                          'superseded',
-                          'cancelled',
-                        ].includes(k),
-                    )
-                    .map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v.label}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div>
-                {lbl('Format')}
-                <select
-                  value={ddmForm.format}
-                  onChange={(e) =>
-                    setDDMForm((f) => ({ ...f, format: e.target.value as DDMEntry['format'] }))
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                  }}
-                >
-                  {(['PDF', 'DWG', 'Native', 'Hard Copy'] as const).map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                {lbl('Copies')}
-                <input
-                  type="number"
-                  min={1}
-                  value={ddmForm.copies}
-                  onChange={(e) =>
-                    setDDMForm((f) => ({ ...f, copies: parseInt(e.target.value) || 1 }))
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 8,
-                    background: theme.bgCanvas,
-                    color: theme.textPrimary,
-                    fontSize: 13,
-                    boxSizing: 'border-box' as const,
-                    outline: 'none',
-                  }}
-                />
-              </div>
-              <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
-                  type="checkbox"
-                  id="autoTransmit"
-                  checked={ddmForm.autoTransmit}
-                  onChange={(e) => setDDMForm((f) => ({ ...f, autoTransmit: e.target.checked }))}
-                  style={{ width: 16, height: 16, cursor: 'pointer' }}
-                />
-                <label
-                  htmlFor="autoTransmit"
-                  style={{ fontSize: 13, color: theme.textPrimary, cursor: 'pointer' }}
-                >
-                  Auto-generate transmittal when document reaches this status
-                </label>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                {lbl('Notes')}
-                {inp(
-                  ddmForm.notes,
-                  (v) => setDDMForm((f) => ({ ...f, notes: v })),
-                  'Optional notes',
-                )}
-              </div>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 10,
-                paddingTop: 4,
-                borderTop: `1px solid ${theme.border}`,
-                marginTop: 4,
-              }}
-            >
-              <button
-                onClick={() => {
-                  setShowDDMModal(false)
-                  setEditDDM(null)
-                  setDDMForm(emptyDDM)
-                }}
-                style={{
-                  padding: '8px 18px',
-                  borderRadius: 8,
-                  background: 'transparent',
-                  border: `1px solid ${theme.border}`,
-                  color: theme.textSecondary,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                disabled={!ddmForm.companyName || ddmLock.lockedByOther}
-                onClick={() => void handleSaveDDM()}
-                style={{
-                  padding: '8px 22px',
-                  borderRadius: 8,
-                  background:
-                    ddmForm.companyName && !ddmLock.lockedByOther ? theme.accent : theme.border,
-                  color: '#fff',
-                  border: 'none',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: ddmForm.companyName && !ddmLock.lockedByOther ? 'pointer' : 'not-allowed',
-                }}
-              >
-                {editDDM ? 'Update Entry' : 'Add Entry'}
-              </button>
-            </div>
-            {ddmLock.lockedByOther && (
-              <div style={{ fontSize: 12, color: theme.warning }}>
-                <strong>{ddmLock.lockedByName}</strong> is currently working on this distribution
-                entry — saving is disabled until they finish.
-              </div>
-            )}
           </div>
         </Modal>
       )}
