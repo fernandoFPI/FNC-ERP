@@ -72,6 +72,9 @@ export const PURCHASE_ORDERS_QUERY = gql`
       expected_delivery_date
       assigned_to_email
       invoice_count
+      project_id
+      projectCode
+      projectName
     }
   }
 `

@@ -39,6 +39,9 @@ interface PurchaseOrder {
   created_at: string
   expected_delivery_date?: string
   invoice_count: number
+  project_id?: string | null
+  projectCode?: string | null
+  projectName?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -94,7 +97,9 @@ export default function PurchaseOrdersPage() {
       const q = search.toLowerCase()
       if (
         !o.po_number.toLowerCase().includes(q) &&
-        !(o.vendor_name ?? '').toLowerCase().includes(q)
+        !(o.vendor_name ?? '').toLowerCase().includes(q) &&
+        !(o.projectCode ?? '').toLowerCase().includes(q) &&
+        !(o.projectName ?? '').toLowerCase().includes(q)
       )
         return false
     }
@@ -158,6 +163,7 @@ export default function PurchaseOrdersPage() {
     const header = [
       'PO Number',
       'Vendor',
+      'Project',
       'Status',
       'Priority',
       'Total Amount',
@@ -168,6 +174,7 @@ export default function PurchaseOrdersPage() {
     const rows = selectedRows.map((o) => [
       o.po_number,
       o.vendor_name ?? '',
+      o.project_id ? [o.projectCode, o.projectName].filter(Boolean).join(' — ') : '',
       getPOStatusLabel(o.status),
       PRIORITY_LABELS[o.priority] ?? o.priority,
       o.total_amount,
@@ -259,6 +266,18 @@ export default function PurchaseOrdersPage() {
       render: (o) => (
         <span style={{ color: theme.textPrimary, fontSize: '13px' }}>{o.vendor_name ?? '—'}</span>
       ),
+    },
+    {
+      key: 'project',
+      header: 'Project',
+      render: (o) =>
+        o.project_id ? (
+          <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
+            {[o.projectCode, o.projectName].filter(Boolean).join(' — ')}
+          </span>
+        ) : (
+          <span style={{ color: theme.textMuted, fontSize: '13px' }}>—</span>
+        ),
     },
     {
       key: 'status',
@@ -359,6 +378,7 @@ export default function PurchaseOrdersPage() {
                 const header = [
                   'PO Number',
                   'Vendor',
+                  'Project',
                   'Status',
                   'Priority',
                   'Total Amount',
@@ -369,6 +389,7 @@ export default function PurchaseOrdersPage() {
                 const rows = filtered.map((o) => [
                   o.po_number,
                   o.vendor_name ?? '',
+                  o.project_id ? [o.projectCode, o.projectName].filter(Boolean).join(' — ') : '',
                   getPOStatusLabel(o.status),
                   PRIORITY_LABELS[o.priority] ?? o.priority,
                   o.total_amount,
