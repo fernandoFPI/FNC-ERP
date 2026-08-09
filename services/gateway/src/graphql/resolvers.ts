@@ -173,6 +173,13 @@ function buildEditChangeSummary(changes: EditChanges): string {
 // because 100%-stock-covered POs skip 'approved' entirely (inventory_check →
 // ready_to_issue → completed via approve_stock_issuance) — that transition is
 // itself the approval for that fast path.
+//
+// 'cancelled' is included too even though it's reachable from both pre- and
+// post-approval statuses (CANCELLABLE covers everything from 'draft' onward) —
+// the current status alone can't tell those two cases apart, so this errs
+// conservative and keeps requiring approval rather than risk silently
+// auto-applying an edit to a PO that actually had been approved before it was
+// cancelled.
 const POST_APPROVAL_PO_STATUSES = [
   'approved',
   'ready_to_issue',
@@ -180,6 +187,7 @@ const POST_APPROVAL_PO_STATUSES = [
   'finance_audit',
   'invoiced',
   'completed',
+  'cancelled',
 ]
 
 async function applyPOEditChanges(
@@ -22767,6 +22775,28 @@ const phase5MutationResolvers = {
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
     if (!isAdmin && !hasPos) throw new Error('store_keeper position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    const isSysAdmin = auth.role === 'system_admin'
+
+    // A picked source location must be a real, active stock location belonging
+    // to either the PO's own company or a company the caller actually has a role
+    // in — otherwise a crafted request could point a PO at a company's stock the
+    // requesting user has no relationship with, and have it silently deducted
+    // (and interco-transferred) once the PO is approved.
+    for (const lsq of args.lineStockQtys) {
+      if (!lsq.sourceLocationId) continue
+      const locCheck = await query(
+        `SELECT sl.company_id FROM stock_locations sl
+         WHERE sl.id=$1 AND sl.is_active=true
+           AND (sl.company_id=$2 OR $3 OR EXISTS (
+             SELECT 1 FROM user_company_roles ucr
+             WHERE ucr.user_id=$4 AND ucr.company_id=sl.company_id AND ucr.is_active=true
+           ))`,
+        [lsq.sourceLocationId, auth.companyId, isSysAdmin, auth.userId],
+      )
+      if (!locCheck.rows[0])
+        throw new Error('Source stock location not found or not accessible to you')
+    }
+
     let needsPurchase = false
     const client = await pool.connect()
     try {

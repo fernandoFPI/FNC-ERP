@@ -1548,6 +1548,21 @@ export default function PurchaseOrderDetail() {
                       >
                         Enter store prices for from-stock quantities
                       </div>
+                      {stockLines.length === 0 && (
+                        <div
+                          style={{
+                            fontSize: '13px',
+                            color: theme.textMuted,
+                            padding: '12px 14px',
+                            borderRadius: '7px',
+                            border: `1px solid ${theme.border}`,
+                            background: theme.bgSurface,
+                          }}
+                        >
+                          No lines on this PO are being fulfilled from stock — there's nothing to
+                          price here. Continue to market pricing below.
+                        </div>
+                      )}
                       {stockLines.map((line) => {
                         const stockQty = line.qty_from_stock || 0
                         const defaultSp = {
@@ -1649,7 +1664,7 @@ export default function PurchaseOrderDetail() {
                           })
                         }
                       >
-                        Submit store pricing
+                        {stockLines.length === 0 ? 'Continue to market pricing' : 'Submit store pricing'}
                       </Button>
                     </div>
                   )
