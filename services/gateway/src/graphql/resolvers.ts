@@ -20548,13 +20548,14 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT ipc.*, c.name as company_name, u.email as updated_by_email
        FROM interco_pricing_configs ipc
        JOIN companies c ON c.id=ipc.company_id
        LEFT JOIN users u ON u.id=ipc.updated_by
        WHERE ipc.company_id=$1`,
-      [args.companyId],
+      [cid],
     )
     if (!r.rows[0]) return null
     const row = r.rows[0] as Record<string, unknown>
@@ -20572,9 +20573,10 @@ const phase5QueryResolvers = {
 
   intercoPricingConfigHistory: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT *, created_at AS changed_at FROM interco_pricing_config_log WHERE company_id=$1 ORDER BY created_at DESC LIMIT 20`,
-      [args.companyId],
+      [cid],
     )
     return r.rows.map((row: Record<string, unknown>) => ({
       previousMethod: row.previous_method,
@@ -20586,8 +20588,13 @@ const phase5QueryResolvers = {
   },
 
   // Admin — Companies
+  // Lists every company in the system — only the cross-company admin console
+  // (apps/web/src/pages/admin/companies/CompaniesPage.tsx) consumes this, so
+  // unlike company()/companyBranches() etc. there's no "own company" fallback:
+  // a non-system_admin has no legitimate reason to see this list at all.
   companies: async (_: unknown, __: unknown, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    if (ctx.auth.role !== 'system_admin') throw new Error('Unauthorized')
     const r = await query(
       `SELECT c.*, sc.fiscal_year_start_month, sc.fiscal_year_start_day,
               sc.default_currency, sc.default_payment_terms_days, sc.default_po_currency,
@@ -20605,6 +20612,7 @@ const phase5QueryResolvers = {
 
   company: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.id)
     const r = await query(
       `SELECT c.*, sc.fiscal_year_start_month, sc.fiscal_year_start_day,
               sc.default_currency, sc.default_payment_terms_days, sc.default_po_currency,
@@ -20615,7 +20623,7 @@ const phase5QueryResolvers = {
        FROM companies c
        LEFT JOIN system_configuration sc ON sc.company_id = c.id
        WHERE c.id=$1`,
-      [args.id],
+      [cid],
     )
     if (!r.rows[0]) return null
     return companyRowToDetail(r.rows[0] as Record<string, unknown>)
@@ -20623,6 +20631,7 @@ const phase5QueryResolvers = {
 
   companyUsers: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT u.id, u.email, u.is_active, u.last_login_at,
               json_agg(json_build_object('id', ucr.id, 'role', ucr.role, 'module', ucr.module, 'isActive', ucr.is_active)) as roles
@@ -20631,7 +20640,7 @@ const phase5QueryResolvers = {
        WHERE ucr.company_id = $1
        GROUP BY u.id, u.email, u.is_active, u.last_login_at
        ORDER BY u.email`,
-      [args.companyId],
+      [cid],
     )
     return r.rows.map((row: Record<string, unknown>) => ({
       id: row.id,
@@ -25242,12 +25251,13 @@ function bankRow(r: Record<string, unknown>) {
 Object.assign(resolvers.Query, {
   companyBranches: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT cb.*, u.email AS default_procurement_user_email
        FROM company_branches cb
        LEFT JOIN users u ON u.id = cb.default_procurement_user_id
        WHERE cb.company_id=$1 ORDER BY cb.name`,
-      [args.companyId],
+      [cid],
     )
     return r.rows.map((row: Record<string, unknown>) => branchRow(row))
   },
