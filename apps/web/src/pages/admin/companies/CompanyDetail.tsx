@@ -69,6 +69,32 @@ function inputStyle(theme: ReturnType<typeof useTheme>['theme']) {
   }
 }
 
+// These images are stored as data: URIs, so downloading is just a client-side
+// anchor click — the file's own MIME type (not the field, since e.g. the
+// stamp keeps whatever format was originally uploaded) decides the extension.
+function downloadDataUri(dataUri: string, filenameBase: string) {
+  const mime = /^data:([^;]+);base64,/.exec(dataUri)?.[1] ?? 'image/png'
+  const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
+  const a = document.createElement('a')
+  a.href = dataUri
+  a.download = `${filenameBase}.${ext}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function downloadButtonStyle(theme: ReturnType<typeof useTheme>['theme']) {
+  return {
+    marginLeft: '8px',
+    background: 'none',
+    border: 'none',
+    color: theme.textSecondary,
+    fontSize: '12px',
+    cursor: 'pointer',
+    padding: '4px',
+  }
+}
+
 export default function CompanyDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -531,6 +557,16 @@ export default function CompanyDetail() {
             </label>
             {company.stampImage && (
               <button
+                style={downloadButtonStyle(theme)}
+                onClick={() => {
+                  downloadDataUri(company.stampImage as string, `${company.name}-stamp`)
+                }}
+              >
+                Download
+              </button>
+            )}
+            {company.stampImage && (
+              <button
                 style={{
                   marginLeft: '8px',
                   background: 'none',
@@ -629,6 +665,16 @@ export default function CompanyDetail() {
                 }}
               />
             </label>
+            {company.letterheadImage && (
+              <button
+                style={downloadButtonStyle(theme)}
+                onClick={() => {
+                  downloadDataUri(company.letterheadImage as string, `${company.name}-letterhead`)
+                }}
+              >
+                Download
+              </button>
+            )}
             {company.letterheadImage && (
               <button
                 style={{
@@ -733,6 +779,16 @@ export default function CompanyDetail() {
             </label>
             {company.pvTemplateImage && (
               <button
+                style={downloadButtonStyle(theme)}
+                onClick={() => {
+                  downloadDataUri(company.pvTemplateImage as string, `${company.name}-pv-template`)
+                }}
+              >
+                Download
+              </button>
+            )}
+            {company.pvTemplateImage && (
+              <button
                 style={{
                   marginLeft: '8px',
                   background: 'none',
@@ -832,6 +888,19 @@ export default function CompanyDetail() {
                 }}
               />
             </label>
+            {company.journalTemplateImage && (
+              <button
+                style={downloadButtonStyle(theme)}
+                onClick={() => {
+                  downloadDataUri(
+                    company.journalTemplateImage as string,
+                    `${company.name}-journal-template`,
+                  )
+                }}
+              >
+                Download
+              </button>
+            )}
             {company.journalTemplateImage && (
               <button
                 style={{
