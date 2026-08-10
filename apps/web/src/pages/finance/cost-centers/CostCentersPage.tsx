@@ -1,8 +1,11 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
+import { useAuthStore } from '../../../store/authStore'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
+import { COMPANY_USERS_QUERY } from '../../../graphql/admin'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
@@ -21,6 +24,8 @@ interface CostCenter {
   parent_id?: string
   is_active: boolean
   journal_line_count: number
+  default_recharge_fulfiller_id?: string | null
+  default_recharge_fulfiller_email?: string | null
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -36,7 +41,13 @@ const TYPE_VARIANTS: Record<string, 'neutral' | 'info' | 'accent' | 'warning'> =
   overhead: 'warning',
 }
 
-const EMPTY_FORM = { code: '', name: '', type: 'department' as CostCenter['type'], parent_id: '' }
+const EMPTY_FORM = {
+  code: '',
+  name: '',
+  type: 'department' as CostCenter['type'],
+  parent_id: '',
+  default_recharge_fulfiller_id: '',
+}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   const { theme } = useTheme()
@@ -55,6 +66,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function CostCentersPage() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
+  const companyId = useAuthStore((s) => s.user?.companyId ?? '')
+  const { data: usersData } = useQuery(COMPANY_USERS_QUERY, {
+    variables: { companyId },
+    skip: !companyId,
+  })
+  const companyUsers: { id: string; email: string }[] = usersData?.companyUsers ?? []
 
   const [items, setItems] = useState<CostCenter[]>([])
   const [loading, setLoading] = useState(true)
@@ -93,7 +110,13 @@ export default function CostCentersPage() {
   }
   function openEdit(cc: CostCenter) {
     setEditing(cc)
-    setForm({ code: cc.code, name: cc.name, type: cc.type, parent_id: cc.parent_id ?? '' })
+    setForm({
+      code: cc.code,
+      name: cc.name,
+      type: cc.type,
+      parent_id: cc.parent_id ?? '',
+      default_recharge_fulfiller_id: cc.default_recharge_fulfiller_id ?? '',
+    })
     setModalOpen(true)
   }
 
@@ -107,7 +130,13 @@ export default function CostCentersPage() {
       return
     }
     setSaving(true)
-    const payload = { ...form, parent_id: form.parent_id || undefined }
+    const payload = {
+      ...form,
+      parent_id: form.parent_id || undefined,
+      // Always present (UUID or null) rather than omitted when empty, so the
+      // backend can tell "clear the fulfiller" apart from "field not sent."
+      default_recharge_fulfiller_id: form.default_recharge_fulfiller_id || null,
+    }
     try {
       if (editing) {
         await api.put(`/finance/cost-centers/${editing.id}`, payload)
@@ -345,6 +374,19 @@ export default function CostCentersPage() {
             placeholder="None"
             options={parentOptions.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
           />
+        </Field>
+        <Field label="Default recharge fulfiller (optional)">
+          <SearchableSelect
+            value={form.default_recharge_fulfiller_id}
+            onChange={(v) => {
+              setForm((p) => ({ ...p, default_recharge_fulfiller_id: v }))
+            }}
+            placeholder="Unassigned"
+            options={companyUsers.map((u) => ({ value: u.id, label: u.email }))}
+          />
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+            Gets notified and can fulfill phone recharge requests charged to this cost center.
+          </div>
         </Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
           <Button

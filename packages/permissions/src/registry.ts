@@ -382,6 +382,19 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
         ],
       },
       {
+        key: 'recharge',
+        label: 'Phone Recharge',
+        permissions: [
+          { key: 'hr.recharge.view', label: 'View Recharge Requests', sortOrder: 545 },
+          { key: 'hr.recharge.approve', label: 'Approve Recharge Requests', sortOrder: 546 },
+          {
+            key: 'hr.recharge.admin',
+            label: 'Manage Recharge Bundles & Fulfillers',
+            sortOrder: 547,
+          },
+        ],
+      },
+      {
         key: 'departments',
         label: 'Departments',
         permissions: [

@@ -13,6 +13,7 @@ const Schema = z.object({
   name: z.string().min(1).max(255),
   type: z.enum(['department', 'project', 'entity', 'overhead']),
   parent_id: z.string().uuid().optional(),
+  default_recharge_fulfiller_id: z.string().uuid().nullable().optional(),
 })
 
 costCentersRouter.get(
@@ -34,12 +35,13 @@ costCentersRouter.get(
       }
       const result = await query(
         `
-      SELECT cc.*,
+      SELECT cc.*, u.email AS default_recharge_fulfiller_email,
         COUNT(DISTINCT jl.id)::integer AS journal_line_count
       FROM cost_centers cc
       LEFT JOIN journal_lines jl ON jl.cost_center_id = cc.id
+      LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
       WHERE ${conditions.join(' AND ')}
-      GROUP BY cc.id
+      GROUP BY cc.id, u.email
       ORDER BY cc.code
     `,
         values,
@@ -97,10 +99,33 @@ costCentersRouter.put(
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
         return
       }
+      // default_recharge_fulfiller_id needs to support explicit clearing (set
+      // back to null), unlike the COALESCE'd fields above — so it's only
+      // touched at all when the caller actually sent it in the body.
+      const fulfillerProvided = 'default_recharge_fulfiller_id' in req.body
+      if (fulfillerProvided && parsed.data.default_recharge_fulfiller_id) {
+        const userCheck = await query(
+          `SELECT 1 FROM user_company_roles WHERE user_id = $1 AND company_id = $2 AND is_active = true`,
+          [parsed.data.default_recharge_fulfiller_id, companyId],
+        )
+        if (!userCheck.rows[0]) {
+          sendError(res, 400, 'VALIDATION_ERROR', 'That user does not belong to this company')
+          return
+        }
+      }
       const result = await query(
-        `UPDATE cost_centers SET name = COALESCE($1, name), type = COALESCE($2, type), is_active = COALESCE($3, is_active)
+        `UPDATE cost_centers SET name = COALESCE($1, name), type = COALESCE($2, type), is_active = COALESCE($3, is_active),
+         default_recharge_fulfiller_id = CASE WHEN $6 THEN $7::uuid ELSE default_recharge_fulfiller_id END
        WHERE id = $4 AND company_id = $5 RETURNING *`,
-        [parsed.data.name ?? null, parsed.data.type ?? null, null, req.params['id'], companyId],
+        [
+          parsed.data.name ?? null,
+          parsed.data.type ?? null,
+          null,
+          req.params['id'],
+          companyId,
+          fulfillerProvided,
+          parsed.data.default_recharge_fulfiller_id ?? null,
+        ],
       )
       if (!result.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Cost center not found')

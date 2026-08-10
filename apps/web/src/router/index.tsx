@@ -223,6 +223,8 @@ const LeaveTypesPage = lazy(() => import('../pages/hr/leave/LeaveTypesPage'))
 const LeaveRequestsPage = lazy(() => import('../pages/hr/leave/LeaveRequestsPage'))
 const LeaveRequestDetail = lazy(() => import('../pages/hr/leave/LeaveRequestDetail'))
 const OvertimePage = lazy(() => import('../pages/hr/overtime/OvertimePage'))
+const RechargeRequestsPage = lazy(() => import('../pages/hr/recharge/RechargeRequestsPage'))
+const RechargeBundlesPage = lazy(() => import('../pages/hr/recharge/RechargeBundlesPage'))
 const SalaryConfigForm = lazy(() => import('../pages/payroll/salary/SalaryConfigForm'))
 
 // Payroll
@@ -667,6 +669,11 @@ export const router = createBrowserRouter([
           { path: 'leave', element: withPerm('hr.leave.view', <LeaveRequestsPage />) },
           { path: 'leave/:id', element: withPerm('hr.leave.view', <LeaveRequestDetail />) },
           { path: 'overtime', element: withPerm('hr.overtime.view', <OvertimePage />) },
+          { path: 'recharge', element: withPerm('hr.recharge.view', <RechargeRequestsPage />) },
+          {
+            path: 'recharge/bundles',
+            element: withPerm('hr.recharge.admin', <RechargeBundlesPage />, 'admin'),
+          },
         ],
       },
 

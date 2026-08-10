@@ -9,6 +9,7 @@ const TABS = [
   { label: 'Leave Types', path: '/hr/leave/types' },
   { label: 'Leave Requests', path: '/hr/leave' },
   { label: 'Overtime', path: '/hr/overtime' },
+  { label: 'Recharge Requests', path: '/hr/recharge' },
 ]
 
 export default function HRLayout() {

@@ -1049,6 +1049,49 @@ async function notifyFinanceTeamGW(
   }
 }
 
+interface RechargeGWNotification {
+  type: string
+  title: string
+  body: string
+  requestId: string
+}
+
+async function notifyRechargeUserGW(
+  userId: string,
+  companyId: string,
+  notification: RechargeGWNotification,
+): Promise<void> {
+  await query(
+    `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+    [notification.type, JSON.stringify({ userId, companyId, ...notification })],
+  )
+}
+
+// Anyone holding hr.recharge.approve at 'approve' or 'admin' level, plus the
+// company-wide admin roles that bypass granular permission checks entirely
+// (isPermissionBypassGW) — mirrors notifyFinanceTeamGW's shape but keyed off
+// the actual granular permission grant rather than a coarse module role,
+// since hr.recharge.approve isn't tied to a single 'module' the way
+// user_company_roles.module is.
+async function notifyRechargeApproversGW(
+  companyId: string,
+  notification: RechargeGWNotification,
+): Promise<void> {
+  const users = await query<{ user_id: string }>(
+    `SELECT DISTINCT u.id AS user_id
+     FROM users u
+     JOIN user_company_roles ucr ON ucr.user_id = u.id AND ucr.company_id = $1 AND ucr.is_active = true
+     LEFT JOIN user_permissions up
+       ON up.user_id = u.id AND up.company_id = $1 AND up.permission_key = 'hr.recharge.approve'
+     WHERE u.is_active = true
+       AND (ucr.role IN ('system_admin', 'company_admin') OR up.access_level IN ('approve', 'admin'))`,
+    [companyId],
+  )
+  for (const user of users.rows) {
+    await notifyRechargeUserGW(user.user_id, companyId, notification)
+  }
+}
+
 async function notifyDeptHeadsAndAdminsGW(
   poId: string,
   notification: POAuthGWNotification,
@@ -2733,6 +2776,127 @@ interface GQLContext {
   auth?: { companyId: string; userId: string; role: string; module: string; sessionId: string }
 }
 
+// ── Phone recharge requests ──────────────────────────────────────────────────
+
+function rechargeBundleRow(r: Record<string, unknown>) {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    name: r.name,
+    amount: r.amount != null ? parseFloat(String(r.amount)) : 0,
+    currencyCode: r.currency_code,
+    isActive: r.is_active,
+    sortOrder: r.sort_order,
+    createdAt: r.created_at,
+  }
+}
+
+const RECHARGE_REQUEST_SELECT = `
+  SELECT rr.*, ru.email AS requested_by_email, cc.name AS cost_center_name,
+    rb.name AS bundle_name, rb.amount AS bundle_amount, rb.currency_code AS bundle_currency_code,
+    au.email AS approved_by_email, fu.email AS fulfilled_by_email
+  FROM recharge_requests rr
+  JOIN users ru ON ru.id = rr.requested_by
+  JOIN cost_centers cc ON cc.id = rr.cost_center_id
+  JOIN recharge_bundles rb ON rb.id = rr.bundle_id
+  LEFT JOIN users au ON au.id = rr.approved_by
+  LEFT JOIN users fu ON fu.id = rr.fulfilled_by
+`
+
+// The blind-confirm-then-reveal gate applies specifically to the requester —
+// the photo is their proof the recharge actually went through, but they only
+// get to see it once they've confirmed receipt independently (e.g. via their
+// own phone balance). Everyone else with legitimate access to this request
+// (approver, the fulfiller who uploaded it, admins) can see it immediately —
+// it's their audit trail, not something that needs gating from them.
+async function rechargeRequestRow(
+  r: Record<string, unknown>,
+  ctx: GQLContext,
+): Promise<Record<string, unknown>> {
+  const confirmedAt = r.confirmed_at as string | null
+  const requestedBy = r.requested_by as string
+  const isRequester = ctx.auth?.userId === requestedBy
+  const isBlocked = isRequester && !confirmedAt
+  let photoDownloadUrl: string | null = null
+  if (r.photo_file_id && !isBlocked) {
+    const f = await query<{ file_key: string; original_filename: string }>(
+      `SELECT file_key, original_filename FROM files WHERE id=$1`,
+      [r.photo_file_id],
+    )
+    if (f.rows[0]) {
+      // A presign failure here shouldn't fail the whole list this row is
+      // part of (rechargeRequests maps every row through this via
+      // Promise.all) — worst case the photo just doesn't load for this one
+      // request instead of the entire tab erroring out.
+      try {
+        const { downloadUrl } = await generateDownloadUrl(
+          f.rows[0].file_key,
+          f.rows[0].original_filename,
+        )
+        photoDownloadUrl = downloadUrl
+      } catch {
+        photoDownloadUrl = null
+      }
+    }
+  }
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    requestedBy,
+    requestedByEmail: r.requested_by_email ?? null,
+    costCenterId: r.cost_center_id,
+    costCenterName: r.cost_center_name ?? null,
+    bundleId: r.bundle_id,
+    bundleName: r.bundle_name ?? null,
+    bundleAmount: r.bundle_amount != null ? parseFloat(String(r.bundle_amount)) : null,
+    bundleCurrencyCode: r.bundle_currency_code ?? null,
+    phoneNumber: r.phone_number,
+    notes: r.notes ?? null,
+    status: r.status,
+    approvedBy: r.approved_by ?? null,
+    approvedByEmail: r.approved_by_email ?? null,
+    approvedAt: r.approved_at ?? null,
+    rejectionReason: r.rejection_reason ?? null,
+    fulfilledBy: r.fulfilled_by ?? null,
+    fulfilledByEmail: r.fulfilled_by_email ?? null,
+    fulfilledAt: r.fulfilled_at ?? null,
+    photoDownloadUrl,
+    confirmedAt,
+    photoPendingConfirmation: Boolean(r.photo_file_id) && isBlocked,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+async function getRechargeRequestForReturn(id: string, ctx: GQLContext) {
+  const r = await query(`${RECHARGE_REQUEST_SELECT} WHERE rr.id=$1`, [id])
+  if (!r.rows[0]) throw new Error('Recharge request not found')
+  return rechargeRequestRow(r.rows[0] as Record<string, unknown>, ctx)
+}
+
+// company_id scoping alone isn't enough for a single-request lookup by id —
+// without this, any authenticated employee could fetch any other employee's
+// request (phone number, notes, and — once fulfilled — the proof photo,
+// since the reveal gate only blocks the *requester* pre-confirmation, not
+// uninvolved third parties). Mirrors who the list scopes ('mine'/'toApprove'/
+// 'toFulfill') already restrict to: the requester themselves, anyone who can
+// approve, this request's assigned fulfiller, or an admin-bypass role.
+async function canViewRechargeRequestGW(
+  ctx: GQLContext,
+  row: { requested_by: string; cost_center_id: string },
+): Promise<boolean> {
+  if (!ctx.auth) return false
+  if (isPermissionBypassGW(ctx.auth.role)) return true
+  if (ctx.auth.userId === row.requested_by) return true
+  const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+  if (meetsLevel(perms['hr.recharge.approve'], 'approve')) return true
+  const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
+    `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+    [row.cost_center_id],
+  )
+  return cc.rows[0]?.default_recharge_fulfiller_id === ctx.auth.userId
+}
+
 export const resolvers = {
   Query: {
     health: () => 'FNC ERP Gateway — Phase 3 active',
@@ -3285,6 +3449,73 @@ export const resolvers = {
         [args.employee_id, ctx.auth.companyId],
       )
       return result.rows
+    },
+
+    rechargeBundles: async (_: unknown, args: { activeOnly?: boolean }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const activeOnly = args.activeOnly ?? true
+      const r = await query(
+        `SELECT * FROM recharge_bundles WHERE company_id=$1 ${activeOnly ? 'AND is_active=true' : ''} ORDER BY sort_order, name`,
+        [ctx.auth.companyId],
+      )
+      return r.rows.map((row) => rechargeBundleRow(row as Record<string, unknown>))
+    },
+
+    rechargeRequests: async (
+      _: unknown,
+      args: { scope?: string; status?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const scope = args.scope ?? 'mine'
+      const conditions = ['rr.company_id = $1']
+      const params: unknown[] = [ctx.auth.companyId]
+      let idx = 2
+
+      // Each scope has a default status filter (what you'd normally want to
+      // see in that tab), but an explicit args.status always takes over
+      // instead of stacking on top of it — ANDing both together would
+      // self-contradict for e.g. scope:'toApprove' (implicitly 'pending')
+      // combined with status:'approved', silently returning nothing.
+      if (scope === 'toApprove') {
+        await requirePermGW(ctx.auth, 'hr.recharge.approve', 'approve')
+        if (!args.status) conditions.push(`rr.status = 'pending'`)
+      } else if (scope === 'toFulfill') {
+        conditions.push(
+          `rr.cost_center_id IN (SELECT id FROM cost_centers WHERE default_recharge_fulfiller_id = $${idx++})`,
+        )
+        params.push(ctx.auth.userId)
+        if (!args.status) conditions.push(`rr.status = 'approved'`)
+      } else {
+        conditions.push(`rr.requested_by = $${idx++}`)
+        params.push(ctx.auth.userId)
+      }
+      if (args.status) {
+        conditions.push(`rr.status = $${idx++}`)
+        params.push(args.status)
+      }
+
+      const sql = `${RECHARGE_REQUEST_SELECT} WHERE ${conditions.join(' AND ')} ORDER BY rr.created_at DESC`
+      const r = await query(sql, params)
+      return Promise.all(
+        r.rows.map((row) => rechargeRequestRow(row as Record<string, unknown>, ctx)),
+      )
+    },
+
+    rechargeRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(`${RECHARGE_REQUEST_SELECT} WHERE rr.id=$1 AND rr.company_id=$2`, [
+        args.id,
+        ctx.auth.companyId,
+      ])
+      if (!r.rows[0]) return null
+      const row = r.rows[0] as Record<string, unknown>
+      const allowed = await canViewRechargeRequestGW(ctx, {
+        requested_by: row.requested_by as string,
+        cost_center_id: row.cost_center_id as string,
+      })
+      if (!allowed) return null
+      return rechargeRequestRow(row, ctx)
     },
 
     leaveRequests: async (
@@ -18730,6 +18961,228 @@ export const resolvers = {
         [args.id],
       )
       return r.rows[0] ?? null
+    },
+
+    createRechargeBundle: async (
+      _: unknown,
+      args: { input: Record<string, unknown> },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+      const i = args.input
+      const r = await query(
+        `INSERT INTO recharge_bundles (company_id, name, amount, currency_code, is_active, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [
+          ctx.auth.companyId,
+          i.name,
+          i.amount,
+          i.currencyCode ?? 'IQD',
+          i.isActive ?? true,
+          i.sortOrder ?? 0,
+        ],
+      )
+      return rechargeBundleRow(r.rows[0] as Record<string, unknown>)
+    },
+
+    updateRechargeBundle: async (
+      _: unknown,
+      args: { id: string; input: Record<string, unknown> },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+      const i = args.input
+      const r = await query(
+        `UPDATE recharge_bundles SET name=COALESCE($3,name), amount=COALESCE($4,amount),
+           currency_code=COALESCE($5,currency_code), is_active=COALESCE($6,is_active),
+           sort_order=COALESCE($7,sort_order), updated_at=NOW()
+         WHERE id=$1 AND company_id=$2 RETURNING *`,
+        [
+          args.id,
+          ctx.auth.companyId,
+          i.name ?? null,
+          i.amount ?? null,
+          i.currencyCode ?? null,
+          i.isActive ?? null,
+          i.sortOrder ?? null,
+        ],
+      )
+      if (!r.rows[0]) throw new Error('Bundle not found')
+      return rechargeBundleRow(r.rows[0] as Record<string, unknown>)
+    },
+
+    deleteRechargeBundle: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+      // Soft-delete only — recharge_requests.bundle_id references this row
+      // with no ON DELETE clause, so a hard delete would fail (or orphan
+      // history) once any request has ever used this bundle.
+      await query(
+        `UPDATE recharge_bundles SET is_active=false, updated_at=NOW() WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      return true
+    },
+
+    createRechargeRequest: async (
+      _: unknown,
+      args: { input: Record<string, unknown> },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const i = args.input
+      // The FK only checks these rows exist somewhere, not that they belong
+      // to the caller's own company — without this, a request could be
+      // created under one company while pointing at another company's cost
+      // center/bundle, leaking their names into this company's approval
+      // queue and routing the fulfillment notification to a foreign user.
+      const ccCheck = await query(`SELECT 1 FROM cost_centers WHERE id=$1 AND company_id=$2`, [
+        i.costCenterId,
+        ctx.auth.companyId,
+      ])
+      if (!ccCheck.rows[0]) throw new Error('Cost center not found')
+      const bundleCheck = await query(
+        `SELECT 1 FROM recharge_bundles WHERE id=$1 AND company_id=$2`,
+        [i.bundleId, ctx.auth.companyId],
+      )
+      if (!bundleCheck.rows[0]) throw new Error('Bundle not found')
+      const r = await query(
+        `INSERT INTO recharge_requests (company_id, requested_by, cost_center_id, bundle_id, phone_number, notes)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+        [ctx.auth.companyId, ctx.auth.userId, i.costCenterId, i.bundleId, i.phoneNumber, i.notes ?? null],
+      )
+      const requestId = r.rows[0].id as string
+      void notifyRechargeApproversGW(ctx.auth.companyId, {
+        type: 'RECHARGE_REQUEST_SUBMITTED',
+        title: 'New recharge request',
+        body: 'A new phone recharge request is pending your approval.',
+        requestId,
+      })
+      return getRechargeRequestForReturn(requestId, ctx)
+    },
+
+    cancelRechargeRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE recharge_requests SET status='cancelled', updated_at=NOW()
+         WHERE id=$1 AND company_id=$2 AND requested_by=$3 AND status='pending' RETURNING id`,
+        [args.id, ctx.auth.companyId, ctx.auth.userId],
+      )
+      if (!r.rows[0]) throw new Error('Request not found, not yours, or no longer pending')
+      return getRechargeRequestForReturn(args.id, ctx)
+    },
+
+    approveRechargeRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.approve', 'approve')
+      const r = await query<{ cost_center_id: string; requested_by: string }>(
+        `UPDATE recharge_requests SET status='approved', approved_by=$3, approved_at=NOW(), updated_at=NOW()
+         WHERE id=$1 AND company_id=$2 AND status='pending' RETURNING cost_center_id, requested_by`,
+        [args.id, ctx.auth.companyId, ctx.auth.userId],
+      )
+      if (!r.rows[0]) throw new Error('Request not found or not pending')
+      const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
+        `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+        [r.rows[0].cost_center_id],
+      )
+      const fulfillerId = cc.rows[0]?.default_recharge_fulfiller_id
+      if (fulfillerId) {
+        void notifyRechargeUserGW(fulfillerId, ctx.auth.companyId, {
+          type: 'RECHARGE_REQUEST_APPROVED',
+          title: 'Recharge request approved',
+          body: 'A recharge request assigned to your cost center is ready to fulfill.',
+          requestId: args.id,
+        })
+      }
+      return getRechargeRequestForReturn(args.id, ctx)
+    },
+
+    rejectRechargeRequest: async (
+      _: unknown,
+      args: { id: string; reason: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.approve', 'approve')
+      if (!args.reason.trim()) throw new Error('reason is required')
+      const r = await query<{ requested_by: string }>(
+        `UPDATE recharge_requests SET status='rejected', approved_by=$3, rejection_reason=$4, updated_at=NOW()
+         WHERE id=$1 AND company_id=$2 AND status='pending' RETURNING requested_by`,
+        [args.id, ctx.auth.companyId, ctx.auth.userId, args.reason],
+      )
+      if (!r.rows[0]) throw new Error('Request not found or not pending')
+      void notifyRechargeUserGW(r.rows[0].requested_by, ctx.auth.companyId, {
+        type: 'RECHARGE_REQUEST_REJECTED',
+        title: 'Recharge request rejected',
+        body: `Your recharge request was rejected: ${args.reason}`,
+        requestId: args.id,
+      })
+      return getRechargeRequestForReturn(args.id, ctx)
+    },
+
+    fulfillRechargeRequest: async (
+      _: unknown,
+      args: { id: string; fileId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const reqRow = await query<{ cost_center_id: string; requested_by: string; status: string }>(
+        `SELECT cost_center_id, requested_by, status FROM recharge_requests WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!reqRow.rows[0]) throw new Error('Request not found')
+      if (reqRow.rows[0].status !== 'approved') {
+        throw new Error(`Cannot fulfill a request in status '${reqRow.rows[0].status}'`)
+      }
+      if (!isPermissionBypassGW(ctx.auth.role)) {
+        const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
+          `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+          [reqRow.rows[0].cost_center_id],
+        )
+        if (cc.rows[0]?.default_recharge_fulfiller_id !== ctx.auth.userId) {
+          throw new Error('Not authorized to fulfill this request')
+        }
+      }
+      // The file must exist, belong to this company, actually be an uploaded
+      // recharge-proof photo — otherwise a caller could point this at an
+      // arbitrary files.id (including another company's document) and it
+      // would get signed and served back to the requester as their "proof."
+      const fileCheck = await query<{ id: string }>(
+        `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded' AND category='recharge_proof'`,
+        [args.fileId, ctx.auth.companyId],
+      )
+      if (!fileCheck.rows[0]) throw new Error('Invalid or missing proof photo')
+      // status='approved' lives in the WHERE clause (not just the earlier
+      // SELECT check) so two concurrent fulfill calls can't both pass the
+      // read and both write — only the first UPDATE finds a matching row.
+      const fulfilled = await query(
+        `UPDATE recharge_requests SET status='fulfilled', fulfilled_by=$3, fulfilled_at=NOW(), photo_file_id=$4, updated_at=NOW()
+         WHERE id=$1 AND company_id=$2 AND status='approved' RETURNING id`,
+        [args.id, ctx.auth.companyId, ctx.auth.userId, args.fileId],
+      )
+      if (!fulfilled.rows[0]) {
+        throw new Error('Request is no longer approved — it may have already been fulfilled')
+      }
+      void notifyRechargeUserGW(reqRow.rows[0].requested_by, ctx.auth.companyId, {
+        type: 'RECHARGE_REQUEST_FULFILLED',
+        title: 'Your recharge is on its way',
+        body: 'Your phone recharge has been sent — please confirm receipt to view the proof.',
+        requestId: args.id,
+      })
+      return getRechargeRequestForReturn(args.id, ctx)
+    },
+
+    confirmRechargeReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query(
+        `UPDATE recharge_requests SET status='confirmed', confirmed_at=NOW(), updated_at=NOW()
+         WHERE id=$1 AND company_id=$2 AND requested_by=$3 AND status='fulfilled' RETURNING id`,
+        [args.id, ctx.auth.companyId, ctx.auth.userId],
+      )
+      if (!r.rows[0]) throw new Error('Request not found, not yours, or not yet fulfilled')
+      return getRechargeRequestForReturn(args.id, ctx)
     },
 
     updateSalaryConfig: async (

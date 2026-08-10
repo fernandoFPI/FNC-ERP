@@ -33,6 +33,9 @@
     leaveRequest(id: ID!): LeaveRequest
     leaveTypes(is_active: Boolean): [LeaveType]
     leaveBalances(employee_id: ID!): [LeaveBalance]
+    rechargeBundles(activeOnly: Boolean): [RechargeBundle!]!
+    rechargeRequests(scope: String, status: String): [RechargeRequest!]!
+    rechargeRequest(id: ID!): RechargeRequest
     bankDetailsSummary(employee_id: ID!): BankDetailsSummary
     shiftConfigs: [ShiftConfig]
     employeeCurrentShift(employee_id: ID!): EmployeeShift
@@ -175,6 +178,17 @@
     approveLeaveRequest(id: ID!): LeaveRequest
     rejectLeaveRequest(id: ID!, reviewNotes: String): LeaveRequest
     cancelLeaveRequest(id: ID!): LeaveRequest
+
+    # HR – Phone recharge
+    createRechargeBundle(input: RechargeBundleInput!): RechargeBundle!
+    updateRechargeBundle(id: ID!, input: RechargeBundleInput!): RechargeBundle!
+    deleteRechargeBundle(id: ID!): Boolean!
+    createRechargeRequest(input: RechargeRequestInput!): RechargeRequest!
+    cancelRechargeRequest(id: ID!): RechargeRequest!
+    approveRechargeRequest(id: ID!): RechargeRequest!
+    rejectRechargeRequest(id: ID!, reason: String!): RechargeRequest!
+    fulfillRechargeRequest(id: ID!, fileId: ID!): RechargeRequest!
+    confirmRechargeReceipt(id: ID!): RechargeRequest!
 
     # HR – Payroll
     createPayrollRun(input: PayrollRunInput!): PayrollRun
@@ -599,6 +613,66 @@
     reviewed_by: ID
     reviewed_at: String
     created_at: String
+  }
+
+  # ── Phone recharge requests ──────────────────────────────────────────────────
+  type RechargeBundle {
+    id: ID!
+    companyId: ID!
+    name: String!
+    amount: Float!
+    currencyCode: String!
+    isActive: Boolean!
+    sortOrder: Int!
+    createdAt: String!
+  }
+
+  input RechargeBundleInput {
+    name: String!
+    amount: Float!
+    currencyCode: String
+    isActive: Boolean
+    sortOrder: Int
+  }
+
+  type RechargeRequest {
+    id: ID!
+    companyId: ID!
+    requestedBy: ID!
+    requestedByEmail: String
+    costCenterId: ID!
+    costCenterName: String
+    bundleId: ID!
+    bundleName: String
+    bundleAmount: Float
+    bundleCurrencyCode: String
+    phoneNumber: String!
+    notes: String
+    status: String!
+    approvedBy: ID
+    approvedByEmail: String
+    approvedAt: String
+    rejectionReason: String
+    fulfilledBy: ID
+    fulfilledByEmail: String
+    fulfilledAt: String
+    # Only populated once the requester has confirmed receipt (or the caller
+    # is an admin/approver/the fulfiller — see resolver for the exact gate).
+    photoDownloadUrl: String
+    confirmedAt: String
+    # True when the current caller specifically is still blocked from seeing
+    # the photo (i.e. they're the requester and haven't confirmed yet) — lets
+    # the UI distinguish "no photo yet" from "photo exists, confirm to view."
+    photoPendingConfirmation: Boolean!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  input RechargeRequestInput {
+    costCenterId: ID!
+    bundleId: ID!
+    phoneNumber: String!
+    notes: String
   }
 
   type PayrollRun {

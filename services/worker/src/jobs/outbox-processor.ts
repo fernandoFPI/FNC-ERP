@@ -1854,6 +1854,25 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
 
+    // All four recharge-request lifecycle notifications share one shape —
+    // unlike the PO cases above, the resolver that enqueues these already
+    // computed a real title/body and a trustworthy companyId (straight from
+    // ctx.auth, not client input), so there's no need to re-derive anything
+    // from the DB here.
+    case 'RECHARGE_REQUEST_SUBMITTED':
+    case 'RECHARGE_REQUEST_APPROVED':
+    case 'RECHARGE_REQUEST_REJECTED':
+    case 'RECHARGE_REQUEST_FULFILLED': {
+      await pool.query(
+        `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
+        [String(p['userId']), String(p['companyId']), String(p['type']),
+         String(p['title']), String(p['body']),
+         JSON.stringify({ requestId: p['requestId'] })]
+      )
+      break
+    }
+
     case 'PO_REJECTED_NOTIFICATION': {
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
         `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]
