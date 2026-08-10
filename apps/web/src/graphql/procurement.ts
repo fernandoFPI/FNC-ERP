@@ -75,6 +75,8 @@ export const PURCHASE_ORDERS_QUERY = gql`
       project_id
       projectCode
       projectName
+      branch_id
+      branch_name
     }
   }
 `
@@ -101,6 +103,8 @@ export const PURCHASE_ORDER_QUERY = gql`
       pdf_path
       assigned_to_email
       assigned_receiver_name
+      branch_id
+      branch_name
       lines {
         id
         product_id

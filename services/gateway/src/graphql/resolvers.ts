@@ -876,6 +876,27 @@ async function requirePermGW(
   }
 }
 
+// A user is a "branch-only procurement buyer" when they're set as one or
+// more branches' default_procurement_user_id and don't otherwise hold
+// edit-level PO access — that combination means their PO visibility should
+// be limited to just those branches instead of the company-wide default
+// every other viewer gets. Returns the branch ids to scope to, or null if
+// no scoping applies (this user sees POs exactly as they always have —
+// true for everyone until an admin explicitly assigns them to a branch).
+async function branchScopedPOFilterGW(
+  auth: { userId: string; companyId: string; role: string },
+): Promise<string[] | null> {
+  if (isPermissionBypassGW(auth.role)) return null
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  if (meetsLevel(perms['procurement.po.edit'], 'edit')) return null
+  const branches = await query<{ id: string }>(
+    `SELECT id FROM company_branches WHERE company_id=$1 AND default_procurement_user_id=$2 AND is_active=true`,
+    [auth.companyId, auth.userId],
+  )
+  if (branches.rows.length === 0) return null
+  return branches.rows.map((r) => r.id)
+}
+
 // The one place "can this user view project X" is decided for single-project
 // read resolvers (project, projectCompletionBlockers, projectTeamMembers, ...):
 // either the company-wide projects.view registry permission, or a direct
@@ -2965,10 +2986,12 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) return []
       let sql = `SELECT po.*, v.name AS vendor_name, proj.code AS "projectCode", proj.name AS "projectName",
+        cb.name AS branch_name,
         (SELECT COUNT(*) FROM vendor_invoices vi WHERE vi.po_id = po.id AND vi.company_id = po.company_id)::int AS invoice_count
         FROM purchase_orders po
         LEFT JOIN vendors v ON v.id = po.vendor_id
         LEFT JOIN projects proj ON proj.id = po.project_id
+        LEFT JOIN company_branches cb ON cb.id = po.branch_id
         WHERE po.company_id = $1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
@@ -2983,6 +3006,11 @@ export const resolvers = {
       if (args.project_id !== undefined) {
         sql += ` AND po.project_id = $${idx++}`
         params.push(args.project_id)
+      }
+      const branchScope = await branchScopedPOFilterGW(ctx.auth)
+      if (branchScope) {
+        sql += ` AND po.branch_id = ANY($${idx++})`
+        params.push(branchScope)
       }
       sql += ' ORDER BY po.created_at DESC LIMIT 200'
       const result = await query(sql, params)
@@ -5436,6 +5464,7 @@ export const resolvers = {
                     aa.name AS analytic_account_name, COALESCE(au.first_name || ' ' || au.last_name, au.email) AS assigned_to_email,
                     po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
                     proj.code AS "projectCode", proj.name AS "projectName",
+                    cb.name AS branch_name,
                     COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name
              FROM purchase_orders po
              LEFT JOIN vendors v ON v.id=po.vendor_id
@@ -5444,6 +5473,7 @@ export const resolvers = {
              LEFT JOIN users au ON au.id=po.assigned_to
              LEFT JOIN employees re ON re.id=po.assigned_receiver_id
              LEFT JOIN projects proj ON proj.id=po.project_id
+             LEFT JOIN company_branches cb ON cb.id=po.branch_id
              WHERE po.id=$1 AND po.company_id=$2`,
             [args.id, ctx.auth.companyId],
           ),
@@ -5493,6 +5523,10 @@ export const resolvers = {
           ),
         ])
         if (!po.rows[0]) return null
+        const branchScope = await branchScopedPOFilterGW(ctx.auth)
+        if (branchScope && !branchScope.includes((po.rows[0] as Record<string, unknown>).branch_id as string)) {
+          return null
+        }
         let editRequests: unknown[] = []
         try {
           const er = await query(
@@ -7257,6 +7291,7 @@ export const resolvers = {
           priority?: string
           linkedProjectId?: string
           linkedMoId?: string
+          branch_id?: string
           lines: {
             product_id?: string
             description?: string
@@ -7295,8 +7330,8 @@ export const resolvers = {
             ? i.priority
             : 'low'
           const po = await client.query(
-            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16) RETURNING *`,
+            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17) RETURNING *`,
             [
               ctx.auth!.companyId,
               poNum,
@@ -7314,6 +7349,7 @@ export const resolvers = {
               ctx.auth!.userId,
               i.assigned_receiver_id ?? null,
               priority,
+              i.branch_id ?? null,
             ],
           )
           const poRow = po.rows[0] as Record<string, unknown>
@@ -7361,7 +7397,8 @@ export const resolvers = {
       const upd = await query(
         `UPDATE purchase_orders SET
            expected_delivery_date=COALESCE($3,expected_delivery_date),
-           notes=COALESCE($4,notes), fx_rate=COALESCE($5,fx_rate), updated_at=NOW()
+           notes=COALESCE($4,notes), fx_rate=COALESCE($5,fx_rate),
+           branch_id=COALESCE($6,branch_id), updated_at=NOW()
          WHERE id=$1 AND company_id=$2 RETURNING *`,
         [
           args.id,
@@ -7369,6 +7406,7 @@ export const resolvers = {
           args.input.expected_delivery_date ?? null,
           args.input.notes ?? null,
           args.input.fx_rate ?? null,
+          args.input.branch_id ?? null,
         ],
       )
       void publishEntityChanged(ctx.auth.companyId, 'purchase_order', args.id, 'updated')
@@ -23217,7 +23255,7 @@ const phase5MutationResolvers = {
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to approve this PO')
     const poRow = await query(
-      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      `SELECT status, organizer_id, po_number, branch_id FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
@@ -23252,6 +23290,25 @@ const phase5MutationResolvers = {
           }),
         ],
       )
+    }
+    if (poRow.rows[0].branch_id) {
+      const branchBuyer = await query<{ default_procurement_user_id: string | null }>(
+        `SELECT default_procurement_user_id FROM company_branches WHERE id=$1`,
+        [poRow.rows[0].branch_id],
+      )
+      const buyerId = branchBuyer.rows[0]?.default_procurement_user_id
+      if (buyerId) {
+        void query(
+          `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','PO_READY_FOR_PROCUREMENT',$1)`,
+          [
+            JSON.stringify({
+              userId: buyerId,
+              poId: args.id,
+              poNumber: poRow.rows[0].po_number,
+            }),
+          ],
+        )
+      }
     }
     void query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('reporting','PO_PDF_REQUESTED',$1)`,
@@ -25157,6 +25214,8 @@ function branchRow(r: Record<string, unknown>) {
     phone: r.phone ?? null,
     isActive: r.is_active,
     createdAt: r.created_at,
+    defaultProcurementUserId: r.default_procurement_user_id ?? null,
+    defaultProcurementUserEmail: r.default_procurement_user_email ?? null,
   }
 }
 
@@ -25183,9 +25242,13 @@ function bankRow(r: Record<string, unknown>) {
 Object.assign(resolvers.Query, {
   companyBranches: async (_: unknown, args: { companyId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
-    const r = await query(`SELECT * FROM company_branches WHERE company_id=$1 ORDER BY name`, [
-      args.companyId,
-    ])
+    const r = await query(
+      `SELECT cb.*, u.email AS default_procurement_user_email
+       FROM company_branches cb
+       LEFT JOIN users u ON u.id = cb.default_procurement_user_id
+       WHERE cb.company_id=$1 ORDER BY cb.name`,
+      [args.companyId],
+    )
     return r.rows.map((row: Record<string, unknown>) => branchRow(row))
   },
   bankAccounts: async (_: unknown, __: unknown, ctx: GQLContext) => {
@@ -25204,8 +25267,8 @@ Object.assign(resolvers.Mutation, {
     if (!ctx.auth || ctx.auth.role !== 'system_admin') throw new Error('Unauthorized')
     const i = args.input
     const r = await query(
-      `INSERT INTO company_branches (company_id, name, address, city, country_code, phone, is_active)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO company_branches (company_id, name, address, city, country_code, phone, is_active, default_procurement_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
       [
         args.companyId,
         i.name,
@@ -25214,6 +25277,7 @@ Object.assign(resolvers.Mutation, {
         i.countryCode ?? 'IQ',
         i.phone ?? null,
         i.isActive ?? true,
+        i.defaultProcurementUserId ?? null,
       ],
     )
     return branchRow(r.rows[0] as Record<string, unknown>)
@@ -25226,10 +25290,15 @@ Object.assign(resolvers.Mutation, {
   ) => {
     if (!ctx.auth || ctx.auth.role !== 'system_admin') throw new Error('Unauthorized')
     const i = args.input
+    // default_procurement_user_id is set directly rather than COALESCEd like
+    // the other fields — the branch settings UI always sends this field
+    // (string id or explicit null for "Unassigned"), so unlike the others it
+    // needs to support clearing back to null, not just leaving unchanged.
     const r = await query(
       `UPDATE company_branches SET name=COALESCE($2,name), address=COALESCE($3,address), city=COALESCE($4,city),
        country_code=COALESCE($5,country_code), phone=COALESCE($6,phone),
-       is_active=COALESCE($7,is_active), updated_at=NOW()
+       is_active=COALESCE($7,is_active),
+       default_procurement_user_id=$8, updated_at=NOW()
        WHERE id=$1 RETURNING *`,
       [
         args.id,
@@ -25239,6 +25308,7 @@ Object.assign(resolvers.Mutation, {
         i.countryCode ?? null,
         i.phone ?? null,
         i.isActive ?? null,
+        i.defaultProcurementUserId ?? null,
       ],
     )
     if (!r.rows[0]) throw new Error('Branch not found')

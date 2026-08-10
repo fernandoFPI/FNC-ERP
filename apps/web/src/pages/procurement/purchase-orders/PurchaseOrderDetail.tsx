@@ -107,6 +107,8 @@ interface PO {
   linkedMoId?: string
   projectCode?: string | null
   projectName?: string | null
+  branch_id?: string | null
+  branch_name?: string | null
   expected_delivery_date?: string
   notes?: string
   created_by_email?: string
@@ -607,7 +609,7 @@ export default function PurchaseOrderDetail() {
           po.project_id
             ? ` • Project: ${[po.projectCode, po.projectName].filter(Boolean).join(' — ')}`
             : ''
-        }`}
+        }${po.branch_name ? ` • Branch: ${po.branch_name}` : ''}`}
         backPath="/procurement/purchase-orders"
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>

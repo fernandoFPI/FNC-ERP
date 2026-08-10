@@ -550,6 +550,8 @@ export const COMPANY_BRANCHES_QUERY = gql`
       phone
       isActive
       createdAt
+      defaultProcurementUserId
+      defaultProcurementUserEmail
     }
   }
 `
@@ -565,6 +567,8 @@ export const CREATE_COMPANY_BRANCH = gql`
       phone
       isActive
       createdAt
+      defaultProcurementUserId
+      defaultProcurementUserEmail
     }
   }
 `
@@ -579,6 +583,8 @@ export const UPDATE_COMPANY_BRANCH = gql`
       countryCode
       phone
       isActive
+      defaultProcurementUserId
+      defaultProcurementUserEmail
     }
   }
 `

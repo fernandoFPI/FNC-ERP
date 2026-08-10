@@ -1757,6 +1757,8 @@
     linkedMoId: ID
     projectCode: String
     projectName: String
+    branch_id: ID
+    branch_name: String
     lines: [POLine!]
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]
@@ -1802,6 +1804,7 @@
     priority: String
     linkedProjectId: ID
     linkedMoId: ID
+    branch_id: ID
     lines: [POLineInput!]!
   }
 
@@ -3550,6 +3553,8 @@
     phone: String
     isActive: Boolean!
     createdAt: String!
+    defaultProcurementUserId: ID
+    defaultProcurementUserEmail: String
   }
 
   input CompanyBranchInput {
@@ -3559,6 +3564,7 @@
     countryCode: String
     phone: String
     isActive: Boolean
+    defaultProcurementUserId: ID
   }
 
   # ── Bank accounts ───────────────────────────────────────────────────────────

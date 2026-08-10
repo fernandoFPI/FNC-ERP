@@ -1836,6 +1836,24 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
 
+    case 'PO_READY_FOR_PROCUREMENT': {
+      const coRes = await pool.query<{ company_id: string; po_number: string }>(
+        `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]
+      )
+      const { company_id, po_number } = coRes.rows[0] ?? {}
+      if (!company_id) break
+      const num = String(p['poNumber'] ?? po_number ?? '')
+      await pool.query(
+        `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
+         VALUES ($1,$2,'PO_READY_FOR_PROCUREMENT',$3,$4,$5::jsonb,false)`,
+        [String(p['userId']), company_id,
+         `PO ready to purchase: ${num}`,
+         `Purchase order ${num} has been approved and is ready to buy.`,
+         JSON.stringify({ poId: p['poId'], poNumber: num })]
+      )
+      break
+    }
+
     case 'PO_REJECTED_NOTIFICATION': {
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
         `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]

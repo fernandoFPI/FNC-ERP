@@ -8,6 +8,8 @@ import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
+import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
+import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -43,6 +45,8 @@ export default function PurchaseOrderForm() {
   const addToast = useToastStore((s) => s.addToast)
   const [searchParams] = useSearchParams()
 
+  const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
+
   const [form, setForm] = useState({
     vendor_id: '',
     currency_code: 'IQD',
@@ -51,6 +55,7 @@ export default function PurchaseOrderForm() {
     notes: '',
     fx_rate: '1',
     assigned_receiver_id: '',
+    branch_id: '',
   })
   const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
@@ -100,6 +105,10 @@ export default function PurchaseOrderForm() {
     skip: purpose !== 'manufacturing',
   })
   const { data: employeesData } = useQuery(EMPLOYEES_QUERY, { variables: { is_active: true } })
+  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
+    variables: { companyId: currentCompanyId },
+    skip: !currentCompanyId,
+  })
   const [createPO, { loading }] = useMutation(CREATE_PO)
 
   const vendors = vendorsData?.vendors ?? []
@@ -120,6 +129,9 @@ export default function PurchaseOrderForm() {
     last_name: string
     employee_number: string
   }[] = employeesData?.employees ?? []
+  const branches: { id: string; name: string; isActive: boolean }[] = (
+    branchesData?.companyBranches ?? []
+  ).filter((b: { isActive: boolean }) => b.isActive)
 
   const productOptions = [
     { value: '', label: 'Custom item' },
@@ -200,6 +212,10 @@ export default function PurchaseOrderForm() {
       addToast({ type: 'error', message: 'Please select a manufacturing order' })
       return
     }
+    if (branches.length > 0 && !form.branch_id) {
+      addToast({ type: 'error', message: 'Please select a branch' })
+      return
+    }
     try {
       const input = {
         vendor_id: form.vendor_id || undefined,
@@ -211,6 +227,7 @@ export default function PurchaseOrderForm() {
         purpose,
         priority,
         assigned_receiver_id: form.assigned_receiver_id || undefined,
+        branch_id: form.branch_id || undefined,
         linkedProjectId: purpose === 'project' ? linkedProjectId || undefined : undefined,
         linkedMoId: purpose === 'manufacturing' ? linkedMoId || undefined : undefined,
         lines: lines
@@ -460,6 +477,22 @@ export default function PurchaseOrderForm() {
                 </option>
               ))}
             </Select>
+            {branches.length > 0 && (
+              <Select
+                label="Branch *"
+                value={form.branch_id}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, branch_id: e.target.value }))
+                }}
+              >
+                <option value="">Select branch…</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            )}
             <Input
               label="Expected Delivery"
               type="date"

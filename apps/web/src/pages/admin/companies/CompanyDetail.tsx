@@ -43,6 +43,8 @@ interface Branch {
   phone?: string
   isActive: boolean
   createdAt: string
+  defaultProcurementUserId?: string | null
+  defaultProcurementUserEmail?: string | null
 }
 
 const EMPTY_BRANCH = {
@@ -52,6 +54,7 @@ const EMPTY_BRANCH = {
   countryCode: 'IQ',
   phone: '',
   isActive: true,
+  defaultProcurementUserId: '',
 }
 
 function inputStyle(theme: ReturnType<typeof useTheme>['theme']) {
@@ -340,17 +343,22 @@ export default function CompanyDetail() {
       countryCode: b.countryCode,
       phone: b.phone ?? '',
       isActive: b.isActive,
+      defaultProcurementUserId: b.defaultProcurementUserId ?? '',
     })
     setBranchModal({ open: true, editing: b })
   }
 
   async function saveBranch() {
     try {
+      const input = {
+        ...branchForm,
+        defaultProcurementUserId: branchForm.defaultProcurementUserId || null,
+      }
       if (branchModal.editing) {
-        await updateBranch({ variables: { id: branchModal.editing.id, input: branchForm } })
+        await updateBranch({ variables: { id: branchModal.editing.id, input } })
         addToast({ type: 'success', message: 'Branch updated' })
       } else {
-        await createBranch({ variables: { companyId: id, input: branchForm } })
+        await createBranch({ variables: { companyId: id, input } })
         addToast({ type: 'success', message: 'Branch created' })
       }
       setBranchModal({ open: false, editing: null })
@@ -1044,6 +1052,35 @@ export default function CompanyDetail() {
               />
               Active
             </label>
+            <div>
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
+                }}
+              >
+                Default procurement buyer
+              </label>
+              <select
+                value={branchForm.defaultProcurementUserId}
+                onChange={(e) => {
+                  setBranchForm({ ...branchForm, defaultProcurementUserId: e.target.value })
+                }}
+                style={inputStyle(theme)}
+              >
+                <option value="">— Unassigned —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.email}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                Gets notified and can view (not edit) this branch&apos;s POs once approved.
+              </div>
+            </div>
             <div
               style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}
             >
