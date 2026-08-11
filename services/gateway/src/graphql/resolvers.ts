@@ -6422,7 +6422,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const maxSize = parseInt(process.env.MAX_FILE_SIZE_BYTES ?? '52428800')
+      const maxSize = parseInt(process.env.MAX_FILE_SIZE_BYTES ?? '262144000') // 250 MB
       const validation = validateFile(
         args.filename,
         args.mimeType,

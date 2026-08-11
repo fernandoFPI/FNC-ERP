@@ -81,7 +81,7 @@ const envSchema = z.object({
   B2_APPLICATION_KEY: z.string().default(''),
   B2_BUCKET_NAME: z.string().default('fnc-erp-dev'),
   B2_BUCKET_PUBLIC_URL: z.string().url().optional(),
-  MAX_FILE_SIZE_BYTES: z.coerce.number().default(52428800),
+  MAX_FILE_SIZE_BYTES: z.coerce.number().default(262144000), // 250 MB
   PRESIGNED_URL_TTL_SECONDS: z.coerce.number().default(900),
   // PDF generation
   PUPPETEER_EXECUTABLE_PATH: z.string().optional(),
