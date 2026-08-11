@@ -669,12 +669,17 @@ export const router = createBrowserRouter([
           { path: 'leave', element: withPerm('hr.leave.view', <LeaveRequestsPage />) },
           { path: 'leave/:id', element: withPerm('hr.leave.view', <LeaveRequestDetail />) },
           { path: 'overtime', element: withPerm('hr.overtime.view', <OvertimePage />) },
-          { path: 'recharge', element: withPerm('hr.recharge.view', <RechargeRequestsPage />) },
-          {
-            path: 'recharge/bundles',
-            element: withPerm('hr.recharge.admin', <RechargeBundlesPage />, 'admin'),
-          },
         ],
+      },
+
+      // Phone Recharge Requests — deliberately NOT nested under /hr/*, since
+      // that parent route is gated by hr.employees.view and would block any
+      // regular employee who only holds hr.recharge.view (this is meant to
+      // be reachable by any employee, not just HR staff).
+      { path: '/recharge', element: withPerm('hr.recharge.view', <RechargeRequestsPage />) },
+      {
+        path: '/recharge/bundles',
+        element: withPerm('hr.recharge.admin', <RechargeBundlesPage />, 'admin'),
       },
 
       // Payroll

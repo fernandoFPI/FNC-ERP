@@ -588,6 +588,19 @@ function Icon({ name }: { name: string }) {
         <line x1="17" y1="16" x2="23" y2="16" />
       </svg>
     ),
+    smartphone: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <rect x="5" y="2" width="14" height="20" rx="2.5" />
+        <line x1="12" y1="18" x2="12.01" y2="18" />
+      </svg>
+    ),
   }
   return <>{icons[name] ?? null}</>
 }
@@ -853,6 +866,12 @@ const NAV_SECTIONS: NavSection[] = [
         icon: <Icon name="check-circle" />,
         path: '/attendance',
         permKeys: ['attendance.view'],
+      },
+      {
+        label: 'Recharge Requests',
+        icon: <Icon name="smartphone" />,
+        path: '/recharge',
+        permKeys: ['hr.recharge.view'],
       },
       {
         label: 'Payroll',

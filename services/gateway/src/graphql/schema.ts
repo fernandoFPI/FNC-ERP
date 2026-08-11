@@ -36,6 +36,8 @@
     rechargeBundles(activeOnly: Boolean): [RechargeBundle!]!
     rechargeRequests(scope: String, status: String): [RechargeRequest!]!
     rechargeRequest(id: ID!): RechargeRequest
+    rechargeCostCenter: RechargeCostCenterInfo
+    rechargeMonthlySummary(year: Int, month: Int): [RechargeMonthlySummaryEntry!]!
     bankDetailsSummary(employee_id: ID!): BankDetailsSummary
     shiftConfigs: [ShiftConfig]
     employeeCurrentShift(employee_id: ID!): EmployeeShift
@@ -183,10 +185,9 @@
     createRechargeBundle(input: RechargeBundleInput!): RechargeBundle!
     updateRechargeBundle(id: ID!, input: RechargeBundleInput!): RechargeBundle!
     deleteRechargeBundle(id: ID!): Boolean!
+    setRechargeCostCenter(costCenterId: ID!): Boolean!
     createRechargeRequest(input: RechargeRequestInput!): RechargeRequest!
     cancelRechargeRequest(id: ID!): RechargeRequest!
-    approveRechargeRequest(id: ID!): RechargeRequest!
-    rejectRechargeRequest(id: ID!, reason: String!): RechargeRequest!
     fulfillRechargeRequest(id: ID!, fileId: ID!): RechargeRequest!
     confirmRechargeReceipt(id: ID!): RechargeRequest!
 
@@ -669,10 +670,33 @@
   }
 
   input RechargeRequestInput {
-    costCenterId: ID!
     bundleId: ID!
     phoneNumber: String!
     notes: String
+  }
+
+  # Distinct from the generic CostCenter type — carries the fulfiller info
+  # the frontend needs (e.g. to decide whether to show the current user the
+  # Monthly Summary tab) without probing rechargeMonthlySummary and reacting
+  # to whether it errors.
+  type RechargeCostCenterInfo {
+    id: ID!
+    name: String!
+    code: String!
+    defaultFulfillerId: ID
+    defaultFulfillerEmail: String
+  }
+
+  # Per-requester totals for a given month — the fulfiller's "who received
+  # what" view. costCenterId/costCenterName come along because there's only
+  # ever the one configured recharge cost center, but the summary itself is
+  # month-scoped, not cost-center-scoped.
+  type RechargeMonthlySummaryEntry {
+    requestedBy: ID!
+    requestedByEmail: String
+    requestCount: Int!
+    totalAmount: Float!
+    currencyCode: String!
   }
 
   type PayrollRun {

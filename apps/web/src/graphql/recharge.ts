@@ -15,10 +15,6 @@ const RECHARGE_REQUEST_FIELDS = gql`
     phoneNumber
     notes
     status
-    approvedBy
-    approvedByEmail
-    approvedAt
-    rejectionReason
     fulfilledBy
     fulfilledByEmail
     fulfilledAt
@@ -63,6 +59,29 @@ export const RECHARGE_REQUEST_QUERY = gql`
   ${RECHARGE_REQUEST_FIELDS}
 `
 
+export const RECHARGE_COST_CENTER_QUERY = gql`
+  query RechargeCostCenter {
+    rechargeCostCenter {
+      id
+      name
+      code
+      defaultFulfillerId
+    }
+  }
+`
+
+export const RECHARGE_MONTHLY_SUMMARY_QUERY = gql`
+  query RechargeMonthlySummary($year: Int, $month: Int) {
+    rechargeMonthlySummary(year: $year, month: $month) {
+      requestedBy
+      requestedByEmail
+      requestCount
+      totalAmount
+      currencyCode
+    }
+  }
+`
+
 export const CREATE_RECHARGE_BUNDLE = gql`
   mutation CreateRechargeBundle($input: RechargeBundleInput!) {
     createRechargeBundle(input: $input) {
@@ -96,6 +115,12 @@ export const DELETE_RECHARGE_BUNDLE = gql`
   }
 `
 
+export const SET_RECHARGE_COST_CENTER = gql`
+  mutation SetRechargeCostCenter($costCenterId: ID!) {
+    setRechargeCostCenter(costCenterId: $costCenterId)
+  }
+`
+
 export const CREATE_RECHARGE_REQUEST = gql`
   mutation CreateRechargeRequest($input: RechargeRequestInput!) {
     createRechargeRequest(input: $input) {
@@ -108,24 +133,6 @@ export const CREATE_RECHARGE_REQUEST = gql`
 export const CANCEL_RECHARGE_REQUEST = gql`
   mutation CancelRechargeRequest($id: ID!) {
     cancelRechargeRequest(id: $id) {
-      ...RechargeRequestFields
-    }
-  }
-  ${RECHARGE_REQUEST_FIELDS}
-`
-
-export const APPROVE_RECHARGE_REQUEST = gql`
-  mutation ApproveRechargeRequest($id: ID!) {
-    approveRechargeRequest(id: $id) {
-      ...RechargeRequestFields
-    }
-  }
-  ${RECHARGE_REQUEST_FIELDS}
-`
-
-export const REJECT_RECHARGE_REQUEST = gql`
-  mutation RejectRechargeRequest($id: ID!, $reason: String!) {
-    rejectRechargeRequest(id: $id, reason: $reason) {
       ...RechargeRequestFields
     }
   }

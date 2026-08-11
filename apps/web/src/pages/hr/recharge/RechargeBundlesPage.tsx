@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   RECHARGE_BUNDLES_QUERY,
+  RECHARGE_COST_CENTER_QUERY,
   CREATE_RECHARGE_BUNDLE,
   UPDATE_RECHARGE_BUNDLE,
   DELETE_RECHARGE_BUNDLE,
+  SET_RECHARGE_COST_CENTER,
 } from '../../../graphql/recharge'
+import { COST_CENTERS_QUERY } from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useToastStore } from '../../../store/toastStore'
@@ -17,6 +20,12 @@ import { Modal } from '../../../components/ui/Modal'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
 import { EmptyState } from '../../../components/ui/EmptyState'
+
+interface CostCenterOption {
+  id: string
+  name: string
+  code: string
+}
 
 interface Bundle {
   id: string
@@ -42,6 +51,33 @@ export default function RechargeBundlesPage() {
   const [createBundle, { loading: creating }] = useMutation(CREATE_RECHARGE_BUNDLE)
   const [updateBundle, { loading: updating }] = useMutation(UPDATE_RECHARGE_BUNDLE)
   const [deleteBundle] = useMutation(DELETE_RECHARGE_BUNDLE)
+
+  const { data: costCentersData } = useQuery(COST_CENTERS_QUERY)
+  const {
+    data: currentCCData,
+    loading: currentCCLoading,
+    refetch: refetchCurrentCC,
+  } = useQuery(RECHARGE_COST_CENTER_QUERY, { fetchPolicy: 'cache-and-network' })
+  const [setRechargeCostCenter, { loading: savingCC }] = useMutation(SET_RECHARGE_COST_CENTER)
+  const [selectedCCId, setSelectedCCId] = useState('')
+
+  const costCenters: CostCenterOption[] = costCentersData?.costCenters ?? []
+  const currentCC = currentCCData?.rechargeCostCenter as { id: string } | null | undefined
+
+  useEffect(() => {
+    if (currentCC?.id) setSelectedCCId(currentCC.id)
+  }, [currentCC?.id])
+
+  async function handleSaveCostCenter() {
+    if (!selectedCCId) return
+    try {
+      await setRechargeCostCenter({ variables: { costCenterId: selectedCCId } })
+      addToast({ type: 'success', message: 'Recharge cost center updated' })
+      void refetchCurrentCC()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: (e as Error).message })
+    }
+  }
 
   const [modal, setModal] = useState<{ open: boolean; editing: Bundle | null }>({
     open: false,
@@ -115,17 +151,56 @@ export default function RechargeBundlesPage() {
   return (
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '900px' }}>
       <PageHeader
-        title="Recharge Bundles"
-        subtitle="The catalog employees pick from when requesting a phone recharge"
-        backPath="/hr/recharge"
-        actions={
-          <Button variant="primary" onClick={openCreate}>
-            + New Bundle
-          </Button>
-        }
+        title="Recharge Settings"
+        subtitle="The bundle catalog and cost center for phone recharge requests"
+        backPath="/recharge"
       />
 
-      <div style={{ marginTop: '20px' }}>
+      <Card style={{ padding: '20px', marginTop: '20px' }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
+          Recharge Cost Center
+        </div>
+        <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+          Every recharge request is charged to this single cost center — its assigned fulfiller
+          (set on the Cost Centers page in Finance) is who gets notified and sends the bundle.
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', maxWidth: '420px' }}>
+          <div style={{ flex: 1 }}>
+            <Select
+              label="Cost Center"
+              value={selectedCCId}
+              onChange={(e) => {
+                setSelectedCCId(e.target.value)
+              }}
+              disabled={currentCCLoading}
+            >
+              <option value="">Select cost center…</option>
+              {costCenters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.code} — {c.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button
+            variant="primary"
+            loading={savingCC}
+            disabled={!selectedCCId || selectedCCId === currentCC?.id}
+            onClick={() => void handleSaveCostCenter()}
+          >
+            Save
+          </Button>
+        </div>
+      </Card>
+
+      <div style={{ marginTop: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>Bundle Catalog</div>
+        <Button variant="primary" size="sm" onClick={openCreate}>
+          + New Bundle
+        </Button>
+      </div>
+
+      <div style={{ marginTop: '12px' }}>
         {!loading && bundles.length === 0 ? (
           <EmptyState
             title="No bundles yet"

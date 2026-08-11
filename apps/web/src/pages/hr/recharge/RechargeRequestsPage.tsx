@@ -4,14 +4,13 @@ import { useQuery, useMutation } from '@apollo/client'
 import {
   RECHARGE_BUNDLES_QUERY,
   RECHARGE_REQUESTS_QUERY,
+  RECHARGE_COST_CENTER_QUERY,
+  RECHARGE_MONTHLY_SUMMARY_QUERY,
   CREATE_RECHARGE_REQUEST,
   CANCEL_RECHARGE_REQUEST,
-  APPROVE_RECHARGE_REQUEST,
-  REJECT_RECHARGE_REQUEST,
   FULFILL_RECHARGE_REQUEST,
   CONFIRM_RECHARGE_RECEIPT,
 } from '../../../graphql/recharge'
-import { COST_CENTERS_QUERY } from '../../../graphql/finance'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -19,6 +18,7 @@ import { usePermission } from '../../../hooks/usePermission'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
 import { PageHeader } from '../../../components/ui/PageHeader'
+import { Card } from '../../../components/ui/Card'
 import { Grid } from '../../../components/ui/Grid'
 import { KPICard } from '../../../components/ui/KPICard'
 import { TabBar } from '../../../components/ui/TabBar'
@@ -45,22 +45,12 @@ interface RechargeBundle {
   isActive: boolean
 }
 
-interface CostCenter {
-  id: string
-  name: string
-  code: string
-}
-
 interface RechargeRequest extends RechargeRequestSummary {
   companyId: string
   requestedBy: string
   costCenterId: string
   bundleId: string
   notes?: string | null
-  approvedBy?: string | null
-  approvedByEmail?: string | null
-  approvedAt?: string | null
-  rejectionReason?: string | null
   fulfilledBy?: string | null
   fulfilledByEmail?: string | null
   fulfilledAt?: string | null
@@ -69,9 +59,21 @@ interface RechargeRequest extends RechargeRequestSummary {
   updatedAt: string
 }
 
-type TabKey = 'mine' | 'toApprove' | 'toFulfill'
+interface MonthlySummaryEntry {
+  requestedBy: string
+  requestedByEmail?: string | null
+  requestCount: number
+  totalAmount: number
+  currencyCode: string
+}
 
-const EMPTY_FORM = { costCenterId: '', bundleId: '', phoneNumber: '', notes: '' }
+type TabKey = 'mine' | 'toFulfill' | 'summary'
+
+const EMPTY_FORM = { bundleId: '', phoneNumber: '', notes: '' }
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
 
 export default function RechargeRequestsPage() {
   const { theme } = useTheme()
@@ -81,35 +83,23 @@ export default function RechargeRequestsPage() {
   const addToast = useToastStore((s) => s.addToast)
   const currentUserId = useAuthStore((s) => s.user?.id)
 
-  const canApprove = can('hr.recharge.approve', 'approve')
   const canAdmin = can('hr.recharge.admin', 'admin')
 
   const [activeTab, setActiveTab] = useState<TabKey>('mine')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [rejecting, setRejecting] = useState(false)
-  const [rejectReason, setRejectReason] = useState('')
   const [fulfillFile, setFulfillFile] = useState<File | null>(null)
   const [fulfillPreview, setFulfillPreview] = useState<string | null>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
 
-  const { data: costCentersData } = useQuery(COST_CENTERS_QUERY)
+  const { data: costCenterData } = useQuery(RECHARGE_COST_CENTER_QUERY)
   const { data: bundlesData } = useQuery(RECHARGE_BUNDLES_QUERY, { variables: { activeOnly: true } })
   const {
     data: mineData,
     loading: mineLoading,
     refetch: refetchMine,
   } = useQuery(RECHARGE_REQUESTS_QUERY, { variables: { scope: 'mine' }, fetchPolicy: 'cache-and-network' })
-  const {
-    data: toApproveData,
-    loading: toApproveLoading,
-    refetch: refetchToApprove,
-  } = useQuery(RECHARGE_REQUESTS_QUERY, {
-    variables: { scope: 'toApprove' },
-    skip: !canApprove,
-    fetchPolicy: 'cache-and-network',
-  })
   const {
     data: toFulfillData,
     loading: toFulfillLoading,
@@ -119,55 +109,60 @@ export default function RechargeRequestsPage() {
     fetchPolicy: 'cache-and-network',
   })
 
+  const costCenter = costCenterData?.rechargeCostCenter as
+    | { id: string; name: string; code: string; defaultFulfillerId?: string | null }
+    | null
+    | undefined
+  const isFulfiller = !!costCenter && costCenter.defaultFulfillerId === currentUserId
+  const canSeeSummary = canAdmin || isFulfiller
+
+  const now = new Date()
+  const [summaryYear, setSummaryYear] = useState(now.getFullYear())
+  const [summaryMonth, setSummaryMonth] = useState(now.getMonth() + 1)
+  const { data: summaryData, loading: summaryLoading } = useQuery(RECHARGE_MONTHLY_SUMMARY_QUERY, {
+    variables: { year: summaryYear, month: summaryMonth },
+    skip: !canSeeSummary,
+    fetchPolicy: 'cache-and-network',
+  })
+
   const [createRequest, { loading: creating }] = useMutation(CREATE_RECHARGE_REQUEST)
   const [cancelRequest] = useMutation(CANCEL_RECHARGE_REQUEST)
-  const [approveRequest, { loading: approving }] = useMutation(APPROVE_RECHARGE_REQUEST)
-  const [rejectRequest, { loading: rejectingMutation }] = useMutation(REJECT_RECHARGE_REQUEST)
   const [fulfillRequest, { loading: fulfilling }] = useMutation(FULFILL_RECHARGE_REQUEST)
   const [confirmReceipt, { loading: confirming }] = useMutation(CONFIRM_RECHARGE_RECEIPT)
 
-  const costCenters: CostCenter[] = costCentersData?.costCenters ?? []
   const bundles: RechargeBundle[] = bundlesData?.rechargeBundles ?? []
   const mine: RechargeRequest[] = mineData?.rechargeRequests ?? []
-  const toApprove: RechargeRequest[] = toApproveData?.rechargeRequests ?? []
   const toFulfill: RechargeRequest[] = toFulfillData?.rechargeRequests ?? []
+  const summary: MonthlySummaryEntry[] = summaryData?.rechargeMonthlySummary ?? []
 
   const refetchAll = () => {
     void refetchMine()
-    if (canApprove) void refetchToApprove()
     void refetchToFulfill()
   }
 
   const tabs = [
     { key: 'mine', label: 'My Requests', badge: mine.filter((r) => r.status === 'fulfilled').length || undefined },
-    ...(canApprove
-      ? [{ key: 'toApprove', label: 'To Approve', badge: toApprove.length || undefined }]
-      : []),
     { key: 'toFulfill', label: 'To Fulfill', badge: toFulfill.length || undefined },
+    ...(canSeeSummary ? [{ key: 'summary', label: 'Monthly Summary' }] : []),
   ]
 
-  const activeList = activeTab === 'mine' ? mine : activeTab === 'toApprove' ? toApprove : toFulfill
-  const activeLoading =
-    activeTab === 'mine' ? mineLoading : activeTab === 'toApprove' ? toApproveLoading : toFulfillLoading
+  const activeList = activeTab === 'mine' ? mine : activeTab === 'toFulfill' ? toFulfill : []
+  const activeLoading = activeTab === 'mine' ? mineLoading : activeTab === 'toFulfill' ? toFulfillLoading : false
 
   const selectedRequest =
-    mine.find((r) => r.id === selectedId) ??
-    toApprove.find((r) => r.id === selectedId) ??
-    toFulfill.find((r) => r.id === selectedId) ??
-    null
+    mine.find((r) => r.id === selectedId) ?? toFulfill.find((r) => r.id === selectedId) ?? null
 
   const selectedBundle = bundles.find((b) => b.id === form.bundleId)
 
   async function handleCreate() {
-    if (!form.costCenterId || !form.bundleId || !form.phoneNumber.trim()) {
-      addToast({ type: 'error', message: 'Cost center, bundle, and phone number are required' })
+    if (!form.bundleId || !form.phoneNumber.trim()) {
+      addToast({ type: 'error', message: 'Bundle and phone number are required' })
       return
     }
     try {
       await createRequest({
         variables: {
           input: {
-            costCenterId: form.costCenterId,
             bundleId: form.bundleId,
             phoneNumber: form.phoneNumber.trim(),
             notes: form.notes.trim() || undefined,
@@ -187,33 +182,6 @@ export default function RechargeRequestsPage() {
     try {
       await cancelRequest({ variables: { id } })
       addToast({ type: 'success', message: 'Request cancelled' })
-      setSelectedId(null)
-      refetchAll()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
-    }
-  }
-
-  async function handleApprove(id: string) {
-    try {
-      await approveRequest({ variables: { id } })
-      addToast({ type: 'success', message: 'Request approved' })
-      refetchAll()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: (e as Error).message })
-    }
-  }
-
-  async function handleReject(id: string) {
-    if (!rejectReason.trim()) {
-      addToast({ type: 'error', message: 'A rejection reason is required' })
-      return
-    }
-    try {
-      await rejectRequest({ variables: { id, reason: rejectReason.trim() } })
-      addToast({ type: 'success', message: 'Request rejected' })
-      setRejecting(false)
-      setRejectReason('')
       setSelectedId(null)
       refetchAll()
     } catch (e: unknown) {
@@ -271,14 +239,14 @@ export default function RechargeRequestsPage() {
     <div style={{ ...pagePadding, margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
         title="Phone Recharge Requests"
-        subtitle="Request a recharge bundle, track approval, and confirm once it arrives"
+        subtitle="Request a recharge bundle, and confirm once it arrives"
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
             {canAdmin && (
               <Button
                 variant="secondary"
                 onClick={() => {
-                  navigate('/hr/recharge/bundles')
+                  navigate('/recharge/bundles')
                 }}
               >
                 Manage Bundles
@@ -297,13 +265,9 @@ export default function RechargeRequestsPage() {
       />
 
       <Grid cols={3} tabletCols={3} phoneCols={1} gap={12} style={{ marginTop: '20px', marginBottom: '20px' }}>
-        <KPICard label="My open requests" value={mine.filter((r) => !['confirmed', 'rejected', 'cancelled'].includes(r.status)).length} iconColor="accent" />
+        <KPICard label="My open requests" value={mine.filter((r) => !['confirmed', 'cancelled'].includes(r.status)).length} iconColor="accent" />
         <KPICard label="Awaiting my confirmation" value={awaitingConfirmCount} iconColor={awaitingConfirmCount > 0 ? 'warning' : 'accent'} />
-        {canApprove ? (
-          <KPICard label="Pending my approval" value={toApprove.length} iconColor={toApprove.length > 0 ? 'warning' : 'accent'} />
-        ) : (
-          <KPICard label="Ready to fulfill" value={toFulfill.length} iconColor={toFulfill.length > 0 ? 'warning' : 'accent'} />
-        )}
+        <KPICard label="Ready to fulfill" value={toFulfill.length} iconColor={toFulfill.length > 0 ? 'warning' : 'accent'} />
       </Grid>
 
       <TabBar
@@ -314,112 +278,97 @@ export default function RechargeRequestsPage() {
         }}
       />
 
-      <div style={{ marginTop: '20px' }}>
-        {activeLoading && activeList.length === 0 ? (
-          <Grid cols={3} tabletCols={2} phoneCols={1} gap={12}>
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="skeleton"
-                style={{ height: '150px', borderRadius: '12px' }}
-              />
-            ))}
-          </Grid>
-        ) : activeList.length === 0 ? (
-          <EmptyState
-            title={
-              activeTab === 'mine'
-                ? 'No recharge requests yet'
-                : activeTab === 'toApprove'
-                  ? 'Nothing pending approval'
-                  : 'Nothing to fulfill right now'
-            }
-            message={
-              activeTab === 'mine'
-                ? 'Submit a request to get a phone recharge bundle approved and sent to you.'
-                : activeTab === 'toApprove'
-                  ? "You're all caught up."
-                  : "You're not assigned as the fulfiller for any cost center with a pending request."
-            }
-            action={
-              activeTab === 'mine' ? (
-                <Button
-                  variant="primary"
-                  size="sm"
+      {activeTab === 'summary' ? (
+        <MonthlySummaryView
+          theme={theme}
+          entries={summary}
+          loading={summaryLoading}
+          year={summaryYear}
+          month={summaryMonth}
+          onChangeMonth={(y, m) => {
+            setSummaryYear(y)
+            setSummaryMonth(m)
+          }}
+        />
+      ) : (
+        <div style={{ marginTop: '20px' }}>
+          {activeLoading && activeList.length === 0 ? (
+            <Grid cols={3} tabletCols={2} phoneCols={1} gap={12}>
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="skeleton"
+                  style={{ height: '150px', borderRadius: '12px' }}
+                />
+              ))}
+            </Grid>
+          ) : activeList.length === 0 ? (
+            <EmptyState
+              title={activeTab === 'mine' ? 'No recharge requests yet' : 'Nothing to fulfill right now'}
+              message={
+                activeTab === 'mine'
+                  ? 'Submit a request to get a phone recharge bundle sent to you.'
+                  : "You're not the assigned fulfiller, or there's nothing pending."
+              }
+              action={
+                activeTab === 'mine' ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setShowCreateModal(true)
+                    }}
+                  >
+                    New Request
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <Grid cols={3} tabletCols={2} phoneCols={1} gap={12}>
+              {activeList.map((r) => (
+                <RechargeRequestCard
+                  key={r.id}
+                  request={r}
                   onClick={() => {
-                    setShowCreateModal(true)
+                    setSelectedId(r.id)
                   }}
-                >
-                  New Request
-                </Button>
-              ) : undefined
-            }
-          />
-        ) : (
-          <Grid cols={3} tabletCols={2} phoneCols={1} gap={12}>
-            {activeList.map((r) => (
-              <RechargeRequestCard
-                key={r.id}
-                request={r}
-                onClick={() => {
-                  setSelectedId(r.id)
-                }}
-                actions={
-                  activeTab === 'toApprove' && r.status === 'pending' ? (
-                    <>
+                  actions={
+                    activeTab === 'toFulfill' && r.status === 'pending' ? (
                       <Button
                         variant="primary"
                         size="sm"
-                        loading={approving}
-                        onClick={() => void handleApprove(r.id)}
+                        onClick={() => {
+                          setSelectedId(r.id)
+                        }}
                       >
-                        Approve
+                        Upload Proof
                       </Button>
+                    ) : activeTab === 'mine' && r.status === 'fulfilled' ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={confirming}
+                        onClick={() => void handleConfirm(r.id)}
+                      >
+                        Confirm Receipt
+                      </Button>
+                    ) : activeTab === 'mine' && r.status === 'pending' ? (
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          setSelectedId(r.id)
-                          setRejecting(true)
-                        }}
+                        onClick={() => void handleCancel(r.id)}
                       >
-                        Reject
+                        Cancel
                       </Button>
-                    </>
-                  ) : activeTab === 'toFulfill' && r.status === 'approved' ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedId(r.id)
-                      }}
-                    >
-                      Upload Proof
-                    </Button>
-                  ) : activeTab === 'mine' && r.status === 'fulfilled' ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      loading={confirming}
-                      onClick={() => void handleConfirm(r.id)}
-                    >
-                      Confirm Receipt
-                    </Button>
-                  ) : activeTab === 'mine' && r.status === 'pending' ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void handleCancel(r.id)}
-                    >
-                      Cancel
-                    </Button>
-                  ) : null
-                }
-              />
-            ))}
-          </Grid>
-        )}
-      </div>
+                    ) : null
+                  }
+                />
+              ))}
+            </Grid>
+          )}
+        </div>
+      )}
 
       {/* ── Create Request Modal ─────────────────────────────────────────── */}
       <Modal
@@ -429,7 +378,7 @@ export default function RechargeRequestsPage() {
           setForm(EMPTY_FORM)
         }}
         title="New Recharge Request"
-        description="An approver will review this, then the assigned cost-center fulfiller will send the bundle."
+        description="The assigned fulfiller will be notified immediately and will send the bundle."
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
             <Button
@@ -448,21 +397,6 @@ export default function RechargeRequestsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Select
-            label="Cost Center"
-            value={form.costCenterId}
-            onChange={(e) => {
-              setForm((f) => ({ ...f, costCenterId: e.target.value }))
-            }}
-          >
-            <option value="">Select cost center…</option>
-            {costCenters.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.code} — {c.name}
-              </option>
-            ))}
-          </Select>
-
           <div>
             <Select
               label="Bundle"
@@ -501,7 +435,7 @@ export default function RechargeRequestsPage() {
             onChange={(e) => {
               setForm((f) => ({ ...f, notes: e.target.value }))
             }}
-            placeholder="Anything the approver should know…"
+            placeholder="Anything the fulfiller should know…"
             rows={2}
           />
         </div>
@@ -512,8 +446,6 @@ export default function RechargeRequestsPage() {
         open={!!selectedRequest}
         onClose={() => {
           setSelectedId(null)
-          setRejecting(false)
-          setRejectReason('')
           setFulfillFile(null)
           setFulfillPreview(null)
         }}
@@ -525,16 +457,7 @@ export default function RechargeRequestsPage() {
             request={selectedRequest}
             theme={theme}
             isRequester={selectedRequest.requestedBy === currentUserId}
-            isApproveTab={activeTab === 'toApprove'}
             isFulfillTab={activeTab === 'toFulfill'}
-            rejecting={rejecting}
-            rejectReason={rejectReason}
-            setRejectReason={setRejectReason}
-            setRejecting={setRejecting}
-            approving={approving}
-            rejectingMutation={rejectingMutation}
-            onApprove={() => void handleApprove(selectedRequest.id)}
-            onReject={() => void handleReject(selectedRequest.id)}
             fulfillFile={fulfillFile}
             fulfillPreview={fulfillPreview}
             onPickFile={pickFulfillFile}
@@ -550,20 +473,136 @@ export default function RechargeRequestsPage() {
   )
 }
 
+function MonthlySummaryView({
+  theme,
+  entries,
+  loading,
+  year,
+  month,
+  onChangeMonth,
+}: {
+  theme: ReturnType<typeof useTheme>['theme']
+  entries: MonthlySummaryEntry[]
+  loading: boolean
+  year: number
+  month: number
+  onChangeMonth: (year: number, month: number) => void
+}) {
+  // Entries can span multiple currencies for the same requester in one
+  // month — sum per currency rather than blindly adding raw amounts together.
+  const totalsByCurrency = entries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.currencyCode] = (acc[e.currencyCode] ?? 0) + e.totalAmount
+    return acc
+  }, {})
+
+  function shiftMonth(delta: number) {
+    let m = month + delta
+    let y = year
+    if (m < 1) {
+      m = 12
+      y -= 1
+    } else if (m > 12) {
+      m = 1
+      y += 1
+    }
+    onChangeMonth(y, m)
+  }
+
+  return (
+    <div style={{ marginTop: '20px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              shiftMonth(-1)
+            }}
+          >
+            ←
+          </Button>
+          <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary, minWidth: '140px', textAlign: 'center' }}>
+            {MONTH_NAMES[month - 1]} {year}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              shiftMonth(1)
+            }}
+          >
+            →
+          </Button>
+        </div>
+        {entries.length > 0 && (
+          <div style={{ fontSize: '13px', color: theme.textMuted, display: 'flex', gap: '12px' }}>
+            <span>Total sent:</span>
+            {Object.entries(totalsByCurrency).map(([code, amount]) => (
+              <span key={code} style={{ color: theme.accent, fontWeight: 700 }}>
+                {amount.toLocaleString()} {code}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {loading && entries.length === 0 ? (
+        <div className="skeleton" style={{ height: '200px', borderRadius: '12px' }} />
+      ) : entries.length === 0 ? (
+        <EmptyState
+          title="No recharges fulfilled this month"
+          message="Once requests are sent out this month, per-person totals will show up here."
+        />
+      ) : (
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                  <th style={{ textAlign: 'left', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
+                    Requester
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
+                    Requests
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '10px 16px', color: theme.textMuted, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase' }}>
+                    Total Received
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e) => (
+                  <tr key={e.requestedBy} style={{ borderBottom: `1px solid ${theme.border}` }}>
+                    <td style={{ padding: '10px 16px', color: theme.textPrimary }}>{e.requestedByEmail ?? '—'}</td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                      {e.requestCount}
+                    </td>
+                    <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {e.totalAmount.toLocaleString()} {e.currencyCode}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
 interface RequestDetailBodyProps {
   request: RechargeRequest
   theme: ReturnType<typeof useTheme>['theme']
   isRequester: boolean
-  isApproveTab: boolean
   isFulfillTab: boolean
-  rejecting: boolean
-  rejectReason: string
-  setRejectReason: (v: string) => void
-  setRejecting: (v: boolean) => void
-  approving: boolean
-  rejectingMutation: boolean
-  onApprove: () => void
-  onReject: () => void
   fulfillFile: File | null
   fulfillPreview: string | null
   onPickFile: (f: File) => void
@@ -578,16 +617,7 @@ function RequestDetailBody({
   request: r,
   theme,
   isRequester,
-  isApproveTab,
   isFulfillTab,
-  rejecting,
-  rejectReason,
-  setRejectReason,
-  setRejecting,
-  approving,
-  rejectingMutation,
-  onApprove,
-  onReject,
   fulfillFile,
   fulfillPreview,
   onPickFile,
@@ -597,15 +627,14 @@ function RequestDetailBody({
   confirming,
   onCancel,
 }: RequestDetailBodyProps) {
-  const statusSteps = ['pending', 'approved', 'fulfilled', 'confirmed']
-  const isTerminalNegative = r.status === 'rejected' || r.status === 'cancelled'
-  // Both reject and cancel only ever fire from 'pending' (see
-  // rejectRechargeRequest/cancelRechargeRequest's WHERE clauses), so that's
-  // always the step a terminal-negative request stopped at. Passing the
-  // literal 'rejected'/'cancelled' string here wouldn't match any entry in
+  const statusSteps = ['pending', 'fulfilled', 'confirmed']
+  const isCancelled = r.status === 'cancelled'
+  // Cancel only ever fires from 'pending' (see cancelRechargeRequest's WHERE
+  // clause), so that's always the step a cancelled request stopped at.
+  // Passing the literal 'cancelled' string here wouldn't match any entry in
   // statusSteps, leaving every dot rendered as untouched instead of showing
   // where it actually stopped.
-  const displayStep = isTerminalNegative ? 'pending' : r.status
+  const displayStep = isCancelled ? 'pending' : r.status
 
   const events: TimelineEvent[] = [
     {
@@ -616,16 +645,6 @@ function RequestDetailBody({
       timestamp: r.createdAt,
     },
   ]
-  if (r.approvedAt) {
-    events.push({
-      id: 'approved',
-      title: r.status === 'rejected' ? 'Rejected' : 'Approved',
-      description: r.status === 'rejected' ? (r.rejectionReason ?? undefined) : undefined,
-      user: r.approvedByEmail ?? undefined,
-      timestamp: r.approvedAt,
-      variant: r.status === 'rejected' ? 'danger' : 'success',
-    })
-  }
   if (r.fulfilledAt) {
     events.push({
       id: 'fulfilled',
@@ -643,13 +662,16 @@ function RequestDetailBody({
       variant: 'success',
     })
   }
-  if (r.status === 'cancelled') {
+  if (isCancelled) {
     // There's no dedicated cancelledAt column — updatedAt is the closest
     // available timestamp, since cancelling is the only thing that touches
     // a pending request's updated_at besides this.
     events.push({
+      // Requests rejected under the old approval workflow were migrated to
+      // 'cancelled' too (see migration 193), so this can't claim it was
+      // always the requester who cancelled.
       id: 'cancelled',
-      title: 'Cancelled by requester',
+      title: 'Cancelled',
       timestamp: r.updatedAt,
       variant: 'danger',
     })
@@ -661,7 +683,7 @@ function RequestDetailBody({
         <StatusBar
           steps={statusSteps.map((s) => ({ key: s, label: RECHARGE_STATUS_LABELS[s] }))}
           currentStep={displayStep}
-          rejected={isTerminalNegative}
+          rejected={isCancelled}
         />
       </div>
 
@@ -682,21 +704,6 @@ function RequestDetailBody({
         <div>
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Notes</div>
           <div style={{ fontSize: '13px', color: theme.textSecondary }}>{r.notes}</div>
-        </div>
-      )}
-
-      {r.status === 'rejected' && r.rejectionReason && (
-        <div
-          style={{
-            background: theme.dangerBg,
-            border: `1px solid ${theme.dangerBorder}`,
-            borderRadius: '8px',
-            padding: '10px 12px',
-            fontSize: '12px',
-            color: theme.danger,
-          }}
-        >
-          <strong>Rejected:</strong> {r.rejectionReason}
         </div>
       )}
 
@@ -775,53 +782,7 @@ function RequestDetailBody({
       )}
 
       {/* ── Actions ──────────────────────────────────────────────────────── */}
-      {isApproveTab && r.status === 'pending' && !rejecting && (
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <Button variant="primary" loading={approving} onClick={onApprove}>
-            Approve
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setRejecting(true)
-            }}
-          >
-            Reject
-          </Button>
-        </div>
-      )}
-      {isApproveTab && rejecting && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <Textarea
-            value={rejectReason}
-            onChange={(e) => {
-              setRejectReason(e.target.value)
-            }}
-            placeholder="Reason for rejection (required)…"
-            rows={2}
-          />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Button
-              variant="danger"
-              loading={rejectingMutation}
-              disabled={!rejectReason.trim()}
-              onClick={onReject}
-            >
-              Confirm Reject
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setRejecting(false)
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {isFulfillTab && r.status === 'approved' && (
+      {isFulfillTab && r.status === 'pending' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
             Upload proof of purchase

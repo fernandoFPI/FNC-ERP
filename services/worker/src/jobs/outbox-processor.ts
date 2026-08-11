@@ -1854,14 +1854,13 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
 
-    // All four recharge-request lifecycle notifications share one shape —
+    // Both recharge-request lifecycle notifications share one shape —
     // unlike the PO cases above, the resolver that enqueues these already
     // computed a real title/body and a trustworthy companyId (straight from
     // ctx.auth, not client input), so there's no need to re-derive anything
-    // from the DB here.
+    // from the DB here. (There's no approval step, so submitted goes
+    // straight to the fulfiller and there's no rejected case.)
     case 'RECHARGE_REQUEST_SUBMITTED':
-    case 'RECHARGE_REQUEST_APPROVED':
-    case 'RECHARGE_REQUEST_REJECTED':
     case 'RECHARGE_REQUEST_FULFILLED': {
       await pool.query(
         `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)

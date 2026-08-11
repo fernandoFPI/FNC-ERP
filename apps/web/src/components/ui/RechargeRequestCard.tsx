@@ -16,9 +16,7 @@ export interface RechargeRequestSummary {
 }
 
 export const RECHARGE_STATUS_LABELS: Record<string, string> = {
-  pending: 'Pending approval',
-  approved: 'Approved',
-  rejected: 'Rejected',
+  pending: 'Awaiting fulfillment',
   fulfilled: 'Sent — confirm receipt',
   confirmed: 'Confirmed',
   cancelled: 'Cancelled',
@@ -26,8 +24,6 @@ export const RECHARGE_STATUS_LABELS: Record<string, string> = {
 
 export const RECHARGE_STATUS_VARIANTS: Record<string, BadgeVariant> = {
   pending: 'warning',
-  approved: 'info',
-  rejected: 'danger',
   fulfilled: 'accent',
   confirmed: 'success',
   cancelled: 'neutral',
@@ -105,13 +101,11 @@ export function RechargeRequestCard({ request: r, onClick, actions }: RechargeRe
           background:
             r.status === 'confirmed'
               ? theme.success
-              : r.status === 'rejected'
-                ? theme.danger
-                : r.status === 'cancelled'
-                  ? theme.textMuted
-                  : r.status === 'pending'
-                    ? theme.warning
-                    : theme.accent,
+              : r.status === 'cancelled'
+                ? theme.textMuted
+                : r.status === 'pending'
+                  ? theme.warning
+                  : theme.accent,
         }}
       />
 

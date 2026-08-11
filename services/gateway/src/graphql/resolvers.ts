@@ -1067,31 +1067,6 @@ async function notifyRechargeUserGW(
   )
 }
 
-// Anyone holding hr.recharge.approve at 'approve' or 'admin' level, plus the
-// company-wide admin roles that bypass granular permission checks entirely
-// (isPermissionBypassGW) — mirrors notifyFinanceTeamGW's shape but keyed off
-// the actual granular permission grant rather than a coarse module role,
-// since hr.recharge.approve isn't tied to a single 'module' the way
-// user_company_roles.module is.
-async function notifyRechargeApproversGW(
-  companyId: string,
-  notification: RechargeGWNotification,
-): Promise<void> {
-  const users = await query<{ user_id: string }>(
-    `SELECT DISTINCT u.id AS user_id
-     FROM users u
-     JOIN user_company_roles ucr ON ucr.user_id = u.id AND ucr.company_id = $1 AND ucr.is_active = true
-     LEFT JOIN user_permissions up
-       ON up.user_id = u.id AND up.company_id = $1 AND up.permission_key = 'hr.recharge.approve'
-     WHERE u.is_active = true
-       AND (ucr.role IN ('system_admin', 'company_admin') OR up.access_level IN ('approve', 'admin'))`,
-    [companyId],
-  )
-  for (const user of users.rows) {
-    await notifyRechargeUserGW(user.user_id, companyId, notification)
-  }
-}
-
 async function notifyDeptHeadsAndAdminsGW(
   poId: string,
   notification: POAuthGWNotification,
@@ -2878,9 +2853,9 @@ async function getRechargeRequestForReturn(id: string, ctx: GQLContext) {
 // without this, any authenticated employee could fetch any other employee's
 // request (phone number, notes, and — once fulfilled — the proof photo,
 // since the reveal gate only blocks the *requester* pre-confirmation, not
-// uninvolved third parties). Mirrors who the list scopes ('mine'/'toApprove'/
-// 'toFulfill') already restrict to: the requester themselves, anyone who can
-// approve, this request's assigned fulfiller, or an admin-bypass role.
+// uninvolved third parties). Mirrors who the list scopes ('mine'/'toFulfill')
+// already restrict to: the requester themselves, this request's assigned
+// fulfiller, hr.recharge.admin holders, or an admin-bypass role.
 async function canViewRechargeRequestGW(
   ctx: GQLContext,
   row: { requested_by: string; cost_center_id: string },
@@ -2889,7 +2864,7 @@ async function canViewRechargeRequestGW(
   if (isPermissionBypassGW(ctx.auth.role)) return true
   if (ctx.auth.userId === row.requested_by) return true
   const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
-  if (meetsLevel(perms['hr.recharge.approve'], 'approve')) return true
+  if (meetsLevel(perms['hr.recharge.admin'], 'admin')) return true
   const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
     `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
     [row.cost_center_id],
@@ -3475,17 +3450,14 @@ export const resolvers = {
       // Each scope has a default status filter (what you'd normally want to
       // see in that tab), but an explicit args.status always takes over
       // instead of stacking on top of it — ANDing both together would
-      // self-contradict for e.g. scope:'toApprove' (implicitly 'pending')
-      // combined with status:'approved', silently returning nothing.
-      if (scope === 'toApprove') {
-        await requirePermGW(ctx.auth, 'hr.recharge.approve', 'approve')
-        if (!args.status) conditions.push(`rr.status = 'pending'`)
-      } else if (scope === 'toFulfill') {
+      // self-contradict for e.g. scope:'toFulfill' (implicitly 'pending')
+      // combined with status:'confirmed', silently returning nothing.
+      if (scope === 'toFulfill') {
         conditions.push(
           `rr.cost_center_id IN (SELECT id FROM cost_centers WHERE default_recharge_fulfiller_id = $${idx++})`,
         )
         params.push(ctx.auth.userId)
-        if (!args.status) conditions.push(`rr.status = 'approved'`)
+        if (!args.status) conditions.push(`rr.status = 'pending'`)
       } else {
         conditions.push(`rr.requested_by = $${idx++}`)
         params.push(ctx.auth.userId)
@@ -3516,6 +3488,100 @@ export const resolvers = {
       })
       if (!allowed) return null
       return rechargeRequestRow(row, ctx)
+    },
+
+    rechargeCostCenter: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query<{
+        id: string
+        name: string
+        code: string
+        default_recharge_fulfiller_id: string | null
+        default_recharge_fulfiller_email: string | null
+      }>(
+        `SELECT cc.id, cc.name, cc.code, cc.default_recharge_fulfiller_id,
+                u.email AS default_recharge_fulfiller_email
+         FROM system_configuration sc
+         JOIN cost_centers cc ON cc.id = sc.recharge_cost_center_id
+         LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
+         WHERE sc.company_id=$1`,
+        [ctx.auth.companyId],
+      )
+      const row = r.rows[0]
+      if (!row) return null
+      return {
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        defaultFulfillerId: row.default_recharge_fulfiller_id,
+        defaultFulfillerEmail: row.default_recharge_fulfiller_email,
+      }
+    },
+
+    // Per-requester totals for a given month (defaults to the current one) —
+    // the fulfiller's "who's received what" view. Only the assigned
+    // fulfiller, hr.recharge.admin holders, or an admin-bypass role can see
+    // it, same access as the request-level reveal gate.
+    rechargeMonthlySummary: async (
+      _: unknown,
+      args: { year?: number; month?: number },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (!isPermissionBypassGW(ctx.auth.role)) {
+        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+        const isAdmin = meetsLevel(perms['hr.recharge.admin'], 'admin')
+        if (!isAdmin) {
+          const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
+            `SELECT cc.default_recharge_fulfiller_id
+             FROM system_configuration sc
+             JOIN cost_centers cc ON cc.id = sc.recharge_cost_center_id
+             WHERE sc.company_id=$1`,
+            [ctx.auth.companyId],
+          )
+          if (cc.rows[0]?.default_recharge_fulfiller_id !== ctx.auth.userId) {
+            throw new Error('Not authorized to view the recharge summary')
+          }
+        }
+      }
+      const now = new Date()
+      const year = args.year ?? now.getFullYear()
+      const month = args.month ?? now.getMonth() + 1
+      const r = await query<{
+        requested_by: string
+        requested_by_email: string
+        request_count: number
+        total_amount: string
+        currency_code: string
+      }>(
+        `SELECT rr.requested_by, ru.email AS requested_by_email,
+                COUNT(*)::int AS request_count,
+                SUM(rb.amount) AS total_amount, rb.currency_code
+         FROM recharge_requests rr
+         JOIN users ru ON ru.id = rr.requested_by
+         JOIN recharge_bundles rb ON rb.id = rr.bundle_id
+         WHERE rr.company_id=$1
+           -- Scope to the currently configured cost center only — requests
+           -- placed under a since-replaced cost center (back when each
+           -- request picked its own) shouldn't surface to whoever holds the
+           -- fulfiller seat today.
+           AND rr.cost_center_id = (
+             SELECT recharge_cost_center_id FROM system_configuration WHERE company_id=$1
+           )
+           AND rr.status IN ('fulfilled','confirmed')
+           AND EXTRACT(YEAR FROM rr.fulfilled_at AT TIME ZONE 'Asia/Baghdad') = $2
+           AND EXTRACT(MONTH FROM rr.fulfilled_at AT TIME ZONE 'Asia/Baghdad') = $3
+         GROUP BY rr.requested_by, ru.email, rb.currency_code
+         ORDER BY total_amount DESC`,
+        [ctx.auth.companyId, year, month],
+      )
+      return r.rows.map((row) => ({
+        requestedBy: row.requested_by,
+        requestedByEmail: row.requested_by_email,
+        requestCount: row.request_count,
+        totalAmount: parseFloat(row.total_amount),
+        currencyCode: row.currency_code,
+      }))
     },
 
     leaveRequests: async (
@@ -19026,6 +19092,25 @@ export const resolvers = {
       return true
     },
 
+    setRechargeCostCenter: async (
+      _: unknown,
+      args: { costCenterId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+      const ccCheck = await query(`SELECT 1 FROM cost_centers WHERE id=$1 AND company_id=$2`, [
+        args.costCenterId,
+        ctx.auth.companyId,
+      ])
+      if (!ccCheck.rows[0]) throw new Error('Cost center not found')
+      await query(
+        `UPDATE system_configuration SET recharge_cost_center_id=$2, updated_at=NOW() WHERE company_id=$1`,
+        [ctx.auth.companyId, args.costCenterId],
+      )
+      return true
+    },
+
     createRechargeRequest: async (
       _: unknown,
       args: { input: Record<string, unknown> },
@@ -19033,16 +19118,19 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
-      // The FK only checks these rows exist somewhere, not that they belong
-      // to the caller's own company — without this, a request could be
-      // created under one company while pointing at another company's cost
-      // center/bundle, leaking their names into this company's approval
-      // queue and routing the fulfillment notification to a foreign user.
-      const ccCheck = await query(`SELECT 1 FROM cost_centers WHERE id=$1 AND company_id=$2`, [
-        i.costCenterId,
-        ctx.auth.companyId,
-      ])
-      if (!ccCheck.rows[0]) throw new Error('Cost center not found')
+      // There's exactly one recharge cost center for the whole company (an
+      // admin sets it once via setRechargeCostCenter) — the requester no
+      // longer picks one per request.
+      const costCenter = await query<{ recharge_cost_center_id: string | null }>(
+        `SELECT recharge_cost_center_id FROM system_configuration WHERE company_id=$1`,
+        [ctx.auth.companyId],
+      )
+      const costCenterId = costCenter.rows[0]?.recharge_cost_center_id
+      if (!costCenterId) {
+        throw new Error(
+          'No recharge cost center has been configured yet — ask an admin to set one first.',
+        )
+      }
       const bundleCheck = await query(
         `SELECT 1 FROM recharge_bundles WHERE id=$1 AND company_id=$2`,
         [i.bundleId, ctx.auth.companyId],
@@ -19051,15 +19139,24 @@ export const resolvers = {
       const r = await query(
         `INSERT INTO recharge_requests (company_id, requested_by, cost_center_id, bundle_id, phone_number, notes)
          VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [ctx.auth.companyId, ctx.auth.userId, i.costCenterId, i.bundleId, i.phoneNumber, i.notes ?? null],
+        [ctx.auth.companyId, ctx.auth.userId, costCenterId, i.bundleId, i.phoneNumber, i.notes ?? null],
       )
       const requestId = r.rows[0].id as string
-      void notifyRechargeApproversGW(ctx.auth.companyId, {
-        type: 'RECHARGE_REQUEST_SUBMITTED',
-        title: 'New recharge request',
-        body: 'A new phone recharge request is pending your approval.',
-        requestId,
-      })
+      // No approval step — the fulfiller assigned to the recharge cost
+      // center is notified directly, the moment the request comes in.
+      const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
+        `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+        [costCenterId],
+      )
+      const fulfillerId = cc.rows[0]?.default_recharge_fulfiller_id
+      if (fulfillerId) {
+        void notifyRechargeUserGW(fulfillerId, ctx.auth.companyId, {
+          type: 'RECHARGE_REQUEST_SUBMITTED',
+          title: 'New recharge request',
+          body: 'A new phone recharge request is ready to fulfill.',
+          requestId,
+        })
+      }
       return getRechargeRequestForReturn(requestId, ctx)
     },
 
@@ -19074,54 +19171,6 @@ export const resolvers = {
       return getRechargeRequestForReturn(args.id, ctx)
     },
 
-    approveRechargeRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'hr.recharge.approve', 'approve')
-      const r = await query<{ cost_center_id: string; requested_by: string }>(
-        `UPDATE recharge_requests SET status='approved', approved_by=$3, approved_at=NOW(), updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 AND status='pending' RETURNING cost_center_id, requested_by`,
-        [args.id, ctx.auth.companyId, ctx.auth.userId],
-      )
-      if (!r.rows[0]) throw new Error('Request not found or not pending')
-      const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
-        `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
-        [r.rows[0].cost_center_id],
-      )
-      const fulfillerId = cc.rows[0]?.default_recharge_fulfiller_id
-      if (fulfillerId) {
-        void notifyRechargeUserGW(fulfillerId, ctx.auth.companyId, {
-          type: 'RECHARGE_REQUEST_APPROVED',
-          title: 'Recharge request approved',
-          body: 'A recharge request assigned to your cost center is ready to fulfill.',
-          requestId: args.id,
-        })
-      }
-      return getRechargeRequestForReturn(args.id, ctx)
-    },
-
-    rejectRechargeRequest: async (
-      _: unknown,
-      args: { id: string; reason: string },
-      ctx: GQLContext,
-    ) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      await requirePermGW(ctx.auth, 'hr.recharge.approve', 'approve')
-      if (!args.reason.trim()) throw new Error('reason is required')
-      const r = await query<{ requested_by: string }>(
-        `UPDATE recharge_requests SET status='rejected', approved_by=$3, rejection_reason=$4, updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 AND status='pending' RETURNING requested_by`,
-        [args.id, ctx.auth.companyId, ctx.auth.userId, args.reason],
-      )
-      if (!r.rows[0]) throw new Error('Request not found or not pending')
-      void notifyRechargeUserGW(r.rows[0].requested_by, ctx.auth.companyId, {
-        type: 'RECHARGE_REQUEST_REJECTED',
-        title: 'Recharge request rejected',
-        body: `Your recharge request was rejected: ${args.reason}`,
-        requestId: args.id,
-      })
-      return getRechargeRequestForReturn(args.id, ctx)
-    },
-
     fulfillRechargeRequest: async (
       _: unknown,
       args: { id: string; fileId: string },
@@ -19133,8 +19182,14 @@ export const resolvers = {
         [args.id, ctx.auth.companyId],
       )
       if (!reqRow.rows[0]) throw new Error('Request not found')
-      if (reqRow.rows[0].status !== 'approved') {
+      if (reqRow.rows[0].status !== 'pending') {
         throw new Error(`Cannot fulfill a request in status '${reqRow.rows[0].status}'`)
+      }
+      // Separation of duties: even an admin-bypass fulfiller must not be able
+      // to fulfill their own request — that would let one person request,
+      // fulfill, and confirm a recharge entirely on their own.
+      if (reqRow.rows[0].requested_by === ctx.auth.userId) {
+        throw new Error('You cannot fulfill your own recharge request')
       }
       if (!isPermissionBypassGW(ctx.auth.role)) {
         const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
@@ -19154,16 +19209,16 @@ export const resolvers = {
         [args.fileId, ctx.auth.companyId],
       )
       if (!fileCheck.rows[0]) throw new Error('Invalid or missing proof photo')
-      // status='approved' lives in the WHERE clause (not just the earlier
+      // status='pending' lives in the WHERE clause (not just the earlier
       // SELECT check) so two concurrent fulfill calls can't both pass the
       // read and both write — only the first UPDATE finds a matching row.
       const fulfilled = await query(
         `UPDATE recharge_requests SET status='fulfilled', fulfilled_by=$3, fulfilled_at=NOW(), photo_file_id=$4, updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 AND status='approved' RETURNING id`,
+         WHERE id=$1 AND company_id=$2 AND status='pending' RETURNING id`,
         [args.id, ctx.auth.companyId, ctx.auth.userId, args.fileId],
       )
       if (!fulfilled.rows[0]) {
-        throw new Error('Request is no longer approved — it may have already been fulfilled')
+        throw new Error('Request is no longer pending — it may have already been fulfilled')
       }
       void notifyRechargeUserGW(reqRow.rows[0].requested_by, ctx.auth.companyId, {
         type: 'RECHARGE_REQUEST_FULFILLED',
