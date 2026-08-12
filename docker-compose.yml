@@ -22,8 +22,8 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - '6379:6379'
-    command: redis-server --appendonly yes
+      - '127.0.0.1:6379:6379'
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-dev_redis_password_change_in_prod}
     volumes:
       - redis_data:/data
     healthcheck:
