@@ -3547,19 +3547,11 @@ export const resolvers = {
       const now = new Date()
       const year = args.year ?? now.getFullYear()
       const month = args.month ?? now.getMonth() + 1
-      const r = await query<{
-        requested_by: string
-        requested_by_email: string
-        request_count: number
-        total_amount: string
-        currency_code: string
-      }>(
-        `SELECT rr.requested_by, ru.email AS requested_by_email,
-                COUNT(*)::int AS request_count,
-                SUM(rb.amount) AS total_amount, rb.currency_code
-         FROM recharge_requests rr
-         JOIN users ru ON ru.id = rr.requested_by
-         JOIN recharge_bundles rb ON rb.id = rr.bundle_id
+      // Fetch the individual requests once and aggregate in JS, rather than a
+      // separate SQL aggregate query — keeps the per-requester totals and the
+      // request list behind them (for drill-down) guaranteed consistent.
+      const detailRows = await query(
+        `${RECHARGE_REQUEST_SELECT}
          WHERE rr.company_id=$1
            -- Scope to the currently configured cost center only — requests
            -- placed under a since-replaced cost center (back when each
@@ -3571,17 +3563,38 @@ export const resolvers = {
            AND rr.status IN ('fulfilled','confirmed')
            AND EXTRACT(YEAR FROM rr.fulfilled_at AT TIME ZONE 'Asia/Baghdad') = $2
            AND EXTRACT(MONTH FROM rr.fulfilled_at AT TIME ZONE 'Asia/Baghdad') = $3
-         GROUP BY rr.requested_by, ru.email, rb.currency_code
-         ORDER BY total_amount DESC`,
+         ORDER BY rr.fulfilled_at DESC`,
         [ctx.auth.companyId, year, month],
       )
-      return r.rows.map((row) => ({
-        requestedBy: row.requested_by,
-        requestedByEmail: row.requested_by_email,
-        requestCount: row.request_count,
-        totalAmount: parseFloat(row.total_amount),
-        currencyCode: row.currency_code,
-      }))
+      const mapped = await Promise.all(
+        detailRows.rows.map((row) => rechargeRequestRow(row as Record<string, unknown>, ctx)),
+      )
+
+      const groups = new Map<string, (typeof mapped)[number][]>()
+      for (const req of mapped) {
+        const key = `${req.requestedBy as string}::${req.bundleCurrencyCode as string}`
+        const list = groups.get(key)
+        if (list) list.push(req)
+        else groups.set(key, [req])
+      }
+
+      const entries = [...groups.values()].map((requests) => {
+        const first = requests[0]
+        const totalAmount = requests.reduce(
+          (sum, req) => sum + ((req.bundleAmount as number | null) ?? 0),
+          0,
+        )
+        return {
+          requestedBy: first.requestedBy,
+          requestedByEmail: first.requestedByEmail,
+          requestCount: requests.length,
+          totalAmount,
+          currencyCode: first.bundleCurrencyCode,
+          requests,
+        }
+      })
+      entries.sort((a, b) => b.totalAmount - a.totalAmount)
+      return entries
     },
 
     leaveRequests: async (

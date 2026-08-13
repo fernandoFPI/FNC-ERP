@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -31,9 +31,11 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { EmptyState } from '../../../components/ui/EmptyState'
 import { Timeline, type TimelineEvent } from '../../../components/ui/Timeline'
 import { StatusBar } from '../../../components/ui/StatusBar'
+import { Badge } from '../../../components/ui/Badge'
 import {
   RechargeRequestCard,
   RECHARGE_STATUS_LABELS,
+  RECHARGE_STATUS_VARIANTS,
   type RechargeRequestSummary,
 } from '../../../components/ui/RechargeRequestCard'
 
@@ -65,6 +67,7 @@ interface MonthlySummaryEntry {
   requestCount: number
   totalAmount: number
   currencyCode: string
+  requests: RechargeRequest[]
 }
 
 type TabKey = 'mine' | 'toFulfill' | 'summary'
@@ -150,7 +153,10 @@ export default function RechargeRequestsPage() {
   const activeLoading = activeTab === 'mine' ? mineLoading : activeTab === 'toFulfill' ? toFulfillLoading : false
 
   const selectedRequest =
-    mine.find((r) => r.id === selectedId) ?? toFulfill.find((r) => r.id === selectedId) ?? null
+    mine.find((r) => r.id === selectedId) ??
+    toFulfill.find((r) => r.id === selectedId) ??
+    summary.flatMap((s) => s.requests).find((r) => r.id === selectedId) ??
+    null
 
   const selectedBundle = bundles.find((b) => b.id === form.bundleId)
 
@@ -289,6 +295,7 @@ export default function RechargeRequestsPage() {
             setSummaryYear(y)
             setSummaryMonth(m)
           }}
+          onSelectRequest={setSelectedId}
         />
       ) : (
         <div style={{ marginTop: '20px' }}>
@@ -480,6 +487,7 @@ function MonthlySummaryView({
   year,
   month,
   onChangeMonth,
+  onSelectRequest,
 }: {
   theme: ReturnType<typeof useTheme>['theme']
   entries: MonthlySummaryEntry[]
@@ -487,7 +495,10 @@ function MonthlySummaryView({
   year: number
   month: number
   onChangeMonth: (year: number, month: number) => void
+  onSelectRequest: (id: string) => void
 }) {
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
+
   // Entries can span multiple currencies for the same requester in one
   // month — sum per currency rather than blindly adding raw amounts together.
   const totalsByCurrency = entries.reduce<Record<string, number>>((acc, e) => {
@@ -578,17 +589,74 @@ function MonthlySummaryView({
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e) => (
-                  <tr key={e.requestedBy} style={{ borderBottom: `1px solid ${theme.border}` }}>
-                    <td style={{ padding: '10px 16px', color: theme.textPrimary }}>{e.requestedByEmail ?? '—'}</td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
-                      {e.requestCount}
-                    </td>
-                    <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {e.totalAmount.toLocaleString()} {e.currencyCode}
-                    </td>
-                  </tr>
-                ))}
+                {entries.map((e) => {
+                  const key = `${e.requestedBy}::${e.currencyCode}`
+                  const isExpanded = expandedKey === key
+                  return (
+                    <Fragment key={key}>
+                      <tr
+                        onClick={() => {
+                          setExpandedKey(isExpanded ? null : key)
+                        }}
+                        style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}
+                      >
+                        <td style={{ padding: '10px 16px', color: theme.textPrimary }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ color: theme.textMuted, fontSize: '10px' }}>
+                              {isExpanded ? '▼' : '▶'}
+                            </span>
+                            {e.requestedByEmail ?? '—'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                          {e.requestCount}
+                        </td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', color: theme.accent, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                          {e.totalAmount.toLocaleString()} {e.currencyCode}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr style={{ borderBottom: `1px solid ${theme.border}` }}>
+                          <td colSpan={3} style={{ padding: '4px 16px 10px 34px', background: theme.bgCanvas }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              {e.requests.map((req) => (
+                                <div
+                                  key={req.id}
+                                  onClick={(ev) => {
+                                    ev.stopPropagation()
+                                    onSelectRequest(req.id)
+                                  }}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '10px',
+                                    padding: '6px 10px',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                  }}
+                                  onMouseEnter={(ev) => {
+                                    ev.currentTarget.style.background = theme.bgSurface
+                                  }}
+                                  onMouseLeave={(ev) => {
+                                    ev.currentTarget.style.background = 'transparent'
+                                  }}
+                                >
+                                  <span style={{ fontSize: '12px', color: theme.textSecondary }}>
+                                    {req.phoneNumber} · {req.bundleName ?? 'Bundle'}
+                                  </span>
+                                  <Badge variant={RECHARGE_STATUS_VARIANTS[req.status] ?? 'neutral'}>
+                                    {RECHARGE_STATUS_LABELS[req.status] ?? req.status}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>

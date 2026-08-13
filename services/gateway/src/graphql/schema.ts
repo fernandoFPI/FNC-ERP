@@ -688,15 +688,16 @@
   }
 
   # Per-requester totals for a given month — the fulfiller's "who received
-  # what" view. costCenterId/costCenterName come along because there's only
-  # ever the one configured recharge cost center, but the summary itself is
-  # month-scoped, not cost-center-scoped.
+  # what" view, scoped to the currently configured recharge cost center.
+  # requests carries the individual fulfilled/confirmed requests behind the
+  # total, so the UI can drill into one and show its own activity/status.
   type RechargeMonthlySummaryEntry {
     requestedBy: ID!
     requestedByEmail: String
     requestCount: Int!
     totalAmount: Float!
     currencyCode: String!
+    requests: [RechargeRequest!]!
   }
 
   type PayrollRun {

@@ -78,8 +78,12 @@ export const RECHARGE_MONTHLY_SUMMARY_QUERY = gql`
       requestCount
       totalAmount
       currencyCode
+      requests {
+        ...RechargeRequestFields
+      }
     }
   }
+  ${RECHARGE_REQUEST_FIELDS}
 `
 
 export const CREATE_RECHARGE_BUNDLE = gql`
