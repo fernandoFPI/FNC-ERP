@@ -5814,7 +5814,7 @@ export const resolvers = {
                     por.received_by, por.received_by_name, por.location_notes, por.notes, por.created_at, por.is_invoiced,
                     sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
                     COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''))) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
-                    COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL), '[]') AS photos
+                    COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL), '[]') AS photos
              FROM po_receipts por
              LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
              LEFT JOIN users u ON u.id=por.received_by
@@ -8004,7 +8004,7 @@ export const resolvers = {
       if (!rcpt.rows[0]) throw new Error('Receipt not found')
       // Verify the file exists and is uploaded
       const file = await query(
-        `SELECT id, original_filename FROM files WHERE id=$1 AND status='uploaded'`,
+        `SELECT id, original_filename, category FROM files WHERE id=$1 AND status='uploaded'`,
         [args.fileId],
       )
       if (!file.rows[0]) throw new Error('File not found or not yet uploaded')
@@ -8019,6 +8019,7 @@ export const resolvers = {
         id: daRow.id,
         fileId: args.fileId,
         label: args.label ?? null,
+        category: fRow.category,
         originalFilename: fRow.original_filename,
         downloadUrl: null,
         createdAt: daRow.created_at,

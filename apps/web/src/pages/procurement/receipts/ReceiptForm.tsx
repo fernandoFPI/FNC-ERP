@@ -32,10 +32,14 @@ interface ReceiptLine {
   po_unit_price: number
 }
 
+type PhotoKind = 'vendor_receipt' | 'materials'
+
 interface PendingPhoto {
+  id: string
   file: File
   previewUrl: string
   label: string
+  kind: PhotoKind
   uploading: boolean
   error?: string
 }
@@ -47,6 +51,7 @@ export default function ReceiptForm() {
   const addToast = useToastStore((s) => s.addToast)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const captureKindRef = useRef<PhotoKind>('materials')
   const currentUser = useAuthStore((s) => s.user)
 
   const [form, setForm] = useState({
@@ -146,12 +151,25 @@ export default function ReceiptForm() {
     }
   }, [employees, currentUser?.id])
 
+  function openCamera(kind: PhotoKind) {
+    captureKindRef.current = kind
+    cameraInputRef.current?.click()
+  }
+
+  function openGallery(kind: PhotoKind) {
+    captureKindRef.current = kind
+    fileInputRef.current?.click()
+  }
+
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
+    const kind = captureKindRef.current
     const newPhotos: PendingPhoto[] = files.map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file: f,
       previewUrl: URL.createObjectURL(f),
       label: '',
+      kind,
       uploading: false,
     }))
     setPendingPhotos((prev) => [...prev, ...newPhotos])
@@ -159,10 +177,11 @@ export default function ReceiptForm() {
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
 
-  function removePhoto(idx: number) {
+  function removePhoto(id: string) {
     setPendingPhotos((prev) => {
-      URL.revokeObjectURL(prev[idx].previewUrl)
-      return prev.filter((_, i) => i !== idx)
+      const photo = prev.find((p) => p.id === id)
+      if (photo) URL.revokeObjectURL(photo.previewUrl)
+      return prev.filter((p) => p.id !== id)
     })
   }
 
@@ -172,7 +191,7 @@ export default function ReceiptForm() {
       filename: photo.file.name,
       mimeType: photo.file.type || 'image/jpeg',
       sizeBytes: photo.file.size,
-      category: 'po_receipt_photo',
+      category: photo.kind === 'vendor_receipt' ? 'po_receipt_document' : 'po_receipt_photo',
     })
     const { fileId } = regResp.data
     // Step 2: POST binary to gateway proxy — no CORS issue
@@ -188,8 +207,16 @@ export default function ReceiptForm() {
       addToast({ type: 'error', message: 'Please select who received the goods' })
       return
     }
-    if (pendingPhotos.length === 0) {
-      addToast({ type: 'error', message: 'At least one photo is required' })
+    const hasVendorReceipt = pendingPhotos.some((p) => p.kind === 'vendor_receipt')
+    const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
+    if (!hasVendorReceipt || !hasMaterials) {
+      const missing = [
+        !hasVendorReceipt ? 'the vendor receipt' : null,
+        !hasMaterials ? 'a photo of the materials received' : null,
+      ]
+        .filter(Boolean)
+        .join(' and ')
+      addToast({ type: 'error', message: `Please attach ${missing}` })
       return
     }
     setSubmitting(true)
@@ -223,11 +250,10 @@ export default function ReceiptForm() {
       // Upload photos sequentially. On a retry (savedReceiptId already set), skip photos
       // that previously succeeded (no error). Only re-attempt ones still showing an error.
       let photosFailed = 0
-      for (let i = 0; i < pendingPhotos.length; i++) {
-        const photo = pendingPhotos[i]
+      for (const photo of pendingPhotos) {
         if (savedReceiptId && !photo.error) continue // already uploaded successfully
         setPendingPhotos((prev) =>
-          prev.map((p, idx) => (idx === i ? { ...p, uploading: true, error: undefined } : p)),
+          prev.map((p) => (p.id === photo.id ? { ...p, uploading: true, error: undefined } : p)),
         )
         try {
           const fileId = await uploadPhoto(photo)
@@ -235,20 +261,20 @@ export default function ReceiptForm() {
             variables: { receiptId, fileId, label: photo.label || undefined },
           })
           setPendingPhotos((prev) =>
-            prev.map((p, idx) => (idx === i ? { ...p, uploading: false } : p)),
+            prev.map((p) => (p.id === photo.id ? { ...p, uploading: false } : p)),
           )
         } catch (photoErr) {
           photosFailed++
           setPendingPhotos((prev) =>
-            prev.map((p, idx) =>
-              idx === i
+            prev.map((p) =>
+              p.id === photo.id
                 ? { ...p, uploading: false, error: apiErrMsg(photoErr, 'Upload failed') }
                 : p,
             ),
           )
           addToast({
             type: 'error',
-            message: `Photo ${i + 1} failed: ${apiErrMsg(photoErr, 'Upload failed')}`,
+            message: `${photo.kind === 'vendor_receipt' ? 'Vendor receipt' : 'Materials'} photo failed: ${apiErrMsg(photoErr, 'Upload failed')}`,
           })
         }
       }
@@ -337,6 +363,147 @@ export default function ReceiptForm() {
       ),
     },
   ]
+
+  function renderPhotoGrid(kind: PhotoKind) {
+    const photos = pendingPhotos.filter((p) => p.kind === kind)
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+        {photos.map((photo) => (
+          <div key={photo.id} style={{ position: 'relative', width: '140px' }}>
+            <img
+              src={photo.previewUrl}
+              alt={photo.file.name}
+              style={{
+                width: '140px',
+                height: '100px',
+                objectFit: 'cover',
+                borderRadius: '6px',
+                border: `1px solid ${theme.border}`,
+              }}
+            />
+            {photo.uploading && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(0,0,0,0.4)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontSize: '12px',
+                }}
+              >
+                Uploading…
+              </div>
+            )}
+            {photo.error && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(200,0,0,0.5)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontSize: '11px',
+                  padding: '4px',
+                  textAlign: 'center',
+                }}
+              >
+                {photo.error}
+              </div>
+            )}
+            <Input
+              placeholder="Caption (optional)"
+              value={photo.label}
+              onChange={(e) => {
+                setPendingPhotos((prev) =>
+                  prev.map((p) => (p.id === photo.id ? { ...p, label: e.target.value } : p)),
+                )
+              }}
+              style={{ marginTop: '4px', fontSize: '11px', padding: '4px 6px' }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                removePhoto(photo.id)
+              }}
+              style={{
+                position: 'absolute',
+                top: '4px',
+                right: '4px',
+                background: 'rgba(0,0,0,0.6)',
+                border: 'none',
+                borderRadius: '50%',
+                color: '#fff',
+                width: '20px',
+                height: '20px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                lineHeight: '20px',
+                textAlign: 'center',
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            openCamera(kind)
+          }}
+          style={{
+            width: '140px',
+            height: '100px',
+            border: `2px dashed ${theme.accent}`,
+            borderRadius: '6px',
+            cursor: 'pointer',
+            background: 'transparent',
+            color: theme.accent,
+            fontSize: '13px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+          }}
+        >
+          <span style={{ fontSize: '24px' }}>📷</span>
+          <span>Take Photo</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            openGallery(kind)
+          }}
+          style={{
+            width: '140px',
+            height: '100px',
+            border: `2px dashed ${theme.border}`,
+            borderRadius: '6px',
+            cursor: 'pointer',
+            background: 'transparent',
+            color: theme.textMuted,
+            fontSize: '13px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+          }}
+        >
+          <span style={{ fontSize: '24px' }}>+</span>
+          <span>Add Photo</span>
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1000px' }}>
@@ -431,160 +598,40 @@ export default function ReceiptForm() {
           />
         </Card>
 
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+
         <Card style={{ marginTop: '16px', padding: '20px' }}>
           <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
-            Photos (required)
+            Vendor Receipt (required)
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
-            {pendingPhotos.map((photo, idx) => (
-              <div key={idx} style={{ position: 'relative', width: '140px' }}>
-                <img
-                  src={photo.previewUrl}
-                  alt={`photo-${idx}`}
-                  style={{
-                    width: '140px',
-                    height: '100px',
-                    objectFit: 'cover',
-                    borderRadius: '6px',
-                    border: `1px solid ${theme.border}`,
-                  }}
-                />
-                {photo.uploading && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: 'rgba(0,0,0,0.4)',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#fff',
-                      fontSize: '12px',
-                    }}
-                  >
-                    Uploading…
-                  </div>
-                )}
-                {photo.error && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      background: 'rgba(200,0,0,0.5)',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#fff',
-                      fontSize: '11px',
-                      padding: '4px',
-                      textAlign: 'center',
-                    }}
-                  >
-                    {photo.error}
-                  </div>
-                )}
-                <Input
-                  placeholder="Caption (optional)"
-                  value={photo.label}
-                  onChange={(e) => {
-                    setPendingPhotos((prev) =>
-                      prev.map((p, i) => (i === idx ? { ...p, label: e.target.value } : p)),
-                    )
-                  }}
-                  style={{ marginTop: '4px', fontSize: '11px', padding: '4px 6px' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    removePhoto(idx)
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: '4px',
-                    right: '4px',
-                    background: 'rgba(0,0,0,0.6)',
-                    border: 'none',
-                    borderRadius: '50%',
-                    color: '#fff',
-                    width: '20px',
-                    height: '20px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    lineHeight: '20px',
-                    textAlign: 'center',
-                    padding: 0,
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              style={{
-                width: '140px',
-                height: '100px',
-                border: `2px dashed ${theme.accent}`,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                background: 'transparent',
-                color: theme.accent,
-                fontSize: '13px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '4px',
-              }}
-            >
-              <span style={{ fontSize: '24px' }}>📷</span>
-              <span>Take Photo</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                width: '140px',
-                height: '100px',
-                border: `2px dashed ${theme.border}`,
-                borderRadius: '6px',
-                cursor: 'pointer',
-                background: 'transparent',
-                color: theme.textMuted,
-                fontSize: '13px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '4px',
-              }}
-            >
-              <span style={{ fontSize: '24px' }}>+</span>
-              <span>Add Photo</span>
-            </button>
-          </div>
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            style={{ display: 'none' }}
-            onChange={handleFileSelect}
-          />
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleFileSelect}
-          />
+          {renderPhotoGrid('vendor_receipt')}
           <div style={{ fontSize: '12px', color: theme.textMuted }}>
-            At least one photo is required. Capture the delivered goods, packaging labels, or
-            delivery location.
+            Photo or scan of the vendor's actual receipt or invoice document.
+          </div>
+        </Card>
+
+        <Card style={{ marginTop: '16px', padding: '20px' }}>
+          <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
+            Materials Received (required)
+          </div>
+          {renderPhotoGrid('materials')}
+          <div style={{ fontSize: '12px', color: theme.textMuted }}>
+            Photo of the delivered goods, packaging labels, or delivery location.
           </div>
         </Card>
 

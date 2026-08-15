@@ -1796,6 +1796,7 @@
     id: ID!
     fileId: ID!
     label: String
+    category: String!
     originalFilename: String!
     downloadUrl: String
     createdAt: String!

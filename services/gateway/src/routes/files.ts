@@ -25,6 +25,7 @@ const uploadUrlSchema = z.object({
     'attachment',
     'report',
     'po_receipt_photo',
+    'po_receipt_document',
     'po_return_damage_photo',
     'recharge_proof',
   ]),

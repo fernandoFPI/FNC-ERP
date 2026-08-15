@@ -148,6 +148,7 @@ interface PO {
       id: string
       fileId: string
       label?: string
+      category: string
       originalFilename: string
       downloadUrl?: string
       createdAt: string
@@ -229,6 +230,79 @@ export default function PurchaseOrderDetail() {
     setLbScale(1)
     setLbOffset({ x: 0, y: 0 })
   }, [])
+
+  function renderPhotoThumb(ph: {
+    id: string
+    label?: string | null
+    originalFilename: string
+    downloadUrl?: string | null
+  }) {
+    return (
+      <div key={ph.id}>
+        {ph.downloadUrl ? (
+          <div
+            onClick={() => {
+              openLightbox(ph.downloadUrl!)
+            }}
+            style={{
+              cursor: 'zoom-in',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: `1px solid ${theme.border}`,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+              width: '180px',
+            }}
+          >
+            <img
+              src={ph.downloadUrl}
+              alt={ph.label ?? ph.originalFilename}
+              style={{
+                width: '180px',
+                height: '130px',
+                objectFit: 'cover',
+                display: 'block',
+              }}
+            />
+            {ph.label && (
+              <div
+                style={{
+                  padding: '6px 8px',
+                  fontSize: '11px',
+                  color: theme.textSecondary,
+                  background: theme.bgSurface,
+                  borderTop: `1px solid ${theme.border}`,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {ph.label}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              width: '180px',
+              height: '130px',
+              borderRadius: '8px',
+              border: `1px solid ${theme.border}`,
+              background: theme.bgSurface,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '11px',
+              color: theme.textMuted,
+              padding: '8px',
+              textAlign: 'center',
+            }}
+          >
+            {ph.originalFilename}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // Non-passive wheel listener so preventDefault() actually works
   useEffect(() => {
@@ -3815,84 +3889,39 @@ export default function PurchaseOrderDetail() {
                 )}
                 {r.photos && r.photos.length > 0 && (
                   <div style={{ marginBottom: '16px' }}>
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        color: theme.textMuted,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        marginBottom: '8px',
-                      }}
-                    >
-                      Photos ({r.photos.length})
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                      {r.photos.map((ph) => (
-                        <div key={ph.id}>
-                          {ph.downloadUrl ? (
-                            <div
-                              onClick={() => {
-                                openLightbox(ph.downloadUrl!)
-                              }}
-                              style={{
-                                cursor: 'zoom-in',
-                                borderRadius: '8px',
-                                overflow: 'hidden',
-                                border: `1px solid ${theme.border}`,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-                                width: '180px',
-                              }}
-                            >
-                              <img
-                                src={ph.downloadUrl}
-                                alt={ph.label ?? ph.originalFilename}
-                                style={{
-                                  width: '180px',
-                                  height: '130px',
-                                  objectFit: 'cover',
-                                  display: 'block',
-                                }}
-                              />
-                              {ph.label && (
-                                <div
-                                  style={{
-                                    padding: '6px 8px',
-                                    fontSize: '11px',
-                                    color: theme.textSecondary,
-                                    background: theme.bgSurface,
-                                    borderTop: `1px solid ${theme.border}`,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {ph.label}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div
-                              style={{
-                                width: '180px',
-                                height: '130px',
-                                borderRadius: '8px',
-                                border: `1px solid ${theme.border}`,
-                                background: theme.bgSurface,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '11px',
-                                color: theme.textMuted,
-                                padding: '8px',
-                                textAlign: 'center',
-                              }}
-                            >
-                              {ph.originalFilename}
-                            </div>
-                          )}
+                    {(() => {
+                      const vendorDocs = r.photos.filter((ph) => ph.category === 'po_receipt_document')
+                      // Legacy receipts predate the vendor-doc/materials split — everything they
+                      // have was captured under the old single 'po_receipt_photo' category, so it
+                      // falls in here rather than vanishing from the group entirely.
+                      const materialPhotos = r.photos.filter(
+                        (ph) => ph.category !== 'po_receipt_document',
+                      )
+                      const groups: { title: string; photos: typeof r.photos }[] = [
+                        ...(vendorDocs.length ? [{ title: 'Vendor Receipt', photos: vendorDocs }] : []),
+                        ...(materialPhotos.length
+                          ? [{ title: 'Materials Received', photos: materialPhotos }]
+                          : []),
+                      ]
+                      return groups.map((g) => (
+                        <div key={g.title} style={{ marginBottom: '12px' }}>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: theme.textMuted,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.06em',
+                              marginBottom: '8px',
+                            }}
+                          >
+                            {g.title} ({g.photos.length})
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                            {g.photos.map((ph) => renderPhotoThumb(ph))}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                      ))
+                    })()}
                   </div>
                 )}
                 <Table columns={receiptLineColumns} data={r.lines} />

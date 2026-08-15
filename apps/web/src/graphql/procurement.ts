@@ -136,6 +136,7 @@ export const PURCHASE_ORDER_QUERY = gql`
           id
           fileId
           label
+          category
           originalFilename
           downloadUrl
           createdAt
@@ -255,6 +256,7 @@ export const ATTACH_RECEIPT_PHOTO = gql`
       id
       fileId
       label
+      category
       originalFilename
       createdAt
     }
@@ -359,6 +361,7 @@ export const PO_LIFECYCLE_QUERY = gql`
           id
           fileId
           label
+          category
           originalFilename
           downloadUrl
           createdAt

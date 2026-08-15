@@ -25,6 +25,7 @@ export const ALLOWED_TYPES: Record<string, string[]> = {
   ],
   report: ['application/pdf'],
   po_receipt_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+  po_receipt_document: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
   po_return_damage_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
   recharge_proof: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
 }
