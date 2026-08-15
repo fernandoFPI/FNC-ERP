@@ -56,6 +56,7 @@ function buildNav(role: string | undefined): NavGroup[] {
       items: [
         { label: 'Cost Centers', path: '/finance/cost-centers' },
         { label: 'Analytic Accounts', path: '/finance/analytic-accounts' },
+        { label: 'Expense Categories', path: '/finance/categories' },
         { label: 'FX Rates', path: '/finance/fx-rates' },
         { label: 'Accounting Periods', path: '/finance/periods' },
         { label: 'Payment Terms', path: '/finance/payment-terms' },

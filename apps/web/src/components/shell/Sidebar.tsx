@@ -657,7 +657,12 @@ const NAV_SECTIONS: NavSection[] = [
         label: 'Cash & Bank',
         icon: <Icon name="landmark" />,
         path: '_f_cash',
-        permKeys: ['finance.bank.view', 'finance.petty_cash.view', 'finance.expenses.view'],
+        permKeys: [
+          'finance.bank.view',
+          'finance.petty_cash.view',
+          'finance.expenses.view',
+          'finance.advances.view',
+        ],
         children: [
           { label: 'Bank Reconciliation', path: '/finance/bank', permKeys: ['finance.bank.view'] },
           {
@@ -669,6 +674,11 @@ const NAV_SECTIONS: NavSection[] = [
             label: 'Expense Claims',
             path: '/finance/expense-claims',
             permKeys: ['finance.expenses.view'],
+          },
+          {
+            label: 'Employee Advances',
+            path: '/finance/advances',
+            permKeys: ['finance.advances.view'],
           },
         ],
       },

@@ -118,6 +118,57 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           },
         ],
       },
+      {
+        key: 'expenses',
+        label: 'Expense Claims',
+        permissions: [
+          { key: 'finance.expenses.view', label: 'View Expense Claims', sortOrder: 92 },
+          { key: 'finance.expenses.edit', label: 'Edit Expense Claims', sortOrder: 93 },
+          { key: 'finance.expenses.approve', label: 'Approve Expense Claims', sortOrder: 94 },
+        ],
+      },
+      {
+        key: 'petty_cash',
+        label: 'Petty Cash',
+        permissions: [
+          { key: 'finance.petty_cash.view', label: 'View Petty Cash', sortOrder: 95 },
+          { key: 'finance.petty_cash.edit', label: 'Manage Petty Cash', sortOrder: 96 },
+          {
+            key: 'finance.petty_cash.approve',
+            label: 'Approve Petty Cash Replenishments',
+            sortOrder: 97,
+          },
+        ],
+      },
+      {
+        key: 'bank',
+        label: 'Bank',
+        permissions: [
+          {
+            key: 'finance.bank.view',
+            label: 'View Bank Accounts & Reconciliation',
+            sortOrder: 98,
+          },
+          {
+            key: 'finance.bank.edit',
+            label: 'Manage Bank Accounts & Reconciliation',
+            sortOrder: 99,
+          },
+        ],
+      },
+      {
+        key: 'advances',
+        label: 'Employee Advances',
+        permissions: [
+          { key: 'finance.advances.view', label: 'View Employee Advances', sortOrder: 100 },
+          { key: 'finance.advances.edit', label: 'Edit Employee Advances', sortOrder: 101 },
+          {
+            key: 'finance.advances.approve',
+            label: 'Approve Employee Advances',
+            sortOrder: 102,
+          },
+        ],
+      },
     ],
   },
   {

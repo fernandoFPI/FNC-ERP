@@ -60,7 +60,15 @@ const BudgetDetail = lazy(() => import('../pages/finance/budget/BudgetDetail'))
 const RevaluationPage = lazy(() => import('../pages/finance/revaluation/RevaluationPage'))
 const ExpenseClaimsPage = lazy(() => import('../pages/finance/expenses/ExpenseClaimsPage'))
 const ExpenseClaimDetail = lazy(() => import('../pages/finance/expenses/ExpenseClaimDetail'))
+const EmployeeAdvancesPage = lazy(() => import('../pages/finance/advances/EmployeeAdvancesPage'))
+const EmployeeAdvanceDetail = lazy(() => import('../pages/finance/advances/EmployeeAdvanceDetail'))
+const EmployeeAdvanceDashboard = lazy(
+  () => import('../pages/finance/advances/EmployeeAdvanceDashboard'),
+)
 const PettyCashPage = lazy(() => import('../pages/finance/petty-cash/PettyCashPage'))
+const ExpenseCategoriesPage = lazy(
+  () => import('../pages/finance/categories/ExpenseCategoriesPage'),
+)
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
@@ -407,6 +415,10 @@ export const router = createBrowserRouter([
             path: 'analytic-accounts/:id',
             element: withPerm('finance.analytic_accounts.view', <AnalyticAccountDetail />),
           },
+          {
+            path: 'categories',
+            element: withPerm('finance.expenses.view', <ExpenseCategoriesPage />),
+          },
           { path: 'wht-payable', element: withPerm('finance.ap.view', <WHTPayablePage />) },
           { path: 'assets', element: withPerm('finance.assets.view', <FixedAssetsPage />) },
           {
@@ -448,6 +460,18 @@ export const router = createBrowserRouter([
             element: withPerm('finance.expenses.view', <ExpenseClaimDetail />),
           },
           { path: 'petty-cash', element: withPerm('finance.petty_cash.view', <PettyCashPage />) },
+          {
+            path: 'advances',
+            element: withPerm('finance.advances.view', <EmployeeAdvancesPage />),
+          },
+          {
+            path: 'advances/dashboard',
+            element: withPerm('finance.advances.view', <EmployeeAdvanceDashboard />),
+          },
+          {
+            path: 'advances/:id',
+            element: withPerm('finance.advances.view', <EmployeeAdvanceDetail />),
+          },
         ],
       },
 

@@ -23,6 +23,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   ap: 'Accounts Payable',
   'cost-centers': 'Cost Centers',
   'analytic-accounts': 'Analytic Accounts',
+  categories: 'Expense Categories',
   reports: 'Reports',
   'trial-balance': 'Trial Balance',
   'profit-loss': 'Profit & Loss',

@@ -46,7 +46,8 @@ interface GLAccount {
 }
 interface Employee {
   id: string
-  full_name: string
+  first_name: string
+  last_name: string
 }
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
@@ -552,14 +553,14 @@ export default function ExpenseClaimsPage() {
                     setForm((f) => ({
                       ...f,
                       employee_id: e.target.value,
-                      employee_name: emp?.full_name ?? '',
+                      employee_name: emp ? `${emp.first_name} ${emp.last_name}` : '',
                     }))
                   }}
                 >
                   <option value="">— Select employee —</option>
                   {employees.map((em) => (
                     <option key={em.id} value={em.id}>
-                      {em.full_name}
+                      {em.first_name} {em.last_name}
                     </option>
                   ))}
                 </select>

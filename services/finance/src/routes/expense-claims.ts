@@ -48,12 +48,13 @@ expenseClaimsRouter.post(
     const schema = z.object({
       name: z.string().min(1),
       gl_account_id: z.string().uuid().optional(),
+      is_project_related: z.boolean().default(false),
     })
     try {
       const d = schema.parse(req.body)
       const r = await query(
-        `INSERT INTO expense_categories (company_id, name, gl_account_id) VALUES ($1,$2,$3) RETURNING *`,
-        [req.auth!.companyId, d.name, d.gl_account_id ?? null],
+        `INSERT INTO expense_categories (company_id, name, gl_account_id, is_project_related) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [req.auth!.companyId, d.name, d.gl_account_id ?? null, d.is_project_related],
       )
       sendOk(res, r.rows[0], 201)
     } catch (err) {
@@ -74,12 +75,13 @@ expenseClaimsRouter.put(
       name: z.string().min(1),
       gl_account_id: z.string().uuid().optional(),
       is_active: z.boolean().default(true),
+      is_project_related: z.boolean().default(false),
     })
     try {
       const d = schema.parse(req.body)
       const r = await query(
-        `UPDATE expense_categories SET name=$1, gl_account_id=$2, is_active=$3 WHERE id=$4 AND company_id=$5 RETURNING *`,
-        [d.name, d.gl_account_id ?? null, d.is_active, req.params['id'], req.auth!.companyId],
+        `UPDATE expense_categories SET name=$1, gl_account_id=$2, is_active=$3, is_project_related=$4 WHERE id=$5 AND company_id=$6 RETURNING *`,
+        [d.name, d.gl_account_id ?? null, d.is_active, d.is_project_related, req.params['id'], req.auth!.companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Category not found')
