@@ -83,6 +83,25 @@ interface POLine {
   audit_flagged_at?: string | null
 }
 
+// Store price is a reference record only — it never feeds the total. A line
+// fully covered from stock is never bought from a vendor, so it contributes
+// $0 (mirrors the backend: confirmPOInventoryCheck zeroes total_price the
+// moment a line is fully covered, regardless of which lifecycle path it
+// then takes). Otherwise the total is market price x the full qty ordered.
+function poLineTotal(line: {
+  qty: number | string | null | undefined
+  qty_from_stock?: number | string
+  market_price?: number | string | null
+  unit_price?: number | string | null
+  total?: number | string | null
+}): number {
+  const qty = parseFloat(String(line.qty ?? 0))
+  const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+  if (qty > 0 && fromStock >= qty) return 0
+  const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
+  return qty * mp || parseFloat(String(line.total ?? 0))
+}
+
 interface PO {
   id: string
   po_number: string
@@ -1981,16 +2000,8 @@ export default function PurchaseOrderDetail() {
                           const isFlagged = lineFlagNotes[line.id] !== undefined
                           const rowBg = isFlagged ? theme.warningBg : 'transparent'
                           const rowBorder = isFlagged ? theme.warningBorder : theme.border
-                          const _fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                          const _totalQty = parseFloat(String(line.qty ?? 0))
-                          const _toBuy = Math.max(0, _totalQty - _fromStock)
                           const _sp = parseFloat(String(line.store_price ?? 0))
-                          const _mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
-                          const _stockCost = _fromStock > 0 && _sp > 0 ? _fromStock * _sp : 0
-                          const _buyCost =
-                            _toBuy * (_mp || parseFloat(String(line.unit_price ?? 0)))
-                          const lineEffectiveTotal =
-                            _stockCost + _buyCost || parseFloat(String(line.total ?? 0))
+                          const lineEffectiveTotal = poLineTotal(line)
                           return (
                             <div
                               key={line.id}
@@ -2349,17 +2360,8 @@ export default function PurchaseOrderDetail() {
                             }}
                           >
                             {fmtN(
-                              po.lines.reduce((sum, l) => {
-                                const fs = parseFloat(String(l.qty_from_stock ?? 0))
-                                const tb = Math.max(0, parseFloat(String(l.qty ?? 0)) - fs)
-                                const sp = parseFloat(String(l.store_price ?? 0))
-                                const mp = parseFloat(String(l.market_price ?? l.unit_price ?? 0))
-                                return (
-                                  sum +
-                                  (fs > 0 && sp > 0 ? fs * sp : 0) +
-                                  tb * (mp || parseFloat(String(l.unit_price ?? 0)))
-                                )
-                              }, 0) || po.total_amount,
+                              po.lines.reduce((sum, l) => sum + poLineTotal(l), 0) ||
+                                po.total_amount,
                             )}{' '}
                             {po.currency_code}
                           </div>
@@ -3581,13 +3583,7 @@ export default function PurchaseOrderDetail() {
               header: 'Total',
               mobilePriority: 2,
               render: (line) => {
-                const fs = parseFloat(String(line.qty_from_stock ?? 0))
-                const tb = Math.max(0, parseFloat(String(line.qty ?? 0)) - fs)
-                const sp = parseFloat(String(line.store_price ?? 0))
-                const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
-                const blended =
-                  (fs > 0 && sp > 0 ? fs * sp : 0) +
-                  tb * (mp || parseFloat(String(line.unit_price ?? 0)))
+                const total = poLineTotal(line)
                 return (
                   <span
                     style={{
@@ -3596,7 +3592,7 @@ export default function PurchaseOrderDetail() {
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {fmtN(blended || line.total)} {po.currency_code}
+                    {fmtN(total || line.total)} {po.currency_code}
                   </span>
                 )
               },

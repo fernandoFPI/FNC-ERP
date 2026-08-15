@@ -788,11 +788,15 @@ async function userHasPositionGW(
   return r.rows.length > 0
 }
 
-async function userIsOrganizerGW(userId: string, poId: string): Promise<boolean> {
-  const r = await query(`SELECT id FROM purchase_orders WHERE id=$1 AND organizer_id=$2 LIMIT 1`, [
-    poId,
-    userId,
-  ])
+async function userIsOrganizerGW(
+  userId: string,
+  poId: string,
+  companyId: string,
+): Promise<boolean> {
+  const r = await query(
+    `SELECT id FROM purchase_orders WHERE id=$1 AND organizer_id=$2 AND company_id=$3 LIMIT 1`,
+    [poId, userId, companyId],
+  )
   return r.rows.length > 0
 }
 
@@ -3179,12 +3183,10 @@ export const resolvers = {
            WHERE po.company_id = $1
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
-               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected'))
-               OR (po.status = 'inventory_check' AND EXISTS (
-                 SELECT 1 FROM po_position_assignments ppa
-                 WHERE ppa.employee_id = $3 AND ppa.position = 'store_keeper' AND ppa.is_active = true
-                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
-               ))
+               -- Inventory check is confirmed by the PO's organizer, not a
+               -- store_keeper position, so it belongs alongside their other
+               -- owner-actioned statuses here rather than a position lookup.
+               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
                OR (po.status = 'store_pricing' AND EXISTS (
                  SELECT 1 FROM po_position_assignments ppa
                  WHERE ppa.employee_id = $3 AND ppa.position = 'store_pricing' AND ppa.is_active = true
@@ -7614,6 +7616,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
       const i = args.input
       if (i.linkedProjectId) {
         const projCheck = await query(
@@ -7640,8 +7643,8 @@ export const resolvers = {
             ? i.priority
             : 'low'
           const po = await client.query(
-            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17) RETURNING *`,
+            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14) RETURNING *`,
             [
               ctx.auth!.companyId,
               poNum,
@@ -7697,6 +7700,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
       const r = await query('SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2', [
         args.id,
         ctx.auth.companyId,
@@ -23339,7 +23343,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can submit to inventory check')
     const poRow = await query(`SELECT priority FROM purchase_orders WHERE id = $1`, [args.id])
@@ -23375,13 +23379,10 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    if (!isEmergency) {
-      void notifyPositionHoldersGW(args.id, 'store_keeper', {
-        type: 'PO_INVENTORY_CHECK_REQUIRED',
-        title: 'Inventory check required',
-        body: `PO ${args.id} requires an inventory check`,
-      })
-    }
+    // No notification needed here: the organizer both submits this step and
+    // is now the only one who confirms it (see confirmPOInventoryCheck), so
+    // there's no other party to alert — they'll find it in My Queue when
+    // they're ready to act.
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -23398,8 +23399,8 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
-    if (!isAdmin && !hasPos) throw new Error('store_keeper position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer) throw new Error('Only the PO owner can confirm the inventory check')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const isSysAdmin = auth.role === 'system_admin'
 
@@ -23428,10 +23429,18 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
 
-      // Update qty_from_stock (+ chosen source location, if any) per line
+      // Update qty_from_stock (+ chosen source location, if any) per line. A
+      // line fully covered from stock is never bought from a vendor — it
+      // never reaches market pricing at all (skipped there, and the whole
+      // PO short-circuits straight to ready_to_issue if every line is fully
+      // covered) — so its contribution to the PO total is zeroed here, the
+      // one place both paths pass through. Its real cost is still recognized
+      // separately, in issueStockForPOLines' stock-issuance cost booking.
       for (const lsq of args.lineStockQtys) {
         await client.query(
-          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4 WHERE id=$2 AND po_id=$3`,
+          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4,
+             total_price = CASE WHEN $1>=qty_ordered THEN 0 ELSE total_price END
+           WHERE id=$2 AND po_id=$3`,
           [lsq.qtyFromStock, lsq.lineId, args.id, lsq.sourceLocationId ?? null],
         )
       }
@@ -23558,15 +23567,12 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
       for (const lp of args.linePrices ?? []) {
-        // Blend now with whatever's known so far: the from-stock portion is valued
-        // at this store price, the rest at whatever market price is already on
-        // file (or this store price, if none yet) — submitPOMarketPricing
-        // recomputes this with the real market price once that's entered. Lines
-        // that end up 100% stock-covered never reach market pricing at all, so
-        // this is the only place their total gets set.
+        // Store price is a reference record only (e.g. for stock-issuance cost
+        // booking in issueStockForPOLines) — it never feeds the PO total, so
+        // total_price is left untouched here. submitPOMarketPricing is what
+        // sets the real total, at market price x full qty_ordered.
         await client.query(
-          `UPDATE po_lines SET store_price=$1, store_price_currency=$2,
-             total_price = COALESCE(qty_from_stock,0)*$1 + GREATEST(qty_ordered-COALESCE(qty_from_stock,0),0)*COALESCE(market_price,$1)
+          `UPDATE po_lines SET store_price=$1, store_price_currency=$2
            WHERE id=$3 AND po_id=$4`,
           [lp.storePrice, lp.currencyCode, lp.lineId, args.id],
         )
@@ -23630,12 +23636,12 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
       for (const lp of args.linePrices ?? []) {
-        // Blended total: the from-stock portion at store price (falling back to
-        // this market price if store pricing never set one), the rest at market
-        // price — not the full qty_ordered at market price regardless of source.
+        // Total is market price x the full qty_ordered, regardless of how much
+        // of it is coming from stock — store_price is a record only and never
+        // factors into the total (see submitPOStorePricing).
         await client.query(
           `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3,
-             total_price = COALESCE(qty_from_stock,0)*COALESCE(store_price,$1) + GREATEST(qty_ordered-COALESCE(qty_from_stock,0),0)*$1
+             total_price = qty_ordered * $1
            WHERE id=$4 AND po_id=$5`,
           [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
         )
@@ -23694,9 +23700,11 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
       for (const la of args.lineAdjustments ?? []) {
+        // Same rule as submitPOMarketPricing: total is verified price x the
+        // full qty_ordered — store_price stays a record only, never blended in.
         await client.query(
           `UPDATE po_lines SET verified_price=$1, verified_price_currency=(SELECT currency_code FROM purchase_orders WHERE id=$3), unit_price=$1,
-             total_price = COALESCE(qty_from_stock,0)*COALESCE(store_price,$1) + GREATEST(qty_ordered-COALESCE(qty_from_stock,0),0)*$1
+             total_price = qty_ordered * $1
            WHERE id=$2 AND po_id=$3`,
           [la.verifiedPrice, la.lineId, args.id],
         )
@@ -23901,7 +23909,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can reopen a rejected PO')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
@@ -23927,7 +23935,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can cancel a PO')
     const poRow = await query(
@@ -23982,7 +23990,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can send a PO to finance audit')
     const poRow = await query(`SELECT status, po_number FROM purchase_orders WHERE id=$1`, [
@@ -24195,7 +24203,7 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id)
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can delete a PO')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])

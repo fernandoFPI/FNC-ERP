@@ -547,12 +547,14 @@ ordersRouter.post(
     const { items_in_stock, notes } = req.body as { items_in_stock?: string[]; notes?: string }
 
     try {
-      const [hasPos, admin] = await Promise.all([
-        userHasPosition(ctx, 'store_keeper'),
+      // Matches the gateway GraphQL resolver: the inventory check is
+      // confirmed by the PO's organizer, not a store_keeper position.
+      const [organizer, admin] = await Promise.all([
+        userIsOrganizer(ctx),
         Promise.resolve(isAdmin(auth.role)),
       ])
-      if (!hasPos && !admin) {
-        sendError(res, 403, 'FORBIDDEN', 'Store keeper position required')
+      if (!organizer && !admin) {
+        sendError(res, 403, 'FORBIDDEN', 'Only the organizer can confirm the inventory check')
         return
       }
 
