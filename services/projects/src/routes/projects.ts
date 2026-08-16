@@ -871,6 +871,25 @@ projectsRouter.get('/:id/members', requirePermission('projects.view', 'view'), a
   } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch members', err) }
 })
 
+// Employee picker for the "Add Team Member" form — minimal fields only
+// (id/name/job_title), gated by projects.edit rather than hr.employees.view.
+// Assigning someone to a project team doesn't need full HR visibility
+// (national_id, phone, hire/termination dates, etc.), just a name to pick.
+projectsRouter.get('/:id/team-candidates', requirePermission('projects.edit', 'edit'), async (req, res) => {
+  try {
+    const { companyId } = req.auth!
+    const result = await query(
+      `SELECT id, first_name, last_name, job_title
+       FROM employees
+       WHERE company_id = $1 AND status = 'active'
+       ORDER BY first_name, last_name
+       LIMIT 200`,
+      [companyId],
+    )
+    sendOk(res, result.rows)
+  } catch (err) { sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch team candidates', err) }
+})
+
 projectsRouter.put('/:id/members/:memberId/permissions', requirePermission('projects.edit', 'edit'), async (req, res) => {
   try {
     const { id, memberId } = req.params as { id: string; memberId: string }

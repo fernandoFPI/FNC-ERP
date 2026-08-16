@@ -477,12 +477,17 @@ export default function ProjectDetail() {
   }, [id])
 
   useEffect(() => {
-    if (!showAddForm) return
+    if (!showAddForm || !id) return
+    // Uses the projects service's own scoped picker (gated by projects.edit,
+    // the same permission that lets this user add a member at all) instead
+    // of the HR module's employee list (gated by hr.employees.view) — a
+    // project manager assigning a teammate shouldn't need HR visibility
+    // into national IDs, phone numbers, and hire dates just to pick a name.
     api
-      .get<Employee[]>('/hr/employees', { params: { limit: 200, status: 'active' } })
+      .get<Employee[]>(`/projects/${id}/team-candidates`)
       .then((r) => setEmployees(Array.isArray(r.data) ? r.data : []))
       .catch(() => {})
-  }, [showAddForm])
+  }, [showAddForm, id])
 
   async function handleAddMember() {
     if (!addForm.employee_id) {
