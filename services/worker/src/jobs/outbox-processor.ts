@@ -953,6 +953,18 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
     throw new Error(`Missing AP/expense GL accounts for company ${p.company_id}`)
   }
 
+  // Re-query cost_center_id/analytic_account_id rather than trusting a payload
+  // snapshot — matches the pattern used elsewhere (e.g. createInvoiceJournal
+  // looking up the project's analytic account by invoice_id). The outbox
+  // payload never carried these, so the expense line always posted untagged
+  // even though the invoice form collects both fields.
+  const invRes = await pool.query<{ cost_center_id: string | null; analytic_account_id: string | null }>(
+    `SELECT cost_center_id, analytic_account_id FROM vendor_invoices WHERE id=$1`,
+    [p.invoice_id],
+  )
+  const costCenterId = invRes.rows[0]?.cost_center_id ?? null
+  const analyticAccountId = invRes.rows[0]?.analytic_account_id ?? null
+
   const sysUser = await pool.query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const userId = sysUser.rows[0]?.['id'] ?? ''
 
@@ -977,11 +989,13 @@ async function createVendorInvoiceJournal(p: VendorInvoiceJournalPayload): Promi
     )
     const id = jeResult.rows[0]!['id']
 
-    // Dr Expense (cost) / Cr Accounts Payable
+    // Dr Expense (cost — tagged with cost center/analytic account so it's
+    // visible to cost-center reporting and project_cost_actuals) / Cr
+    // Accounts Payable (a payable, not a cost — deliberately untagged).
     await client.query(
-      `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, fx_rate, amount_company_currency)
-       VALUES ($1,$2,$3,0,$4,$5,ROUND($3::numeric*$5::numeric,4)), ($1,$6,0,$3,$4,$5,ROUND($3::numeric*$5::numeric,4))`,
-      [id, expenseAccount['id'], totalAmount, p.currency_code, fxRate, apAccount['id']],
+      `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, cost_center_id, debit, credit, currency_code, fx_rate, amount_company_currency)
+       VALUES ($1,$2,$3,$4,$5,0,$6,$7,ROUND($5::numeric*$7::numeric,4)), ($1,$8,NULL,NULL,0,$5,$6,$7,ROUND($5::numeric*$7::numeric,4))`,
+      [id, expenseAccount['id'], analyticAccountId, costCenterId, totalAmount, p.currency_code, fxRate, apAccount['id']],
     )
     return id
   })
@@ -1164,10 +1178,19 @@ async function createRentalInvoiceJournal(p: RentalInvoiceJournalPayload): Promi
     )
     const id = jeResult.rows[0]!['id']
 
+    // DR: AR (no analytic tag) / CR: Revenue — tag with the contract's
+    // analytic account so it flows into project_cost_actuals. The payload
+    // already carried analytic_account_id from rental_contracts (both
+    // enqueue sites set it); it just wasn't being applied here.
     await client.query(
       `INSERT INTO journal_lines (journal_entry_id, account_id, debit, credit, currency_code, amount_company_currency)
-       VALUES ($1,$2,$3,0,'IQD',$3), ($1,$4,0,$3,'IQD',$3)`,
-      [id, arAccount['id'], amount, revenueAccount['id']],
+       VALUES ($1,$2,$3,0,'IQD',$3)`,
+      [id, arAccount['id'], amount],
+    )
+    await client.query(
+      `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, debit, credit, currency_code, amount_company_currency)
+       VALUES ($1,$2,$3,0,$4,'IQD',$4)`,
+      [id, revenueAccount['id'], p.analytic_account_id ?? null, amount],
     )
 
     await client.query(`UPDATE rental_invoices SET journal_entry_id=$1 WHERE id=$2`, [id, p.invoice_id])

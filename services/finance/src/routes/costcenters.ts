@@ -14,6 +14,7 @@ const Schema = z.object({
   type: z.enum(['department', 'project', 'entity', 'overhead']),
   parent_id: z.string().uuid().optional(),
   default_recharge_fulfiller_id: z.string().uuid().nullable().optional(),
+  is_active: z.boolean().optional(),
 })
 
 costCentersRouter.get(
@@ -120,7 +121,7 @@ costCentersRouter.put(
         [
           parsed.data.name ?? null,
           parsed.data.type ?? null,
-          null,
+          parsed.data.is_active ?? null,
           req.params['id'],
           companyId,
           fulfillerProvided,

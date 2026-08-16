@@ -169,6 +169,20 @@ export default function CostCentersPage() {
     }
   }
 
+  async function handleReactivate(cc: CostCenter) {
+    try {
+      await api.put(`/finance/cost-centers/${cc.id}`, {
+        name: cc.name,
+        type: cc.type,
+        is_active: true,
+      })
+      addToast({ type: 'success', message: 'Cost center reactivated' })
+      void fetchData()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: apiErrMsg(e, 'Reactivate failed') })
+    }
+  }
+
   const parentOptions = items.filter((c) => !editing || c.id !== editing.id)
 
   const columns: Column<CostCenter>[] = [
@@ -225,7 +239,7 @@ export default function CostCentersPage() {
           >
             Edit
           </Button>
-          {cc.is_active && (
+          {cc.is_active ? (
             <Button
               variant="ghost"
               size="sm"
@@ -234,6 +248,10 @@ export default function CostCentersPage() {
               }}
             >
               Deactivate
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => void handleReactivate(cc)}>
+              Reactivate
             </Button>
           )}
         </div>
