@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../theme/ThemeContext'
 import { api } from '../../lib/axios'
+import { NAV_SECTIONS } from '../shell/Sidebar'
+import { usePermission } from '../../hooks/usePermission'
+import { useCompanyStore } from '../../store/companyStore'
 
 interface SearchItem {
   id: string
@@ -44,7 +47,55 @@ const TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> 
   vendor: { label: 'VEN', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
   project_invoice: { label: 'INV', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)' },
   rental_contract: { label: 'RC', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+  page: { label: 'GO', color: '#64748b', bg: 'rgba(100,116,139,0.14)' },
 }
+
+// Flattened once from the sidebar's own nav tree (not re-typed by hand) —
+// a real navigable page is either a top-level item with a real path (some
+// sections, like Projects, are a single page with no sub-pages) or one of
+// its children (sections like Finance use a synthetic '_f_...' path on the
+// parent purely to group children, so only the children are real pages).
+interface PageEntry {
+  label: string
+  path: string
+  section: string
+  permKeys?: string[]
+  factoryOnly?: boolean
+}
+
+// factoryOnly lives only on the parent (e.g. "Manufacturing") in the source
+// data, but the sidebar hides the whole item — parent AND every child —
+// when the active company isn't a factory (section.items.filter(isItemVisible)
+// runs before children ever get rendered). Propagate it down here so a
+// non-factory user can't search their way to a page the sidebar hides.
+function flattenNavPages(): PageEntry[] {
+  const out: PageEntry[] = []
+  for (const sec of NAV_SECTIONS) {
+    for (const item of sec.items) {
+      if (item.path.startsWith('/')) {
+        out.push({
+          label: item.label,
+          path: item.path,
+          section: sec.section,
+          permKeys: item.permKeys,
+          factoryOnly: item.factoryOnly,
+        })
+      }
+      for (const child of item.children ?? []) {
+        out.push({
+          label: child.label,
+          path: child.path,
+          section: sec.section,
+          permKeys: child.permKeys,
+          factoryOnly: item.factoryOnly,
+        })
+      }
+    }
+  }
+  return out
+}
+
+const NAV_PAGES = flattenNavPages()
 
 const RECENT_KEY = 'fnc_search_recent'
 const MAX_RECENT = 5
@@ -72,6 +123,9 @@ function saveRecent(item: SearchItem) {
 export function SearchPalette({ open, prefill, onClose }: Props) {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { canAny, isSystemLevel } = usePermission()
+  const activeCompany = useCompanyStore((s) => s.activeCompany)
+  const isFactoryCompany = !!activeCompany?.name?.toLowerCase().includes('factory')
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [groups, setGroups] = useState<SearchGroup[]>([])
@@ -79,6 +133,35 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
   const [activeIdx, setActiveIdx] = useState(0)
   const [recents, setRecents] = useState<RecentItem[]>([])
   const prevOpen = useRef(false)
+
+  // Instant, local "go to page" matches — no debounce, no API round trip.
+  // Lets a query like "projects" jump straight to the Projects list page
+  // even though no entity is literally named "projects".
+  const pageGroup: SearchGroup | null = useMemo(() => {
+    if (query.length < 2) return null
+    const q = query.toLowerCase()
+    const seen = new Set<string>()
+    const items: SearchItem[] = []
+    for (const p of NAV_PAGES) {
+      if (!p.label.toLowerCase().includes(q)) continue
+      if (seen.has(p.path)) continue
+      if (p.factoryOnly && !isFactoryCompany) continue
+      if (p.permKeys && p.permKeys.length > 0 && !isSystemLevel && !canAny(p.permKeys)) continue
+      seen.add(p.path)
+      items.push({
+        id: `page:${p.path}`,
+        type: 'page',
+        title: p.label,
+        subtitle: p.section,
+        meta: '',
+        status: '',
+        url: p.path,
+      })
+    }
+    return items.length > 0 ? { type: 'page', label: 'Go to', items } : null
+  }, [query, canAny, isSystemLevel, isFactoryCompany])
+
+  const displayGroups = pageGroup ? [pageGroup, ...groups] : groups
 
   // Reset and focus when palette opens
   useEffect(() => {
@@ -134,7 +217,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
     document.querySelector(`[data-search-idx="${activeIdx}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [activeIdx])
 
-  const allItems = groups.flatMap((g) => g.items)
+  const allItems = displayGroups.flatMap((g) => g.items)
 
   const handleSelect = useCallback(
     (item: SearchItem) => {
@@ -169,7 +252,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
   if (!open) return null
 
   const showRecents = query.length < 2 && recents.length > 0
-  const showNoResults = query.length >= 2 && !loading && groups.length === 0
+  const showNoResults = query.length >= 2 && !loading && displayGroups.length === 0
   let flatIdx = 0
 
   return (
@@ -362,7 +445,7 @@ export function SearchPalette({ open, prefill, onClose }: Props) {
           )}
 
           {/* Groups with results */}
-          {groups.map((group) => {
+          {displayGroups.map((group) => {
             const groupEl = (
               <div key={group.type} style={{ padding: '8px 0' }}>
                 <div

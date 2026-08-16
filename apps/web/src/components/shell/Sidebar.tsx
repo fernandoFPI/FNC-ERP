@@ -9,14 +9,14 @@ import { useCompanyStore } from '../../store/companyStore'
 import { useAuthStore } from '../../store/authStore'
 import { getInitials } from '../../lib/userDisplay'
 
-interface NavChild {
+export interface NavChild {
   label: string
   path: string
   badge?: number | 'overdue' | 'ap_pending'
   permKeys?: string[]
 }
 
-interface NavItem {
+export interface NavItem {
   label: string
   icon: React.ReactNode
   path: string
@@ -26,7 +26,7 @@ interface NavItem {
   factoryOnly?: boolean
 }
 
-interface NavSection {
+export interface NavSection {
   section: string
   items: NavItem[]
 }
@@ -605,7 +605,11 @@ function Icon({ name }: { name: string }) {
   return <>{icons[name] ?? null}</>
 }
 
-const NAV_SECTIONS: NavSection[] = [
+// Exported so SearchPalette can offer "go to page" quick-navigation from
+// the same single source of truth the sidebar itself renders from — a
+// hand-maintained second copy would drift the same way the Journal
+// Entries source-type filter did.
+export const NAV_SECTIONS: NavSection[] = [
   {
     section: 'Overview',
     items: [{ label: 'Dashboard', icon: <Icon name="grid" />, path: '/dashboard' }],
