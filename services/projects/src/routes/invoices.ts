@@ -284,14 +284,33 @@ invoicesRouter.post('/:id/issue', requirePermission('projects.invoices.edit', 'e
     const companyId = req.auth!.companyId
     const userId = req.auth!.userId
 
-    const invoice = await query('SELECT * FROM project_invoices WHERE id=$1 AND company_id=$2', [id, companyId])
-    if (!invoice.rows[0]) return sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
-    const inv = invoice.rows[0] as Record<string, unknown>
-    if (inv['status'] !== 'approved') return sendError(res, 409, 'INVALID_STATUS', 'Only approved invoices can be issued')
-
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+
+      // Atomic: the UPDATE's own WHERE clause (not a prior SELECT-then-check)
+      // is what prevents a race — two near-simultaneous "Issue" clicks (double
+      // click, two tabs) serialize on the row, and only the first to see
+      // status='approved' can ever match, so only one journal ever gets
+      // enqueued. A separate SELECT check beforehand let both requests pass
+      // validation and each enqueue their own GL journal, double-posting
+      // revenue for the same invoice.
+      const updated = await client.query(
+        `UPDATE project_invoices SET status='issued', issued_by=$1, issued_at=NOW(), updated_at=NOW()
+         WHERE id=$2 AND company_id=$3 AND status='approved' RETURNING *`,
+        [userId, id, companyId],
+      )
+      const inv = updated.rows[0] as Record<string, unknown> | undefined
+      if (!inv) {
+        await client.query('ROLLBACK')
+        const exists = await query('SELECT id FROM project_invoices WHERE id=$1 AND company_id=$2', [id, companyId])
+        if (!exists.rows[0]) {
+          sendError(res, 404, 'NOT_FOUND', 'Invoice not found')
+        } else {
+          sendError(res, 409, 'INVALID_STATUS', 'Only approved invoices can be issued')
+        }
+        return
+      }
 
       // Queue GL journal
       await client.query(
@@ -313,10 +332,6 @@ invoicesRouter.post('/:id/issue', requirePermission('projects.invoices.edit', 'e
         [JSON.stringify({ invoice_id: id, company_id: companyId })],
       )
 
-      await client.query(
-        `UPDATE project_invoices SET status='issued', issued_by=$1, issued_at=NOW(), updated_at=NOW() WHERE id=$2`,
-        [userId, id],
-      )
       await client.query('COMMIT')
       await logAudit({ companyId, userId, action: 'UPDATE', tableName: 'project_invoices', recordId: id, newValues: { status: 'issued' } })
       sendOk(res, { id, status: 'issued' })

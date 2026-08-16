@@ -25,18 +25,50 @@ interface NotificationsDrawerProps {
 
 const PAGE_SIZE = 20
 
+// Pick the first present value for a concept that different backend
+// producers happen to store under different key casings (poId vs po_id,
+// invoiceId vs invoice_id, etc.) rather than one consistent name.
+function pick(d: Record<string, unknown> | undefined, ...keys: string[]): string | null {
+  if (!d) return null
+  for (const k of keys) {
+    if (d[k] != null && d[k] !== '') return String(d[k])
+  }
+  return null
+}
+
 function notificationPath(n: AppNotification): string {
   const d = n.data
-  const link = d?.link ? String(d.link) : null
-  const projectId = d?.project_id ? String(d.project_id) : null
-  const poId = d?.po_id ? String(d.po_id) : null
+  const link = pick(d, 'link')
+  const projectId = pick(d, 'project_id', 'projectId')
+  const poId = pick(d, 'po_id', 'poId')
+  const invoiceId = pick(d, 'invoice_id', 'invoiceId')
+  const contractId = pick(d, 'contract_id', 'contractId')
 
   // Explicit deep-link from backend always wins
   if (link) return link
 
   switch (n.type) {
+    // Purchase orders — every PO workflow event (see outbox-processor.ts's
+    // "PO workflow notifications" block) stores { poId, poNumber } in data.
     case 'PO_APPROVAL_REQUIRED':
     case 'po_approval_required':
+    case 'PO_INVENTORY_CHECK_REQUIRED':
+    case 'PO_STORE_PRICING_REQUIRED':
+    case 'PO_MARKET_PRICING_REQUIRED':
+    case 'PO_PRICE_VERIFICATION_REQUIRED':
+    case 'PO_PRICING_REJECTED':
+    case 'PO_SENT_TO_AUDIT':
+    case 'PO_AUDIT_PASSED':
+    case 'PO_AUDIT_FAILED':
+    case 'PO_COMPLETED':
+    case 'PO_CANCELLED':
+    case 'PO_RECEIVER_ASSIGNED':
+    case 'PO_GOODS_RECEIVED':
+    case 'PO_EDIT_REQUEST_SUBMITTED':
+    case 'PO_EDIT_REQUEST_APPROVED':
+    case 'PO_EDIT_REQUEST_REJECTED':
+    case 'PO_APPROVED':
+    case 'PO_READY_FOR_PROCUREMENT':
       return poId
         ? `/procurement/purchase-orders/${poId}`
         : '/procurement/purchase-orders/approval-queue'
@@ -61,6 +93,17 @@ function notificationPath(n: AppNotification): string {
     case 'manufacturing_request_approved':
     case 'manufacturing_request_rejected':
       return '/manufacturing/requests'
+    // A milestone has no page of its own — it's managed on its contract.
+    case 'MILESTONE_REACHED':
+      return contractId ? `/projects/contracts/${contractId}` : '/projects/contracts'
+    // Vendor invoice lifecycle (approval, approved/rejected, cancelled) and
+    // payments recorded against one — all land on the invoice itself.
+    case 'VENDOR_INVOICE_APPROVAL_REQUIRED':
+    case 'VENDOR_INVOICE_APPROVED_NOTIFICATION':
+    case 'VENDOR_INVOICE_REJECTED_NOTIFICATION':
+    case 'VENDOR_INVOICE_CANCELLED':
+    case 'VENDOR_PAYMENT_RECORDED':
+      return invoiceId ? `/finance/ap/${invoiceId}` : '/finance/ap'
     default:
       return projectId ? `/projects/${projectId}` : '/dashboard'
   }

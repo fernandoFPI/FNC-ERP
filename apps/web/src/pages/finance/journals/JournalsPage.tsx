@@ -10,8 +10,16 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
-const FILTER_DEFAULTS = { search: '', status: '', source: '', fromDate: '', toDate: '' }
-import { Badge } from '../../../components/ui/Badge'
+const FILTER_DEFAULTS = {
+  search: '',
+  status: '',
+  source: '',
+  fromDate: '',
+  toDate: '',
+  minAmount: '',
+  maxAmount: '',
+}
+import { Badge, type BadgeVariant } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
@@ -36,12 +44,59 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-const SOURCE_OPTIONS = [
-  { value: 'manual', label: 'Manual' },
-  { value: 'po', label: 'Purchase Order' },
-  { value: 'payroll', label: 'Payroll' },
-  { value: 'inventory', label: 'Inventory' },
-]
+// Every source_type a journal entry can actually be posted with, grouped by
+// what kind of money movement it represents rather than colored one-by-one —
+// revenue/cash-in (green), expense/cost recognition (amber), money to/from
+// employees (blue), reversals (red, deliberately stands out), and internal/
+// administrative entries (gray). Keeps the palette restrained instead of
+// assigning a distinct color per exact backend string.
+const SOURCE_META: Record<string, { label: string; variant: BadgeVariant }> = {
+  project_invoice: { label: 'Project Invoice', variant: 'success' },
+  rental_invoice: { label: 'Rental Invoice', variant: 'success' },
+  invoice_payment: { label: 'Invoice Payment', variant: 'success' },
+
+  vendor_invoice: { label: 'Vendor Invoice', variant: 'warning' },
+  vendor_payment: { label: 'Vendor Payment', variant: 'warning' },
+  payroll_run: { label: 'Payroll', variant: 'warning' },
+  depreciation: { label: 'Depreciation', variant: 'warning' },
+  asset_disposal: { label: 'Asset Disposal', variant: 'warning' },
+  po_completion: { label: 'PO Completion', variant: 'warning' },
+  manufacturing_order: { label: 'Manufacturing', variant: 'warning' },
+  mo_completion: { label: 'Manufacturing', variant: 'warning' },
+  retention: { label: 'Retention Held', variant: 'warning' },
+  retention_release: { label: 'Retention Release', variant: 'warning' },
+
+  employee_advance_issuance: { label: 'Advance Issued', variant: 'info' },
+  advance_settlement: { label: 'Advance Settled', variant: 'info' },
+  advance_return: { label: 'Advance Returned', variant: 'info' },
+
+  cancellation: { label: 'Reversal', variant: 'danger' },
+
+  combined: { label: 'Combined', variant: 'accent' },
+  manual: { label: 'Manual', variant: 'neutral' },
+  interco: { label: 'Intercompany', variant: 'neutral' },
+  interco_transaction: { label: 'Intercompany', variant: 'neutral' },
+  bank_entry: { label: 'Bank Entry', variant: 'neutral' },
+}
+
+function sourceMeta(sourceType?: string): { label: string; variant: BadgeVariant } {
+  const key = sourceType ?? 'manual'
+  return (
+    SOURCE_META[key] ?? {
+      label: key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      variant: 'neutral',
+    }
+  )
+}
+
+// A couple of source_types share a label (manufacturing_order/mo_completion,
+// interco/interco_transaction — two code paths posting the same kind of
+// entry under different strings, a backend inconsistency of its own). The
+// filter dropdown only needs one entry per label; badge coloring above
+// still handles every underlying value correctly regardless.
+const SOURCE_OPTIONS = Array.from(
+  new Map(Object.entries(SOURCE_META).map(([value, meta]) => [meta.label, { value, label: meta.label }])).values(),
+)
 
 export default function JournalsPage() {
   const { theme } = useTheme()
@@ -52,8 +107,18 @@ export default function JournalsPage() {
   const [sourceFilter, setSourceFilter] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [maxAmount, setMaxAmount] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const currentFilters = { search, status: statusFilter, source: sourceFilter, fromDate, toDate }
+  const currentFilters = {
+    search,
+    status: statusFilter,
+    source: sourceFilter,
+    fromDate,
+    toDate,
+    minAmount,
+    maxAmount,
+  }
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'journals',
     FILTER_DEFAULTS,
@@ -76,9 +141,16 @@ export default function JournalsPage() {
 
   const entries: JournalEntry[] = data?.journalEntries ?? []
   const filtered = entries.filter((e) => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return e.reference.toLowerCase().includes(q) || (e.description ?? '').toLowerCase().includes(q)
+    if (search) {
+      const q = search.toLowerCase()
+      if (!e.reference.toLowerCase().includes(q) && !(e.description ?? '').toLowerCase().includes(q)) {
+        return false
+      }
+    }
+    const amount = parseFloat(e.total_debit ?? '0')
+    if (minAmount && amount < parseFloat(minAmount)) return false
+    if (maxAmount && amount > parseFloat(maxAmount)) return false
+    return true
   })
 
   function toggleSelect(id: string, isDraft: boolean) {
@@ -181,7 +253,10 @@ export default function JournalsPage() {
     {
       key: 'source_type',
       header: 'Source',
-      render: (e) => <Badge variant="neutral">{e.source_type ?? 'manual'}</Badge>,
+      render: (e) => {
+        const meta = sourceMeta(e.source_type)
+        return <Badge variant={meta.variant}>{meta.label}</Badge>
+      },
     },
     {
       key: 'total_debit',
@@ -274,6 +349,50 @@ export default function JournalsPage() {
           resultCount={filtered.length}
           onRefresh={() => refetch()}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap' }}>
+              Amount
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={minAmount}
+              onChange={(e) => {
+                setMinAmount(e.target.value)
+              }}
+              placeholder="Min"
+              style={{
+                width: '90px',
+                background: theme.bgSurface,
+                border: `1px solid ${theme.borderInput}`,
+                borderRadius: '8px',
+                padding: '6px 10px',
+                fontSize: '12px',
+                color: theme.textSecondary,
+                fontFamily: 'inherit',
+              }}
+            />
+            <span style={{ fontSize: '12px', color: theme.textMuted }}>–</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={maxAmount}
+              onChange={(e) => {
+                setMaxAmount(e.target.value)
+              }}
+              placeholder="Max"
+              style={{
+                width: '90px',
+                background: theme.bgSurface,
+                border: `1px solid ${theme.borderInput}`,
+                borderRadius: '8px',
+                padding: '6px 10px',
+                fontSize: '12px',
+                color: theme.textSecondary,
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
           <FilterPresets
             presets={presets}
             onApply={(preset) => {
@@ -283,6 +402,8 @@ export default function JournalsPage() {
               setSourceFilter(r.source)
               setFromDate(r.fromDate)
               setToDate(r.toDate)
+              setMinAmount(r.minAmount)
+              setMaxAmount(r.maxAmount)
             }}
             onSave={(name) => {
               savePreset(name, currentFilters)

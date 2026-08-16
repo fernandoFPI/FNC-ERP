@@ -714,6 +714,18 @@ async function deliverToFinance(event: OutboxRow): Promise<void> {
 }
 
 async function createInvoiceJournal(p: InvoiceJournalPayload): Promise<void> {
+  // Idempotency: skip if a journal was already posted for this invoice
+  // (outbox retry path, or a duplicate enqueue from a non-atomic status
+  // check upstream) — same guard as createPayrollJournal.
+  const existing = await pool.query<{ journal_entry_id: string | null }>(
+    `SELECT journal_entry_id FROM project_invoices WHERE id = $1`,
+    [p.invoice_id],
+  )
+  if (existing.rows[0]?.journal_entry_id) {
+    log.warn({ invoiceId: p.invoice_id }, 'project invoice journal already exists — skipping duplicate')
+    return
+  }
+
   const grossTotal = parseFloat(String(p.gross_total))
   const retentionAmount = parseFloat(String(p.retention_amount))
   const netPayable = parseFloat(String(p.net_payable))
