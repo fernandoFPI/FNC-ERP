@@ -3310,6 +3310,41 @@ export const resolvers = {
       return row
     },
 
+    // "Add existing person" prefill for the employee create form — a
+    // holding-company admin who already manages this person's record in
+    // another company can look them up by email instead of retyping
+    // everything. Scoped to companies the SEARCHING user themselves has
+    // active access to (not global search) so this can't be used to pull
+    // PII out of unrelated companies.
+    findEmployeeAcrossCompanies: async (
+      _: unknown,
+      args: { email: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return null
+      const email = args.email.trim().toLowerCase()
+      if (!email) return null
+      const result = await query(
+        `SELECT e.id, e.company_id AS "companyId", c.name AS "companyName",
+                e.first_name, e.last_name, e.email, e.phone, e.national_id,
+                e.passport_number, e.nationality, e.date_of_birth, e.gender,
+                e.job_title, e.employment_type, e.user_id,
+                u.email AS linked_user_email
+         FROM employees e
+         JOIN companies c ON c.id = e.company_id
+         LEFT JOIN users u ON u.id = e.user_id
+         WHERE LOWER(e.email) = $1
+           AND e.company_id != $2
+           AND e.company_id IN (
+             SELECT company_id FROM user_company_roles WHERE user_id = $3 AND is_active = true
+           )
+         ORDER BY e.created_at DESC
+         LIMIT 1`,
+        [email, ctx.auth.companyId, ctx.auth.userId],
+      )
+      return result.rows[0] ?? null
+    },
+
     departments: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) return []
       const result = await query(

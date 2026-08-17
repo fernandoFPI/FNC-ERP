@@ -49,6 +49,29 @@ export const EMPLOYEE_QUERY = gql`
   }
 `
 
+export const FIND_EMPLOYEE_ACROSS_COMPANIES = gql`
+  query FindEmployeeAcrossCompanies($email: String!) {
+    findEmployeeAcrossCompanies(email: $email) {
+      id
+      companyId
+      companyName
+      first_name
+      last_name
+      email
+      phone
+      national_id
+      passport_number
+      nationality
+      date_of_birth
+      gender
+      job_title
+      employment_type
+      user_id
+      linked_user_email
+    }
+  }
+`
+
 export const CREATE_EMPLOYEE = gql`
   mutation CreateEmployee($input: EmployeeInput!) {
     createEmployee(input: $input) {

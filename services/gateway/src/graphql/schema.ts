@@ -26,6 +26,7 @@
     # HR
     employees(department_id: ID, is_active: Boolean): [Employee]
     employee(id: ID!): Employee
+    findEmployeeAcrossCompanies(email: String!): EmployeeCrossCompanyMatch
     departments: [Department]
     workLocations(is_active: Boolean): [WorkLocation]
     attendanceLogs(employee_id: ID, from_date: String, to_date: String): [AttendanceLog]
@@ -387,6 +388,29 @@
     linked_user_email: String
     photo_url: String
     is_active: Boolean
+  }
+
+  # Prefill source for "Add existing person" on the employee create form —
+  # a match found in one of the searching user's OTHER companies, keyed by
+  # email. Deliberately excludes fields not useful for prefill (status,
+  # department_id/work_location_id are company-specific, termination_date).
+  type EmployeeCrossCompanyMatch {
+    id: ID!
+    companyId: ID!
+    companyName: String!
+    first_name: String!
+    last_name: String!
+    email: String
+    phone: String
+    national_id: String
+    passport_number: String
+    nationality: String
+    date_of_birth: String
+    gender: String
+    job_title: String
+    employment_type: String
+    user_id: ID
+    linked_user_email: String
   }
 
   input EmployeeInput {

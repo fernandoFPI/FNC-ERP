@@ -1,12 +1,13 @@
 ﻿import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useMutation, useQuery } from '@apollo/client'
+import { useMutation, useQuery, useLazyQuery } from '@apollo/client'
 import {
   CREATE_EMPLOYEE,
   UPDATE_EMPLOYEE,
   EMPLOYEE_QUERY,
   DEPARTMENTS_QUERY,
   WORK_LOCATIONS_QUERY,
+  FIND_EMPLOYEE_ACROSS_COMPANIES,
 } from '../../../graphql/hr'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -77,6 +78,9 @@ export default function EmployeeForm() {
 
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [searchEmail, setSearchEmail] = useState('')
+  const [linkedUserId, setLinkedUserId] = useState<string | null>(null)
+  const [matchApplied, setMatchApplied] = useState(false)
 
   const { data: empData } = useQuery(EMPLOYEE_QUERY, { variables: { id }, skip: !isEdit })
   const { data: deptData } = useQuery(DEPARTMENTS_QUERY)
@@ -84,6 +88,28 @@ export default function EmployeeForm() {
 
   const [createEmployee, { loading: creating }] = useMutation(CREATE_EMPLOYEE)
   const [updateEmployee, { loading: updating }] = useMutation(UPDATE_EMPLOYEE)
+  const [searchMatch, { data: matchData, loading: searching }] = useLazyQuery(
+    FIND_EMPLOYEE_ACROSS_COMPANIES,
+    { fetchPolicy: 'network-only' },
+  )
+  const match = matchData?.findEmployeeAcrossCompanies as
+    | {
+        first_name: string
+        last_name: string
+        email?: string | null
+        phone?: string | null
+        national_id?: string | null
+        passport_number?: string | null
+        nationality?: string | null
+        date_of_birth?: string | null
+        gender?: string | null
+        job_title?: string | null
+        employment_type?: string | null
+        user_id?: string | null
+        companyName: string
+      }
+    | null
+    | undefined
 
   const departments = deptData?.departments ?? []
   const locations = locData?.workLocations ?? []
@@ -115,6 +141,34 @@ export default function EmployeeForm() {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }))
     }
+  }
+
+  function handleSearchMatch() {
+    if (!searchEmail.trim()) return
+    setMatchApplied(false)
+    setLinkedUserId(null)
+    void searchMatch({ variables: { email: searchEmail.trim() } })
+  }
+
+  function applyMatch() {
+    if (!match) return
+    setForm((f) => ({
+      ...f,
+      first_name: match.first_name || f.first_name,
+      last_name: match.last_name || f.last_name,
+      national_id: match.national_id || f.national_id,
+      passport_number: match.passport_number || f.passport_number,
+      nationality: match.nationality || f.nationality,
+      date_of_birth: match.date_of_birth?.slice(0, 10) || f.date_of_birth,
+      gender: match.gender || f.gender,
+      job_title: match.job_title || f.job_title,
+      employment_type: match.employment_type || f.employment_type,
+      email: match.email || searchEmail.trim(),
+      phone: match.phone || f.phone,
+    }))
+    setLinkedUserId(match.user_id ?? null)
+    setMatchApplied(true)
+    addToast({ type: 'success', message: `Pre-filled from ${match.companyName}` })
   }
 
   function validate(): boolean {
@@ -149,6 +203,7 @@ export default function EmployeeForm() {
       work_location_id: form.work_location_id || undefined,
       employment_type: form.employment_type || undefined,
       hire_date: form.hire_date || undefined,
+      ...(!isEdit && linkedUserId ? { user_id: linkedUserId } : {}),
     }
     try {
       if (isEdit && id) {
@@ -176,6 +231,85 @@ export default function EmployeeForm() {
 
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '20px' }}>
+          {!isEdit && (
+            <Card
+              style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}
+            >
+              <SectionHeader title="Add existing person (optional)" />
+              <p style={{ fontSize: '12px', color: theme.textMuted, margin: 0 }}>
+                Already an employee in one of your other companies? Look them up by email to
+                pre-fill their details instead of retyping everything.
+              </p>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <Input
+                    label="Email"
+                    type="email"
+                    value={searchEmail}
+                    onChange={(e) => {
+                      setSearchEmail(e.target.value)
+                      setMatchApplied(false)
+                    }}
+                    placeholder="person@example.com"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={searching}
+                  disabled={!searchEmail.trim()}
+                  onClick={handleSearchMatch}
+                >
+                  Search
+                </Button>
+              </div>
+              {matchData !== undefined && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    background: match ? theme.accentBg : theme.bgSurface,
+                    border: `1px solid ${match ? theme.accent : theme.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                  }}
+                >
+                  {match ? (
+                    <>
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.accent }}>
+                          Found: {match.first_name} {match.last_name}
+                          {match.job_title ? ` — ${match.job_title}` : ''}
+                        </div>
+                        <div
+                          style={{ fontSize: '11px', color: theme.textSecondary, marginTop: '2px' }}
+                        >
+                          Already an employee in {match.companyName}
+                          {match.user_id ? ' — will link their existing account once you save' : ''}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant={matchApplied ? 'ghost' : 'primary'}
+                        size="sm"
+                        onClick={applyMatch}
+                        disabled={matchApplied}
+                      >
+                        {matchApplied ? 'Applied' : 'Use this info'}
+                      </Button>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                      No match found in your other companies — fill in the form below as usual.
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
           <div data-tour="personal-info-card">
             <Card
               style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}
