@@ -5,12 +5,14 @@ import { ThemeProvider } from '../../../theme/ThemeContext'
 
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
+const mockUseLazyQuery = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@apollo/client')>()
   return {
     ...actual,
     useQuery: (...args: unknown[]) => mockUseQuery(...args),
+    useLazyQuery: (...args: unknown[]) => mockUseLazyQuery(...args),
     useMutation: (...args: unknown[]) => mockUseMutation(...args),
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
@@ -37,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({}), { loading: false }])
   mockUseQuery.mockReturnValue({ data: undefined, loading: false, refetch: vi.fn() })
+  mockUseLazyQuery.mockReturnValue([vi.fn(), { data: undefined, loading: false }])
 })
 
 // ── EmployeesPage ─────────────────────────────────────────────────────────────
