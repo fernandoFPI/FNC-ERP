@@ -47,6 +47,25 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
     }
   }, [])
 
+  // Refreshes the switcher's own list from the source of truth — otherwise
+  // this only ever gets set once at login, so a company the user was added
+  // to mid-session would never show up here.
+  function refreshCompanies() {
+    void api
+      .get<{ id: string; name: string; currency_code?: string }[]>('/auth/me/companies')
+      .then((res) => {
+        const mapped = res.data.map((c) => ({
+          id: c.id,
+          name: c.name,
+          currencyCode: c.currency_code ?? '',
+        }))
+        if (mapped.length > 0) useCompanyStore.getState().setCompanies(mapped)
+      })
+      .catch(() => {
+        /* best-effort — keep whatever's already cached */
+      })
+  }
+
   async function switchCompany(company: typeof activeCompany) {
     if (!company || company.id === activeCompany?.id) {
       setOpen(false)
@@ -66,6 +85,7 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
       setActiveCompany(company)
       setOpen(false)
       navigate('/dashboard')
+      refreshCompanies()
     } catch (e: unknown) {
       const msg =
         e && typeof e === 'object' && 'response' in e
@@ -86,7 +106,11 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
     <button
       onClick={() => {
         setError(null)
-        setOpen((v) => !v)
+        setOpen((v) => {
+          const next = !v
+          if (next) refreshCompanies()
+          return next
+        })
       }}
       aria-label={activeCompany?.name ? `Switch company (${activeCompany.name})` : 'Select company'}
       title={activeCompany?.name ?? 'Select company'}
@@ -118,7 +142,11 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
     <button
       onClick={() => {
         setError(null)
-        setOpen((v) => !v)
+        setOpen((v) => {
+          const next = !v
+          if (next) refreshCompanies()
+          return next
+        })
       }}
       style={{
         display: 'inline-flex',

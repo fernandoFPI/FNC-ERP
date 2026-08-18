@@ -1,11 +1,32 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
+import { useCompanyStore } from '../store/companyStore'
 import { decodeJWT } from './jwt'
 
 export const api = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL}/api/v1`,
   timeout: 30000,
 })
+
+// Fire-and-forget refresh of the entity switcher's company list — the
+// initial login response is the only other place this ever gets populated,
+// so without this, a user added to a new company mid-session would never
+// see it until they logged out and back in.
+function refreshCompanyList() {
+  void api
+    .get<{ id: string; name: string; currency_code?: string }[]>('/auth/me/companies')
+    .then((res) => {
+      const mapped = res.data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        currencyCode: c.currency_code ?? '',
+      }))
+      if (mapped.length > 0) useCompanyStore.getState().setCompanies(mapped)
+    })
+    .catch(() => {
+      /* best-effort — keep whatever's already cached */
+    })
+}
 
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken
@@ -47,6 +68,7 @@ api.interceptors.response.use(
           if (decoded) {
             store.setUser({ role: decoded.role, companyId: decoded.companyId })
           }
+          refreshCompanyList()
 
           if (config) {
             config._retry = true
