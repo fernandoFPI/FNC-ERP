@@ -173,11 +173,16 @@ export const moStateMachine = new StateMachine<MOStatus, MOAction>({
 //   rejected → draft                  (reopen)
 //
 // PHASE 3 — P2P FULFILLMENT
-//   approved → goods_received         (receive_goods — auto-triggered by first receipt)
-//   approved → items_bought           (start_buying — employee-advance-funded POs only,
-//                                       auto-chained by approvePO in the same transaction)
-//   items_bought → goods_received     (finish_buying — auto-triggered when the buyer
-//                                       ticks the last line as bought)
+//   approved → items_bought           (start_buying — auto-chained by approvePO in the
+//                                       same transaction, for every PO; no PO is ever
+//                                       observably left at 'approved')
+//   items_bought → goods_received     (finish_buying — auto-triggered either when the
+//                                       buyer ticks the last line as bought, or when
+//                                       recordReceipt logs a real receipt, whichever
+//                                       happens first)
+//   approved → goods_received         (receive_goods — legacy direct path, kept for
+//                                       recordReceipt's status check but effectively
+//                                       unreachable now that 'approved' is instantaneous)
 //   goods_received → finance_audit    (send_to_audit)
 //   finance_audit → goods_received    (fail_audit — finance returns with flags)
 //   finance_audit → invoiced          (pass_audit — three-way match OK)
@@ -261,14 +266,18 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     { from: 'rejected', to: 'draft', action: 'reopen' },
 
     // Phase 3 — P2P fulfillment
-    { from: 'approved', to: 'goods_received', action: 'receive_goods' },
-    // Employee-advance-funded POs only: approvePO chains straight from
-    // 'approved' into 'items_bought' in the same transaction (the buyer
-    // ticks each line bought, then the last tick auto-advances to
-    // goods_received) — vendor-AP POs never see 'items_bought' at all and
-    // keep using receive_goods above exactly as before.
+    // Every PO: approvePO chains straight from 'approved' into
+    // 'items_bought' in the same transaction, regardless of funding
+    // source (that's decided later, by Finance, at 'invoiced'). The buyer
+    // ticks each line bought, and recordReceipt (logging a real receipt,
+    // still needed for vendor-sourced items) also accepts 'items_bought' —
+    // whichever happens first auto-advances to goods_received.
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'items_bought', to: 'goods_received', action: 'finish_buying' },
+    // Legacy direct path — kept so recordReceipt's status check still has
+    // somewhere to point if 'approved' is ever reached directly again, but
+    // approvePO no longer leaves any PO there in practice.
+    { from: 'approved', to: 'goods_received', action: 'receive_goods' },
     { from: 'goods_received', to: 'finance_audit', action: 'send_to_audit' },
     { from: 'finance_audit', to: 'goods_received', action: 'fail_audit' },
     { from: 'finance_audit', to: 'invoiced', action: 'pass_audit' },

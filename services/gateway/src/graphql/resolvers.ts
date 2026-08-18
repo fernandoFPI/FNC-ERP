@@ -7664,16 +7664,12 @@ export const resolvers = {
           linkedProjectId?: string
           linkedMoId?: string
           branch_id?: string
-          fundingSource?: string
-          fundingAdvanceId?: string
           lines: {
             product_id?: string
             description?: string
             qty: number
             unit_price: number
             uom?: string
-            glAccountId?: string
-            costCenterId?: string
           }[]
         }
       },
@@ -7682,36 +7678,27 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
       const i = args.input
-      // The buyer who'll tick each line bought (items_bought stage) is the
-      // same person the advance belongs to — not a separate pick — resolved
-      // straight from the chosen advance's employee below, once validated.
+      // Funding source (vendor AP vs employee advance) isn't decided here —
+      // the requester creating the PO usually has no idea how it'll end up
+      // being paid, and Finance is better placed to make that call once the
+      // PO reaches 'invoiced' (setPOFunding). Every PO gets the same buyer
+      // default regardless: whoever the branch has assigned as its
+      // procurement buyer, for the items_bought stage after approval.
       let resolvedBuyerUserId: string | null = null
-      if (i.fundingSource === 'employee_advance') {
-        if (!i.fundingAdvanceId) {
-          throw new Error('An advance must be selected when funding source is Employee Advance')
-        }
-        // GL account + cost center are deliberately NOT required here —
-        // the person creating this PO is usually the employee spending the
-        // advance, not someone who knows accounting codes. Finance assigns
-        // them per line during the finance_audit review instead
-        // (setPOLineAccounting), and passPOAudit blocks completion until
-        // every line has both set.
-        const advCheck = await query(
-          `SELECT ea.status, ea.currency_code, e.user_id AS employee_user_id
-           FROM employee_advances ea
-           LEFT JOIN employees e ON e.id = ea.employee_id
-           WHERE ea.id=$1 AND ea.company_id=$2`,
-          [i.fundingAdvanceId, ctx.auth.companyId],
+      if (i.branch_id) {
+        const branchBuyerRes = await query<{ default_procurement_user_id: string | null }>(
+          `SELECT default_procurement_user_id FROM company_branches WHERE id=$1 AND company_id=$2`,
+          [i.branch_id, ctx.auth.companyId],
         )
-        const adv = advCheck.rows[0] as Record<string, unknown> | undefined
-        if (!adv) throw new Error('Selected advance not found')
-        if (!['approved', 'partially_settled'].includes(adv.status as string)) {
-          throw new Error('Selected advance is not in a settleable state')
-        }
-        if (adv.currency_code !== (i.currency_code ?? 'IQD')) {
-          throw new Error('PO currency must match the selected advance’s currency')
-        }
-        resolvedBuyerUserId = (adv.employee_user_id as string | null) ?? null
+        resolvedBuyerUserId = branchBuyerRes.rows[0]?.default_procurement_user_id ?? null
+      }
+      // No branch, or the branch has no procurement buyer configured yet —
+      // fall back to whoever's creating the PO. Without this, items_bought
+      // would have no one able to act on it (markPOLineBought requires a
+      // real assigned_buyer_user_id match) and the PO would be stuck until
+      // an admin manually intervened.
+      if (!resolvedBuyerUserId) {
+        resolvedBuyerUserId = ctx.auth.userId
       }
       if (i.linkedProjectId) {
         const projCheck = await query(
@@ -7738,8 +7725,8 @@ export const resolvers = {
             ? i.priority
             : 'low'
           const po = await client.query(
-            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,funding_source,funding_advance_id,assigned_buyer_user_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18,$19,$20) RETURNING *`,
+            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,assigned_buyer_user_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18) RETURNING *`,
             [
               ctx.auth!.companyId,
               poNum,
@@ -7758,16 +7745,14 @@ export const resolvers = {
               i.assigned_receiver_id ?? null,
               priority,
               i.branch_id ?? null,
-              i.fundingSource === 'employee_advance' ? 'employee_advance' : 'vendor_ap',
-              i.fundingAdvanceId ?? null,
-              i.fundingSource === 'employee_advance' ? resolvedBuyerUserId : null,
+              resolvedBuyerUserId,
             ],
           )
           const poRow = po.rows[0] as Record<string, unknown>
           for (let idx = 0; idx < i.lines.length; idx++) {
             const l = i.lines[idx]
             await client.query(
-              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom,account_id,cost_center_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
               [
                 poRow.id,
                 l.product_id ?? null,
@@ -7777,8 +7762,6 @@ export const resolvers = {
                 l.unit_price,
                 l.qty * l.unit_price,
                 l.uom ?? 'unit',
-                l.glAccountId ?? null,
-                l.costCenterId ?? null,
               ],
             )
           }
@@ -7953,7 +7936,12 @@ export const resolvers = {
           )
           if (!po.rows[0]) throw new Error('PO not found')
           const poStatus = po.rows[0].status as string
-          if (!['approved', 'goods_received'].includes(poStatus)) {
+          // 'items_bought' included alongside the legacy 'approved' window
+          // (no PO rests there in practice anymore — approvePO now always
+          // chains straight into items_bought) — recording a real receipt
+          // is equally authoritative as the buyer's checklist and
+          // shouldn't be blocked behind it.
+          if (!['approved', 'items_bought', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record receipt on a PO with status '${poStatus}'`)
           }
           const receiptNumber = `RCPT-${Date.now()}`
@@ -8065,15 +8053,18 @@ export const resolvers = {
               )
             }
           }
-          // Auto-transition approved → goods_received on first receipt
+          // Auto-transition into goods_received on first receipt — from the
+          // legacy 'approved' window or from 'items_bought' (a real receipt
+          // is equally authoritative as the buyer finishing their checklist,
+          // and shouldn't require it first).
           const currentStatus = po.rows[0].status as POStatus
-          if (currentStatus === 'approved') {
+          if (currentStatus === 'approved' || currentStatus === 'items_bought') {
             await poTransition(
               client,
               args.poId,
-              'approved',
+              currentStatus,
               'goods_received',
-              'receive_goods',
+              currentStatus === 'approved' ? 'receive_goods' : 'finish_buying',
               ctx.auth!,
               'Auto-transitioned on first receipt',
             )
@@ -23912,12 +23903,11 @@ const phase5MutationResolvers = {
       const fullPo = fullPoRes.rows[0] as Record<string, unknown>
       await issueStockForPOLines(client, fullPo, auth.companyId, auth.userId)
       await poTransition(client, args.id, 'pending_approval', 'approved', 'approve', auth)
-      // Employee-advance-funded POs skip the vendor goods-receiving flow —
-      // the employee already bought the items themselves — and go straight
-      // into items_bought for the assigned buyer to tick each line bought.
-      if (fullPo.funding_source === 'employee_advance') {
-        await poTransition(client, args.id, 'approved', 'items_bought', 'start_buying', auth)
-      }
+      // Every PO goes through items_bought — the assigned buyer needs to
+      // track what's actually been bought and what's left regardless of how
+      // it eventually gets paid, and funding source (vendor AP vs employee
+      // advance) isn't decided until Finance picks it at 'invoiced'.
+      await poTransition(client, args.id, 'approved', 'items_bought', 'start_buying', auth)
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -24141,7 +24131,7 @@ const phase5MutationResolvers = {
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to pass audit')
     const poRow = await query(
-      `SELECT status, organizer_id, po_number, funding_source FROM purchase_orders WHERE id=$1`,
+      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
@@ -24154,18 +24144,6 @@ const phase5MutationResolvers = {
     const flagged = parseInt(String(flaggedRes.rows[0]?.c ?? '0'))
     if (flagged > 0)
       throw new Error(`Cannot pass audit: ${flagged} line${flagged > 1 ? 's are' : ' is'} flagged`)
-    if (poRow.rows[0].funding_source === 'employee_advance') {
-      const unclassifiedRes = await query(
-        `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND (account_id IS NULL OR cost_center_id IS NULL)`,
-        [args.id],
-      )
-      const unclassified = parseInt(String(unclassifiedRes.rows[0]?.c ?? '0'))
-      if (unclassified > 0) {
-        throw new Error(
-          `Cannot pass audit: ${unclassified} line${unclassified > 1 ? 's need' : ' needs'} a GL account and cost center assigned`,
-        )
-      }
-    }
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -24272,10 +24250,12 @@ const phase5MutationResolvers = {
     return result.rows[0]
   },
 
-  // GL account + cost center classification for advance-funded PO lines,
-  // done by finance during the audit review — not asked of the employee
-  // creating the PO, since they usually have no reason to know accounting
-  // codes. Same finance_audit-only window as setPOLineAuditStatus above.
+  // GL account + cost center classification for advance-funded PO lines —
+  // not asked of the employee creating the PO (they usually have no reason
+  // to know accounting codes), and only relevant once Finance has actually
+  // picked "employee advance" as the funding source at 'invoiced'
+  // (setPOFunding). completePO blocks the advance-funded completion path
+  // until every line has both set.
   setPOLineAccounting: async (
     _: unknown,
     args: { poId: string; lineId: string; glAccountId?: string; costCenterId?: string },
@@ -24285,12 +24265,14 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to classify PO lines')
-    const poRow = await query(`SELECT status, company_id FROM purchase_orders WHERE id=$1`, [
-      args.poId,
-    ])
-    if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'finance_audit')
-      throw new Error('PO must be in finance_audit status to classify lines')
+    const poRow = await query(
+      `SELECT status, company_id, funding_source FROM purchase_orders WHERE id=$1`,
+      [args.poId],
+    )
+    if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
+      throw new Error('PO not found')
+    if (poRow.rows[0].status !== 'invoiced' || poRow.rows[0].funding_source !== 'employee_advance')
+      throw new Error('PO must be invoiced and funded by an employee advance to classify lines')
     const result = await query(
       `UPDATE po_lines
           SET account_id = $1, cost_center_id = $2
@@ -24306,11 +24288,12 @@ const phase5MutationResolvers = {
     return result.rows[0]
   },
 
-  // Employee-advance-funded POs only: the assigned buyer ticks each line as
-  // bought while the PO sits in items_bought (see approvePO, which chains
-  // straight into this status for advance-funded POs). Ticking the last
+  // Every PO's assigned buyer ticks each line as bought while it sits in
+  // items_bought (see approvePO, which now always chains straight into
+  // this status on approval) — funding source doesn't matter here, the
+  // buyer needs to track what's bought either way. Ticking the last
   // unbought line auto-advances the PO to goods_received, same pattern as
-  // recordReceipt's auto-transition on first receipt for vendor-AP POs.
+  // recordReceipt's auto-transition on first receipt used to be.
   markPOLineBought: async (
     _: unknown,
     args: { poId: string; lineId: string; bought: boolean },
@@ -24361,13 +24344,75 @@ const phase5MutationResolvers = {
     }
   },
 
+  // Finance decides vendor AP vs employee advance once the PO reaches
+  // 'invoiced' — not at creation, since the requester usually has no idea
+  // how it'll end up being paid. One-time: funding_decided locks it in so
+  // the frontend stops showing the picker and falls through to the
+  // existing AP-invoice or advance-completion panel, whichever applies.
+  setPOFunding: async (
+    _: unknown,
+    args: { id: string; fundingSource: string; fundingAdvanceId?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error('Finance approval permission required to set PO funding')
+    if (!['vendor_ap', 'employee_advance'].includes(args.fundingSource))
+      throw new Error('fundingSource must be vendor_ap or employee_advance')
+    const poRow = await query(
+      `SELECT status, company_id, currency_code, funding_decided FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
+    if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
+      throw new Error('PO not found')
+    if (poRow.rows[0].status !== 'invoiced')
+      throw new Error('PO must be in invoiced status to set funding')
+    if (poRow.rows[0].funding_decided)
+      throw new Error('Funding source has already been set for this PO')
+    if (args.fundingSource === 'employee_advance') {
+      if (!args.fundingAdvanceId) {
+        throw new Error('An advance must be selected when funding source is Employee Advance')
+      }
+      const advCheck = await query(
+        `SELECT status, currency_code FROM employee_advances WHERE id=$1 AND company_id=$2`,
+        [args.fundingAdvanceId, auth.companyId],
+      )
+      const adv = advCheck.rows[0] as Record<string, unknown> | undefined
+      if (!adv) throw new Error('Selected advance not found')
+      if (!['approved', 'partially_settled'].includes(adv.status as string)) {
+        throw new Error('Selected advance is not in a settleable state')
+      }
+      if (adv.currency_code !== poRow.rows[0].currency_code) {
+        throw new Error('PO currency must match the selected advance’s currency')
+      }
+    }
+    // funding_decided=false in the WHERE makes this the actual guard
+    // against a double-click or concurrent tab racing past the read above
+    // — the earlier check is just a fast, friendly error for the common case.
+    const updateRes = await query(
+      `UPDATE purchase_orders
+          SET funding_source=$1, funding_advance_id=$2, funding_decided=true
+        WHERE id=$3 AND funding_decided=false`,
+      [
+        args.fundingSource,
+        args.fundingSource === 'employee_advance' ? args.fundingAdvanceId : null,
+        args.id,
+      ],
+    )
+    if (updateRes.rowCount === 0)
+      throw new Error('Funding source has already been set for this PO')
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+    return getPOForReturn(args.id)
+  },
+
   completePO: async (_: unknown, args: { id: string; receiptNotes?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to complete a PO')
     const poRow = await query(
-      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      `SELECT status, organizer_id, po_number, funding_source, funding_decided FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
@@ -24375,6 +24420,20 @@ const phase5MutationResolvers = {
       throw new Error(
         `PO must be in invoiced status to complete. Current: '${poRow.rows[0].status as string}'`,
       )
+    if (!poRow.rows[0].funding_decided)
+      throw new Error('Finance must confirm the funding source (AP or Advance) before completing')
+    if (poRow.rows[0].funding_source === 'employee_advance') {
+      const unclassifiedRes = await query(
+        `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND (account_id IS NULL OR cost_center_id IS NULL)`,
+        [args.id],
+      )
+      const unclassified = parseInt(String(unclassifiedRes.rows[0]?.c ?? '0'))
+      if (unclassified > 0) {
+        throw new Error(
+          `Cannot complete: ${unclassified} line${unclassified > 1 ? 's need' : ' needs'} a GL account and cost center assigned`,
+        )
+      }
+    }
     const client = await pool.connect()
     try {
       await client.query('BEGIN')

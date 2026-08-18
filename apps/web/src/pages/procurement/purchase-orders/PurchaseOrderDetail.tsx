@@ -30,6 +30,7 @@ import {
   SET_PO_LINE_ACTUAL_PRICE,
   SET_PO_LINE_ACCOUNTING,
   MARK_PO_LINE_BOUGHT,
+  SET_PO_FUNDING,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
@@ -140,6 +141,7 @@ interface PO {
   branch_id?: string | null
   branch_name?: string | null
   funding_source?: string | null
+  funding_decided?: boolean | null
   funding_advance_id?: string | null
   funding_advance_number?: string | null
   funding_employee_name?: string | null
@@ -399,6 +401,60 @@ export default function PurchaseOrderDetail() {
   const [flaggingLines, setFlaggingLines] = useState<Record<string, string>>({})
   const [actualPrices, setActualPrices] = useState<Record<string, string>>({})
 
+  // Funding decision picker — shown once a PO reaches 'invoiced' with
+  // funding_decided still false (see setPOFunding). Mirrors what used to be
+  // on the PO creation form, just moved here so Finance decides once the
+  // real cost is known instead of the requester guessing up front.
+  const [fundingChoice, setFundingChoice] = useState<'vendor_ap' | 'employee_advance' | ''>('')
+  const [fundingEmployeeId, setFundingEmployeeId] = useState('')
+  const [fundingAdvanceId, setFundingAdvanceId] = useState('')
+  const [fundingAdvances, setFundingAdvances] = useState<
+    {
+      id: string
+      advance_number: string
+      outstanding_amount: number
+      currency_code: string
+      status: string
+    }[]
+  >([])
+  useEffect(() => {
+    // Reset on every employee change, not just when cleared — otherwise a
+    // previously-picked advance for a different employee survives the
+    // switch (invisible in the dropdown, but still submitted).
+    setFundingAdvanceId('')
+    if (!fundingEmployeeId) {
+      setFundingAdvances([])
+      return
+    }
+    let cancelled = false
+    void api
+      .get<
+        {
+          id: string
+          advance_number: string
+          outstanding_amount: number
+          currency_code: string
+          status: string
+        }[]
+      >('/finance/advances', { params: { employee_id: fundingEmployeeId } })
+      .then((res) => {
+        if (cancelled) return
+        const settleable = res.data.filter((a) =>
+          ['approved', 'partially_settled'].includes(a.status),
+        )
+        setFundingAdvances(settleable)
+        if (settleable.length === 1) {
+          setFundingAdvanceId((prev) => prev || settleable[0].id)
+        }
+      })
+      .catch(() => {
+        /* handled */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fundingEmployeeId])
+
   const addToast = useToastStore((s) => s.addToast)
   const { isSystemLevel, can } = usePermission()
   const currentUserId = useAuthStore((s) => s.user?.id)
@@ -620,6 +676,15 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
+  const [setPOFunding, { loading: settingFunding }] = useMutation(SET_PO_FUNDING, {
+    onCompleted: () => {
+      setFundingChoice('')
+      setFundingEmployeeId('')
+      setFundingAdvanceId('')
+      void refetch()
+    },
+    onError: onErr,
+  })
   const [completePO, { loading: l9 }] = useMutation(COMPLETE_PO, {
     ...mutOpts,
     onError: (err) => {
@@ -692,15 +757,19 @@ export default function PurchaseOrderDetail() {
   const employees: { id: string; first_name: string; last_name: string; job_title?: string }[] =
     employeesData?.employees ?? []
 
-  const isAdvanceFunded = po?.funding_source === 'employee_advance'
+  // Only needed once Finance has actually confirmed "employee advance" as
+  // the funding source (see the invoiced-status panel below) — before
+  // that, or for vendor-AP POs, per-line classification never renders.
+  const needsLineAccountingOptions =
+    po?.status === 'invoiced' && !!po?.funding_decided && po?.funding_source === 'employee_advance'
   const { data: accountsData } = useQuery(ACCOUNTS_QUERY, {
     variables: { isActive: true },
     fetchPolicy: 'cache-first',
-    skip: !isAdvanceFunded,
+    skip: !needsLineAccountingOptions,
   })
   const { data: costCentersData } = useQuery(COST_CENTERS_QUERY, {
     fetchPolicy: 'cache-first',
-    skip: !isAdvanceFunded,
+    skip: !needsLineAccountingOptions,
   })
   const glAccountOptions: { value: string; label: string }[] = (accountsData?.accounts ?? []).map(
     (a: { id: string; code: string; name: string }) => ({
@@ -2669,9 +2738,9 @@ export default function PurchaseOrderDetail() {
                           color: theme.accent,
                         }}
                       >
-                        Funded by employee advance — {po.assigned_buyer_name ?? 'the assigned buyer'}{' '}
-                        ticks each item off as it's bought. Once every line is checked, this PO moves
-                        on to Goods Received automatically.
+                        {po.assigned_buyer_name ?? 'The assigned buyer'} ticks each item off as
+                        it's bought. Once every line is checked, this PO moves on to Goods
+                        Received automatically.
                         {!canMarkBought && (
                           <div style={{ marginTop: '4px', opacity: 0.85 }}>
                             You're viewing this read-only — only {po.assigned_buyer_name ?? 'the assigned buyer'} or an admin can check items off.
@@ -2896,10 +2965,7 @@ export default function PurchaseOrderDetail() {
                   const pendingCount = po.lines.filter(
                     (l) => !l.audit_status || l.audit_status === 'pending',
                   ).length
-                  const unclassifiedCount = isAdvanceFunded
-                    ? po.lines.filter((l) => !l.account_id || !l.cost_center_id).length
-                    : 0
-                  const canPass = flaggedCount === 0 && pendingCount === 0 && unclassifiedCount === 0
+                  const canPass = flaggedCount === 0 && pendingCount === 0
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
@@ -3006,57 +3072,6 @@ export default function PurchaseOrderDetail() {
                                 </button>
                               </div>
                             </div>
-
-                            {/* GL account + cost center — advance-funded POs only, classified by Finance here */}
-                            {isAdvanceFunded && (
-                              <div
-                                style={{
-                                  marginTop: '8px',
-                                  padding: '8px 10px',
-                                  borderRadius: '6px',
-                                  background: theme.bgSurface,
-                                  border: `1px solid ${!line.account_id || !line.cost_center_id ? '#fdba74' : theme.border}`,
-                                  display: 'grid',
-                                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                                  gap: '8px',
-                                }}
-                              >
-                                <SearchableSelect
-                                  label="GL Account"
-                                  required
-                                  value={line.account_id ?? ''}
-                                  onChange={(v) =>
-                                    void setLineAccounting({
-                                      variables: {
-                                        poId: po.id,
-                                        lineId: line.id,
-                                        glAccountId: v || null,
-                                        costCenterId: line.cost_center_id ?? null,
-                                      },
-                                    })
-                                  }
-                                  options={glAccountOptions}
-                                  placeholder="Search GL accounts…"
-                                />
-                                <SearchableSelect
-                                  label="Cost Center"
-                                  required
-                                  value={line.cost_center_id ?? ''}
-                                  onChange={(v) =>
-                                    void setLineAccounting({
-                                      variables: {
-                                        poId: po.id,
-                                        lineId: line.id,
-                                        glAccountId: line.account_id ?? null,
-                                        costCenterId: v || null,
-                                      },
-                                    })
-                                  }
-                                  options={costCenterOptions}
-                                  placeholder="Search cost centers…"
-                                />
-                              </div>
-                            )}
 
                             {/* Qty fulfilled vs ordered (received + from stock) */}
                             {(() => {
@@ -3541,13 +3556,7 @@ export default function PurchaseOrderDetail() {
                         >
                           {canPass
                             ? 'Pass Audit → Invoiced'
-                            : `Pass Audit (${
-                                pendingCount > 0
-                                  ? `${pendingCount} pending`
-                                  : flaggedCount > 0
-                                    ? `${flaggedCount} flagged`
-                                    : `${unclassifiedCount} unclassified`
-                              })`}
+                            : `Pass Audit (${pendingCount > 0 ? `${pendingCount} pending` : `${flaggedCount} flagged`})`}
                         </Button>
                         <Button
                           variant="ghost"
@@ -3565,30 +3574,258 @@ export default function PurchaseOrderDetail() {
                 })()}
 
               {po.status === 'invoiced' &&
-                (po.funding_source === 'employee_advance' ? (
+                (!po.funding_decided ? (
                   can('finance.ap.approve', 'approve') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
                         style={{
                           padding: '10px 14px',
                           borderRadius: '8px',
-                          background: theme.accentBg,
-                          border: `1px solid ${theme.accent}`,
+                          background: theme.bgSurface,
+                          border: `1px solid ${theme.border}`,
                           fontSize: '12px',
-                          color: theme.accent,
+                          color: theme.textSecondary,
                         }}
                       >
-                        Funded by employee advance — no vendor invoice needed. Once completed,
-                        this PO's lines will queue for settlement against the advance.
+                        How was this PO paid? Pick vendor AP to create a vendor invoice, or an
+                        employee advance to settle it against someone's advance.
                       </div>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                          gap: '8px',
+                        }}
+                      >
+                        <Button
+                          variant={fundingChoice === 'vendor_ap' ? 'primary' : 'secondary'}
+                          onClick={() => {
+                            setFundingChoice('vendor_ap')
+                          }}
+                        >
+                          Vendor (Accounts Payable)
+                        </Button>
+                        <Button
+                          variant={fundingChoice === 'employee_advance' ? 'primary' : 'secondary'}
+                          onClick={() => {
+                            setFundingChoice('employee_advance')
+                          }}
+                        >
+                          Employee Advance
+                        </Button>
+                      </div>
+                      {fundingChoice === 'employee_advance' && (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                            gap: '8px',
+                          }}
+                        >
+                          <SearchableSelect
+                            label="Employee"
+                            value={fundingEmployeeId}
+                            onChange={setFundingEmployeeId}
+                            options={[
+                              { value: '', label: 'Select employee…' },
+                              ...employees.map((e) => ({
+                                value: e.id,
+                                label: `${e.first_name} ${e.last_name}`,
+                              })),
+                            ]}
+                            placeholder="Search employee…"
+                            minDropdownWidth={320}
+                          />
+                          <div>
+                            <label
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 600,
+                                color: theme.textMuted,
+                                display: 'block',
+                                marginBottom: '4px',
+                              }}
+                            >
+                              Advance *
+                            </label>
+                            <select
+                              value={fundingAdvanceId}
+                              onChange={(e) => {
+                                setFundingAdvanceId(e.target.value)
+                              }}
+                              style={{
+                                width: '100%',
+                                padding: '7px 10px',
+                                borderRadius: '6px',
+                                border: `1px solid ${theme.border}`,
+                                background: theme.bgCanvas,
+                                color: theme.textPrimary,
+                                fontSize: '13px',
+                                boxSizing: 'border-box' as const,
+                              }}
+                            >
+                              <option value="">
+                                {fundingEmployeeId ? 'Select advance…' : 'Select an employee first'}
+                              </option>
+                              {fundingAdvances.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.advance_number} —{' '}
+                                  {Number(a.outstanding_amount).toLocaleString()} {a.currency_code}{' '}
+                                  outstanding
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
                       <Button
                         variant="primary"
-                        loading={anyLoading}
-                        onClick={() => void completePO({ variables: { id: po.id } })}
+                        loading={settingFunding}
+                        disabled={
+                          !fundingChoice ||
+                          (fundingChoice === 'employee_advance' && !fundingAdvanceId)
+                        }
+                        onClick={() =>
+                          void setPOFunding({
+                            variables: {
+                              id: po.id,
+                              fundingSource: fundingChoice,
+                              fundingAdvanceId:
+                                fundingChoice === 'employee_advance'
+                                  ? fundingAdvanceId
+                                  : undefined,
+                            },
+                          })
+                        }
                       >
-                        Mark as Completed
+                        Confirm Funding Source
                       </Button>
                     </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: theme.bgSurface,
+                        border: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
+                        Awaiting Finance
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                        This PO has been invoiced and Finance still needs to decide how it was
+                        paid. No action required from you.
+                      </div>
+                    </div>
+                  )
+                ) : po.funding_source === 'employee_advance' ? (
+                  can('finance.ap.approve', 'approve') ? (
+                    (() => {
+                      const unclassifiedCount = po.lines.filter(
+                        (l) => !l.account_id || !l.cost_center_id,
+                      ).length
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div
+                            style={{
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              background: theme.accentBg,
+                              border: `1px solid ${theme.accent}`,
+                              fontSize: '12px',
+                              color: theme.accent,
+                            }}
+                          >
+                            Funded by employee advance — no vendor invoice needed. Assign a GL
+                            account and cost center to each line, then once completed, this PO's
+                            lines will queue for settlement against the advance.
+                          </div>
+                          <div
+                            style={{
+                              border: `1px solid ${theme.border}`,
+                              borderRadius: '10px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {po.lines.map((line, idx) => (
+                              <div
+                                key={line.id}
+                                style={{
+                                  padding: '10px 12px',
+                                  borderBottom:
+                                    idx < po.lines.length - 1
+                                      ? `1px solid ${theme.border}`
+                                      : 'none',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: '13px',
+                                    color: theme.textPrimary,
+                                    marginBottom: '6px',
+                                  }}
+                                >
+                                  {line.description || line.product_name || '—'}
+                                </div>
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                    gap: '8px',
+                                  }}
+                                >
+                                  <SearchableSelect
+                                    label="GL Account"
+                                    required
+                                    value={line.account_id ?? ''}
+                                    onChange={(v) =>
+                                      void setLineAccounting({
+                                        variables: {
+                                          poId: po.id,
+                                          lineId: line.id,
+                                          glAccountId: v || null,
+                                          costCenterId: line.cost_center_id ?? null,
+                                        },
+                                      })
+                                    }
+                                    options={glAccountOptions}
+                                    placeholder="Search GL accounts…"
+                                  />
+                                  <SearchableSelect
+                                    label="Cost Center"
+                                    required
+                                    value={line.cost_center_id ?? ''}
+                                    onChange={(v) =>
+                                      void setLineAccounting({
+                                        variables: {
+                                          poId: po.id,
+                                          lineId: line.id,
+                                          glAccountId: line.account_id ?? null,
+                                          costCenterId: v || null,
+                                        },
+                                      })
+                                    }
+                                    options={costCenterOptions}
+                                    placeholder="Search cost centers…"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            variant="primary"
+                            loading={anyLoading}
+                            disabled={unclassifiedCount > 0}
+                            onClick={() => void completePO({ variables: { id: po.id } })}
+                          >
+                            {unclassifiedCount > 0
+                              ? `Mark as Completed (${unclassifiedCount} unclassified)`
+                              : 'Mark as Completed'}
+                          </Button>
+                        </div>
+                      )
+                    })()
                   ) : (
                     <div
                       style={{

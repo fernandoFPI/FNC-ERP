@@ -322,6 +322,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       branch_id
       branch_name
       funding_source
+      funding_decided
       funding_advance_id
       funding_advance_number
       funding_employee_name
@@ -671,6 +672,19 @@ export const MARK_PO_LINE_BOUGHT = gql`
     markPOLineBought(poId: $poId, lineId: $lineId, bought: $bought) {
       id
       is_bought
+    }
+  }
+`
+
+export const SET_PO_FUNDING = gql`
+  mutation SetPOFunding($id: ID!, $fundingSource: String!, $fundingAdvanceId: ID) {
+    setPOFunding(id: $id, fundingSource: $fundingSource, fundingAdvanceId: $fundingAdvanceId) {
+      id
+      funding_source
+      funding_decided
+      funding_advance_id
+      funding_advance_number
+      funding_employee_name
     }
   }
 `

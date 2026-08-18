@@ -132,6 +132,7 @@
     setPOLineAuditStatus(poId: ID!, lineId: ID!, auditStatus: String!, auditNote: String): POLine!
     setPOLineAccounting(poId: ID!, lineId: ID!, glAccountId: ID, costCenterId: ID): POLine!
     markPOLineBought(poId: ID!, lineId: ID!, bought: Boolean!): POLine!
+    setPOFunding(id: ID!, fundingSource: String!, fundingAdvanceId: ID): PurchaseOrder!
     completePO(id: ID!, receiptNotes: String): PurchaseOrder!
     deletePO(id: ID!, reason: String): PurchaseOrder!
     adminSetPOStatus(id: ID!, status: String!): PurchaseOrder!
@@ -1897,6 +1898,7 @@
     branch_id: ID
     branch_name: String
     funding_source: String
+    funding_decided: Boolean
     funding_advance_id: ID
     funding_advance_number: String
     funding_employee_name: String
@@ -1932,8 +1934,6 @@
     qty: Float!
     unit_price: Float!
     uom: String
-    glAccountId: ID
-    costCenterId: ID
   }
 
   input POInput {
@@ -1950,8 +1950,6 @@
     linkedProjectId: ID
     linkedMoId: ID
     branch_id: ID
-    fundingSource: String
-    fundingAdvanceId: ID
     lines: [POLineInput!]!
   }
 
