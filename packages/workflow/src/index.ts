@@ -174,6 +174,10 @@ export const moStateMachine = new StateMachine<MOStatus, MOAction>({
 //
 // PHASE 3 — P2P FULFILLMENT
 //   approved → goods_received         (receive_goods — auto-triggered by first receipt)
+//   approved → items_bought           (start_buying — employee-advance-funded POs only,
+//                                       auto-chained by approvePO in the same transaction)
+//   items_bought → goods_received     (finish_buying — auto-triggered when the buyer
+//                                       ticks the last line as bought)
 //   goods_received → finance_audit    (send_to_audit)
 //   finance_audit → goods_received    (fail_audit — finance returns with flags)
 //   finance_audit → invoiced          (pass_audit — three-way match OK)
@@ -191,6 +195,7 @@ export type POStatus =
   | 'pending_approval'
   | 'approved'
   | 'ready_to_issue'
+  | 'items_bought'
   | 'goods_received'
   | 'finance_audit'
   | 'invoiced'
@@ -210,6 +215,8 @@ export type POAction =
   | 'approve'
   | 'reject'
   | 'reopen'
+  | 'start_buying'
+  | 'finish_buying'
   | 'receive_goods'
   | 'send_to_audit'
   | 'fail_audit'
@@ -228,6 +235,7 @@ const CANCELLABLE: POStatus[] = [
   'pending_approval',
   'approved',
   'ready_to_issue',
+  'items_bought',
   'goods_received',
   'finance_audit',
   'invoiced',
@@ -254,6 +262,13 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 
     // Phase 3 — P2P fulfillment
     { from: 'approved', to: 'goods_received', action: 'receive_goods' },
+    // Employee-advance-funded POs only: approvePO chains straight from
+    // 'approved' into 'items_bought' in the same transaction (the buyer
+    // ticks each line bought, then the last tick auto-advances to
+    // goods_received) — vendor-AP POs never see 'items_bought' at all and
+    // keep using receive_goods above exactly as before.
+    { from: 'approved', to: 'items_bought', action: 'start_buying' },
+    { from: 'items_bought', to: 'goods_received', action: 'finish_buying' },
     { from: 'goods_received', to: 'finance_audit', action: 'send_to_audit' },
     { from: 'finance_audit', to: 'goods_received', action: 'fail_audit' },
     { from: 'finance_audit', to: 'invoiced', action: 'pass_audit' },

@@ -19,6 +19,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import { api } from '../../../lib/axios'
 import type { VoucherPrintLine, VoucherPrintJournal } from '../../../lib/voucherHtml'
 import { buildPaymentVoucherHTML } from '../../../lib/voucherHtml'
 
@@ -53,6 +54,7 @@ interface JournalSummary {
   status: string
   description?: string
   source_type?: string
+  source_id?: string
   total_debit?: string
   total_credit?: string
   payment_currency?: string
@@ -319,7 +321,7 @@ export default function PaymentVoucherDetail() {
     setLines((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev))
   }
 
-  function toggleJournal(jid: string) {
+  async function toggleJournal(jid: string) {
     if (isReadOnly) return
     const next = new Set(linkedJournalIds)
     if (next.has(jid)) next.delete(jid)
@@ -330,25 +332,59 @@ export default function PaymentVoucherDetail() {
     const selected = allJournals.filter((j) => next.has(j.id))
     if (selected.length === 0) {
       setLines([EMPTY_LINE()])
-    } else {
-      setLines(
-        selected.map((j, idx) => {
-          const isUsd = (j.payment_currency ?? 'IQD') !== 'IQD'
-          const amount = j.total_debit ? String(parseFloat(j.total_debit).toFixed(2)) : ''
-          return {
-            id: undefined,
-            statement: j.description || j.reference,
-            acct_1: '',
-            acct_2: '',
-            acct_3: '',
-            acct_4: '',
-            acct_5: '',
-            amount_iqd: isUsd ? '' : amount,
-            amount_usd: isUsd ? amount : '',
-            sequence: idx + 1,
-          }
-        }),
-      )
+      return
+    }
+    setLines(
+      selected.map((j, idx) => {
+        const isUsd = (j.payment_currency ?? 'IQD') !== 'IQD'
+        const amount = j.total_debit ? String(parseFloat(j.total_debit).toFixed(2)) : ''
+        return {
+          id: undefined,
+          statement: j.description || j.reference,
+          acct_1: '',
+          acct_2: '',
+          acct_3: '',
+          acct_4: '',
+          acct_5: '',
+          amount_iqd: isUsd ? '' : amount,
+          amount_usd: isUsd ? amount : '',
+          sequence: idx + 1,
+        }
+      }),
+    )
+
+    // Advance-settlement journals get their GL account codes auto-filled:
+    // the employee's own advance account on the line (acct_5 — prints in
+    // the column nearest "Statement"), the configured parent account's
+    // code on the voucher header (Bank Account/Fund). These are the same
+    // two accounts resolveAdvanceAccounts already set up when the advance
+    // was created — read back by code here, not re-resolved. Still plain
+    // editable fields afterward — this just saves retyping, per the
+    // auto-fill-but-editable convention the rest of this form follows
+    // (amounts/statement work the same way).
+    for (let idx = 0; idx < selected.length; idx++) {
+      const j = selected[idx]
+      if (j.source_type !== 'advance_settlement') continue
+      try {
+        const res = await api.get<{
+          employeeAccountCode: string | null
+          parentAccountCode: string | null
+        } | null>('/finance/advance-config/settlement-account-codes', {
+          params: { journal_id: j.id },
+        })
+        if (!res.data) continue
+        const { employeeAccountCode, parentAccountCode } = res.data
+        if (employeeAccountCode) {
+          setLines((prev) =>
+            prev.map((l, i) => (i === idx ? { ...l, acct_5: employeeAccountCode } : l)),
+          )
+        }
+        if (parentAccountCode) {
+          setForm((f) => ({ ...f, bank_account_fund: parentAccountCode }))
+        }
+      } catch {
+        /* leave fields blank — finance can still fill them in manually */
+      }
     }
   }
 
@@ -426,15 +462,23 @@ export default function PaymentVoucherDetail() {
   }
 
   const lineFields: LineItemField<VoucherLine>[] = [
-    ...(['acct_1', 'acct_2', 'acct_3', 'acct_4', 'acct_5'] as const).map((f, i) => ({
-      key: f,
-      label: `Acct ${i + 1}`,
-      width: '64px',
+    // Was 5 separate free-text Acct boxes (acct_1..acct_5) mirroring the
+    // paper voucher's 5 account-code columns. Collapsed to the one that's
+    // actually used — acct_5 prints in the column nearest "Statement" —
+    // auto-filled with the employee's advance GL account code for
+    // advance-settlement journals (see toggleJournal), editable like
+    // everything else here. acct_1..acct_4 stay in the schema/print
+    // template for older vouchers that already have data in them, just no
+    // longer offered for new entry.
+    {
+      key: 'acct_5',
+      label: 'Account',
+      width: '90px',
       render: (line: VoucherLine, idx: number) => (
         <input
           type="text"
           readOnly={isReadOnly}
-          value={line[f]}
+          value={line.acct_5}
           maxLength={12}
           style={{
             ...inputStyle,
@@ -443,11 +487,11 @@ export default function PaymentVoucherDetail() {
             fontSize: '11px',
           }}
           onChange={(e) => {
-            updateLine(idx, f, e.target.value)
+            updateLine(idx, 'acct_5', e.target.value)
           }}
         />
       ),
-    })),
+    },
     {
       key: 'statement',
       label: 'Statement (البيان)',
@@ -952,7 +996,9 @@ export default function PaymentVoucherDetail() {
                           type="checkbox"
                           disabled={isReadOnly}
                           checked={checked}
-                          onChange={() => !isReadOnly && toggleJournal(j.id)}
+                          onChange={() => {
+                            if (!isReadOnly) void toggleJournal(j.id)
+                          }}
                           style={{ marginTop: '3px', accentColor: theme.accent, flexShrink: 0 }}
                         />
                         <div style={{ minWidth: 0 }}>

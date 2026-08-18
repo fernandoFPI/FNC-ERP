@@ -60,6 +60,7 @@ function buildNav(role: string | undefined): NavGroup[] {
         { label: 'FX Rates', path: '/finance/fx-rates' },
         { label: 'Accounting Periods', path: '/finance/periods' },
         { label: 'Payment Terms', path: '/finance/payment-terms' },
+        { label: 'Advance Automation', path: '/finance/advance-config' },
       ],
     })
   }

@@ -28,8 +28,12 @@ import {
   SET_PO_PRIORITY,
   SET_PO_RECEIVER,
   SET_PO_LINE_ACTUAL_PRICE,
+  SET_PO_LINE_ACCOUNTING,
+  MARK_PO_LINE_BOUGHT,
 } from '../../../graphql/procurement'
+import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
+import { ACCOUNTS_QUERY, COST_CENTERS_QUERY } from '../../../graphql/finance'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
@@ -81,6 +85,13 @@ interface POLine {
   audit_note?: string | null
   audit_flagged_by_email?: string | null
   audit_flagged_at?: string | null
+  account_id?: string | null
+  account_code?: string | null
+  account_name?: string | null
+  cost_center_id?: string | null
+  cost_center_name?: string | null
+  advance_settlement_id?: string | null
+  is_bought?: boolean | null
 }
 
 // Store price is a reference record only — it never feeds the total. A line
@@ -128,6 +139,12 @@ interface PO {
   projectName?: string | null
   branch_id?: string | null
   branch_name?: string | null
+  funding_source?: string | null
+  funding_advance_id?: string | null
+  funding_advance_number?: string | null
+  funding_employee_name?: string | null
+  assigned_buyer_user_id?: string | null
+  assigned_buyer_name?: string | null
   expected_delivery_date?: string
   notes?: string
   created_by_email?: string
@@ -384,6 +401,7 @@ export default function PurchaseOrderDetail() {
 
   const addToast = useToastStore((s) => s.addToast)
   const { isSystemLevel, can } = usePermission()
+  const currentUserId = useAuthStore((s) => s.user?.id)
   const [apInvoice, setApInvoice] = useState<
     { id: string; invoice_number: string; status: string } | null | undefined
   >(undefined)
@@ -590,6 +608,18 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
+  const [setLineAccounting] = useMutation(SET_PO_LINE_ACCOUNTING, {
+    onCompleted: () => {
+      void refetch()
+    },
+    onError: onErr,
+  })
+  const [markLineBought] = useMutation(MARK_PO_LINE_BOUGHT, {
+    onCompleted: () => {
+      void refetch()
+    },
+    onError: onErr,
+  })
   const [completePO, { loading: l9 }] = useMutation(COMPLETE_PO, {
     ...mutOpts,
     onError: (err) => {
@@ -661,6 +691,29 @@ export default function PurchaseOrderDetail() {
   })
   const employees: { id: string; first_name: string; last_name: string; job_title?: string }[] =
     employeesData?.employees ?? []
+
+  const isAdvanceFunded = po?.funding_source === 'employee_advance'
+  const { data: accountsData } = useQuery(ACCOUNTS_QUERY, {
+    variables: { isActive: true },
+    fetchPolicy: 'cache-first',
+    skip: !isAdvanceFunded,
+  })
+  const { data: costCentersData } = useQuery(COST_CENTERS_QUERY, {
+    fetchPolicy: 'cache-first',
+    skip: !isAdvanceFunded,
+  })
+  const glAccountOptions: { value: string; label: string }[] = (accountsData?.accounts ?? []).map(
+    (a: { id: string; code: string; name: string }) => ({
+      value: a.id,
+      label: `${a.code} — ${a.name}`,
+    }),
+  )
+  const costCenterOptions: { value: string; label: string }[] = (
+    costCentersData?.costCenters ?? []
+  ).map((c: { id: string; code: string; name: string }) => ({
+    value: c.id,
+    label: `${c.code} — ${c.name}`,
+  }))
 
   const anyLoading = l1 || l2 || l3 || l4 || l5 || l8 || l9 || lIssue || lAudit || lPass
 
@@ -780,6 +833,7 @@ export default function PurchaseOrderDetail() {
                 no-op passthrough on tablet+desktop). */}
             <StickyActionBar>
               {apInvoice !== undefined &&
+                po.funding_source !== 'employee_advance' &&
                 can('finance.ap.view') &&
                 (apInvoice ? (
                   <Button
@@ -1176,6 +1230,28 @@ export default function PurchaseOrderDetail() {
             <div style={{ fontSize: '13px', color: theme.textPrimary }}>{value}</div>
           </Card>
         ))}
+        {po.funding_source === 'employee_advance' && (
+          <Card style={{ padding: '12px' }}>
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
+              Funded by advance
+            </div>
+            <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+              {po.funding_advance_id ? (
+                <a
+                  href={`/finance/advances/${po.funding_advance_id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: theme.accent }}
+                >
+                  {po.funding_advance_number ?? 'View advance'}
+                </a>
+              ) : (
+                '—'
+              )}
+              {po.funding_employee_name ? ` · ${po.funding_employee_name}` : ''}
+            </div>
+          </Card>
+        )}
         {/* Receiver card — always editable */}
         <Card style={{ padding: '12px' }}>
           <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -2571,6 +2647,105 @@ export default function PurchaseOrderDetail() {
                 </div>
               )}
 
+              {po.status === 'items_bought' &&
+                (() => {
+                  const isBuyer = !!currentUserId && po.assigned_buyer_user_id === currentUserId
+                  const canMarkBought = isSystemLevel || isBuyer
+                  const fmtN = (n: number | string) =>
+                    parseFloat(String(n)).toLocaleString('en-US', {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 2,
+                    })
+                  const boughtCount = po.lines.filter((l) => l.is_bought).length
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: theme.accentBg,
+                          border: `1px solid ${theme.accent}`,
+                          fontSize: '12px',
+                          color: theme.accent,
+                        }}
+                      >
+                        Funded by employee advance — {po.assigned_buyer_name ?? 'the assigned buyer'}{' '}
+                        ticks each item off as it's bought. Once every line is checked, this PO moves
+                        on to Goods Received automatically.
+                        {!canMarkBought && (
+                          <div style={{ marginTop: '4px', opacity: 0.85 }}>
+                            You're viewing this read-only — only {po.assigned_buyer_name ?? 'the assigned buyer'} or an admin can check items off.
+                          </div>
+                        )}
+                      </div>
+                      <div
+                        style={{
+                          border: `1px solid ${theme.border}`,
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {po.lines.map((line, idx) => (
+                          <div
+                            key={line.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              padding: '10px 12px',
+                              borderBottom:
+                                idx < po.lines.length - 1 ? `1px solid ${theme.border}` : 'none',
+                              background: line.is_bought ? '#f0fdf4' : 'transparent',
+                            }}
+                          >
+                            <button
+                              disabled={!canMarkBought}
+                              onClick={() =>
+                                void markLineBought({
+                                  variables: {
+                                    poId: po.id,
+                                    lineId: line.id,
+                                    bought: !line.is_bought,
+                                  },
+                                })
+                              }
+                              style={{
+                                width: '20px',
+                                height: '20px',
+                                flexShrink: 0,
+                                borderRadius: '5px',
+                                border: `1px solid ${line.is_bought ? '#16a34a' : theme.border}`,
+                                background: line.is_bought ? '#16a34a' : 'transparent',
+                                color: '#fff',
+                                cursor: canMarkBought ? 'pointer' : 'not-allowed',
+                                fontSize: '13px',
+                                lineHeight: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              {line.is_bought ? '✓' : ''}
+                            </button>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+                                {line.description || line.product_name || '—'}
+                              </div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                {fmtN(line.qty)} {line.uom}
+                              </div>
+                            </div>
+                            <AmountDisplay amount={line.total} currency={po.currency_code} size="sm" />
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                        {boughtCount} / {po.lines.length} items bought
+                      </div>
+                    </div>
+                  )
+                })()}
+
               {po.status === 'goods_received' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div
@@ -2721,7 +2896,10 @@ export default function PurchaseOrderDetail() {
                   const pendingCount = po.lines.filter(
                     (l) => !l.audit_status || l.audit_status === 'pending',
                   ).length
-                  const canPass = flaggedCount === 0 && pendingCount === 0
+                  const unclassifiedCount = isAdvanceFunded
+                    ? po.lines.filter((l) => !l.account_id || !l.cost_center_id).length
+                    : 0
+                  const canPass = flaggedCount === 0 && pendingCount === 0 && unclassifiedCount === 0
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
@@ -2828,6 +3006,57 @@ export default function PurchaseOrderDetail() {
                                 </button>
                               </div>
                             </div>
+
+                            {/* GL account + cost center — advance-funded POs only, classified by Finance here */}
+                            {isAdvanceFunded && (
+                              <div
+                                style={{
+                                  marginTop: '8px',
+                                  padding: '8px 10px',
+                                  borderRadius: '6px',
+                                  background: theme.bgSurface,
+                                  border: `1px solid ${!line.account_id || !line.cost_center_id ? '#fdba74' : theme.border}`,
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                  gap: '8px',
+                                }}
+                              >
+                                <SearchableSelect
+                                  label="GL Account"
+                                  required
+                                  value={line.account_id ?? ''}
+                                  onChange={(v) =>
+                                    void setLineAccounting({
+                                      variables: {
+                                        poId: po.id,
+                                        lineId: line.id,
+                                        glAccountId: v || null,
+                                        costCenterId: line.cost_center_id ?? null,
+                                      },
+                                    })
+                                  }
+                                  options={glAccountOptions}
+                                  placeholder="Search GL accounts…"
+                                />
+                                <SearchableSelect
+                                  label="Cost Center"
+                                  required
+                                  value={line.cost_center_id ?? ''}
+                                  onChange={(v) =>
+                                    void setLineAccounting({
+                                      variables: {
+                                        poId: po.id,
+                                        lineId: line.id,
+                                        glAccountId: line.account_id ?? null,
+                                        costCenterId: v || null,
+                                      },
+                                    })
+                                  }
+                                  options={costCenterOptions}
+                                  placeholder="Search cost centers…"
+                                />
+                              </div>
+                            )}
 
                             {/* Qty fulfilled vs ordered (received + from stock) */}
                             {(() => {
@@ -3312,7 +3541,13 @@ export default function PurchaseOrderDetail() {
                         >
                           {canPass
                             ? 'Pass Audit → Invoiced'
-                            : `Pass Audit (${pendingCount > 0 ? `${pendingCount} pending` : `${flaggedCount} flagged`})`}
+                            : `Pass Audit (${
+                                pendingCount > 0
+                                  ? `${pendingCount} pending`
+                                  : flaggedCount > 0
+                                    ? `${flaggedCount} flagged`
+                                    : `${unclassifiedCount} unclassified`
+                              })`}
                         </Button>
                         <Button
                           variant="ghost"
@@ -3330,7 +3565,49 @@ export default function PurchaseOrderDetail() {
                 })()}
 
               {po.status === 'invoiced' &&
-                (can('finance.ap.view') ? (
+                (po.funding_source === 'employee_advance' ? (
+                  can('finance.ap.approve', 'approve') ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div
+                        style={{
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          background: theme.accentBg,
+                          border: `1px solid ${theme.accent}`,
+                          fontSize: '12px',
+                          color: theme.accent,
+                        }}
+                      >
+                        Funded by employee advance — no vendor invoice needed. Once completed,
+                        this PO's lines will queue for settlement against the advance.
+                      </div>
+                      <Button
+                        variant="primary"
+                        loading={anyLoading}
+                        onClick={() => void completePO({ variables: { id: po.id } })}
+                      >
+                        Mark as Completed
+                      </Button>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: theme.bgSurface,
+                        border: `1px solid ${theme.border}`,
+                      }}
+                    >
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textPrimary }}>
+                        Awaiting Finance
+                      </div>
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
+                        This PO was funded by an employee advance and is now with the Finance team
+                        to mark complete. No action required from you.
+                      </div>
+                    </div>
+                  )
+                ) : can('finance.ap.view') ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {apInvoice ? (
                       <div

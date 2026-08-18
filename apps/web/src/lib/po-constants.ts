@@ -10,10 +10,11 @@ export const PO_STATUSES = [
   { key: 'pending_approval', label: 'Pending approval', sequence: 5 },
   { key: 'approved', label: 'Approved', sequence: 6 },
   { key: 'ready_to_issue', label: 'Ready to issue', sequence: 7 },
-  { key: 'goods_received', label: 'Goods received', sequence: 8 },
-  { key: 'finance_audit', label: 'Finance audit', sequence: 9 },
-  { key: 'invoiced', label: 'Invoiced', sequence: 10 },
-  { key: 'completed', label: 'Completed', sequence: 11 },
+  { key: 'items_bought', label: 'Items bought', sequence: 8 },
+  { key: 'goods_received', label: 'Goods received', sequence: 9 },
+  { key: 'finance_audit', label: 'Finance audit', sequence: 10 },
+  { key: 'invoiced', label: 'Invoiced', sequence: 11 },
+  { key: 'completed', label: 'Completed', sequence: 12 },
 ] as const
 
 export type POStatus = (typeof PO_STATUSES)[number]['key'] | 'rejected' | 'cancelled' | 'deleted'
@@ -75,6 +76,11 @@ export const PO_STATUS_ACTIONS: Record<
     description: 'Record goods received — auto-transitions PO to goods_received',
     isOrganizer: true,
   },
+  items_bought: {
+    label: 'Mark items bought',
+    description:
+      'Employee-advance-funded PO — the assigned buyer ticks each line as bought. Auto-transitions to goods_received once every line is checked.',
+  },
   goods_received: {
     label: 'Send to finance audit',
     description: 'Organizer sends PO to finance team for three-way match audit',
@@ -110,6 +116,8 @@ export function getPOStatusVariant(status: string): BadgeVariant {
     case 'approved':
       return 'accent'
     case 'ready_to_issue':
+      return 'accent'
+    case 'items_bought':
       return 'accent'
     case 'goods_received':
       return 'success'

@@ -379,6 +379,20 @@ export default function EmployeeDetail() {
               </div>
             </Card>
 
+            {emp.advance_control_account_id && (
+              <Card style={{ padding: '16px' }}>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
+                  Advance control account
+                </div>
+                <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+                  {emp.advance_control_account_code} · {emp.advance_control_account_name}
+                </div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                  Auto-created — tracks this employee's cash advances in the GL
+                </div>
+              </Card>
+            )}
+
             {/* Shift assignment */}
             <Card style={{ padding: '16px' }}>
               <div

@@ -11,6 +11,7 @@ import { EMPLOYEES_QUERY } from '../../../graphql/hr'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
+import { api } from '../../../lib/axios'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
@@ -37,6 +38,15 @@ const emptyLine = (): POLine => ({
   uom: 'pc',
 })
 
+interface FundingAdvance {
+  id: string
+  advance_number: string
+  amount: number
+  outstanding_amount: number
+  currency_code: string
+  status: string
+}
+
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
 export default function PurchaseOrderForm() {
@@ -62,6 +72,10 @@ export default function PurchaseOrderForm() {
   const [linkedProjectId, setLinkedProjectId] = useState('')
   const [linkedMoId, setLinkedMoId] = useState('')
   const [lines, setLines] = useState<POLine[]>([emptyLine()])
+  const [fundingSource, setFundingSource] = useState<'vendor_ap' | 'employee_advance'>('vendor_ap')
+  const [fundingEmployeeId, setFundingEmployeeId] = useState('')
+  const [fundingAdvanceId, setFundingAdvanceId] = useState('')
+  const [fundingAdvances, setFundingAdvances] = useState<FundingAdvance[]>([])
 
   // Pre-fill from URL
   useEffect(() => {
@@ -111,6 +125,38 @@ export default function PurchaseOrderForm() {
   })
   const [createPO, { loading }] = useMutation(CREATE_PO)
 
+  // Employee-advance funding: settleable advances for the selected employee.
+  // REST, not GraphQL — Employee Advances is a REST-only module (see
+  // services/finance/src/routes/employee-advances.ts).
+  useEffect(() => {
+    if (fundingSource !== 'employee_advance' || !fundingEmployeeId) {
+      setFundingAdvances([])
+      setFundingAdvanceId('')
+      return
+    }
+    let cancelled = false
+    void api
+      .get<FundingAdvance[]>('/finance/advances', { params: { employee_id: fundingEmployeeId } })
+      .then((res) => {
+        if (cancelled) return
+        const settleable = res.data.filter((a) =>
+          ['approved', 'partially_settled'].includes(a.status),
+        )
+        setFundingAdvances(settleable)
+        // No ambiguity to ask about when there's only one — pre-fill it,
+        // but only if nothing's been picked yet.
+        if (settleable.length === 1) {
+          setFundingAdvanceId((prev) => prev || settleable[0].id)
+        }
+      })
+      .catch(() => {
+        /* handled */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fundingSource, fundingEmployeeId])
+
   const vendors = vendorsData?.vendors ?? []
   const analytics = analyticsData?.analyticAccounts ?? []
   const products: { id: string; sku: string; name: string; uom: string }[] =
@@ -128,10 +174,14 @@ export default function PurchaseOrderForm() {
     first_name: string
     last_name: string
     employee_number: string
+    user_id?: string | null
   }[] = employeesData?.employees ?? []
-  const branches: { id: string; name: string; isActive: boolean }[] = (
-    branchesData?.companyBranches ?? []
-  ).filter((b: { isActive: boolean }) => b.isActive)
+  const branches: {
+    id: string
+    name: string
+    isActive: boolean
+    defaultProcurementUserId?: string | null
+  }[] = (branchesData?.companyBranches ?? []).filter((b: { isActive: boolean }) => b.isActive)
 
   const productOptions = [
     { value: '', label: 'Custom item' },
@@ -171,6 +221,21 @@ export default function PurchaseOrderForm() {
       setForm((f) => ({ ...f, analytic_account_id: mo.project_analytic_account_id }))
     }
   }, [linkedMoId, mos])
+
+  // Employee-advance POs only: default "Employee" itself to the selected
+  // branch's existing default procurement buyer — the same person is who's
+  // whose advance funds the PO and who'll tick each line bought once
+  // approved, not a separate pick. Only fills an empty picker, so a manual
+  // choice is never overwritten.
+  useEffect(() => {
+    if (fundingSource !== 'employee_advance' || !form.branch_id || fundingEmployeeId) return
+    const branch = branches.find((b) => b.id === form.branch_id)
+    if (!branch?.defaultProcurementUserId) return
+    const match = employees.find((e) => e.user_id === branch.defaultProcurementUserId)
+    if (match) {
+      setFundingEmployeeId(match.id)
+    }
+  }, [fundingSource, form.branch_id, branches, employees, fundingEmployeeId])
 
   const subtotal = lines.reduce(
     (s, l) => s + parseFloat(l.qty || '0') * parseFloat(l.unit_price || '0'),
@@ -216,6 +281,10 @@ export default function PurchaseOrderForm() {
       addToast({ type: 'error', message: 'Please select a branch' })
       return
     }
+    if (fundingSource === 'employee_advance' && !fundingAdvanceId) {
+      addToast({ type: 'error', message: 'Please select an advance to fund this PO' })
+      return
+    }
     try {
       const input = {
         vendor_id: form.vendor_id || undefined,
@@ -230,6 +299,8 @@ export default function PurchaseOrderForm() {
         branch_id: form.branch_id || undefined,
         linkedProjectId: purpose === 'project' ? linkedProjectId || undefined : undefined,
         linkedMoId: purpose === 'manufacturing' ? linkedMoId || undefined : undefined,
+        fundingSource,
+        fundingAdvanceId: fundingSource === 'employee_advance' ? fundingAdvanceId : undefined,
         lines: lines
           .filter((l) => l.description || l.product_id)
           .map((l) => ({
@@ -452,7 +523,81 @@ export default function PurchaseOrderForm() {
                 </option>
               ))}
             </Select>
+            {branches.length > 0 && (
+              <Select
+                label="Branch *"
+                value={form.branch_id}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, branch_id: e.target.value }))
+                }}
+              >
+                <option value="">Select branch…</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
+
+          {/* Funding Source row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '16px',
+            }}
+          >
+            <Select
+              label="Funding Source"
+              value={fundingSource}
+              onChange={(e) => {
+                setFundingSource(e.target.value as 'vendor_ap' | 'employee_advance')
+              }}
+            >
+              <option value="vendor_ap">Vendor (Accounts Payable)</option>
+              <option value="employee_advance">Employee Advance</option>
+            </Select>
+            {fundingSource === 'employee_advance' && (
+              <>
+                <SearchableSelect
+                  label="Employee"
+                  value={fundingEmployeeId}
+                  onChange={(v) => {
+                    setFundingEmployeeId(v)
+                  }}
+                  options={employeeOptions}
+                  placeholder="Search employee…"
+                  minDropdownWidth={320}
+                />
+                <Select
+                  label="Advance *"
+                  value={fundingAdvanceId}
+                  onChange={(e) => {
+                    setFundingAdvanceId(e.target.value)
+                  }}
+                >
+                  <option value="">
+                    {fundingEmployeeId ? 'Select advance…' : 'Select an employee first'}
+                  </option>
+                  {fundingAdvances.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.advance_number} — {Number(a.outstanding_amount).toLocaleString()}{' '}
+                      {a.currency_code} outstanding
+                    </option>
+                  ))}
+                </Select>
+              </>
+            )}
+          </div>
+          {fundingSource === 'employee_advance' && (
+            <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
+              Employee defaults to this branch's assigned procurement buyer — pick a branch above
+              to fill it in, or search for someone else. Finance will assign a GL account and cost
+              center to each line during audit review, so no need to pick those here.
+            </p>
+          )}
 
           {/* Row 3: Analytic Account + Expected Delivery + FX Rate */}
           <div
@@ -477,22 +622,6 @@ export default function PurchaseOrderForm() {
                 </option>
               ))}
             </Select>
-            {branches.length > 0 && (
-              <Select
-                label="Branch *"
-                value={form.branch_id}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, branch_id: e.target.value }))
-                }}
-              >
-                <option value="">Select branch…</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </Select>
-            )}
             <Input
               label="Expected Delivery"
               type="date"

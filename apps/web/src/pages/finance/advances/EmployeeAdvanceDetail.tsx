@@ -48,6 +48,7 @@ interface Advance {
   employee_name: string
   purpose: string | null
   project_id: string | null
+  cost_center_id: string | null
   amount: number
   settled_amount: number
   returned_amount: number
@@ -87,6 +88,19 @@ interface Category {
   name: string
   gl_account_id: string | null
   is_project_related: boolean
+}
+interface PendingPOLine {
+  id: string
+  description: string
+  total_price: number
+  po_id: string
+  po_number: string
+  account_code: string | null
+  account_name: string | null
+  cost_center_code: string | null
+  cost_center_name: string | null
+  project_code: string | null
+  project_name: string | null
 }
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
@@ -149,6 +163,8 @@ export default function EmployeeAdvanceDetail() {
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [showReject, setShowReject] = useState(false)
+  const [showApprove, setShowApprove] = useState(false)
+  const [approveCostCenterId, setApproveCostCenterId] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [showSettlementForm, setShowSettlementForm] = useState(false)
   const [lines, setLines] = useState<LineForm[]>([emptyLine()])
@@ -167,12 +183,15 @@ export default function EmployeeAdvanceDetail() {
   const [savingReturn, setSavingReturn] = useState(false)
   const [showVoid, setShowVoid] = useState(false)
   const [voidReason, setVoidReason] = useState('')
+  const [pendingPOLines, setPendingPOLines] = useState<PendingPOLine[]>([])
+  const [selectedPOLineIds, setSelectedPOLineIds] = useState<Set<string>>(new Set())
+  const [bundling, setBundling] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
     setLoading(true)
     try {
-      const [advRes, glRes, ccRes, projRes, catRes, ledgerRes] = await Promise.all([
+      const [advRes, glRes, ccRes, projRes, catRes, ledgerRes, poLinesRes] = await Promise.all([
         api.get<Advance>(`/finance/advances/${id}`),
         api.get<GLAccount[]>('/finance/accounts?limit=500'),
         api.get<CostCenter[]>('/finance/cost-centers'),
@@ -181,6 +200,7 @@ export default function EmployeeAdvanceDetail() {
         }),
         api.get<Category[]>('/finance/expense-claims/categories'),
         api.get<LedgerEntry[]>(`/finance/advances/${id}/ledger`),
+        api.get<PendingPOLine[]>(`/finance/advances/${id}/pending-po-lines`),
       ])
       setAdvance(advRes.data)
       setGlAccounts(glRes.data)
@@ -188,6 +208,8 @@ export default function EmployeeAdvanceDetail() {
       setProjects(projRes.data.data)
       setCategories(catRes.data)
       setLedger(ledgerRes.data)
+      setPendingPOLines(poLinesRes.data)
+      setSelectedPOLineIds(new Set())
     } catch {
       /* handled */
     } finally {
@@ -331,6 +353,31 @@ export default function EmployeeAdvanceDetail() {
     }
   }
 
+  function togglePOLine(lineId: string) {
+    setSelectedPOLineIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(lineId)) next.delete(lineId)
+      else next.add(lineId)
+      return next
+    })
+  }
+
+  async function handleBundleSettlement() {
+    if (!id || selectedPOLineIds.size === 0) return
+    setBundling(true)
+    try {
+      await api.post('/finance/advances/settlements', {
+        advance_id: id,
+        po_line_ids: Array.from(selectedPOLineIds),
+      })
+      void load()
+    } catch {
+      /* handled */
+    } finally {
+      setBundling(false)
+    }
+  }
+
   const inputStyle = {
     background: theme.bgSurface,
     border: `1px solid ${theme.border}`,
@@ -363,6 +410,9 @@ export default function EmployeeAdvanceDetail() {
     : advance.status
   const stepIdx = FLOW.indexOf(stepStatus)
   const totalLines = lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)
+  const selectedPOTotal = pendingPOLines
+    .filter((l) => selectedPOLineIds.has(l.id))
+    .reduce((s, l) => s + Number(l.total_price), 0)
 
   const lineFields: LineItemField<LineForm>[] = [
     {
@@ -538,7 +588,15 @@ export default function EmployeeAdvanceDetail() {
                 >
                   Reject
                 </Button>
-                <Button variant="primary" size="sm" onClick={() => void act('approve')} disabled={acting}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setApproveCostCenterId(advance.cost_center_id ?? '')
+                    setShowApprove(true)
+                  }}
+                  disabled={acting}
+                >
                   Approve &amp; Issue
                 </Button>
               </>
@@ -743,6 +801,125 @@ export default function EmployeeAdvanceDetail() {
 
         {/* Settlements table */}
         <div>
+          {canSettle && pendingPOLines.length > 0 && (
+            <Card padding="none" style={{ marginBottom: '16px' }}>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: `1px solid ${theme.border}`,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: theme.textMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  Pending PO Line Items ({pendingPOLines.length})
+                </p>
+                <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                  Completed POs funded by this advance, awaiting settlement
+                </span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ background: theme.bgSurface, borderBottom: `1px solid ${theme.border}` }}>
+                    {['', 'PO #', 'Project', 'Description', 'Account', 'Cost Center', 'Amount'].map(
+                      (h, i) => (
+                        <th
+                          key={h}
+                          style={{
+                            padding: '8px 12px',
+                            textAlign: i === 6 ? 'right' : 'left',
+                            color: theme.textMuted,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {h}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingPOLines.map((l) => (
+                    <tr
+                      key={l.id}
+                      onClick={() => {
+                        togglePOLine(l.id)
+                      }}
+                      style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}
+                    >
+                      <td style={{ padding: '8px 12px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedPOLineIds.has(l.id)}
+                          onChange={() => {
+                            togglePOLine(l.id)
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                          }}
+                        />
+                      </td>
+                      <td style={{ padding: '8px 12px', color: theme.accent, fontFamily: 'monospace', fontSize: '11px' }}>
+                        {l.po_number}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
+                        {l.project_code ? (
+                          `${l.project_code} · ${l.project_name ?? ''}`
+                        ) : (
+                          <span style={{ fontStyle: 'italic' }}>General</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: theme.textSecondary }}>{l.description}</td>
+                      <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
+                        {l.account_code ? `${l.account_code} · ${l.account_name ?? ''}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: theme.textSecondary, fontSize: '11px' }}>
+                        {l.cost_center_code ? `${l.cost_center_code} · ${l.cost_center_name ?? ''}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                        <AmountDisplay amount={Number(l.total_price)} currency={advance.currency_code} size="sm" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  borderTop: `1px solid ${theme.border}`,
+                }}
+              >
+                <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {selectedPOLineIds.size} selected · Total:{' '}
+                  <span style={{ fontFamily: 'monospace', color: theme.accent, fontWeight: 700 }}>
+                    {selectedPOTotal.toLocaleString()} {advance.currency_code}
+                  </span>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => void handleBundleSettlement()}
+                  disabled={bundling || selectedPOLineIds.size === 0}
+                >
+                  {bundling ? 'Creating...' : 'Create Settlement from Selected'}
+                </Button>
+              </div>
+            </Card>
+          )}
+
           <Card padding="none">
             <div style={{ padding: '12px 16px', borderBottom: `1px solid ${theme.border}` }}>
               <p
@@ -1013,6 +1190,75 @@ export default function EmployeeAdvanceDetail() {
       </div>
 
       {/* Reject advance modal */}
+      {/* Approve advance modal */}
+      {showApprove && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <Card padding="lg" style={{ width: '420px' }}>
+            <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
+              Approve &amp; Issue Advance
+            </h3>
+            {advance.purpose && (
+              <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
+                <strong>Purpose:</strong> {advance.purpose}
+              </p>
+            )}
+            <div style={{ marginBottom: '4px' }}>
+              <label style={labelStyle}>Cost Center (optional)</label>
+              <select
+                style={inputStyle}
+                value={approveCostCenterId}
+                onChange={(e) => {
+                  setApproveCostCenterId(e.target.value)
+                }}
+              >
+                <option value="">— Not set —</option>
+                {costCenters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} · {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p style={{ fontSize: '11px', color: theme.textMuted, margin: '4px 0 0' }}>
+              Classify this advance now that you know what it's for — it's informational at
+              issuance, but helps track which department the spend belongs to.
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowApprove(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={async () => {
+                  await act('approve', { cost_center_id: approveCostCenterId || undefined })
+                  setShowApprove(false)
+                }}
+                disabled={acting}
+              >
+                Approve &amp; Issue
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {showReject && (
         <div
           style={{

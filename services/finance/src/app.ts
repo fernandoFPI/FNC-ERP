@@ -22,6 +22,7 @@ import { revaluationRouter } from './routes/revaluation.js'
 import { expenseClaimsRouter } from './routes/expense-claims.js'
 import { pettyCashRouter } from './routes/petty-cash.js'
 import { employeeAdvancesRouter } from './routes/employee-advances.js'
+import { advanceConfigRouter } from './routes/advance-config.js'
 
 export function createApp(): import('express').Express {
   const app = express()
@@ -57,6 +58,7 @@ export function createApp(): import('express').Express {
   app.use('/finance/expense-claims', expenseClaimsRouter)
   app.use('/finance/petty-cash', pettyCashRouter)
   app.use('/finance/advances', employeeAdvancesRouter)
+  app.use('/finance/advance-config', advanceConfigRouter)
 
   return app
 }

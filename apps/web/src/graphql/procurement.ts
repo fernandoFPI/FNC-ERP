@@ -105,6 +105,10 @@ export const PURCHASE_ORDER_QUERY = gql`
       assigned_receiver_name
       branch_id
       branch_name
+      funding_source
+      funding_advance_id
+      funding_advance_number
+      funding_employee_name
       lines {
         id
         product_id
@@ -116,6 +120,12 @@ export const PURCHASE_ORDER_QUERY = gql`
         uom
         qty_received
         qty_from_stock
+        account_id
+        account_code
+        account_name
+        cost_center_id
+        cost_center_name
+        advance_settlement_id
       }
       receipts {
         id
@@ -309,6 +319,14 @@ export const PO_LIFECYCLE_QUERY = gql`
       linkedMoId
       projectCode
       projectName
+      branch_id
+      branch_name
+      funding_source
+      funding_advance_id
+      funding_advance_number
+      funding_employee_name
+      assigned_buyer_user_id
+      assigned_buyer_name
       expected_delivery_date
       notes
       created_by_email
@@ -342,6 +360,13 @@ export const PO_LIFECYCLE_QUERY = gql`
         audit_note
         audit_flagged_by_email
         audit_flagged_at
+        account_id
+        account_code
+        account_name
+        cost_center_id
+        cost_center_name
+        advance_settlement_id
+        is_bought
       }
       receipts {
         id
@@ -619,6 +644,33 @@ export const SET_PO_LINE_AUDIT_STATUS = gql`
       id
       audit_status
       audit_note
+    }
+  }
+`
+
+export const SET_PO_LINE_ACCOUNTING = gql`
+  mutation SetPOLineAccounting($poId: ID!, $lineId: ID!, $glAccountId: ID, $costCenterId: ID) {
+    setPOLineAccounting(
+      poId: $poId
+      lineId: $lineId
+      glAccountId: $glAccountId
+      costCenterId: $costCenterId
+    ) {
+      id
+      account_id
+      account_code
+      account_name
+      cost_center_id
+      cost_center_name
+    }
+  }
+`
+
+export const MARK_PO_LINE_BOUGHT = gql`
+  mutation MarkPOLineBought($poId: ID!, $lineId: ID!, $bought: Boolean!) {
+    markPOLineBought(poId: $poId, lineId: $lineId, bought: $bought) {
+      id
+      is_bought
     }
   }
 `

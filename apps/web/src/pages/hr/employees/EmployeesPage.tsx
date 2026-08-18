@@ -176,7 +176,7 @@ export default function EmployeesPage() {
             >
               Export CSV
             </Button>
-            <PermissionGate permission="hr.employees.create" minLevel="edit">
+            <PermissionGate permission="hr.employees.edit" minLevel="edit">
               <Button
                 data-tour="new-employee-btn"
                 variant="primary"

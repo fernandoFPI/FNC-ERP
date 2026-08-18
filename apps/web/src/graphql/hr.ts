@@ -14,6 +14,7 @@ export const EMPLOYEES_QUERY = gql`
       employment_type
       status
       hire_date
+      user_id
     }
   }
 `
@@ -45,6 +46,9 @@ export const EMPLOYEE_QUERY = gql`
       user_id
       linked_user_email
       photo_url
+      advance_control_account_id
+      advance_control_account_code
+      advance_control_account_name
     }
   }
 `

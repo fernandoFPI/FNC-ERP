@@ -130,6 +130,8 @@
     passPOAudit(id: ID!): PurchaseOrder!
     failPOAudit(id: ID!, notes: String): PurchaseOrder!
     setPOLineAuditStatus(poId: ID!, lineId: ID!, auditStatus: String!, auditNote: String): POLine!
+    setPOLineAccounting(poId: ID!, lineId: ID!, glAccountId: ID, costCenterId: ID): POLine!
+    markPOLineBought(poId: ID!, lineId: ID!, bought: Boolean!): POLine!
     completePO(id: ID!, receiptNotes: String): PurchaseOrder!
     deletePO(id: ID!, reason: String): PurchaseOrder!
     adminSetPOStatus(id: ID!, status: String!): PurchaseOrder!
@@ -388,6 +390,9 @@
     linked_user_email: String
     photo_url: String
     is_active: Boolean
+    advance_control_account_id: ID
+    advance_control_account_code: String
+    advance_control_account_name: String
   }
 
   # Prefill source for "Add existing person" on the employee create form —
@@ -1497,6 +1502,7 @@
 
   extend type JournalEntry {
     source_type: String
+    source_id: ID
     total_debit: String
     total_credit: String
     payment_currency: String
@@ -1808,6 +1814,13 @@
     audit_note: String
     audit_flagged_by_email: String
     audit_flagged_at: String
+    account_id: ID
+    account_code: String
+    account_name: String
+    cost_center_id: ID
+    cost_center_name: String
+    advance_settlement_id: ID
+    is_bought: Boolean
   }
 
   type POReceiptLine {
@@ -1883,6 +1896,12 @@
     projectName: String
     branch_id: ID
     branch_name: String
+    funding_source: String
+    funding_advance_id: ID
+    funding_advance_number: String
+    funding_employee_name: String
+    assigned_buyer_user_id: ID
+    assigned_buyer_name: String
     lines: [POLine!]
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]
@@ -1913,6 +1932,8 @@
     qty: Float!
     unit_price: Float!
     uom: String
+    glAccountId: ID
+    costCenterId: ID
   }
 
   input POInput {
@@ -1929,6 +1950,8 @@
     linkedProjectId: ID
     linkedMoId: ID
     branch_id: ID
+    fundingSource: String
+    fundingAdvanceId: ID
     lines: [POLineInput!]!
   }
 
@@ -3516,6 +3539,7 @@
     companyEmailFrom: String
     companyEmailSignature: String
     setupCompleted: Boolean!
+    advanceControlParentAccountId: ID
   }
 
   type CompanyDetail {
@@ -3637,6 +3661,7 @@
     default_wht_rate: Float
     company_email_from: String
     company_email_signature: String
+    advance_control_parent_account_id: ID
   }
 
   input AssignRoleInput {

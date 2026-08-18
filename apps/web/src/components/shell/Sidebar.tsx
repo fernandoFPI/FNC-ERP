@@ -888,6 +888,16 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['hr.recharge.view'],
       },
       {
+        label: 'My Advances',
+        icon: <Icon name="dollar-sign" />,
+        path: '/my-advances',
+        // No permKeys — reachable by any authenticated user, matching
+        // /my-advances not being nested under the finance.accounts.view-
+        // gated /finance route (see router/index.tsx). Requesting an
+        // advance only requires a linked employee record, checked
+        // server-side and surfaced in-page, not gated by a permission.
+      },
+      {
         label: 'Payroll',
         icon: <Icon name="credit-card" />,
         path: '/payroll',

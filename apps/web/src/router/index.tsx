@@ -34,6 +34,7 @@ const APDashboard = lazy(() => import('../pages/finance/ap/APDashboard'))
 const VendorInvoiceDetail = lazy(() => import('../pages/finance/ap/VendorInvoiceDetail'))
 const VendorInvoiceForm = lazy(() => import('../pages/finance/ap/VendorInvoiceForm'))
 const CostCentersPage = lazy(() => import('../pages/finance/cost-centers/CostCentersPage'))
+const AdvanceConfigPage = lazy(() => import('../pages/finance/advance-config/AdvanceConfigPage'))
 const AnalyticAccountsPage = lazy(
   () => import('../pages/finance/analytic-accounts/AnalyticAccountsPage'),
 )
@@ -65,6 +66,7 @@ const EmployeeAdvanceDetail = lazy(() => import('../pages/finance/advances/Emplo
 const EmployeeAdvanceDashboard = lazy(
   () => import('../pages/finance/advances/EmployeeAdvanceDashboard'),
 )
+const MyAdvancesPage = lazy(() => import('../pages/finance/advances/MyAdvancesPage'))
 const PettyCashPage = lazy(() => import('../pages/finance/petty-cash/PettyCashPage'))
 const ExpenseCategoriesPage = lazy(
   () => import('../pages/finance/categories/ExpenseCategoriesPage'),
@@ -347,6 +349,12 @@ export const router = createBrowserRouter([
       { path: '/', element: <Navigate to="/dashboard" replace /> },
       { path: '/dashboard', element: withSuspense(<DashboardPage />) },
       { path: '/notifications', element: withSuspense(<NotificationsPage />) },
+      // My Advances — deliberately NOT nested under /finance, since that
+      // parent route is gated by finance.accounts.view and would block any
+      // regular employee submitting their own advance request (this is
+      // meant to be reachable by any employee with a linked employee
+      // record, same reasoning as /recharge below).
+      { path: '/my-advances', element: withSuspense(<MyAdvancesPage />) },
 
       // Finance
       {
@@ -406,6 +414,10 @@ export const router = createBrowserRouter([
           {
             path: 'cost-centers',
             element: withPerm('finance.cost_centers.view', <CostCentersPage />),
+          },
+          {
+            path: 'advance-config',
+            element: withPerm('finance.accounts.edit', <AdvanceConfigPage />, 'edit'),
           },
           {
             path: 'analytic-accounts',

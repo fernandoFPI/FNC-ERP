@@ -183,6 +183,7 @@ function buildEditChangeSummary(changes: EditChanges): string {
 const POST_APPROVAL_PO_STATUSES = [
   'approved',
   'ready_to_issue',
+  'items_bought',
   'goods_received',
   'finance_audit',
   'invoiced',
@@ -301,7 +302,12 @@ async function poTransition(
 
 async function getPOForReturn(poId: string): Promise<Record<string, unknown>> {
   const r = await query(
-    `SELECT po.*, v.name AS vendor_name FROM purchase_orders po LEFT JOIN vendors v ON v.id=po.vendor_id WHERE po.id=$1`,
+    `SELECT po.*, v.name AS vendor_name,
+            fadv.advance_number AS funding_advance_number, fadv.employee_name AS funding_employee_name
+     FROM purchase_orders po
+     LEFT JOIN vendors v ON v.id=po.vendor_id
+     LEFT JOIN employee_advances fadv ON fadv.id=po.funding_advance_id
+     WHERE po.id=$1`,
     [poId],
   )
   if (!r.rows[0]) throw new Error('PO not found')
@@ -331,7 +337,7 @@ async function postPOCompletionJournal(
 ): Promise<void> {
   const poRes = await client.query(
     `SELECT po.id, po.po_number, po.project_id, po.total_amount, po.currency_code,
-            po.fx_rate, p.analytic_account_id, p.company_id AS project_company_id
+            po.fx_rate, po.funding_source, p.analytic_account_id, p.company_id AS project_company_id
      FROM purchase_orders po
      LEFT JOIN projects p ON p.id = po.project_id
      WHERE po.id = $1`,
@@ -339,6 +345,10 @@ async function postPOCompletionJournal(
   )
   const po = poRes.rows[0] as Record<string, unknown> | undefined
   if (!po?.project_id || !po.analytic_account_id) return // not a project PO or no analytic account
+  // Employee-advance-funded POs settle through advance settlements
+  // (services/finance/src/routes/employee-advances.ts), not a vendor AP
+  // entry — posting one here would be a phantom payable no one will ever pay.
+  if (po.funding_source === 'employee_advance') return
   const totalAmount = parseFloat(String(po.total_amount ?? 0))
   if (totalAmount <= 0) return
 
@@ -3187,6 +3197,7 @@ export const resolvers = {
                -- store_keeper position, so it belongs alongside their other
                -- owner-actioned statuses here rather than a position lookup.
                (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
+               OR (po.status = 'items_bought' AND po.assigned_buyer_user_id = $2)
                OR (po.status = 'store_pricing' AND EXISTS (
                  SELECT 1 FROM po_position_assignments ppa
                  WHERE ppa.employee_id = $3 AND ppa.position = 'store_pricing' AND ppa.is_active = true
@@ -3209,7 +3220,7 @@ export const resolvers = {
                OR ($6 = true AND po.status IN ('finance_audit','invoiced'))
                OR ($5 = 'system_admin' AND po.status IN (
                  'inventory_check','store_pricing','market_pricing',
-                 'price_verification','pending_approval','goods_received',
+                 'price_verification','pending_approval','items_bought','goods_received',
                  'finance_audit','invoiced'
                ))
              )
@@ -3288,10 +3299,14 @@ export const resolvers = {
                 (e.status = 'active') AS is_active,
                 d.name AS department_name,
                 u.email AS linked_user_email,
-                u.profile_picture AS photo_url
+                u.profile_picture AS photo_url,
+                e.advance_control_account_id,
+                adv_coa.code AS advance_control_account_code,
+                adv_coa.name AS advance_control_account_name
          FROM employees e
          LEFT JOIN departments d ON d.id = e.department_id
          LEFT JOIN users u ON u.id = e.user_id
+         LEFT JOIN chart_of_accounts adv_coa ON adv_coa.id = e.advance_control_account_id
          WHERE e.id = $1 AND e.company_id = $2`,
         [args.id, ctx.auth.companyId],
       )
@@ -5812,7 +5827,9 @@ export const resolvers = {
                     po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
                     proj.code AS "projectCode", proj.name AS "projectName",
                     cb.name AS branch_name,
-                    COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name
+                    COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name,
+                    fadv.advance_number AS funding_advance_number, fadv.employee_name AS funding_employee_name,
+                    COALESCE(NULLIF(TRIM(bu.first_name || ' ' || bu.last_name), ''), bu.email) AS assigned_buyer_name
              FROM purchase_orders po
              LEFT JOIN vendors v ON v.id=po.vendor_id
              LEFT JOIN users u ON u.id=po.created_by
@@ -5821,6 +5838,8 @@ export const resolvers = {
              LEFT JOIN employees re ON re.id=po.assigned_receiver_id
              LEFT JOIN projects proj ON proj.id=po.project_id
              LEFT JOIN company_branches cb ON cb.id=po.branch_id
+             LEFT JOIN employee_advances fadv ON fadv.id=po.funding_advance_id
+             LEFT JOIN users bu ON bu.id=po.assigned_buyer_user_id
              WHERE po.id=$1 AND po.company_id=$2`,
             [args.id, ctx.auth.companyId],
           ),
@@ -5835,12 +5854,17 @@ export const resolvers = {
                     sl.company_id AS source_company_id, sc.name AS source_company_name,
                     sb.average_cost AS source_average_cost,
                     pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
-                    pol.line_number, p.name AS product_name
+                    pol.line_number, p.name AS product_name,
+                    pol.account_id, coa.code AS account_code, coa.name AS account_name,
+                    pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
+                    pol.is_bought
              FROM po_lines pol
              LEFT JOIN products p ON p.id=pol.product_id
              LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
              LEFT JOIN companies sc ON sc.id=sl.company_id
              LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
+             LEFT JOIN chart_of_accounts coa ON coa.id=pol.account_id
+             LEFT JOIN cost_centers cc ON cc.id=pol.cost_center_id
              WHERE pol.po_id=$1 ORDER BY pol.line_number`,
             [args.id],
           ),
@@ -5947,6 +5971,7 @@ export const resolvers = {
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
                (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected'))
+               OR (po.status='items_bought' AND po.assigned_buyer_user_id=$2)
                OR (po.status='inventory_check' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
@@ -5969,7 +5994,7 @@ export const resolvers = {
                OR (po.status IN ('finance_audit','invoiced') AND $6=true)
                OR ($5='system_admin' AND po.status IN (
                      'inventory_check','store_pricing','market_pricing',
-                     'price_verification','pending_approval','goods_received',
+                     'price_verification','pending_approval','items_bought','goods_received',
                      'finance_audit','invoiced'))
              )
            ORDER BY po.created_at DESC`,
@@ -7639,12 +7664,16 @@ export const resolvers = {
           linkedProjectId?: string
           linkedMoId?: string
           branch_id?: string
+          fundingSource?: string
+          fundingAdvanceId?: string
           lines: {
             product_id?: string
             description?: string
             qty: number
             unit_price: number
             uom?: string
+            glAccountId?: string
+            costCenterId?: string
           }[]
         }
       },
@@ -7653,6 +7682,37 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
       const i = args.input
+      // The buyer who'll tick each line bought (items_bought stage) is the
+      // same person the advance belongs to — not a separate pick — resolved
+      // straight from the chosen advance's employee below, once validated.
+      let resolvedBuyerUserId: string | null = null
+      if (i.fundingSource === 'employee_advance') {
+        if (!i.fundingAdvanceId) {
+          throw new Error('An advance must be selected when funding source is Employee Advance')
+        }
+        // GL account + cost center are deliberately NOT required here —
+        // the person creating this PO is usually the employee spending the
+        // advance, not someone who knows accounting codes. Finance assigns
+        // them per line during the finance_audit review instead
+        // (setPOLineAccounting), and passPOAudit blocks completion until
+        // every line has both set.
+        const advCheck = await query(
+          `SELECT ea.status, ea.currency_code, e.user_id AS employee_user_id
+           FROM employee_advances ea
+           LEFT JOIN employees e ON e.id = ea.employee_id
+           WHERE ea.id=$1 AND ea.company_id=$2`,
+          [i.fundingAdvanceId, ctx.auth.companyId],
+        )
+        const adv = advCheck.rows[0] as Record<string, unknown> | undefined
+        if (!adv) throw new Error('Selected advance not found')
+        if (!['approved', 'partially_settled'].includes(adv.status as string)) {
+          throw new Error('Selected advance is not in a settleable state')
+        }
+        if (adv.currency_code !== (i.currency_code ?? 'IQD')) {
+          throw new Error('PO currency must match the selected advance’s currency')
+        }
+        resolvedBuyerUserId = (adv.employee_user_id as string | null) ?? null
+      }
       if (i.linkedProjectId) {
         const projCheck = await query(
           `SELECT status, is_rfq FROM projects WHERE id=$1 AND company_id=$2`,
@@ -7678,8 +7738,8 @@ export const resolvers = {
             ? i.priority
             : 'low'
           const po = await client.query(
-            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14) RETURNING *`,
+            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,funding_source,funding_advance_id,assigned_buyer_user_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18,$19,$20) RETURNING *`,
             [
               ctx.auth!.companyId,
               poNum,
@@ -7698,13 +7758,16 @@ export const resolvers = {
               i.assigned_receiver_id ?? null,
               priority,
               i.branch_id ?? null,
+              i.fundingSource === 'employee_advance' ? 'employee_advance' : 'vendor_ap',
+              i.fundingAdvanceId ?? null,
+              i.fundingSource === 'employee_advance' ? resolvedBuyerUserId : null,
             ],
           )
           const poRow = po.rows[0] as Record<string, unknown>
           for (let idx = 0; idx < i.lines.length; idx++) {
             const l = i.lines[idx]
             await client.query(
-              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom,account_id,cost_center_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
               [
                 poRow.id,
                 l.product_id ?? null,
@@ -7714,6 +7777,8 @@ export const resolvers = {
                 l.unit_price,
                 l.qty * l.unit_price,
                 l.uom ?? 'unit',
+                l.glAccountId ?? null,
+                l.costCenterId ?? null,
               ],
             )
           }
@@ -20062,6 +20127,7 @@ function companyRowToDetail(row: Record<string, unknown>) {
           companyEmailFrom: row.company_email_from,
           companyEmailSignature: row.company_email_signature,
           setupCompleted: row.config_setup_completed ?? false,
+          advanceControlParentAccountId: row.advance_control_parent_account_id,
         }
       : null
   return {
@@ -21161,7 +21227,7 @@ const phase5QueryResolvers = {
               sc.default_currency, sc.default_payment_terms_days, sc.default_po_currency,
               sc.income_tax_enabled, sc.social_security_rate, sc.employer_social_security_rate,
               sc.default_wht_rate,
-              sc.company_email_from, sc.company_email_signature, sc.setup_completed as config_setup_completed,
+              sc.company_email_from, sc.company_email_signature, sc.advance_control_parent_account_id, sc.setup_completed as config_setup_completed,
               (SELECT COUNT(*) FROM user_company_roles ucr WHERE ucr.company_id=c.id AND ucr.is_active=true) as user_count
        FROM companies c
        LEFT JOIN system_configuration sc ON sc.company_id = c.id
@@ -21179,7 +21245,7 @@ const phase5QueryResolvers = {
               sc.default_currency, sc.default_payment_terms_days, sc.default_po_currency,
               sc.income_tax_enabled, sc.social_security_rate, sc.employer_social_security_rate,
               sc.default_wht_rate,
-              sc.company_email_from, sc.company_email_signature, sc.setup_completed as config_setup_completed,
+              sc.company_email_from, sc.company_email_signature, sc.advance_control_parent_account_id, sc.setup_completed as config_setup_completed,
               (SELECT COUNT(*) FROM user_company_roles ucr WHERE ucr.company_id=c.id AND ucr.is_active=true) as user_count
        FROM companies c
        LEFT JOIN system_configuration sc ON sc.company_id = c.id
@@ -23846,6 +23912,12 @@ const phase5MutationResolvers = {
       const fullPo = fullPoRes.rows[0] as Record<string, unknown>
       await issueStockForPOLines(client, fullPo, auth.companyId, auth.userId)
       await poTransition(client, args.id, 'pending_approval', 'approved', 'approve', auth)
+      // Employee-advance-funded POs skip the vendor goods-receiving flow —
+      // the employee already bought the items themselves — and go straight
+      // into items_bought for the assigned buyer to tick each line bought.
+      if (fullPo.funding_source === 'employee_advance') {
+        await poTransition(client, args.id, 'approved', 'items_bought', 'start_buying', auth)
+      }
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -23989,6 +24061,7 @@ const phase5MutationResolvers = {
       'pending_approval',
       'approved',
       'ready_to_issue',
+      'items_bought',
       'goods_received',
       'finance_audit',
       'invoiced',
@@ -24068,7 +24141,7 @@ const phase5MutationResolvers = {
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to pass audit')
     const poRow = await query(
-      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      `SELECT status, organizer_id, po_number, funding_source FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
@@ -24081,6 +24154,18 @@ const phase5MutationResolvers = {
     const flagged = parseInt(String(flaggedRes.rows[0]?.c ?? '0'))
     if (flagged > 0)
       throw new Error(`Cannot pass audit: ${flagged} line${flagged > 1 ? 's are' : ' is'} flagged`)
+    if (poRow.rows[0].funding_source === 'employee_advance') {
+      const unclassifiedRes = await query(
+        `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND (account_id IS NULL OR cost_center_id IS NULL)`,
+        [args.id],
+      )
+      const unclassified = parseInt(String(unclassifiedRes.rows[0]?.c ?? '0'))
+      if (unclassified > 0) {
+        throw new Error(
+          `Cannot pass audit: ${unclassified} line${unclassified > 1 ? 's need' : ' needs'} a GL account and cost center assigned`,
+        )
+      }
+    }
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -24185,6 +24270,95 @@ const phase5MutationResolvers = {
     )
     if (!result.rows[0]) throw new Error('PO line not found')
     return result.rows[0]
+  },
+
+  // GL account + cost center classification for advance-funded PO lines,
+  // done by finance during the audit review — not asked of the employee
+  // creating the PO, since they usually have no reason to know accounting
+  // codes. Same finance_audit-only window as setPOLineAuditStatus above.
+  setPOLineAccounting: async (
+    _: unknown,
+    args: { poId: string; lineId: string; glAccountId?: string; costCenterId?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
+      throw new Error('Finance approval permission required to classify PO lines')
+    const poRow = await query(`SELECT status, company_id FROM purchase_orders WHERE id=$1`, [
+      args.poId,
+    ])
+    if (!poRow.rows[0]) throw new Error('PO not found')
+    if (poRow.rows[0].status !== 'finance_audit')
+      throw new Error('PO must be in finance_audit status to classify lines')
+    const result = await query(
+      `UPDATE po_lines
+          SET account_id = $1, cost_center_id = $2
+        WHERE id=$3 AND po_id=$4
+       RETURNING id, account_id, cost_center_id,
+         (SELECT code FROM chart_of_accounts WHERE id=$1) AS account_code,
+         (SELECT name FROM chart_of_accounts WHERE id=$1) AS account_name,
+         (SELECT code FROM cost_centers WHERE id=$2) AS cost_center_code,
+         (SELECT name FROM cost_centers WHERE id=$2) AS cost_center_name`,
+      [args.glAccountId ?? null, args.costCenterId ?? null, args.lineId, args.poId],
+    )
+    if (!result.rows[0]) throw new Error('PO line not found')
+    return result.rows[0]
+  },
+
+  // Employee-advance-funded POs only: the assigned buyer ticks each line as
+  // bought while the PO sits in items_bought (see approvePO, which chains
+  // straight into this status for advance-funded POs). Ticking the last
+  // unbought line auto-advances the PO to goods_received, same pattern as
+  // recordReceipt's auto-transition on first receipt for vendor-AP POs.
+  markPOLineBought: async (
+    _: unknown,
+    args: { poId: string; lineId: string; bought: boolean },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const poRow = await query(
+      `SELECT status, company_id, assigned_buyer_user_id FROM purchase_orders WHERE id=$1`,
+      [args.poId],
+    )
+    if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
+      throw new Error('PO not found')
+    if (poRow.rows[0].status !== 'items_bought')
+      throw new Error('PO must be in items_bought status to mark lines as bought')
+    const isAdmin = isAdminGW(auth.role)
+    if (!isAdmin && poRow.rows[0].assigned_buyer_user_id !== auth.userId)
+      throw new Error('Only the assigned buyer can mark items bought on this PO')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await client.query(
+        `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
+        [args.bought, args.lineId, args.poId],
+      )
+      if (!result.rows[0]) throw new Error('PO line not found')
+      const remaining = await client.query(
+        `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND is_bought=false`,
+        [args.poId],
+      )
+      if (parseInt(String(remaining.rows[0]?.c ?? '0')) === 0) {
+        await poTransition(
+          client,
+          args.poId,
+          'items_bought',
+          'goods_received',
+          'finish_buying',
+          auth,
+        )
+      }
+      await client.query('COMMIT')
+      return result.rows[0]
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
   },
 
   completePO: async (_: unknown, args: { id: string; receiptNotes?: string }, ctx: GQLContext) => {
@@ -25311,6 +25485,7 @@ const phase5MutationResolvers = {
       default_wht_rate: 'default_wht_rate',
       company_email_from: 'company_email_from',
       company_email_signature: 'company_email_signature',
+      advance_control_parent_account_id: 'advance_control_parent_account_id',
     }
     for (const [key, col] of Object.entries(map)) {
       if (i[key] !== undefined) {
@@ -25342,6 +25517,7 @@ const phase5MutationResolvers = {
       companyEmailFrom: row.company_email_from,
       companyEmailSignature: row.company_email_signature,
       setupCompleted: row.setup_completed ?? false,
+      advanceControlParentAccountId: row.advance_control_parent_account_id,
     }
   },
 

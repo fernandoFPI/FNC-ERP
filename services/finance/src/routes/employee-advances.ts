@@ -1,11 +1,107 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { query, withTransaction, nextDocumentNumber } from '@fnc-erp/db'
+import { query, withTransaction, nextDocumentNumber, type PoolClient } from '@fnc-erp/db'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 import { logAudit } from '@fnc-erp/audit'
 
 export const employeeAdvancesRouter: import('express').Router = Router()
+
+// Thrown by resolveAdvanceAccounts for expected, user-actionable setup gaps
+// (missing Settings config, stale references) — callers catch this
+// specifically to return a clear 422 instead of a generic 500. A bare Error
+// works structurally the same, but its message doesn't survive
+// JSON.stringify (Error has no enumerable own properties), so sendError's
+// `details: err` pattern silently serializes to `{}` on the client.
+export class AdvanceConfigError extends Error {}
+
+// ─── Account auto-resolution ────────────────────────────────────────────────
+//
+// Cash account is picked by currency (one designated account per currency
+// per company, configured once in Settings). Advance control account is a
+// genuine subsidiary-ledger design — every employee gets their OWN GL
+// account, lazily auto-created under a configured parent account the first
+// time they need one, then reused on every advance after that. Both
+// resolutions used to be manual dropdowns on the create-advance form;
+// neither is client-suppliable input anymore.
+async function resolveAdvanceAccounts(
+  client: PoolClient,
+  companyId: string,
+  employeeId: string,
+  currencyCode: string,
+): Promise<{ cashAccountId: string; advanceAccountId: string }> {
+  const cashRes = await client.query(
+    `SELECT account_id FROM company_default_cash_accounts WHERE company_id=$1 AND currency_code=$2`,
+    [companyId, currencyCode],
+  )
+  const cashAccountId = cashRes.rows[0]?.account_id as string | undefined
+  if (!cashAccountId) {
+    throw new AdvanceConfigError(
+      `No default cash account configured for ${currencyCode} — set one in Settings → Finance Config → Advance Automation first`,
+    )
+  }
+
+  const empRes = await client.query(
+    `SELECT advance_control_account_id, employee_number, first_name, last_name
+     FROM employees WHERE id=$1 AND company_id=$2 FOR UPDATE`,
+    [employeeId, companyId],
+  )
+  const emp = empRes.rows[0] as Record<string, unknown> | undefined
+  if (!emp) throw new AdvanceConfigError('Employee not found')
+
+  let advanceAccountId = emp['advance_control_account_id'] as string | null
+  if (!advanceAccountId) {
+    const parentRes = await client.query(
+      `SELECT advance_control_parent_account_id FROM system_configuration WHERE company_id=$1`,
+      [companyId],
+    )
+    const parentAccountId = parentRes.rows[0]?.advance_control_parent_account_id as
+      | string
+      | undefined
+    if (!parentAccountId) {
+      throw new AdvanceConfigError(
+        'No Employee Advances parent account configured — set one in Settings → Finance Config → Advance Automation first',
+      )
+    }
+    const parentAcctRes = await client.query(
+      `SELECT code, account_type, currency_code FROM chart_of_accounts WHERE id=$1 AND company_id=$2`,
+      [parentAccountId, companyId],
+    )
+    const parentAcct = parentAcctRes.rows[0] as Record<string, unknown> | undefined
+    if (!parentAcct) {
+      throw new AdvanceConfigError('Configured Employee Advances parent account no longer exists')
+    }
+    const seqRes = await client.query(
+      `UPDATE system_configuration
+          SET advance_control_next_seq = advance_control_next_seq + 1
+        WHERE company_id=$1
+       RETURNING advance_control_next_seq - 1 AS seq`,
+      [companyId],
+    )
+    const seq = Number(seqRes.rows[0]?.seq ?? 1)
+    const fullName = `${String(emp['first_name'])} ${String(emp['last_name'])}`
+    const code = `${String(parentAcct['code'])}-${String(seq).padStart(2, '0')}`.slice(0, 20)
+    const newAcctRes = await client.query(
+      `INSERT INTO chart_of_accounts (company_id, code, name, account_type, parent_id, currency_code)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        companyId,
+        code,
+        `Employee Advances — ${fullName}`,
+        parentAcct['account_type'],
+        parentAccountId,
+        parentAcct['currency_code'],
+      ],
+    )
+    advanceAccountId = newAcctRes.rows[0]!.id as string
+    await client.query(`UPDATE employees SET advance_control_account_id=$1 WHERE id=$2`, [
+      advanceAccountId,
+      employeeId,
+    ])
+  }
+
+  return { cashAccountId, advanceAccountId }
+}
 
 // ─── Create advance ────────────────────────────────────────────────────────
 
@@ -18,9 +114,15 @@ const advanceSchema = z.object({
   currency_code: z.string().length(3).default('IQD'),
   fx_rate: z.coerce.number().positive().default(1),
   amount: z.coerce.number().positive(),
-  cash_account_id: z.string().uuid(),
-  advance_account_id: z.string().uuid(),
   notes: z.string().optional(),
+})
+
+const selfRequestSchema = z.object({
+  amount: z.coerce.number().positive(),
+  currency_code: z.string().length(3).default('IQD'),
+  purpose: z.string().optional(),
+  project_id: z.string().uuid().optional(),
+  cost_center_id: z.string().uuid().optional(),
 })
 
 // ─── List advances ─────────────────────────────────────────────────────────
@@ -142,42 +244,142 @@ employeeAdvancesRouter.post(
     try {
       const d = advanceSchema.parse(req.body)
       const advanceNumber = await nextDocumentNumber(req.auth!.companyId, 'employee_advance', 'ADV')
-      const r = await query(
-        `INSERT INTO employee_advances
-           (company_id, advance_number, employee_id, employee_name, purpose, project_id, cost_center_id,
-            currency_code, fx_rate, amount, cash_account_id, advance_account_id, notes, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-        [
-          req.auth!.companyId,
-          advanceNumber,
-          d.employee_id,
-          d.employee_name,
-          d.purpose ?? null,
-          d.project_id ?? null,
-          d.cost_center_id ?? null,
-          d.currency_code,
-          d.fx_rate,
-          d.amount,
-          d.cash_account_id,
-          d.advance_account_id,
-          d.notes ?? null,
-          req.auth!.userId,
-        ],
+      const row = await withTransaction(
+        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        async (client) => {
+          const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
+            client,
+            req.auth!.companyId,
+            d.employee_id,
+            d.currency_code,
+          )
+          const r = await client.query(
+            `INSERT INTO employee_advances
+               (company_id, advance_number, employee_id, employee_name, purpose, project_id, cost_center_id,
+                currency_code, fx_rate, amount, cash_account_id, advance_account_id, notes, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+            [
+              req.auth!.companyId,
+              advanceNumber,
+              d.employee_id,
+              d.employee_name,
+              d.purpose ?? null,
+              d.project_id ?? null,
+              d.cost_center_id ?? null,
+              d.currency_code,
+              d.fx_rate,
+              d.amount,
+              cashAccountId,
+              advanceAccountId,
+              d.notes ?? null,
+              req.auth!.userId,
+            ],
+          )
+          return r.rows[0]
+        },
       )
       await logAudit({
         companyId: req.auth!.companyId,
         userId: req.auth!.userId,
         action: 'INSERT',
         tableName: 'employee_advances',
-        recordId: r.rows[0]!['id'] as string,
+        recordId: row!.id as string,
         newValues: { advance_number: advanceNumber, amount: d.amount },
       })
-      sendOk(res, r.rows[0], 201)
+      sendOk(res, row, 201)
     } catch (err) {
+      if (err instanceof AdvanceConfigError) {
+        sendError(res, 422, 'ADVANCE_CONFIG_MISSING', err.message)
+        return
+      }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create advance', err)
     }
   },
 )
+
+// ─── Employee self-service request ──────────────────────────────────────────
+//
+// Mirrors createLeaveRequest's self-service pattern: the caller's own
+// employee record is resolved from the auth token via employees.user_id
+// (nullable, opt-in, linked per-person from EmployeeDetail.tsx), no
+// finance.advances.* permission required — the requireAuth() middleware
+// mounted ahead of this router in app.ts is the only gate. Lands directly
+// as pending_approval; approval is the existing POST /:id/approve, unchanged.
+
+employeeAdvancesRouter.post('/request-self', async (req, res) => {
+  try {
+    const d = selfRequestSchema.parse(req.body)
+    const result = await withTransaction(
+      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      async (client) => {
+        const empRes = await client.query(
+          `SELECT id, first_name, last_name FROM employees WHERE user_id=$1 AND company_id=$2`,
+          [req.auth!.userId, req.auth!.companyId],
+        )
+        const emp = empRes.rows[0] as Record<string, unknown> | undefined
+        if (!emp) return { error: 'NO_EMPLOYEE_LINK' as const }
+
+        const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
+          client,
+          req.auth!.companyId,
+          emp['id'] as string,
+          d.currency_code,
+        )
+        const advanceNumber = await nextDocumentNumber(
+          req.auth!.companyId,
+          'employee_advance',
+          'ADV',
+        )
+        const employeeName = `${emp['first_name'] as string} ${emp['last_name'] as string}`
+        const r = await client.query(
+          `INSERT INTO employee_advances
+             (company_id, advance_number, employee_id, employee_name, purpose, project_id, cost_center_id,
+              currency_code, fx_rate, amount, cash_account_id, advance_account_id, status, submitted_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,'pending_approval',NOW(),$12) RETURNING *`,
+          [
+            req.auth!.companyId,
+            advanceNumber,
+            emp['id'],
+            employeeName,
+            d.purpose ?? null,
+            d.project_id ?? null,
+            d.cost_center_id ?? null,
+            d.currency_code,
+            d.amount,
+            cashAccountId,
+            advanceAccountId,
+            req.auth!.userId,
+          ],
+        )
+        return { advance: r.rows[0] }
+      },
+    )
+    if ('error' in result) {
+      sendError(res, 403, 'NO_EMPLOYEE_LINK', 'No employee record linked to your account')
+      return
+    }
+    const advance = result.advance as Record<string, unknown>
+    await logAudit({
+      companyId: req.auth!.companyId,
+      userId: req.auth!.userId,
+      action: 'INSERT',
+      tableName: 'employee_advances',
+      recordId: advance['id'] as string,
+      newValues: {
+        advance_number: advance['advance_number'],
+        amount: d.amount,
+        self_service: true,
+      },
+    })
+    sendOk(res, advance, 201)
+  } catch (err) {
+    if (err instanceof AdvanceConfigError) {
+      sendError(res, 422, 'ADVANCE_CONFIG_MISSING', err.message)
+      return
+    }
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to submit advance request', err)
+  }
+})
 
 // ─── Update advance (draft only) ────────────────────────────────────────────
 
@@ -199,29 +401,45 @@ employeeAdvancesRouter.put(
         return
       }
       const d = advanceSchema.parse(req.body)
-      const r = await query(
-        `UPDATE employee_advances SET
-           employee_id=$1, employee_name=$2, purpose=$3, project_id=$4, cost_center_id=$5,
-           currency_code=$6, fx_rate=$7, amount=$8, cash_account_id=$9, advance_account_id=$10,
-           notes=$11, updated_at=NOW()
-         WHERE id=$12 RETURNING *`,
-        [
-          d.employee_id,
-          d.employee_name,
-          d.purpose ?? null,
-          d.project_id ?? null,
-          d.cost_center_id ?? null,
-          d.currency_code,
-          d.fx_rate,
-          d.amount,
-          d.cash_account_id,
-          d.advance_account_id,
-          d.notes ?? null,
-          req.params['id'],
-        ],
+      const row = await withTransaction(
+        { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+        async (client) => {
+          const { cashAccountId, advanceAccountId } = await resolveAdvanceAccounts(
+            client,
+            req.auth!.companyId,
+            d.employee_id,
+            d.currency_code,
+          )
+          const r = await client.query(
+            `UPDATE employee_advances SET
+               employee_id=$1, employee_name=$2, purpose=$3, project_id=$4, cost_center_id=$5,
+               currency_code=$6, fx_rate=$7, amount=$8, cash_account_id=$9, advance_account_id=$10,
+               notes=$11, updated_at=NOW()
+             WHERE id=$12 RETURNING *`,
+            [
+              d.employee_id,
+              d.employee_name,
+              d.purpose ?? null,
+              d.project_id ?? null,
+              d.cost_center_id ?? null,
+              d.currency_code,
+              d.fx_rate,
+              d.amount,
+              cashAccountId,
+              advanceAccountId,
+              d.notes ?? null,
+              req.params['id'],
+            ],
+          )
+          return r.rows[0]
+        },
       )
-      sendOk(res, r.rows[0])
+      sendOk(res, row)
     } catch (err) {
+      if (err instanceof AdvanceConfigError) {
+        sendError(res, 422, 'ADVANCE_CONFIG_MISSING', err.message)
+        return
+      }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update advance', err)
     }
   },
@@ -261,11 +479,26 @@ employeeAdvancesRouter.post(
 // create project cost — only settlement does. Tagging the issuance line
 // would double-count the same money as project cost twice.
 
+const approveAdvanceSchema = z.object({
+  cost_center_id: z.string().uuid().optional(),
+})
+
 employeeAdvancesRouter.post(
   '/:id/approve',
   requirePermission('finance.advances.approve', 'approve'),
   async (req, res) => {
     try {
+      const d = approveAdvanceSchema.parse(req.body)
+      if (d.cost_center_id) {
+        const ccCheck = await query(`SELECT id FROM cost_centers WHERE id=$1 AND company_id=$2`, [
+          d.cost_center_id,
+          req.auth!.companyId,
+        ])
+        if (!ccCheck.rows[0]) {
+          sendError(res, 400, 'INVALID_COST_CENTER', 'Cost center not found in this company')
+          return
+        }
+      }
       const result = await withTransaction(
         { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
         async (client) => {
@@ -319,9 +552,10 @@ employeeAdvancesRouter.post(
           )
 
           const updated = await client.query(
-            `UPDATE employee_advances SET status='approved', approved_by=$1, approved_at=NOW(), journal_entry_id=$2, updated_at=NOW()
-             WHERE id=$3 RETURNING *`,
-            [req.auth!.userId, jeId, req.params['id']],
+            `UPDATE employee_advances SET status='approved', approved_by=$1, approved_at=NOW(), journal_entry_id=$2,
+               cost_center_id=COALESCE($3, cost_center_id), updated_at=NOW()
+             WHERE id=$4 RETURNING *`,
+            [req.auth!.userId, jeId, d.cost_center_id ?? null, req.params['id']],
           )
           return updated.rows[0]
         },
@@ -442,9 +676,10 @@ employeeAdvancesRouter.post(
             )
           }
 
-          await client.query(`UPDATE journal_entries SET status='cancelled', updated_at=NOW() WHERE id=$1`, [
-            adv['journal_entry_id'],
-          ])
+          await client.query(
+            `UPDATE journal_entries SET status='cancelled', updated_at=NOW() WHERE id=$1`,
+            [adv['journal_entry_id']],
+          )
 
           const updated = await client.query(
             `UPDATE employee_advances SET status='cancelled', voided_by=$1, voided_at=NOW(), void_reason=$2, updated_at=NOW()
@@ -459,7 +694,12 @@ employeeAdvancesRouter.post(
           INVALID_STATUS: 'Advance is not in a voidable state',
           HAS_ACTIVITY: 'Cannot void an advance that already has settlements or returns',
         }
-        sendError(res, result.error === 'INVALID_STATUS' ? 409 : 422, result.error, messages[result.error]!)
+        sendError(
+          res,
+          result.error === 'INVALID_STATUS' ? 409 : 422,
+          result.error,
+          messages[result.error]!,
+        )
         return
       }
       await logAudit({
@@ -517,6 +757,51 @@ employeeAdvancesRouter.get(
       sendOk(res, r.rows)
     } catch (err) {
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load ledger', err)
+    }
+  },
+)
+
+// ─── Pending PO line items (settlement queue) ───────────────────────────────
+//
+// Line-level, not PO-level: a completed PO tagged as funded by this advance
+// contributes each of its lines individually — a PO with lines tagged to
+// different cost centers can settle across separate batches at different
+// times. Eligibility = parent PO belongs to this advance and is completed,
+// AND the line itself hasn't already been claimed by a settlement.
+
+employeeAdvancesRouter.get(
+  '/:id([0-9a-fA-F-]{36})/pending-po-lines',
+  requirePermission('finance.advances.view', 'view'),
+  async (req, res) => {
+    try {
+      const adv = await query(`SELECT id FROM employee_advances WHERE id=$1 AND company_id=$2`, [
+        req.params['id'],
+        req.auth!.companyId,
+      ])
+      if (!adv.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Advance not found')
+        return
+      }
+      const r = await query(
+        `SELECT pl.id, pl.description, pl.qty_ordered, pl.unit_price, pl.total_price,
+                pl.account_id AS gl_account_id, pl.cost_center_id,
+                coa.code AS account_code, coa.name AS account_name,
+                cc.code AS cost_center_code, cc.name AS cost_center_name,
+                po.id AS po_id, po.po_number, po.project_id,
+                p.code AS project_code, p.name AS project_name
+         FROM po_lines pl
+         JOIN purchase_orders po ON po.id = pl.po_id
+         LEFT JOIN chart_of_accounts coa ON coa.id = pl.account_id
+         LEFT JOIN cost_centers cc ON cc.id = pl.cost_center_id
+         LEFT JOIN projects p ON p.id = po.project_id
+         WHERE po.company_id=$1 AND po.funding_advance_id=$2 AND po.status='completed'
+           AND pl.advance_settlement_id IS NULL
+         ORDER BY po.po_number, pl.line_number`,
+        [req.auth!.companyId, req.params['id']],
+      )
+      sendOk(res, r.rows)
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to load pending PO line items', err)
     }
   },
 )
@@ -589,6 +874,21 @@ const settlementSchema = z.object({
   description: z.string().optional(),
   notes: z.string().optional(),
   lines: z.array(settlementLineSchema).min(1),
+})
+
+// Alternate input shape: bundle finance-selected completed-PO line items
+// straight into a settlement instead of hand-typing lines. Posts
+// immediately (status='approved' + journal, no draft/submit/approve steps)
+// since choosing which lines to include *is* the review for this path.
+const settlementFromPOLinesSchema = z.object({
+  advance_id: z.string().uuid(),
+  po_line_ids: z.array(z.string().uuid()).min(1),
+  settlement_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  description: z.string().optional(),
+  notes: z.string().optional(),
 })
 
 // ─── List settlements ───────────────────────────────────────────────────────
@@ -668,12 +968,239 @@ employeeAdvancesRouter.get(
   },
 )
 
+// ─── Create settlement from bundled PO lines (posts immediately) ───────────
+//
+// Reuses the exact journal-posting shape of POST /settlements/:id/approve
+// below (one Dr line per settlement line tagged with its cost center/
+// analytic account, one Cr line on the advance's control account for the
+// total) but inlined into creation instead of a separate approve step,
+// since selecting which PO lines to bundle *is* the review for this path.
+
+async function createSettlementFromPOLines(
+  req: import('express').Request,
+  res: import('express').Response,
+): Promise<void> {
+  try {
+    const d = settlementFromPOLinesSchema.parse(req.body)
+    const settlementNumber = await nextDocumentNumber(
+      req.auth!.companyId,
+      'advance_settlement',
+      'SET',
+    )
+    const result = await withTransaction(
+      { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
+      async (client) => {
+        const advRes = await client.query(
+          `SELECT * FROM employee_advances
+           WHERE id=$1 AND company_id=$2 AND status IN ('approved','partially_settled') FOR UPDATE`,
+          [d.advance_id, req.auth!.companyId],
+        )
+        if (!advRes.rows[0]) return { error: 'INVALID_STATUS' as const }
+        const advance = advRes.rows[0] as Record<string, unknown>
+
+        // Lock the parent PO rows up front so two concurrent bundling
+        // requests touching lines from the same PO can't both pass the
+        // eligibility re-check below.
+        await client.query(
+          `SELECT id FROM purchase_orders
+           WHERE id IN (SELECT DISTINCT po_id FROM po_lines WHERE id = ANY($1::uuid[]))
+           FOR UPDATE`,
+          [d.po_line_ids],
+        )
+
+        // Re-fetch under lock, filtered to the same eligibility condition as
+        // GET /:id/pending-po-lines — never trust the client's list.
+        // project_analytic_account_id comes from the analytic_accounts JOIN
+        // itself, not a straight passthrough of projects.analytic_account_id
+        // — a dangling reference (row deleted after being linked) must fail
+        // the PROJECT_MISSING_ANALYTIC_ACCOUNT check below, not reach the
+        // journal_lines INSERT and crash on its FK constraint instead.
+        const linesRes = await client.query(
+          `SELECT pl.id, pl.description, pl.total_price, pl.account_id AS gl_account_id,
+                  pl.cost_center_id, po.id AS po_id, po.project_id,
+                  aa.id AS project_analytic_account_id
+           FROM po_lines pl
+           JOIN purchase_orders po ON po.id = pl.po_id
+           LEFT JOIN projects p ON p.id = po.project_id
+           LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
+           WHERE pl.id = ANY($1::uuid[]) AND po.company_id=$2 AND po.funding_advance_id=$3
+             AND po.status='completed' AND pl.advance_settlement_id IS NULL`,
+          [d.po_line_ids, req.auth!.companyId, d.advance_id],
+        )
+        if (linesRes.rows.length !== d.po_line_ids.length) {
+          return { error: 'INELIGIBLE_LINES' as const }
+        }
+        for (const line of linesRes.rows as Record<string, unknown>[]) {
+          if (line['project_id'] && !line['project_analytic_account_id']) {
+            return { error: 'PROJECT_MISSING_ANALYTIC_ACCOUNT' as const }
+          }
+        }
+
+        const totalAmount = (linesRes.rows as Record<string, unknown>[]).reduce(
+          (sum, l) => sum + parseFloat(String(l['total_price'])),
+          0,
+        )
+        if (totalAmount > parseFloat(String(advance['outstanding_amount']))) {
+          return { error: 'OVER_SETTLEMENT' as const }
+        }
+
+        const sRes = await client.query(
+          `INSERT INTO advance_settlements
+             (company_id, settlement_number, advance_id, employee_id, employee_name, settlement_date,
+              description, currency_code, total_amount, notes, status, created_by, approved_by, approved_at)
+           VALUES ($1,$2,$3,$4,$5,COALESCE($6,CURRENT_DATE),$7,$8,$9,$10,'approved',$11,$11,NOW()) RETURNING *`,
+          [
+            req.auth!.companyId,
+            settlementNumber,
+            d.advance_id,
+            advance['employee_id'],
+            advance['employee_name'],
+            d.settlement_date ?? null,
+            d.description ??
+              `PO line settlement (${linesRes.rows.length} item${linesRes.rows.length === 1 ? '' : 's'})`,
+            advance['currency_code'],
+            totalAmount,
+            d.notes ?? null,
+            req.auth!.userId,
+          ],
+        )
+        const settlement = sRes.rows[0] as Record<string, unknown>
+
+        const jeRes = await client.query(
+          `INSERT INTO journal_entries (company_id, entry_date, reference, description, status, source_type, source_id, created_by, posted_at, posted_by)
+           VALUES ($1, CURRENT_DATE, $2, $3, 'posted', 'advance_settlement', $4, $5, NOW(), $5)
+           RETURNING id`,
+          [
+            req.auth!.companyId,
+            settlementNumber,
+            `Advance settlement: ${advance['employee_name'] as string}`,
+            settlement['id'],
+            req.auth!.userId,
+          ],
+        )
+        const jeId = jeRes.rows[0]!.id as string
+        const advFxRate = parseFloat(String(advance['fx_rate']))
+        const insertedLines = []
+
+        for (const line of linesRes.rows as Record<string, unknown>[]) {
+          const amt = parseFloat(String(line['total_price']))
+          const lr = await client.query(
+            `INSERT INTO advance_settlement_lines
+               (settlement_id, company_id, line_date, gl_account_id, project_id, cost_center_id,
+                description, amount, currency_code, fx_rate, po_line_id)
+             VALUES ($1,$2,COALESCE($3,CURRENT_DATE),$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+            [
+              settlement['id'],
+              req.auth!.companyId,
+              d.settlement_date ?? null,
+              line['gl_account_id'],
+              line['project_id'],
+              line['cost_center_id'],
+              line['description'],
+              amt,
+              advance['currency_code'],
+              advFxRate,
+              line['id'],
+            ],
+          )
+          insertedLines.push(lr.rows[0])
+
+          await client.query(
+            `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, cost_center_id, description, debit, credit, currency_code, fx_rate, amount_company_currency)
+             VALUES ($1,$2,$3,$4,$5,$6,0,$7,$8,$9)`,
+            [
+              jeId,
+              line['gl_account_id'],
+              line['project_analytic_account_id'] ?? null,
+              line['cost_center_id'],
+              line['description'],
+              amt,
+              advance['currency_code'],
+              advFxRate,
+              amt * advFxRate,
+            ],
+          )
+        }
+
+        await client.query(
+          `INSERT INTO journal_lines (journal_entry_id, account_id, description, debit, credit, currency_code, fx_rate, amount_company_currency)
+           VALUES ($1,$2,$3,0,$4,$5,$6,$7)`,
+          [
+            jeId,
+            advance['advance_account_id'],
+            `Settlement ${settlementNumber}`,
+            totalAmount,
+            advance['currency_code'],
+            advFxRate,
+            totalAmount * advFxRate,
+          ],
+        )
+
+        await client.query(
+          `UPDATE advance_settlements SET journal_entry_id=$1, updated_at=NOW() WHERE id=$2`,
+          [jeId, settlement['id']],
+        )
+
+        await client.query(
+          `UPDATE po_lines SET advance_settlement_id=$1 WHERE id = ANY($2::uuid[])`,
+          [settlement['id'], d.po_line_ids],
+        )
+
+        const newSettled = parseFloat(String(advance['settled_amount'])) + totalAmount
+        const newReturned = parseFloat(String(advance['returned_amount']))
+        const advanceAmount = parseFloat(String(advance['amount']))
+        const newStatus =
+          newSettled + newReturned >= advanceAmount ? 'settled' : 'partially_settled'
+        await client.query(
+          `UPDATE employee_advances SET settled_amount=$1, status=$2, updated_at=NOW() WHERE id=$3`,
+          [newSettled, newStatus, d.advance_id],
+        )
+
+        return { settlement: { ...settlement, journal_entry_id: jeId, lines: insertedLines } }
+      },
+    )
+    if ('error' in result) {
+      const messages: Record<string, string> = {
+        INVALID_STATUS: 'Advance is not approved or partially settled',
+        INELIGIBLE_LINES:
+          'One or more selected PO lines are no longer eligible (already settled, PO not completed, or not funded by this advance)',
+        OVER_SETTLEMENT: 'Selected total exceeds the advance’s outstanding balance',
+        PROJECT_MISSING_ANALYTIC_ACCOUNT:
+          'A project-tagged PO line references a project with no analytic account configured — set one before this line can settle',
+      }
+      const statusCode = result.error === 'INVALID_STATUS' ? 409 : 422
+      sendError(res, statusCode, result.error, messages[result.error]!)
+      return
+    }
+    const settlement = result.settlement as Record<string, unknown>
+    await logAudit({
+      companyId: req.auth!.companyId,
+      userId: req.auth!.userId,
+      action: 'INSERT',
+      tableName: 'advance_settlements',
+      recordId: settlement['id'] as string,
+      newValues: {
+        settlement_number: settlementNumber,
+        total_amount: settlement['total_amount'],
+        from_po_lines: true,
+      },
+    })
+    sendOk(res, settlement, 201)
+  } catch (err) {
+    sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create settlement', err)
+  }
+}
+
 // ─── Create settlement (draft) ──────────────────────────────────────────────
 
 employeeAdvancesRouter.post(
   '/settlements',
   requirePermission('finance.advances.edit', 'edit'),
   async (req, res) => {
+    if (Array.isArray((req.body as Record<string, unknown> | undefined)?.['po_line_ids'])) {
+      await createSettlementFromPOLines(req, res)
+      return
+    }
     try {
       const d = settlementSchema.parse(req.body)
       const adv = await query(
@@ -923,10 +1450,16 @@ employeeAdvancesRouter.post(
             return { error: 'OVER_SETTLEMENT' as const }
           }
 
+          // project_analytic_account_id comes from the analytic_accounts JOIN
+          // itself, not a straight passthrough of projects.analytic_account_id
+          // — a dangling reference (row deleted after being linked) must fail
+          // the PROJECT_MISSING_ANALYTIC_ACCOUNT check below, not reach the
+          // journal_lines INSERT and crash on its FK constraint instead.
           const lines = await client.query(
-            `SELECT sl.*, p.analytic_account_id AS project_analytic_account_id
+            `SELECT sl.*, aa.id AS project_analytic_account_id
              FROM advance_settlement_lines sl
              LEFT JOIN projects p ON p.id = sl.project_id
+             LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
              WHERE sl.settlement_id=$1`,
             [req.params['id']],
           )
@@ -995,7 +1528,8 @@ employeeAdvancesRouter.post(
           const newSettled = parseFloat(String(s['settled_amount'])) + totalAmount
           const newReturned = parseFloat(String(s['returned_amount']))
           const advanceAmount = parseFloat(String(s['advance_amount']))
-          const newStatus = newSettled + newReturned >= advanceAmount ? 'settled' : 'partially_settled'
+          const newStatus =
+            newSettled + newReturned >= advanceAmount ? 'settled' : 'partially_settled'
           await client.query(
             `UPDATE employee_advances SET settled_amount=$1, status=$2, updated_at=NOW() WHERE id=$3`,
             [newSettled, newStatus, s['adv_id']],
@@ -1159,13 +1693,23 @@ employeeAdvancesRouter.post(
       }
       const advance = adv.rows[0] as Record<string, unknown>
       if (!['approved', 'partially_settled'].includes(advance['status'] as string)) {
-        sendError(res, 409, 'INVALID_STATUS', 'Advance must be approved before it can be returned against')
+        sendError(
+          res,
+          409,
+          'INVALID_STATUS',
+          'Advance must be approved before it can be returned against',
+        )
         return
       }
       // Advisory check — the authoritative, race-safe check happens again
       // under a row lock at approval time.
       if (d.amount > parseFloat(String(advance['outstanding_amount']))) {
-        sendError(res, 422, 'OVER_RETURN', 'Return amount exceeds the advance’s outstanding balance')
+        sendError(
+          res,
+          422,
+          'OVER_RETURN',
+          'Return amount exceeds the advance’s outstanding balance',
+        )
         return
       }
 
@@ -1223,7 +1767,12 @@ employeeAdvancesRouter.put(
       }
       const d = returnSchema.parse(req.body)
       if (d.amount > parseFloat(existing.rows[0]['outstanding_amount'])) {
-        sendError(res, 422, 'OVER_RETURN', 'Return amount exceeds the advance’s outstanding balance')
+        sendError(
+          res,
+          422,
+          'OVER_RETURN',
+          'Return amount exceeds the advance’s outstanding balance',
+        )
         return
       }
       const r = await query(
@@ -1325,7 +1874,8 @@ employeeAdvancesRouter.post(
           const newReturned = parseFloat(String(ret['returned_amount'])) + amt
           const newSettled = parseFloat(String(ret['settled_amount']))
           const advanceAmount = parseFloat(String(ret['advance_amount']))
-          const newStatus = newSettled + newReturned >= advanceAmount ? 'settled' : 'partially_settled'
+          const newStatus =
+            newSettled + newReturned >= advanceAmount ? 'settled' : 'partially_settled'
           await client.query(
             `UPDATE employee_advances SET returned_amount=$1, status=$2, updated_at=NOW() WHERE id=$3`,
             [newReturned, newStatus, ret['adv_id']],
@@ -1339,7 +1889,12 @@ employeeAdvancesRouter.post(
           INVALID_STATUS: 'Return is not in draft status',
           OVER_RETURN: 'Return amount exceeds the advance’s outstanding balance',
         }
-        sendError(res, result.error === 'INVALID_STATUS' ? 409 : 422, result.error, messages[result.error]!)
+        sendError(
+          res,
+          result.error === 'INVALID_STATUS' ? 409 : 422,
+          result.error,
+          messages[result.error]!,
+        )
         return
       }
       await logAudit({

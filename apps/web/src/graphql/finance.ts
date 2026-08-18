@@ -77,6 +77,7 @@ export const JOURNAL_ENTRIES_QUERY = gql`
       status
       description
       source_type
+      source_id
       total_debit
       total_credit
       payment_currency

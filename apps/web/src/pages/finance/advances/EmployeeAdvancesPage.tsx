@@ -29,15 +29,15 @@ interface Summary {
   settled_count: number
 }
 
-interface GLAccount {
-  id: string
-  code: string
-  name: string
-}
 interface Employee {
   id: string
   first_name: string
   last_name: string
+}
+interface Project {
+  id: string
+  code: string
+  name: string
 }
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
@@ -56,8 +56,7 @@ const emptyForm = () => ({
   purpose: '',
   currency_code: 'IQD',
   amount: '',
-  cash_account_id: '',
-  advance_account_id: '',
+  project_id: '',
   notes: '',
 })
 
@@ -70,23 +69,23 @@ export default function EmployeeAdvancesPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [form, setForm] = useState(emptyForm())
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [advRes, sumRes, glRes, empRes] = await Promise.all([
+      const [advRes, sumRes, empRes, projRes] = await Promise.all([
         api.get<Advance[]>('/finance/advances', { params: { status: statusFilter || undefined } }),
         api.get<Summary>('/finance/advances/summary'),
-        api.get<GLAccount[]>('/finance/accounts?limit=500'),
         api.get<Employee[]>('/hr/employees?limit=500'),
+        api.get<{ data: Project[] }>('/projects', { params: { limit: 500 } }),
       ])
       setAdvances(advRes.data)
       setSummary(sumRes.data)
-      setGlAccounts(glRes.data)
       setEmployees(empRes.data)
+      setProjects(projRes.data.data)
     } catch {
       /* handled */
     } finally {
@@ -99,20 +98,14 @@ export default function EmployeeAdvancesPage() {
   }, [load])
 
   async function handleSave() {
-    if (
-      !form.employee_id ||
-      !form.amount ||
-      Number(form.amount) <= 0 ||
-      !form.cash_account_id ||
-      !form.advance_account_id
-    )
-      return
+    if (!form.employee_id || !form.amount || Number(form.amount) <= 0) return
     setSaving(true)
     try {
       const r = await api.post<Advance>('/finance/advances', {
         ...form,
         amount: Number(form.amount),
         purpose: form.purpose || undefined,
+        project_id: form.project_id || undefined,
         notes: form.notes || undefined,
       })
       setShowForm(false)
@@ -255,7 +248,12 @@ export default function EmployeeAdvancesPage() {
               {['Ref', 'Employee', 'Purpose', 'Amount', 'Outstanding', 'Status', ''].map((h) => (
                 <th
                   key={h}
-                  style={{ padding: '9px 12px', textAlign: 'left', color: theme.textMuted, fontWeight: 500 }}
+                  style={{
+                    padding: '9px 12px',
+                    textAlign: 'left',
+                    color: theme.textMuted,
+                    fontWeight: 500,
+                  }}
                 >
                   {h}
                 </th>
@@ -265,14 +263,20 @@ export default function EmployeeAdvancesPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+                <td
+                  colSpan={7}
+                  style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
+                >
                   Loading...
                 </td>
               </tr>
             )}
             {!loading && !advances.length && (
               <tr>
-                <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}>
+                <td
+                  colSpan={7}
+                  style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
+                >
                   No employee advances found.
                 </td>
               </tr>
@@ -285,18 +289,31 @@ export default function EmployeeAdvancesPage() {
                   navigate(`/finance/advances/${a.id}`)
                 }}
               >
-                <td style={{ padding: '9px 12px', color: theme.accent, fontFamily: 'monospace', fontSize: '11px' }}>
+                <td
+                  style={{
+                    padding: '9px 12px',
+                    color: theme.accent,
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                  }}
+                >
                   {a.advance_number}
                 </td>
                 <td style={{ padding: '9px 12px', fontWeight: 500, color: theme.textPrimary }}>
                   {a.employee_name}
                 </td>
-                <td style={{ padding: '9px 12px', color: theme.textSecondary }}>{a.purpose ?? '—'}</td>
+                <td style={{ padding: '9px 12px', color: theme.textSecondary }}>
+                  {a.purpose ?? '—'}
+                </td>
                 <td style={{ padding: '9px 12px' }}>
                   <AmountDisplay amount={Number(a.amount)} currency={a.currency_code} size="sm" />
                 </td>
                 <td style={{ padding: '9px 12px' }}>
-                  <AmountDisplay amount={Number(a.outstanding_amount)} currency={a.currency_code} size="sm" />
+                  <AmountDisplay
+                    amount={Number(a.outstanding_amount)}
+                    currency={a.currency_code}
+                    size="sm"
+                  />
                 </td>
                 <td style={{ padding: '9px 12px' }}>
                   <Badge variant={STATUS_BADGE[a.status] ?? 'neutral'}>
@@ -423,39 +440,27 @@ export default function EmployeeAdvancesPage() {
                 />
               </div>
               <div>
-                <label style={labelStyle}>Cash Account (credited on issuance) *</label>
+                <label style={labelStyle}>Project</label>
                 <select
                   style={inputStyle}
-                  value={form.cash_account_id}
+                  value={form.project_id}
                   onChange={(e) => {
-                    setForm((f) => ({ ...f, cash_account_id: e.target.value }))
+                    setForm((f) => ({ ...f, project_id: e.target.value }))
                   }}
                 >
-                  <option value="">— Select account —</option>
-                  {glAccounts.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.code} · {g.name}
+                  <option value="">— Not set —</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} · {p.name}
                     </option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label style={labelStyle}>Employee Advance Control Account *</label>
-                <select
-                  style={inputStyle}
-                  value={form.advance_account_id}
-                  onChange={(e) => {
-                    setForm((f) => ({ ...f, advance_account_id: e.target.value }))
-                  }}
-                >
-                  <option value="">— Select account —</option>
-                  {glAccounts.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.code} · {g.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <p style={{ fontSize: '11px', color: theme.textMuted, margin: 0 }}>
+                Cash and advance-control accounts are resolved automatically from the employee and
+                currency. Cost center is set by finance when the advance is approved, once what it's
+                for is known.
+              </p>
               <div>
                 <label style={labelStyle}>Notes</label>
                 <input
@@ -484,14 +489,7 @@ export default function EmployeeAdvancesPage() {
                 variant="primary"
                 size="sm"
                 onClick={() => void handleSave()}
-                disabled={
-                  saving ||
-                  !form.employee_id ||
-                  !form.amount ||
-                  Number(form.amount) <= 0 ||
-                  !form.cash_account_id ||
-                  !form.advance_account_id
-                }
+                disabled={saving || !form.employee_id || !form.amount || Number(form.amount) <= 0}
               >
                 {saving ? 'Creating...' : 'Create Advance'}
               </Button>
