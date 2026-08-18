@@ -18740,8 +18740,8 @@ export const resolvers = {
            last_name=COALESCE($3,last_name), email=COALESCE($4,email), phone=$5,
            national_id=$6, passport_number=$7, nationality=$8, date_of_birth=$9, gender=$10,
            job_title=$11, department_id=$12, work_location_id=$13,
-           manager_id=$14, employment_type=$15, hire_date=$16, status=COALESCE($17,status),
-           user_id=$18, updated_at=NOW()
+           manager_id=COALESCE($14,manager_id), employment_type=$15, hire_date=$16, status=COALESCE($17,status),
+           user_id=COALESCE($18,user_id), updated_at=NOW()
          WHERE id=$19 AND company_id=$20`,
         [
           i.employee_number ?? null,
