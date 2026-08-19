@@ -1775,6 +1775,7 @@ export default function PurchaseOrderDetail() {
                   // including lines that are 100% stock-covered, which never reach market
                   // pricing at all, so this is the only place their total gets set.
                   const stockLines = po.lines.filter((l) => (l.qty_from_stock || 0) > 0)
+                  const isOrganizer = !!currentUserId && po.organizer_id === currentUserId
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
@@ -1788,6 +1789,44 @@ export default function PurchaseOrderDetail() {
                       >
                         Enter store prices for from-stock quantities
                       </div>
+                      {(isSystemLevel || isOrganizer) && stockLines.length > 0 && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            flexWrap: 'wrap',
+                            padding: '10px 14px',
+                            borderRadius: '7px',
+                            border: `1px solid ${theme.border}`,
+                            background: theme.bgSurface,
+                          }}
+                        >
+                          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                            Skip entering prices — store prices will be filled in automatically
+                            from each line's current average cost.
+                          </span>
+                          <Button
+                            variant="secondary"
+                            loading={anyLoading}
+                            onClick={() =>
+                              void submitStorePricing({
+                                variables: {
+                                  id: po.id,
+                                  linePrices: stockLines.map((line) => ({
+                                    lineId: line.id,
+                                    storePrice: line.store_price ?? line.source_average_cost ?? 0,
+                                    currencyCode: line.store_price_currency ?? po.currency_code,
+                                  })),
+                                },
+                              })
+                            }
+                          >
+                            Skip → Continue to Market Pricing
+                          </Button>
+                        </div>
+                      )}
                       {stockLines.length === 0 && (
                         <div
                           style={{

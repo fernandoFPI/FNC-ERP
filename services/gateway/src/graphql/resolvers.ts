@@ -23654,7 +23654,14 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_pricing')
-    if (!isAdmin && !hasPos) throw new Error('store_pricing position required')
+    // The organizer can also skip straight past store pricing (frontend
+    // sends auto-derived, average-cost-based line prices in that case) —
+    // this doesn't remove the store_pricing position's own ability to fill
+    // in real prices, just adds a second path so a PO isn't stuck waiting
+    // on that position to be assigned/available.
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !hasPos && !isOrganizer)
+      throw new Error('store_pricing position or PO organizer required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
