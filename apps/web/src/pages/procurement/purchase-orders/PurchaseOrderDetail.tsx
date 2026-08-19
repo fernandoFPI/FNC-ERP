@@ -2778,8 +2778,8 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         {po.assigned_buyer_name ?? 'The assigned buyer'} ticks each item off as
-                        it's bought. Once every line is checked, this PO moves on to Goods
-                        Received automatically.
+                        it's bought — this is just tracking. A receipt still needs to be recorded
+                        below to move this PO on to Goods Received.
                         {!canMarkBought && (
                           <div style={{ marginTop: '4px', opacity: 0.85 }}>
                             You're viewing this read-only — only {po.assigned_buyer_name ?? 'the assigned buyer'} or an admin can check items off.
@@ -2850,6 +2850,15 @@ export default function PurchaseOrderDetail() {
                       <div style={{ fontSize: '11px', color: theme.textMuted }}>
                         {boughtCount} / {po.lines.length} items bought
                       </div>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          navigate(`/procurement/purchase-orders/${po.id}/receive`)
+                        }}
+                      >
+                        Record Receipt
+                      </Button>
                     </div>
                   )
                 })()}
@@ -4678,8 +4687,11 @@ export default function PurchaseOrderDetail() {
             lines: po.lines.map((l) => ({
               id: l.id,
               description: l.description,
-              qty: l.qty,
-              unit_price: l.unit_price,
+              // qty/unit_price come off the wire as numeric strings (e.g.
+              // "1.0000") despite the POLine type claiming number — parse
+              // them so the edit-request inputs don't show trailing zeros.
+              qty: parseFloat(String(l.qty)) || 0,
+              unit_price: parseFloat(String(l.unit_price)) || 0,
               uom: l.uom,
             })),
             linesAdded: [],

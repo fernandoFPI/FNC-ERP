@@ -8,6 +8,7 @@
   nextDocumentNumber,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
+import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
 import {
   sendEmail,
   renderMeetingInvitationEmail,
@@ -8902,12 +8903,21 @@ export const resolvers = {
         `Document uploaded: "${args.title}" [${documentNumber}]`,
       )
 
-      // Notify project members (in-app + email via outbox)
+      // Notify project manager + active members (in-app + email via outbox)
       const membersR = await query(
-        `SELECT pm.id, e.user_id, e.first_name||' '||e.last_name AS full_name, e.email
-         FROM project_members pm
-         JOIN employees e ON e.id=pm.employee_id
-         WHERE pm.project_id=$1 AND e.user_id IS NOT NULL AND e.user_id != $2`,
+        `SELECT DISTINCT ON (u.id) u.id AS user_id,
+                COALESCE(NULLIF(TRIM(e.first_name || ' ' || e.last_name), ''), u.email) AS full_name,
+                u.email
+         FROM (
+           SELECT pm.employee_id FROM project_members pm
+             WHERE pm.project_id=$1 AND pm.is_active=true
+           UNION
+           SELECT p2.project_manager_id AS employee_id FROM projects p2
+             WHERE p2.id=$1 AND p2.project_manager_id IS NOT NULL
+         ) team
+         JOIN employees e ON e.id = team.employee_id
+         JOIN users u ON u.id = e.user_id
+         WHERE u.id != $2`,
         [args.projectId, ctx.auth.userId],
       )
       const projectName = String(p.name ?? '')
@@ -9071,6 +9081,13 @@ export const resolvers = {
         ctx.auth.userId,
         'client_document_revision',
         `New revision "${args.revision}" uploaded for: "${parent.title}"`,
+      )
+      void notifyProjectFileUploadGW(
+        projectId,
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'Document Revision',
+        `${String(parent.title)} (rev. ${args.revision})`,
       )
 
       let downloadUrl: string | null = null
@@ -10989,6 +11006,13 @@ export const resolvers = {
         'bid_deliverable_file',
         `File attached to ${String(d.name)}: ${String(f.original_filename)}`,
       )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'Bid Deliverable File',
+        String(args.title ?? f.original_filename),
+      )
       // Return updated deliverable
       const files = await query(
         `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.description, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='bid_deliverable' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
@@ -11101,6 +11125,13 @@ export const resolvers = {
         ctx.auth.userId,
         'bid_package_file',
         `${args.bidType === 'technical' ? 'Technical' : 'Commercial'} bid package file attached: ${String(f.original_filename)}`,
+      )
+      void notifyProjectFileUploadGW(
+        args.projectId,
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        args.bidType === 'technical' ? 'Bid Package File (Technical)' : 'Bid Package File (Commercial)',
+        String(args.title ?? f.original_filename),
       )
       return bidPackageFileList(args.projectId, ctx.auth.companyId)
     },
@@ -12027,6 +12058,13 @@ export const resolvers = {
         'rfi_file',
         `File attached to RFI ${String(d.rfi_number)}`,
       )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'RFI File',
+        `${String(args.title ?? f.original_filename)} (RFI ${String(d.rfi_number)})`,
+      )
       const files = await query(
         `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='rfi' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
         [args.rfiId, ctx.auth.companyId],
@@ -12309,6 +12347,13 @@ export const resolvers = {
         ctx.auth.userId,
         'si_file',
         `File attached to SI ${String(d.si_number)}`,
+      )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'Site Instruction File',
+        `${String(args.title ?? f.original_filename)} (SI ${String(d.si_number)})`,
       )
       const files = await query(
         `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='site_instruction' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
@@ -12873,6 +12918,13 @@ export const resolvers = {
         'ir_file',
         `File attached to IR ${String(d.ir_number)}`,
       )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'Inspection Request File',
+        `${String(args.title ?? f.original_filename)} (IR ${String(d.ir_number)})`,
+      )
       const files = await query(
         `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='inspection_request' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
         [args.irId, ctx.auth.companyId],
@@ -13193,6 +13245,13 @@ export const resolvers = {
         ctx.auth.userId,
         'ncr_file',
         `File attached to NCR ${String(d.ncr_number)}`,
+      )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'NCR File',
+        `${String(args.title ?? f.original_filename)} (NCR ${String(d.ncr_number)})`,
       )
       const files = await query(
         `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='ncr' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
@@ -13610,6 +13669,13 @@ export const resolvers = {
         ctx.auth.userId,
         'hse_file',
         `File attached to HSE record: ${String(d.title)}`,
+      )
+      void notifyProjectFileUploadGW(
+        String(d.project_id),
+        ctx.auth.companyId,
+        ctx.auth.userId,
+        'HSE Record File',
+        `${String(args.title ?? f.original_filename)} (${String(d.title)})`,
       )
       const files = await query(
         `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key FROM document_attachments da JOIN files f ON f.id=da.file_id WHERE da.entity_type='hse_record' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted' ORDER BY da.created_at`,
@@ -24298,9 +24364,12 @@ const phase5MutationResolvers = {
   // Every PO's assigned buyer ticks each line as bought while it sits in
   // items_bought (see approvePO, which now always chains straight into
   // this status on approval) — funding source doesn't matter here, the
-  // buyer needs to track what's bought either way. Ticking the last
-  // unbought line auto-advances the PO to goods_received, same pattern as
-  // recordReceipt's auto-transition on first receipt used to be.
+  // buyer needs to track what's bought either way. This is tracking only:
+  // it deliberately does NOT transition the PO on its own once every line
+  // is ticked — recordReceipt (which now also accepts items_bought) is the
+  // only real path to goods_received, so reaching that status still always
+  // means an actual receipt (quantities, location, price) was recorded,
+  // not just a checklist.
   markPOLineBought: async (
     _: unknown,
     args: { poId: string; lineId: string; bought: boolean },
@@ -24319,36 +24388,12 @@ const phase5MutationResolvers = {
     const isAdmin = isAdminGW(auth.role)
     if (!isAdmin && poRow.rows[0].assigned_buyer_user_id !== auth.userId)
       throw new Error('Only the assigned buyer can mark items bought on this PO')
-    const client = await pool.connect()
-    try {
-      await client.query('BEGIN')
-      const result = await client.query(
-        `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
-        [args.bought, args.lineId, args.poId],
-      )
-      if (!result.rows[0]) throw new Error('PO line not found')
-      const remaining = await client.query(
-        `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND is_bought=false`,
-        [args.poId],
-      )
-      if (parseInt(String(remaining.rows[0]?.c ?? '0')) === 0) {
-        await poTransition(
-          client,
-          args.poId,
-          'items_bought',
-          'goods_received',
-          'finish_buying',
-          auth,
-        )
-      }
-      await client.query('COMMIT')
-      return result.rows[0]
-    } catch (e) {
-      await client.query('ROLLBACK')
-      throw e
-    } finally {
-      client.release()
-    }
+    const result = await query(
+      `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
+      [args.bought, args.lineId, args.poId],
+    )
+    if (!result.rows[0]) throw new Error('PO line not found')
+    return result.rows[0]
   },
 
   // Finance decides vendor AP vs employee advance once the PO reaches
@@ -27106,7 +27151,7 @@ Object.assign(resolvers.Mutation, {
     if (!ctx.auth) throw new Error('Unauthorized')
     await requirePermGW(ctx.auth, 'projects.handover.edit', 'edit')
     const certR = await query(
-      `SELECT phc.id FROM project_handover_certificates phc JOIN projects p ON p.id=phc.project_id WHERE phc.id=$1 AND p.company_id=$2`,
+      `SELECT phc.id, phc.project_id FROM project_handover_certificates phc JOIN projects p ON p.id=phc.project_id WHERE phc.id=$1 AND p.company_id=$2`,
       [args.certificateId, ctx.auth.companyId],
     )
     if (!certR.rows[0]) throw new Error('Handover certificate not found')
@@ -27119,6 +27164,13 @@ Object.assign(resolvers.Mutation, {
     await query(
       `INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'handover_cert',$2,$3,$4)`,
       [args.fileId, args.certificateId, args.title ?? f.original_filename, ctx.auth.userId],
+    )
+    void notifyProjectFileUploadGW(
+      String(certR.rows[0].project_id),
+      ctx.auth.companyId,
+      ctx.auth.userId,
+      'Handover Certificate File',
+      String(args.title ?? f.original_filename),
     )
     return refetchHandoverCert(args.certificateId, ctx.auth.companyId)
   },

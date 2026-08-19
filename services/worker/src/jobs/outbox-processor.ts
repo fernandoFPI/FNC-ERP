@@ -16,6 +16,7 @@ import {
   renderNewDeviceLoginEmail,
   renderClientDocumentEmail,
   renderEngineeringRevisionEmail,
+  renderProjectFileUploadEmail,
 } from '@fnc-erp/email'
 import { uploadBuffer } from '@fnc-erp/storage'
 import {
@@ -2041,6 +2042,23 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       await sendEmail({
         to: String(p['to']),
         subject: `New Document: ${String(p['documentTitle'])}`,
+        html,
+      })
+      break
+    }
+    case 'PROJECT_FILE_UPLOAD_EMAIL': {
+      const html = renderProjectFileUploadEmail({
+        recipientName: String(p['recipientName']),
+        projectName: String(p['projectName']),
+        projectCode: String(p['projectCode']),
+        fileType: String(p['fileType']),
+        fileLabel: String(p['fileLabel']),
+        uploadedBy: String(p['uploadedBy']),
+        projectUrl: String(p['projectUrl']),
+      })
+      await sendEmail({
+        to: String(p['to']),
+        subject: `New file uploaded: ${String(p['fileLabel'])}`,
         html,
       })
       break

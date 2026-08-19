@@ -79,7 +79,7 @@ export const PO_STATUS_ACTIONS: Record<
   items_bought: {
     label: 'Mark items bought',
     description:
-      'Employee-advance-funded PO — the assigned buyer ticks each line as bought. Auto-transitions to goods_received once every line is checked.',
+      "The assigned buyer ticks each line as bought (tracking only). A receipt still needs to be recorded to move on to goods_received.",
   },
   goods_received: {
     label: 'Send to finance audit',

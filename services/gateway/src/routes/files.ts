@@ -12,6 +12,7 @@ import {
   uploadBuffer,
   downloadBuffer,
 } from '@fnc-erp/storage'
+import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
 
 export const filesRouter: IRouter = Router()
 
@@ -344,8 +345,8 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
     })
     return
   }
-  const file = await query(
-    `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
+  const file = await query<{ id: string; original_filename: string }>(
+    `SELECT id, original_filename FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
     [fileId, req.auth!.companyId],
   )
   if (!file.rows[0]) {
@@ -363,11 +364,14 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
       [fileId, entityType, entityId, label ?? null, description ?? null, req.auth!.userId],
     )
     await query(`UPDATE files SET status='attached' WHERE id=$1`, [fileId])
+    const fileLabel = label ?? file.rows[0]!.original_filename
     // Log to project activity when attaching to an RFQ phase
     if (entityType === 'rfq_phase') {
       const phase = await query<{ project_id: string; phase_type: string }>(
-        `SELECT project_id, phase_type FROM rfq_phases WHERE id=$1`,
-        [entityId],
+        `SELECT rp.project_id, rp.phase_type FROM rfq_phases rp
+         JOIN projects p ON p.id = rp.project_id
+         WHERE rp.id=$1 AND p.company_id=$2`,
+        [entityId, req.auth!.companyId],
       )
       if (phase.rows[0]) {
         const phaseLabel =
@@ -382,6 +386,27 @@ filesRouter.post('/attach', requireAuth(), async (req, res) => {
             'rfq_phase_file',
             `File uploaded to ${phaseLabel} phase: "${label ?? fileId}"`,
           ],
+        )
+        void notifyProjectFileUploadGW(
+          phase.rows[0].project_id,
+          req.auth!.companyId,
+          req.auth!.userId,
+          `RFQ ${phaseLabel} Phase File`,
+          fileLabel,
+        )
+      }
+    } else if (entityType === 'project') {
+      const proj = await query<{ id: string }>(
+        `SELECT id FROM projects WHERE id=$1 AND company_id=$2`,
+        [entityId, req.auth!.companyId],
+      )
+      if (proj.rows[0]) {
+        void notifyProjectFileUploadGW(
+          entityId,
+          req.auth!.companyId,
+          req.auth!.userId,
+          'Project Attachment',
+          fileLabel,
         )
       }
     }

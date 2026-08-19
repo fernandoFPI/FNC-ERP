@@ -176,10 +176,12 @@ export const moStateMachine = new StateMachine<MOStatus, MOAction>({
 //   approved → items_bought           (start_buying — auto-chained by approvePO in the
 //                                       same transaction, for every PO; no PO is ever
 //                                       observably left at 'approved')
-//   items_bought → goods_received     (finish_buying — auto-triggered either when the
-//                                       buyer ticks the last line as bought, or when
-//                                       recordReceipt logs a real receipt, whichever
-//                                       happens first)
+//   items_bought → goods_received     (finish_buying — auto-triggered by recordReceipt
+//                                       logging a real receipt. Ticking every line bought
+//                                       is tracking only and does NOT transition on its
+//                                       own — a receipt is always required to reach
+//                                       goods_received, same guarantee as before
+//                                       items_bought existed)
 //   approved → goods_received         (receive_goods — legacy direct path, kept for
 //                                       recordReceipt's status check but effectively
 //                                       unreachable now that 'approved' is instantaneous)
@@ -269,9 +271,10 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     // Every PO: approvePO chains straight from 'approved' into
     // 'items_bought' in the same transaction, regardless of funding
     // source (that's decided later, by Finance, at 'invoiced'). The buyer
-    // ticks each line bought, and recordReceipt (logging a real receipt,
-    // still needed for vendor-sourced items) also accepts 'items_bought' —
-    // whichever happens first auto-advances to goods_received.
+    // ticks each line bought there for tracking, but that alone never
+    // advances the PO — recordReceipt (which now also accepts
+    // 'items_bought') logging a real receipt is still the only way to
+    // reach goods_received, exactly as it was before this status existed.
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'items_bought', to: 'goods_received', action: 'finish_buying' },
     // Legacy direct path — kept so recordReceipt's status check still has
