@@ -16702,9 +16702,7 @@ export const resolvers = {
       if (!requiredCurrent)
         throw new Error(`Use standard workflow actions to advance to ${args.targetPhase}`)
       const proj = await query(
-        `SELECT id, status, lifecycle_phase,
-           (SELECT COUNT(*) FROM rfq_lines WHERE project_id=$1)::integer AS rfq_line_count
-         FROM projects WHERE id=$1 AND company_id=$2`,
+        `SELECT id, status, lifecycle_phase FROM projects WHERE id=$1 AND company_id=$2`,
         [args.id, ctx.auth.companyId],
       )
       if (!proj.rows[0]) throw new Error('Project not found')
@@ -16713,11 +16711,6 @@ export const resolvers = {
         throw new Error(
           `Project must be in ${requiredCurrent.replace(/_/g, ' ')} to advance to ${args.targetPhase.replace(/_/g, ' ')}`,
         )
-      if (args.targetPhase === 'bidding') {
-        const rfqLineCount = parseInt(String(proj.rows[0].rfq_line_count ?? '0'))
-        if (rfqLineCount < 1)
-          throw new Error('At least one Scope of Work line is required before advancing to Bidding')
-      }
       const r = await query(
         `UPDATE projects SET lifecycle_phase=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *`,
         [args.targetPhase, args.id, ctx.auth.companyId],

@@ -97,7 +97,6 @@ function getPhaseButtons(
       return btns
     }
     case 'scope_review': {
-      const notEnoughLines = rfqLineCount < 1
       const btns: PhaseButton[] = [
         {
           key: 'advance_bidding',
@@ -105,7 +104,7 @@ function getPhaseButtons(
           variant: 'primary',
           isAdvancePhase: true,
           targetPhase: 'bidding',
-          gate: notEnoughLines ? 'Add at least one Scope of Work line first' : null,
+          gate: null,
         },
       ]
       if (has('hold'))
