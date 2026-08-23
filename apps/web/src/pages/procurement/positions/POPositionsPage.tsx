@@ -393,15 +393,22 @@ export default function POPositionsPage() {
             </div>
 
             {/* Position */}
-            <Select
-              label="Position"
-              value={position}
-              onChange={(e) => {
-                setPosition(e.target.value)
-              }}
-              options={PO_POSITIONS.map((p) => ({ value: p.key, label: p.label }))}
-              placeholder="Select position"
-            />
+            <div>
+              <Select
+                label="Position"
+                value={position}
+                onChange={(e) => {
+                  setPosition(e.target.value)
+                }}
+                options={PO_POSITIONS.map((p) => ({ value: p.key, label: p.label }))}
+                placeholder="Select position"
+              />
+              {position && (
+                <p style={{ fontSize: '12px', color: theme.textMuted, lineHeight: 1.5, marginTop: '6px' }}>
+                  {PO_POSITIONS.find((p) => p.key === position)?.description}
+                </p>
+              )}
+            </div>
 
             {/* Scope */}
             <div>

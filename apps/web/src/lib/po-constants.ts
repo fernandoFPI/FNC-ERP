@@ -22,11 +22,34 @@ export type POStatus = (typeof PO_STATUSES)[number]['key'] | 'rejected' | 'cance
 export const PO_TERMINAL_STATUSES = ['completed', 'rejected', 'cancelled', 'deleted'] as const
 
 export const PO_POSITIONS = [
-  { key: 'store_keeper', label: 'Store Keeper' },
-  { key: 'store_pricing', label: 'Store Pricing' },
-  { key: 'procurement_officer', label: 'Procurement Officer' },
-  { key: 'procurement_2nd', label: '2nd Procurement' },
-  { key: 'po_admin', label: 'PO Admin' },
+  {
+    key: 'store_keeper',
+    label: 'Store Keeper',
+    description:
+      'Approves stock issuance (Store Out). Does not gate any purchase order stage — inventory check is confirmed by the PO organizer instead.',
+  },
+  {
+    key: 'store_pricing',
+    label: 'Store Pricing',
+    description: 'Enters internal stock pricing during the Store pricing stage.',
+  },
+  {
+    key: 'procurement_officer',
+    label: 'Procurement Officer',
+    description: 'Adds vendor quotes during the Market pricing stage.',
+  },
+  {
+    key: 'procurement_2nd',
+    label: '2nd Procurement',
+    description:
+      'Cross-checks market prices and submits for approval during the Price verification stage.',
+  },
+  {
+    key: 'po_admin',
+    label: 'PO Admin',
+    description:
+      'Manages PO Position assignments company-wide. Project/department scope has no effect on this position — it always acts company-wide.',
+  },
 ] as const
 
 export type POPosition = (typeof PO_POSITIONS)[number]['key']
@@ -48,8 +71,8 @@ export const PO_STATUS_ACTIONS: Record<
   },
   inventory_check: {
     label: 'Confirm inventory check',
-    description: 'Store keeper confirms which items are available in stock',
-    requiredPosition: 'store_keeper',
+    description: 'The organizer confirms which items are available in stock',
+    isOrganizer: true,
   },
   store_pricing: {
     label: 'Submit store pricing',
