@@ -87,8 +87,7 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
   <!-- Header -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:24px;border-bottom:3px solid #1a3c5e;margin-bottom:32px">
     <div>
-      <div style="font-size:22px;font-weight:700;color:#1a3c5e;margin-bottom:4px">${mi.companyName ?? 'FNC Group'}</div>
-      <div style="font-size:11px;color:#888">Farage Printing Industries</div>
+      <div style="font-size:22px;font-weight:700;color:#1a3c5e;margin-bottom:4px">${mi.companyName ?? ''}</div>
     </div>
     <div style="text-align:right">
       <div style="font-size:24px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Store Out</div>
@@ -169,7 +168,7 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
 
   <!-- Footer -->
   <div style="border-top:1px solid #e5e7eb;padding-top:16px;display:flex;justify-content:space-between;font-size:11px;color:#888">
-    <div>${mi.companyName ?? 'FNC Group'} — ${mi.issueNumber}</div>
+    <div>${mi.companyName ?? ''} — ${mi.issueNumber}</div>
     <div>Generated ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
   </div>
 

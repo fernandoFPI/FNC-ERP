@@ -12,6 +12,7 @@ import { StoreOutAttachments } from '../../../components/inventory/StoreOutAttac
 import { buildStoreOutHTML } from '../../../lib/storeOutHtml'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { useCompany } from '../../../hooks/useCompany'
 
 interface MILine {
   id: string
@@ -54,6 +55,7 @@ export default function StoreOutDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
+  const { activeCompany } = useCompany()
   const [showPrintModal, setShowPrintModal] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
 
@@ -270,7 +272,7 @@ export default function StoreOutDetail() {
                   projectName: mi.projectName,
                   poNumber: mi.poNumber,
                   issuedByName: mi.issuedByName,
-                  companyName: 'FNC Group',
+                  companyName: activeCompany?.name,
                   lines: mi.lines.map((l) => ({
                     productName: l.productName,
                     sku: l.sku,
