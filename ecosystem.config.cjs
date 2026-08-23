@@ -85,12 +85,9 @@ module.exports = {
 
     makeApp('auth',          `${BASE}/services/auth/dist/index.js`,           3001, { DB_POOL_MAX: '8' }),
     makeApp('finance',       `${BASE}/services/finance/dist/index.js`,        3002, { DB_POOL_MAX: '8' }),
-    makeApp('procurement',   `${BASE}/services/procurement/dist/index.js`,    3003, { DB_POOL_MAX: '8' }),
     makeApp('hr',            `${BASE}/services/hr/dist/index.js`,             3004, { DB_POOL_MAX: '8' }),
     makeApp('inventory',     `${BASE}/services/inventory/dist/index.js`,      3005, { DB_POOL_MAX: '8' }),
     makeApp('projects',      `${BASE}/services/projects/dist/index.js`,       3006, { DB_POOL_MAX: '8' }),
-    makeApp('manufacturing', `${BASE}/services/manufacturing/dist/index.js`,  3007, { DB_POOL_MAX: '8' }),
-    makeApp('interco',       `${BASE}/services/interco/dist/index.js`,        3008, { DB_POOL_MAX: '8' }),
     makeApp('notifications', `${BASE}/services/notifications/dist/index.js`,  3009, { DB_POOL_MAX: '8' }),
     makeApp('rental',        `${BASE}/services/rental/dist/index.js`,         3010, { DB_POOL_MAX: '8' }),
     makeApp('reporting',     `${BASE}/services/reporting/dist/index.js`,      3011, { DB_POOL_MAX: '8' }),

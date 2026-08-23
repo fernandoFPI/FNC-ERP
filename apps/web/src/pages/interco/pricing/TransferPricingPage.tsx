@@ -11,6 +11,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
+import { useCompanyStore } from '../../../store/companyStore'
 import {
   INTERCO_PRICING_SETTINGS_QUERY,
   INTERCO_PRICING_HISTORY_QUERY,
@@ -42,17 +43,19 @@ interface HistoryData {
   intercoPricingConfigHistory: PricingHistory[]
 }
 
-const COMPANIES = [
-  { id: '1', name: 'Yakam' },
-  { id: '2', name: 'Factory' },
-  { id: '3', name: 'Watanyia' },
-]
-
 export default function TransferPricingPage() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
+  const companies = useCompanyStore((s) => s.companies)
+  const activeCompany = useCompanyStore((s) => s.activeCompany)
 
-  const [selectedCompanyId, setSelectedCompanyId] = useState('1')
+  // Was hardcoded to fake ids ('1','2','3') that don't exist as real company
+  // UUIDs, so every query on this page failed with "invalid input syntax for
+  // type uuid". Use the same real company list (with real ids) the entity
+  // switcher already has for this logged-in user.
+  const [selectedCompanyId, setSelectedCompanyId] = useState(
+    () => activeCompany?.id ?? companies[0]?.id ?? '',
+  )
   const [editMethod, setEditMethod] = useState('')
   const [editMarkupPct, setEditMarkupPct] = useState('')
   const [editing, setEditing] = useState(false)
@@ -63,11 +66,12 @@ export default function TransferPricingPage() {
     refetch: refetchSettings,
   } = useQuery<SettingsData>(INTERCO_PRICING_SETTINGS_QUERY, {
     variables: { companyId: selectedCompanyId },
+    skip: !selectedCompanyId,
   })
 
   const { data: historyData, loading: historyLoading } = useQuery<HistoryData>(
     INTERCO_PRICING_HISTORY_QUERY,
-    { variables: { companyId: selectedCompanyId } },
+    { variables: { companyId: selectedCompanyId }, skip: !selectedCompanyId },
   )
 
   const [updatePricing, { loading: updating }] = useMutation(UPDATE_INTERCO_PRICING, {
@@ -166,7 +170,7 @@ export default function TransferPricingPage() {
               setSelectedCompanyId(e.target.value)
               setEditing(false)
             }}
-            options={COMPANIES.map((c) => ({ value: c.id, label: c.name }))}
+            options={companies.map((c) => ({ value: c.id, label: c.name }))}
             style={{ minWidth: '160px' }}
           />
         </div>

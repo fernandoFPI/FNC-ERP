@@ -19,7 +19,7 @@ cd "${APP_DIR}"
 NEW_SHA=$(git rev-parse HEAD)
 
 echo "Waiting for services to report healthy..."
-SERVICES="gateway:3000 auth:3001 finance:3002 procurement:3003 hr:3004 inventory:3005 projects:3006 manufacturing:3007 interco:3008 notifications:3009 rental:3010 reporting:3011"
+SERVICES="gateway:3000 auth:3001 finance:3002 hr:3004 inventory:3005 projects:3006 notifications:3009 rental:3010 reporting:3011"
 FAILED=0
 for entry in $SERVICES; do
   svc="${entry%%:*}"

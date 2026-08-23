@@ -87,7 +87,7 @@
     intercoStockTransfers(fromCompanyId: ID, toCompanyId: ID, status: String, fromDate: String, toDate: String, page: Int, limit: Int): IntercoStockTransferPage!
     intercoStockTransfer(id: ID!): IntercoStockTransferDetail
     previewTransferPrice(productId: ID!, fromCompanyId: ID!, fromLocationId: ID!, qty: Float!, marketPrice: Float): TransferPricePreview!
-    companyIntercoPricingSettings(companyId: ID!): CompanyIntercoPricingSettings!
+    companyIntercoPricingSettings(companyId: ID!): CompanyIntercoPricingSettings
 
     # File & document management
     fileDownloadUrl(fileId: ID!): DownloadUrlPayload!
@@ -139,7 +139,10 @@
     adminSetPOStatus(id: ID!, status: String!): PurchaseOrder!
     setPOPriority(id: ID!, priority: String!): PurchaseOrder!
     setPOReceiver(id: ID!, employeeId: ID): PurchaseOrder!
+    setPOVendor(id: ID!, vendorId: ID): PurchaseOrder!
     setPOLineActualPrice(poId: ID!, lineId: ID!, actualUnitPrice: Float): POLine!
+    addPOLineComment(poId: ID!, lineId: ID!, comment: String!, flag: String): POLineComment!
+    resolvePOLineComment(poId: ID!, commentId: ID!): POLineComment!
 
     # PO edit requests
     submitPOEditRequest(id: ID!, changes: String!, notes: String): POEditRequest!
@@ -1307,8 +1310,12 @@
   }
 
   type CompanyIntercoPricingSettings {
+    companyId: ID
+    companyName: String
     method: String!
-    costPlusMarkupPct: Float!
+    costPlusMarkupPct: Float
+    updatedAt: String
+    updatedByEmail: String
     configHistory: [PricingConfigChange!]!
   }
 
@@ -1803,6 +1810,8 @@
     uom: String
     qty_received: String
     actual_unit_price: String
+    currency_code: String
+    fx_rate_to_base: Float
     store_price: String
     store_price_currency: String
     market_price: String
@@ -1827,6 +1836,19 @@
     cost_center_name: String
     advance_settlement_id: ID
     is_bought: Boolean
+  }
+
+  type POLineComment {
+    id: ID!
+    po_line_id: ID!
+    comment: String!
+    created_by_name: String!
+    created_at: String!
+    flag: String
+    resolved: Boolean!
+    resolved_by: ID
+    resolved_at: String
+    resolved_by_email: String
   }
 
   type POReceiptLine {
@@ -1882,6 +1904,7 @@
 
   extend type PurchaseOrder {
     vendor_id: ID
+    base_currency_code: String
     analytic_account_id: ID
     analytic_account_name: String
     expected_delivery_date: String
@@ -1994,6 +2017,7 @@
   extend type Query {
     vendor(id: ID!): Vendor
     myApprovalQueue: [PurchaseOrder!]!
+    poLineComments(poId: ID!): [POLineComment!]!
   }
 
   extend type Mutation {
@@ -2001,12 +2025,6 @@
     updateVendor(id: ID!, input: VendorInput!): Vendor!
     createPurchaseOrder(input: POInput!): PurchaseOrder!
     updatePurchaseOrder(id: ID!, input: POInput!): PurchaseOrder!
-    submitPO(id: ID!): PurchaseOrder!
-    approveL1PO(id: ID!): PurchaseOrder!
-    approveL2PO(id: ID!): PurchaseOrder!
-    rejectPO(id: ID!, notes: String!): PurchaseOrder!
-    cancelPO(id: ID!, notes: String): PurchaseOrder!
-    markOrderedPO(id: ID!): PurchaseOrder!
     recordReceipt(poId: ID!, input: ReceiptInput!): POReceipt!
     attachReceiptPhoto(receiptId: ID!, fileId: ID!, label: String): ReceiptPhoto!
   }

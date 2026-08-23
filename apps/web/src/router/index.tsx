@@ -215,6 +215,7 @@ const IntegrationsPage = lazy(
 const DocumentNumberingPage = lazy(
   () => import('../pages/settings/company/numbering/DocumentNumberingPage'),
 )
+const PoFxRatesPage = lazy(() => import('../pages/settings/company/po-fx-rates/PoFxRatesPage'))
 const LifecycleSettingsPage = lazy(
   () => import('../pages/settings/company/lifecycle/LifecycleSettingsPage'),
 )
@@ -867,6 +868,10 @@ export const router = createBrowserRouter([
           {
             path: 'company/numbering',
             element: withPerm('admin.companies.admin', <DocumentNumberingPage />, 'admin'),
+          },
+          {
+            path: 'company/po-fx-rates',
+            element: withPerm('admin.companies.admin', <PoFxRatesPage />, 'admin'),
           },
           {
             path: 'company/lifecycle',

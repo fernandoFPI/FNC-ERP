@@ -66,7 +66,17 @@ export default function ReceiptForm() {
   const [initialized, setInitialized] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [savedReceiptId, setSavedReceiptId] = useState<string | null>(null)
+  // A submission normally becomes one receipt. In split mode it can become several
+  // (one per distinct receiver) — always an array so the photo-retry logic below
+  // doesn't need two separate code paths for the two modes.
+  const [savedReceiptIds, setSavedReceiptIds] = useState<string[]>([])
+  // Default: everything received by the one person in "Received By" below — this is
+  // exactly today's form. Unchecking it reveals a per-line receiver picker so a
+  // delivery split across multiple people doesn't need a separate form trip each.
+  const [receiveAll, setReceiveAll] = useState(true)
+  const [lineReceivers, setLineReceivers] = useState<Record<string, { id: string; name: string }>>(
+    {},
+  )
 
   const { data: poData } = useQuery(PURCHASE_ORDER_QUERY, { variables: { id }, skip: !id })
 
@@ -207,6 +217,10 @@ export default function ReceiptForm() {
       addToast({ type: 'error', message: 'Please select who received the goods' })
       return
     }
+    if (!lines.some((l) => parseFloat(l.qty_to_receive) > 0)) {
+      addToast({ type: 'error', message: 'Enter a quantity for at least one line' })
+      return
+    }
     const hasVendorReceipt = pendingPhotos.some((p) => p.kind === 'vendor_receipt')
     const hasMaterials = pendingPhotos.some((p) => p.kind === 'materials')
     if (!hasVendorReceipt || !hasMaterials) {
@@ -221,37 +235,82 @@ export default function ReceiptForm() {
     }
     setSubmitting(true)
     try {
-      // If the receipt was already saved (photo retry), skip re-recording
-      let receiptId = savedReceiptId
-      if (!receiptId) {
-        const { data: receiptData } = await recordReceipt({
-          variables: {
-            poId: id,
-            input: {
-              receipt_date: form.receipt_date,
-              location_id: form.location_id || undefined,
-              notes: form.notes || undefined,
-              received_by_name: form.received_by_name,
-              location_notes: form.location_notes || undefined,
-              lines: lines
-                .filter((l) => parseFloat(l.qty_to_receive) > 0)
-                .map((l) => ({
+      // If the receipt(s) were already saved (photo retry), skip re-recording
+      let receiptIds = savedReceiptIds
+      if (receiptIds.length === 0) {
+        const toReceive = lines.filter((l) => parseFloat(l.qty_to_receive) > 0)
+        if (receiveAll) {
+          const { data: receiptData } = await recordReceipt({
+            variables: {
+              poId: id,
+              input: {
+                receipt_date: form.receipt_date,
+                location_id: form.location_id || undefined,
+                notes: form.notes || undefined,
+                received_by_name: form.received_by_name,
+                location_notes: form.location_notes || undefined,
+                lines: toReceive.map((l) => ({
                   po_line_id: l.po_line_id,
                   qty_received: parseFloat(l.qty_to_receive),
                 })),
+              },
             },
-          },
-          refetchQueries: [{ query: PURCHASE_ORDER_QUERY, variables: { id } }],
-        })
-        receiptId = receiptData.recordReceipt.id as string
-        setSavedReceiptId(receiptId)
+            refetchQueries: [{ query: PURCHASE_ORDER_QUERY, variables: { id } }],
+          })
+          receiptIds = [receiptData.recordReceipt.id as string]
+        } else {
+          // Group lines by their effective receiver (per-line override, falling back
+          // to the top "Received By" field), then file one receipt per distinct
+          // receiver — same underlying multi-receipt model as separate form trips,
+          // just done as one submission.
+          const groups = new Map<string, { name: string; lines: typeof toReceive }>()
+          for (const line of toReceive) {
+            const override = lineReceivers[line.po_line_id]
+            const name = override?.name || form.received_by_name
+            const key = override?.id || form.received_by_id || name
+            const group = groups.get(key)
+            if (group) group.lines.push(line)
+            else groups.set(key, { name, lines: [line] })
+          }
+          const newIds: string[] = []
+          const groupEntries = [...groups.values()]
+          for (let g = 0; g < groupEntries.length; g++) {
+            const { name, lines: groupLines } = groupEntries[g]
+            const isLast = g === groupEntries.length - 1
+            const { data: receiptData } = await recordReceipt({
+              variables: {
+                poId: id,
+                input: {
+                  receipt_date: form.receipt_date,
+                  location_id: form.location_id || undefined,
+                  notes: form.notes || undefined,
+                  received_by_name: name,
+                  location_notes: form.location_notes || undefined,
+                  lines: groupLines.map((l) => ({
+                    po_line_id: l.po_line_id,
+                    qty_received: parseFloat(l.qty_to_receive),
+                  })),
+                },
+              },
+              refetchQueries: isLast
+                ? [{ query: PURCHASE_ORDER_QUERY, variables: { id } }]
+                : undefined,
+            })
+            newIds.push(receiptData.recordReceipt.id as string)
+          }
+          receiptIds = newIds
+        }
+        setSavedReceiptIds(receiptIds)
       }
+      // Photos (the two required categories) are attached once per submission, to
+      // the first receipt filed — not duplicated across every split-mode receiver.
+      const receiptId = receiptIds[0]
 
-      // Upload photos sequentially. On a retry (savedReceiptId already set), skip photos
+      // Upload photos sequentially. On a retry (receipt(s) already saved), skip photos
       // that previously succeeded (no error). Only re-attempt ones still showing an error.
       let photosFailed = 0
       for (const photo of pendingPhotos) {
-        if (savedReceiptId && !photo.error) continue // already uploaded successfully
+        if (savedReceiptIds.length > 0 && !photo.error) continue // already uploaded successfully
         setPendingPhotos((prev) =>
           prev.map((p) => (p.id === photo.id ? { ...p, uploading: true, error: undefined } : p)),
         )
@@ -362,6 +421,55 @@ export default function ReceiptForm() {
         />
       ),
     },
+    ...(receiveAll
+      ? []
+      : [
+          {
+            key: 'receiver',
+            label: 'Receiver',
+            width: '160px',
+            render: (line: ReceiptLine) => (
+              <select
+                value={lineReceivers[line.po_line_id]?.id ?? ''}
+                onChange={(e) => {
+                  const empId = e.target.value
+                  if (!empId) {
+                    setLineReceivers((prev) => {
+                      const next = { ...prev }
+                      delete next[line.po_line_id]
+                      return next
+                    })
+                    return
+                  }
+                  const emp = employees.find((emp2) => emp2.id === empId)
+                  setLineReceivers((prev) => ({
+                    ...prev,
+                    [line.po_line_id]: {
+                      id: empId,
+                      name: emp ? `${emp.first_name} ${emp.last_name}` : '',
+                    },
+                  }))
+                }}
+                style={{
+                  width: '100%',
+                  fontSize: '12px',
+                  padding: '4px 6px',
+                  borderRadius: '4px',
+                  border: `1px solid ${theme.border}`,
+                  background: 'transparent',
+                  color: theme.textPrimary,
+                }}
+              >
+                <option value="">— Default —</option>
+                {employees.map((emp2) => (
+                  <option key={emp2.id} value={emp2.id}>
+                    {emp2.first_name} {emp2.last_name}
+                  </option>
+                ))}
+              </select>
+            ),
+          },
+        ]),
   ]
 
   function renderPhotoGrid(kind: PhotoKind) {
@@ -526,6 +634,31 @@ export default function ReceiptForm() {
           <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
             Receipt Details
           </div>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '13px',
+              color: theme.textPrimary,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={receiveAll}
+              onChange={(e) => {
+                setReceiveAll(e.target.checked)
+              }}
+            />
+            Receive All Items (single receiver)
+          </label>
+          {!receiveAll && (
+            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '-8px' }}>
+              Each line below can be assigned its own receiver — leave a line unassigned to use
+              the default receiver.
+            </div>
+          )}
           <div
             style={{
               display: 'grid',
@@ -559,7 +692,7 @@ export default function ReceiptForm() {
             </Select>
             <div>
               <SearchableSelect
-                label="Received By *"
+                label={receiveAll ? 'Received By *' : 'Default Receiver *'}
                 value={form.received_by_id}
                 onChange={(v) => {
                   const emp = employees.find((e) => e.id === v)
@@ -575,7 +708,9 @@ export default function ReceiptForm() {
               />
               {form.received_by_id && (
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '3px' }}>
-                  Auto-selected — change if someone else received the goods
+                  {receiveAll
+                    ? 'Auto-selected — change if someone else received the goods'
+                    : 'Used for any line below with no receiver of its own'}
                 </div>
               )}
             </div>

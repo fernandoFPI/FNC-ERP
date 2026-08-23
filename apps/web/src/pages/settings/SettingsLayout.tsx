@@ -48,6 +48,7 @@ function buildNav(role: string | undefined): NavGroup[] {
         { label: 'Accounting', path: '/settings/company/accounting' },
         { label: 'Integrations', path: '/settings/company/integrations' },
         { label: 'Document Numbering', path: '/settings/company/numbering' },
+        { label: 'PO Exchange Rates', path: '/settings/company/po-fx-rates' },
         { label: 'Project Lifecycle', path: '/settings/company/lifecycle' },
       ],
     })

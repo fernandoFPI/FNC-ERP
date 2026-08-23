@@ -65,8 +65,18 @@ interface CreateTxForm {
   toAccountId: string
 }
 
+// Must match interco_transactions_transaction_type_check in the DB —
+// the previous list here (interco_charge/interco_loan/interco_settlement)
+// didn't, so every create and every type-filter silently failed.
+const TRANSACTION_TYPES = [
+  { value: 'goods_transfer', label: 'Goods Transfer' },
+  { value: 'service_charge', label: 'Service Charge' },
+  { value: 'equipment_rental', label: 'Equipment Rental' },
+  { value: 'management_fee', label: 'Management Fee' },
+]
+
 const EMPTY_FORM: CreateTxForm = {
-  transactionType: 'interco_charge',
+  transactionType: 'goods_transfer',
   fromCompanyId: '',
   toCompanyId: '',
   amount: '',
@@ -141,7 +151,8 @@ export default function IntercoTransactionsPage() {
       mobilePriority: 3,
       render: (row) => (
         <Badge variant="neutral" size="sm">
-          {row.transactionType.replace('interco_', '')}
+          {TRANSACTION_TYPES.find((t) => t.value === row.transactionType)?.label ??
+            row.transactionType}
         </Badge>
       ),
     },
@@ -244,11 +255,7 @@ export default function IntercoTransactionsPage() {
               label: 'Type',
               value: typeFilter,
               onChange: setTypeFilter,
-              options: [
-                { value: 'interco_charge', label: 'Charge' },
-                { value: 'interco_loan', label: 'Loan' },
-                { value: 'interco_settlement', label: 'Settlement' },
-              ],
+              options: TRANSACTION_TYPES,
             },
           ]}
           fromDate={fromDate}
@@ -324,11 +331,7 @@ export default function IntercoTransactionsPage() {
             onChange={(e) => {
               setForm((f) => ({ ...f, transactionType: e.target.value }))
             }}
-            options={[
-              { value: 'interco_charge', label: 'Interco Charge' },
-              { value: 'interco_loan', label: 'Interco Loan' },
-              { value: 'interco_settlement', label: 'Settlement' },
-            ]}
+            options={TRANSACTION_TYPES}
           />
           <div
             style={{

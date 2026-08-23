@@ -769,58 +769,6 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@20.19.41)(jsdom@24.1.3)(terser@5.48.0)
 
-  services/interco:
-    dependencies:
-      '@fnc-erp/audit':
-        specifier: workspace:*
-        version: link:../../packages/audit
-      '@fnc-erp/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
-      '@fnc-erp/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@fnc-erp/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@fnc-erp/fx':
-        specifier: workspace:*
-        version: link:../../packages/fx
-      '@fnc-erp/logger':
-        specifier: workspace:*
-        version: link:../../packages/logger
-      '@fnc-erp/permissions':
-        specifier: workspace:*
-        version: link:../../packages/permissions
-      '@fnc-erp/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      express:
-        specifier: ^4.19.2
-        version: 4.22.2
-      zod:
-        specifier: ^3.23.4
-        version: 3.25.76
-    devDependencies:
-      '@types/express':
-        specifier: ^4.17.21
-        version: 4.17.25
-      '@types/supertest':
-        specifier: ^6.0.2
-        version: 6.0.3
-      supertest:
-        specifier: ^7.0.0
-        version: 7.2.2
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@20.19.41)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.9
-        version: 2.1.9(@types/node@20.19.41)(jsdom@24.1.3)(terser@5.48.0)
-
   services/inventory:
     dependencies:
       '@fnc-erp/audit':
@@ -844,58 +792,6 @@ importers:
       '@fnc-erp/types':
         specifier: workspace:*
         version: link:../../packages/types
-      express:
-        specifier: ^4.19.2
-        version: 4.22.2
-      zod:
-        specifier: ^3.23.4
-        version: 3.25.76
-    devDependencies:
-      '@types/express':
-        specifier: ^4.17.21
-        version: 4.17.25
-      '@types/supertest':
-        specifier: ^6.0.2
-        version: 6.0.3
-      supertest:
-        specifier: ^7.0.0
-        version: 7.2.2
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@20.19.41)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.9
-        version: 2.1.9(@types/node@20.19.41)(jsdom@24.1.3)(terser@5.48.0)
-
-  services/manufacturing:
-    dependencies:
-      '@fnc-erp/audit':
-        specifier: workspace:*
-        version: link:../../packages/audit
-      '@fnc-erp/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
-      '@fnc-erp/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@fnc-erp/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@fnc-erp/logger':
-        specifier: workspace:*
-        version: link:../../packages/logger
-      '@fnc-erp/permissions':
-        specifier: workspace:*
-        version: link:../../packages/permissions
-      '@fnc-erp/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      '@fnc-erp/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
       express:
         specifier: ^4.19.2
         version: 4.22.2
@@ -958,58 +854,6 @@ importers:
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.1
-      supertest:
-        specifier: ^7.0.0
-        version: 7.2.2
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@20.19.41)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.9
-        version: 2.1.9(@types/node@20.19.41)(jsdom@24.1.3)(terser@5.48.0)
-
-  services/procurement:
-    dependencies:
-      '@fnc-erp/audit':
-        specifier: workspace:*
-        version: link:../../packages/audit
-      '@fnc-erp/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
-      '@fnc-erp/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@fnc-erp/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@fnc-erp/logger':
-        specifier: workspace:*
-        version: link:../../packages/logger
-      '@fnc-erp/permissions':
-        specifier: workspace:*
-        version: link:../../packages/permissions
-      '@fnc-erp/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      '@fnc-erp/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
-      express:
-        specifier: ^4.19.2
-        version: 4.22.2
-      zod:
-        specifier: ^3.23.4
-        version: 3.25.76
-    devDependencies:
-      '@types/express':
-        specifier: ^4.17.21
-        version: 4.17.25
-      '@types/supertest':
-        specifier: ^6.0.2
-        version: 6.0.3
       supertest:
         specifier: ^7.0.0
         version: 7.2.2

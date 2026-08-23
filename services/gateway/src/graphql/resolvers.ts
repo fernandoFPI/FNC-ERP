@@ -61,13 +61,10 @@ async function fetchAllHealth(): Promise<HealthEntry[]> {
   const serviceUrls: Record<string, string> = {
     auth: env.AUTH_SERVICE_URL,
     finance: env.FINANCE_SERVICE_URL,
-    procurement: env.PROCUREMENT_SERVICE_URL,
     inventory: env.INVENTORY_SERVICE_URL,
     hr: env.HR_SERVICE_URL,
     projects: env.PROJECTS_SERVICE_URL,
-    manufacturing: env.MANUFACTURING_SERVICE_URL,
     rental: env.RENTAL_SERVICE_URL,
-    interco: env.INTERCO_SERVICE_URL,
     notifications: env.NOTIFICATIONS_SERVICE_URL,
     reporting: env.REPORTING_SERVICE_URL,
     gateway: `http://localhost:${process.env.PORT ?? 3000}`,
@@ -229,30 +226,46 @@ async function applyPOEditChanges(
       poId,
     ])
   }
-  for (const line of changes.lines?.added ?? []) {
-    const qty = Number(line.qty_ordered ?? 0),
-      price = Number(line.unit_price ?? 0)
-    await client.query(
-      `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,currency_code,uom,total_price)
-       VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$6,$7,$8)`,
-      [
-        poId,
-        line.description,
-        line.product_id ?? null,
-        qty,
-        price,
-        line.currency_code ?? 'IQD',
-        line.uom ?? 'unit',
-        qty * price,
-      ],
+  if ((changes.lines?.added ?? []).length > 0) {
+    const poRes = await client.query<{ company_id: string; base_currency_code: string }>(
+      `SELECT company_id, base_currency_code FROM purchase_orders WHERE id=$1`,
+      [poId],
     )
+    const companyId = poRes.rows[0]!.company_id
+    const baseCurrencyCode = poRes.rows[0]!.base_currency_code
+    for (const line of changes.lines?.added ?? []) {
+      const qty = Number(line.qty_ordered ?? 0),
+        price = Number(line.unit_price ?? 0)
+      const currencyCode = (line.currency_code as string | undefined) ?? baseCurrencyCode
+      const fxRateToBase = await resolveFxRateToBase(client, companyId, currencyCode, baseCurrencyCode)
+      await client.query(
+        `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,currency_code,fx_rate_to_base,uom,total_price)
+         VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          poId,
+          line.description,
+          line.product_id ?? null,
+          qty,
+          price,
+          currencyCode,
+          fxRateToBase,
+          line.uom ?? 'unit',
+          qty * price,
+        ],
+      )
+    }
   }
   for (const lineId of changes.lines?.removed ?? []) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
   }
   if (changes.lines) {
+    // Converted the same way as recalcPO — see that function's comment.
     await client.query(
-      `UPDATE purchase_orders SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),updated_at=NOW() WHERE id=$1`,
+      `UPDATE purchase_orders
+       SET subtotal=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
+           total_amount=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
+           updated_at=NOW()
+       WHERE id=$1`,
       [poId],
     )
   }
@@ -1149,9 +1162,46 @@ async function notifyDeptHeadsAndAdminsGW(
   }
 }
 
+// Resolves what to multiply an amount in `currencyCode` by to get an amount in
+// the PO's base currency. 1 when they already match (the common case, needs no
+// configuration); otherwise looks up the company's manually-maintained
+// po_fx_rates (Settings → PO Exchange Rates — deliberately not the date-scored
+// automated fx_rates/fx_rate_sync tables, which are for finance journal
+// revaluation, not this). Throws rather than silently defaulting to 1 for an
+// unconfigured currency, since that would understate/overstate the PO total.
+async function resolveFxRateToBase(
+  client: import('@fnc-erp/db').PoolClient,
+  companyId: string,
+  currencyCode: string,
+  baseCurrencyCode: string,
+): Promise<number> {
+  if (currencyCode === baseCurrencyCode) return 1
+  const r = await client.query<{ rate_to_base: number }>(
+    `SELECT rate_to_base FROM po_fx_rates WHERE company_id=$1 AND currency_code=$2`,
+    [companyId, currencyCode],
+  )
+  const rate = r.rows[0]?.rate_to_base
+  if (rate == null)
+    throw new Error(
+      `No PO exchange rate configured for ${currencyCode} → ${baseCurrencyCode}. Set one in Settings → PO Exchange Rates first.`,
+    )
+  return rate
+}
+
 async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string): Promise<void> {
+  // Each line's total_price is in that line's own currency_code; fx_rate_to_base
+  // (set when the line is priced — see submitPOMarketPricing) converts it into
+  // the PO's base_currency_code before summing, so the header total is always a
+  // real, correctly-converted number even when lines were quoted in different
+  // currencies. Lines not yet priced (fx_rate_to_base still NULL) are treated as
+  // already-in-base-currency (rate 1) — the common, same-currency case needs no
+  // configuration at all.
   await client.query(
-    `UPDATE purchase_orders SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1), total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1), updated_at=NOW() WHERE id=$1`,
+    `UPDATE purchase_orders
+     SET subtotal=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
+         total_amount=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
+         updated_at=NOW()
+     WHERE id=$1`,
     [poId],
   )
 }
@@ -4394,8 +4444,11 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      let sql = `SELECT b.*, p.name AS product_name FROM boms b
-                 JOIN products p ON p.id = b.finished_product_id WHERE 1=1`
+      // LEFT JOIN, not JOIN: a BOM whose finished_product_id points at a
+      // product that's since been deleted must still show up (flagged, not
+      // silently dropped from the list) rather than vanish with no error.
+      let sql = `SELECT b.*, COALESCE(p.name, '(product not found)') AS product_name FROM boms b
+                 LEFT JOIN products p ON p.id = b.finished_product_id WHERE 1=1`
       const params: unknown[] = []
       let idx = 1
       if (!args.allCompanies) {
@@ -4663,39 +4716,6 @@ export const resolvers = {
         createdAt: r.created_at,
         uploadedByEmail: r.uploaded_by_email,
       }))
-    },
-
-    companyIntercoPricingSettings: async (
-      _: unknown,
-      args: { companyId: string },
-      ctx: GQLContext,
-    ) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      const [settings, history] = await Promise.all([
-        query<{ interco_transfer_pricing_method: string; interco_cost_plus_markup_pct: string }>(
-          `SELECT interco_transfer_pricing_method, interco_cost_plus_markup_pct FROM companies WHERE id=$1`,
-          [args.companyId],
-        ),
-        query(
-          `SELECT * FROM interco_pricing_config_log WHERE company_id=$1 ORDER BY created_at DESC LIMIT 10`,
-          [args.companyId],
-        ),
-      ])
-      if (!settings.rows[0]) throw new Error('Company not found')
-      return {
-        method: settings.rows[0].interco_transfer_pricing_method,
-        costPlusMarkupPct: parseFloat(settings.rows[0].interco_cost_plus_markup_pct),
-        configHistory: history.rows.map((r: Record<string, unknown>) => ({
-          id: r.id,
-          previousMethod: r.previous_method,
-          newMethod: r.new_method,
-          previousMarkupPct:
-            r.previous_markup_pct != null ? parseFloat(String(r.previous_markup_pct)) : null,
-          newMarkupPct: r.new_markup_pct != null ? parseFloat(String(r.new_markup_pct)) : null,
-          effectiveFrom: r.effective_from,
-          notes: r.notes,
-        })),
-      }
     },
 
     // Invoicing — contracts
@@ -6097,6 +6117,25 @@ export const resolvers = {
             ctx.auth.role,
             hasFinance,
           ],
+        )
+      ).rows
+    },
+
+    // Ported from the deleted services/procurement REST route (GET
+    // /:id/line-comments).
+    poLineComments: async (_: unknown, args: { poId: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return []
+      return (
+        await query(
+          `SELECT c.id, c.po_line_id, c.comment, c.created_by_name, c.created_at,
+                  c.flag, c.resolved, c.resolved_by, c.resolved_at,
+                  ru.email AS resolved_by_email
+           FROM po_line_comments c
+           JOIN purchase_orders po ON po.id = c.po_id
+           LEFT JOIN users ru ON ru.id = c.resolved_by
+           WHERE c.po_id = $1 AND po.company_id = $2
+           ORDER BY c.created_at ASC`,
+          [args.poId, ctx.auth.companyId],
         )
       ).rows
     },
@@ -7795,6 +7834,17 @@ export const resolvers = {
       if (!resolvedBuyerUserId) {
         resolvedBuyerUserId = ctx.auth.userId
       }
+      // Snapshotted at creation (rather than joined live) so a later change to
+      // the company's default PO currency doesn't retroactively reinterpret
+      // what an existing PO's total_amount is denominated in. default_po_currency
+      // lives on system_configuration (one row per company), not on companies
+      // itself — and is distinct from system_configuration.default_currency,
+      // which is the company's general default, not PO-specific.
+      const companyCurrencyRes = await query<{ default_po_currency: string }>(
+        `SELECT default_po_currency FROM system_configuration WHERE company_id=$1`,
+        [ctx.auth.companyId],
+      )
+      const baseCurrencyCode = companyCurrencyRes.rows[0]?.default_po_currency ?? 'IQD'
       if (i.linkedProjectId) {
         const projCheck = await query(
           `SELECT status, is_rfq FROM projects WHERE id=$1 AND company_id=$2`,
@@ -7820,8 +7870,8 @@ export const resolvers = {
             ? i.priority
             : 'low'
           const po = await client.query(
-            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,assigned_buyer_user_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18) RETURNING *`,
+            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,assigned_buyer_user_id,base_currency_code)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18,$19) RETURNING *`,
             [
               ctx.auth!.companyId,
               poNum,
@@ -7841,6 +7891,7 @@ export const resolvers = {
               priority,
               i.branch_id ?? null,
               resolvedBuyerUserId,
+              baseCurrencyCode,
             ],
           )
           const poRow = po.rows[0] as Record<string, unknown>
@@ -7905,101 +7956,6 @@ export const resolvers = {
       return upd.rows[0]
     },
 
-    submitPO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      return withTransaction(
-        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
-        async (client) => {
-          const r = await client.query(
-            `UPDATE purchase_orders SET status='submitted', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING *`,
-            [args.id, ctx.auth!.companyId],
-          )
-          if (!r.rows[0]) throw new Error('PO not found or not in draft')
-          await client.query(
-            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'submitted',$2)`,
-            [args.id, ctx.auth!.userId],
-          )
-          return r.rows[0]
-        },
-      )
-    },
-
-    approveL1PO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      return withTransaction(
-        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
-        async (client) => {
-          const r = await client.query(
-            `UPDATE purchase_orders SET status='approved_l1', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status IN ('submitted','pending_review','under_review') RETURNING *`,
-            [args.id, ctx.auth!.companyId],
-          )
-          if (!r.rows[0]) throw new Error('PO not found or invalid status for L1 approval')
-          await client.query(
-            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'approved_l1',$2)`,
-            [args.id, ctx.auth!.userId],
-          )
-          return r.rows[0]
-        },
-      )
-    },
-
-    approveL2PO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      return withTransaction(
-        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
-        async (client) => {
-          const r = await client.query(
-            `UPDATE purchase_orders SET status='approved_l2', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status='approved_l1' RETURNING *`,
-            [args.id, ctx.auth!.companyId],
-          )
-          if (!r.rows[0]) throw new Error('PO not found or not at L1 approval')
-          await client.query(
-            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'approved_l2',$2)`,
-            [args.id, ctx.auth!.userId],
-          )
-          return r.rows[0]
-        },
-      )
-    },
-
-    rejectPO: async (_: unknown, args: { id: string; notes: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      return withTransaction(
-        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
-        async (client) => {
-          const r = await client.query(
-            `UPDATE purchase_orders SET status='rejected', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status NOT IN ('closed','cancelled') RETURNING *`,
-            [args.id, ctx.auth!.companyId],
-          )
-          if (!r.rows[0]) throw new Error('PO not found or cannot be rejected')
-          await client.query(
-            `INSERT INTO po_approval_log (po_id,action,user_id,notes) VALUES ($1,'rejected',$2,$3)`,
-            [args.id, ctx.auth!.userId, args.notes],
-          )
-          return r.rows[0]
-        },
-      )
-    },
-
-    markOrderedPO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
-      if (!ctx.auth) throw new Error('Unauthorized')
-      return withTransaction(
-        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
-        async (client) => {
-          const r = await client.query(
-            `UPDATE purchase_orders SET status='ordered', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status IN ('approved_l1','approved_l2') RETURNING *`,
-            [args.id, ctx.auth!.companyId],
-          )
-          if (!r.rows[0]) throw new Error('PO not found or not approved')
-          await client.query(
-            `INSERT INTO po_approval_log (po_id,action,actor_id) VALUES ($1,'ordered',$2)`,
-            [args.id, ctx.auth!.userId],
-          )
-          return r.rows[0]
-        },
-      )
-    },
-
     recordReceipt: async (
       _: unknown,
       args: {
@@ -8060,6 +8016,28 @@ export const resolvers = {
             receipt_date: dbRow.received_date,
             location_id: dbRow.warehouse_location_id,
           }
+          // "Receiving Location" is optional on the form, but stock_moves.to_location_id
+          // is NOT NULL — fall back to the company's default warehouse (same lookup
+          // used elsewhere for stock-issuance moves, see issueStockForPOLines above)
+          // rather than crash when no location was picked.
+          let resolvedToLocationId = i.location_id
+          if (!resolvedToLocationId) {
+            const warehouseRes = await client.query(
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+              [ctx.auth!.companyId],
+            )
+            const fallbackRes = await client.query(
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
+              [ctx.auth!.companyId],
+            )
+            resolvedToLocationId = (warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id) as
+              | string
+              | undefined
+            if (!resolvedToLocationId)
+              throw new Error(
+                'No active stock location is configured for this company. Set one up in Inventory, or pick a receiving location on this receipt.',
+              )
+          }
           let virtualInId: string | undefined
           for (const l of i.lines) {
             await client.query(
@@ -8105,7 +8083,7 @@ export const resolvers = {
                   ctx.auth!.companyId,
                   polProductId,
                   virtualInId,
-                  i.location_id,
+                  resolvedToLocationId,
                   i.receipt_date,
                   l.qty_received,
                   polUnitPrice,
@@ -17130,6 +17108,50 @@ export const resolvers = {
       return po
     },
 
+    setPOVendor: async (
+      _: unknown,
+      args: { id: string; vendorId?: string | null },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      const isAdmin = isAdminGW(auth.role)
+      const hasPos = await userHasPositionGW(
+        auth.userId,
+        auth.companyId,
+        args.id,
+        'procurement_officer',
+      )
+      const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+      if (!isAdmin && !hasPos && !isOrganizer)
+        throw new Error('procurement_officer position or PO organizer required')
+      const poCheck = await query(`SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
+        args.id,
+        auth.companyId,
+      ])
+      if (!poCheck.rows[0]) throw new Error('PO not found')
+      // Vendor is normally chosen during market pricing (030_po_lifecycle_redesign.sql),
+      // not at creation — this control lets it be set/corrected any time up through
+      // that stage, but not after price verification has started against it.
+      const editableStatuses = ['draft', 'inventory_check', 'store_pricing', 'market_pricing']
+      if (!editableStatuses.includes((poCheck.rows[0] as { status: string }).status))
+        throw new Error('Vendor can only be assigned or changed before price verification')
+      if (args.vendorId) {
+        const vendorCheck = await query(
+          `SELECT id FROM vendors WHERE id=$1 AND company_id=$2 AND is_active=true`,
+          [args.vendorId, auth.companyId],
+        )
+        if (!vendorCheck.rows[0]) throw new Error('Vendor not found')
+      }
+      const r = await query(
+        `UPDATE purchase_orders SET vendor_id=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *`,
+        [args.vendorId ?? null, args.id, auth.companyId],
+      )
+      if (!r.rows[0]) throw new Error('PO not found')
+      void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+      return getPOForReturn(args.id)
+    },
+
     setPOLineActualPrice: async (
       _: unknown,
       args: { poId: string; lineId: string; actualUnitPrice?: number | null },
@@ -17149,16 +17171,73 @@ export const resolvers = {
          WHERE id=$2 RETURNING *`,
         [args.actualUnitPrice ?? null, args.lineId],
       )
-      // Recalculate PO-level subtotal and total_amount
+      // Recalculate PO-level subtotal and total_amount, converted to base currency
+      // the same way as recalcPO (see that function's comment) — actual_unit_price
+      // can be entered on a line priced in a non-base currency, so this must
+      // convert too, or a mixed-currency PO's total silently goes wrong the moment
+      // a buyer records what they actually paid.
       await query(
         `UPDATE purchase_orders
-         SET subtotal=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),
-             total_amount=(SELECT COALESCE(SUM(total_price),0) FROM po_lines WHERE po_id=$1),
+         SET subtotal=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
+             total_amount=(SELECT COALESCE(SUM(total_price * COALESCE(fx_rate_to_base,1)),0) FROM po_lines WHERE po_id=$1),
              updated_at=NOW()
          WHERE id=$1`,
         [args.poId],
       )
       return r.rows[0]
+    },
+
+    // Ported from the deleted services/procurement REST route (POST
+    // /:id/lines/:lineId/comments) — see git history for the original.
+    addPOLineComment: async (
+      _: unknown,
+      args: { poId: string; lineId: string; comment: string; flag?: string | null },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (!args.comment.trim()) throw new Error('Comment is required')
+      const validFlags = ['info', 'warning', 'dispute']
+      const safeFlag = args.flag && validFlags.includes(args.flag) ? args.flag : null
+      const po = await query(`SELECT id FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
+        args.poId,
+        ctx.auth.companyId,
+      ])
+      if (!po.rows[0]) throw new Error('PO not found')
+      const userRow = await query(
+        `SELECT COALESCE(NULLIF(TRIM(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')), ''), email) AS display_name FROM users WHERE id=$1`,
+        [ctx.auth.userId],
+      )
+      const displayName = (userRow.rows[0]?.display_name as string | undefined) ?? 'Unknown'
+      const result = await query(
+        `INSERT INTO po_line_comments (po_line_id, po_id, comment, created_by_name, flag)
+         VALUES ($1,$2,$3,$4,$5)
+         RETURNING id, po_line_id, comment, created_by_name, created_at, flag, resolved, resolved_by, resolved_at`,
+        [args.lineId, args.poId, args.comment.trim(), displayName, safeFlag],
+      )
+      return result.rows[0]
+    },
+
+    // Ported from the deleted services/procurement REST route (PATCH
+    // /:id/lines/:lineId/comments/:commentId/resolve).
+    resolvePOLineComment: async (
+      _: unknown,
+      args: { poId: string; commentId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const po = await query(`SELECT id FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
+        args.poId,
+        ctx.auth.companyId,
+      ])
+      if (!po.rows[0]) throw new Error('PO not found')
+      const result = await query(
+        `UPDATE po_line_comments SET resolved=true, resolved_by=$1, resolved_at=NOW()
+         WHERE id=$2 AND po_id=$3 AND flag IS NOT NULL AND resolved=false
+         RETURNING id, po_line_id, comment, created_by_name, created_at, flag, resolved, resolved_by, resolved_at`,
+        [ctx.auth.userId, args.commentId, args.poId],
+      )
+      if (!result.rows[0]) throw new Error('Flag not found or already resolved')
+      return result.rows[0]
     },
 
     createProjectStage: async (
@@ -18169,20 +18248,69 @@ export const resolvers = {
           if (!bom.rows[0]) throw new Error('BOM not found')
           const lines = i.lines as Record<string, unknown>[] | undefined
           if (lines) {
-            await client.query(`DELETE FROM bom_lines WHERE bom_id=$1`, [args.id])
+            // A line already consumed by an MO (mo_consumptions.bom_line_id) can't be
+            // deleted — its FK blocks that. Delete-all-then-reinsert-all (the old
+            // approach) hit that FK violation on ANY edit to a BOM that had ever been
+            // used, even a notes-only typo fix. Instead: delete only lines with no
+            // consumption history, and update matching consumed lines in place
+            // (preserving their id, so mo_consumptions stays valid) rather than
+            // recreating them.
+            const existingLines = await client.query<{
+              id: string
+              component_product_id: string
+              consumed: boolean
+            }>(
+              `SELECT bl.id, bl.component_product_id,
+                      EXISTS(SELECT 1 FROM mo_consumptions mc WHERE mc.bom_line_id = bl.id) AS consumed
+               FROM bom_lines bl WHERE bl.bom_id = $1`,
+              [args.id],
+            )
+            const consumedLines = existingLines.rows.filter((r) => r.consumed)
+            const nonConsumedIds = existingLines.rows.filter((r) => !r.consumed).map((r) => r.id)
+            if (nonConsumedIds.length > 0) {
+              await client.query(`DELETE FROM bom_lines WHERE id = ANY($1::uuid[])`, [
+                nonConsumedIds,
+              ])
+            }
+            const consumedByProduct = new Map(
+              consumedLines.map((r) => [r.component_product_id, r.id]),
+            )
+            const matchedConsumedIds = new Set<string>()
             for (let idx = 0; idx < lines.length; idx++) {
               const l = lines[idx]
-              await client.query(
-                `INSERT INTO bom_lines (bom_id,sequence,component_product_id,qty_required,uom,unit_cost,notes) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                [
-                  args.id,
-                  l.sequence ?? idx + 1,
-                  l.component_product_id,
-                  l.qty_required ?? l.qty,
-                  l.uom ?? 'unit',
-                  l.unit_cost ?? 0,
-                  l.notes ?? null,
-                ],
+              const consumedLineId = consumedByProduct.get(l.component_product_id as string)
+              if (consumedLineId && !matchedConsumedIds.has(consumedLineId)) {
+                matchedConsumedIds.add(consumedLineId)
+                await client.query(
+                  `UPDATE bom_lines SET sequence=$1, qty_required=$2, uom=$3, unit_cost=$4, notes=$5 WHERE id=$6`,
+                  [
+                    l.sequence ?? idx + 1,
+                    l.qty_required ?? l.qty,
+                    l.uom ?? 'unit',
+                    l.unit_cost ?? 0,
+                    l.notes ?? null,
+                    consumedLineId,
+                  ],
+                )
+              } else {
+                await client.query(
+                  `INSERT INTO bom_lines (bom_id,sequence,component_product_id,qty_required,uom,unit_cost,notes) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                  [
+                    args.id,
+                    l.sequence ?? idx + 1,
+                    l.component_product_id,
+                    l.qty_required ?? l.qty,
+                    l.uom ?? 'unit',
+                    l.unit_cost ?? 0,
+                    l.notes ?? null,
+                  ],
+                )
+              }
+            }
+            const removedConsumed = consumedLines.filter((r) => !matchedConsumedIds.has(r.id))
+            if (removedConsumed.length > 0) {
+              throw new Error(
+                'One or more components in this BOM have already been consumed by a production order and cannot be removed. Edit their quantity instead of deleting them, or contact an admin.',
               )
             }
           }
@@ -23883,20 +24011,41 @@ const phase5MutationResolvers = {
       args.id,
       'procurement_officer',
     )
-    if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
+    // Same organizer fallback as submitPOStorePricing: without this, a PO with no
+    // procurement_officer assigned in scope could get permanently stuck with no
+    // vendor and no way for anyone but an admin to unblock it.
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !hasPos && !isOrganizer)
+      throw new Error('procurement_officer position or PO organizer required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      // Market pricing is where a line's real currency is actually known (a vendor
+      // quote), so this is where currency_code — dead weight before this point,
+      // frozen at its creation-time default — finally becomes live, alongside the
+      // rate used to convert it into the PO's base currency for recalcPO.
+      const poRes = await client.query<{ base_currency_code: string }>(
+        `SELECT base_currency_code FROM purchase_orders WHERE id=$1`,
+        [args.id],
+      )
+      const baseCurrencyCode = poRes.rows[0]?.base_currency_code ?? 'IQD'
       for (const lp of args.linePrices ?? []) {
+        const fxRateToBase = await resolveFxRateToBase(
+          client,
+          auth.companyId,
+          lp.currencyCode,
+          baseCurrencyCode,
+        )
         // Total is market price x the full qty_ordered, regardless of how much
         // of it is coming from stock — store_price is a record only and never
         // factors into the total (see submitPOStorePricing).
         await client.query(
           `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3,
+             currency_code=$2, fx_rate_to_base=$6,
              total_price = qty_ordered * $1
            WHERE id=$4 AND po_id=$5`,
-          [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
+          [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id, fxRateToBase],
         )
       }
       if (args.vendorId)

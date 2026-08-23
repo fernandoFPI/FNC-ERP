@@ -27,10 +27,15 @@ import {
   ADMIN_SET_PO_STATUS,
   SET_PO_PRIORITY,
   SET_PO_RECEIVER,
+  SET_PO_VENDOR,
+  VENDORS_QUERY,
   SET_PO_LINE_ACTUAL_PRICE,
   SET_PO_LINE_ACCOUNTING,
   MARK_PO_LINE_BOUGHT,
   SET_PO_FUNDING,
+  PO_LINE_COMMENTS_QUERY,
+  ADD_PO_LINE_COMMENT,
+  RESOLVE_PO_LINE_COMMENT,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
@@ -120,9 +125,10 @@ interface PO {
   status: string
   priority: string
   currency_code: string
+  base_currency_code: string
   total_amount: number
   subtotal: number
-  vendor_id: string
+  vendor_id?: string | null
   vendor_name?: string
   project_id?: string
   organizer_id?: string
@@ -491,42 +497,43 @@ export default function PurchaseOrderDetail() {
       .catch(() => {})
   }, [id])
 
+  interface RawComment {
+    id: string
+    po_line_id: string
+    comment: string
+    created_by_name: string
+    created_at: string
+    flag?: string | null
+    resolved: boolean
+    resolved_at?: string | null
+  }
+  const { data: lineCommentsData, refetch: refetchLineComments } = useQuery<{
+    poLineComments: RawComment[]
+  }>(PO_LINE_COMMENTS_QUERY, {
+    variables: { poId: id },
+    skip: !id,
+    fetchPolicy: 'cache-and-network',
+  })
   const fetchLineComments = React.useCallback(() => {
-    if (!id) return
-    interface RawComment {
-      id: string
-      po_line_id: string
-      comment: string
-      created_by_name: string
-      created_at: string
-      flag?: string | null
-      resolved: boolean
-      resolved_at?: string | null
-    }
-    api
-      .get<RawComment[]>(`/procurement/purchase-orders/${id}/line-comments`)
-      .then((r) => {
-        const grouped: Record<string, LineComment[]> = {}
-        for (const c of Array.isArray(r.data) ? r.data : []) {
-          if (!grouped[c.po_line_id]) grouped[c.po_line_id] = []
-          grouped[c.po_line_id].push({
-            id: c.id,
-            comment: c.comment,
-            created_by_name: c.created_by_name,
-            created_at: c.created_at,
-            flag: (c.flag as LineComment['flag']) ?? null,
-            resolved: c.resolved,
-            resolved_at: c.resolved_at,
-          })
-        }
-        setLineComments(grouped)
-      })
-      .catch(() => {})
-  }, [id])
+    void refetchLineComments()
+  }, [refetchLineComments])
 
   useEffect(() => {
-    fetchLineComments()
-  }, [fetchLineComments])
+    const grouped: Record<string, LineComment[]> = {}
+    for (const c of lineCommentsData?.poLineComments ?? []) {
+      if (!grouped[c.po_line_id]) grouped[c.po_line_id] = []
+      grouped[c.po_line_id].push({
+        id: c.id,
+        comment: c.comment,
+        created_by_name: c.created_by_name,
+        created_at: c.created_at,
+        flag: (c.flag as LineComment['flag']) ?? null,
+        resolved: c.resolved,
+        resolved_at: c.resolved_at,
+      })
+    }
+    setLineComments(grouped)
+  }, [lineCommentsData])
 
   const { data, loading, refetch } = useQuery(PO_LIFECYCLE_QUERY, {
     variables: { id },
@@ -741,6 +748,14 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
+  const [setVendor] = useMutation(SET_PO_VENDOR, {
+    onCompleted: () => {
+      void refetch()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
+  })
   const [setLineActualPrice] = useMutation(SET_PO_LINE_ACTUAL_PRICE, {
     onCompleted: () => {
       void refetch()
@@ -749,6 +764,8 @@ export default function PurchaseOrderDetail() {
       addToast({ type: 'error', message: e.message })
     },
   })
+  const [addLineComment] = useMutation(ADD_PO_LINE_COMMENT)
+  const [resolveLineComment] = useMutation(RESOLVE_PO_LINE_COMMENT)
 
   const { data: employeesData } = useQuery(EMPLOYEES_QUERY, {
     variables: { is_active: true },
@@ -756,6 +773,12 @@ export default function PurchaseOrderDetail() {
   })
   const employees: { id: string; first_name: string; last_name: string; job_title?: string }[] =
     employeesData?.employees ?? []
+
+  const { data: vendorsData } = useQuery(VENDORS_QUERY, {
+    variables: {},
+    fetchPolicy: 'cache-first',
+  })
+  const vendors: { id: string; name: string }[] = vendorsData?.vendors ?? []
 
   // Only needed once Finance has actually confirmed "employee advance" as
   // the funding source (see the invoiced-status panel below) — before
@@ -1183,6 +1206,7 @@ export default function PurchaseOrderDetail() {
                                 { value: 'pending_approval', label: 'Pending Approval' },
                                 { value: 'approved', label: 'Approved' },
                                 { value: 'ready_to_issue', label: 'Ready to Issue' },
+                                { value: 'items_bought', label: 'Items Bought' },
                                 { value: 'goods_received', label: 'Goods Received' },
                                 { value: 'finance_audit', label: 'Finance Audit' },
                                 { value: 'invoiced', label: 'Invoiced' },
@@ -1286,9 +1310,11 @@ export default function PurchaseOrderDetail() {
         {[
           {
             label: 'Total',
-            value: <AmountDisplay amount={po.total_amount} currency={po.currency_code} />,
+            // total_amount is always in base_currency_code (lines can be priced in
+            // other currencies and converted — see recalcPO/resolveFxRateToBase in
+            // the gateway resolvers), not the header currency_code field.
+            value: <AmountDisplay amount={po.total_amount} currency={po.base_currency_code} />,
           },
-          { label: 'Vendor', value: po.vendor_name ?? '—' },
           { label: 'Expected delivery', value: po.expected_delivery_date ?? '—' },
           { label: 'Created by', value: po.created_by_email ?? '—' },
         ].map(({ label, value }) => (
@@ -1299,6 +1325,42 @@ export default function PurchaseOrderDetail() {
             <div style={{ fontSize: '13px', color: theme.textPrimary }}>{value}</div>
           </Card>
         ))}
+        {/* Vendor card — editable up through market_pricing (vendor is normally chosen
+            there, per 030_po_lifecycle_redesign.sql), read-only after */}
+        <Card style={{ padding: '12px' }}>
+          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
+            Vendor
+          </div>
+          {['draft', 'inventory_check', 'store_pricing', 'market_pricing'].includes(po.status) ? (
+            <select
+              value={po.vendor_id ?? ''}
+              onChange={(e) =>
+                void setVendor({ variables: { id: po.id, vendorId: e.target.value || null } })
+              }
+              style={{
+                width: '100%',
+                fontSize: '13px',
+                color: po.vendor_id ? theme.textPrimary : theme.textMuted,
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              <option value="">— Not yet selected —</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+              {po.vendor_name ?? '—'}
+            </div>
+          )}
+        </Card>
         {po.funding_source === 'employee_advance' && (
           <Card style={{ padding: '12px' }}>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
@@ -2793,59 +2855,145 @@ export default function PurchaseOrderDetail() {
                           overflow: 'hidden',
                         }}
                       >
-                        {po.lines.map((line, idx) => (
-                          <div
-                            key={line.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '10px',
-                              padding: '10px 12px',
-                              borderBottom:
-                                idx < po.lines.length - 1 ? `1px solid ${theme.border}` : 'none',
-                              background: line.is_bought ? '#f0fdf4' : 'transparent',
-                            }}
-                          >
-                            <button
-                              disabled={!canMarkBought}
-                              onClick={() =>
-                                void markLineBought({
-                                  variables: {
-                                    poId: po.id,
-                                    lineId: line.id,
-                                    bought: !line.is_bought,
-                                  },
-                                })
-                              }
+                        {po.lines.map((line, idx) => {
+                          const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+                          const totalQty = parseFloat(String(line.qty ?? 0))
+                          const toBuy = Math.max(0, totalQty - fromStock)
+                          const poPrice = parseFloat(String(line.unit_price ?? 0))
+                          const actualPrice =
+                            line.actual_unit_price != null
+                              ? parseFloat(String(line.actual_unit_price))
+                              : null
+                          const variance =
+                            actualPrice != null && poPrice > 0 ? actualPrice - poPrice : null
+                          const variancePct =
+                            variance != null && poPrice > 0 ? (variance / poPrice) * 100 : null
+                          const varColor =
+                            variance == null || variance === 0
+                              ? theme.textMuted
+                              : variance > 0
+                                ? '#dc2626'
+                                : '#16a34a'
+                          return (
+                            <div
+                              key={line.id}
                               style={{
-                                width: '20px',
-                                height: '20px',
-                                flexShrink: 0,
-                                borderRadius: '5px',
-                                border: `1px solid ${line.is_bought ? '#16a34a' : theme.border}`,
-                                background: line.is_bought ? '#16a34a' : 'transparent',
-                                color: '#fff',
-                                cursor: canMarkBought ? 'pointer' : 'not-allowed',
-                                fontSize: '13px',
-                                lineHeight: 1,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
+                                padding: '10px 12px',
+                                borderBottom:
+                                  idx < po.lines.length - 1 ? `1px solid ${theme.border}` : 'none',
+                                background: line.is_bought ? '#f0fdf4' : 'transparent',
                               }}
                             >
-                              {line.is_bought ? '✓' : ''}
-                            </button>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-                                {line.description || line.product_name || '—'}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <button
+                                  disabled={!canMarkBought}
+                                  onClick={() =>
+                                    void markLineBought({
+                                      variables: {
+                                        poId: po.id,
+                                        lineId: line.id,
+                                        bought: !line.is_bought,
+                                      },
+                                    })
+                                  }
+                                  style={{
+                                    width: '20px',
+                                    height: '20px',
+                                    flexShrink: 0,
+                                    borderRadius: '5px',
+                                    border: `1px solid ${line.is_bought ? '#16a34a' : theme.border}`,
+                                    background: line.is_bought ? '#16a34a' : 'transparent',
+                                    color: '#fff',
+                                    cursor: canMarkBought ? 'pointer' : 'not-allowed',
+                                    fontSize: '13px',
+                                    lineHeight: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  {line.is_bought ? '✓' : ''}
+                                </button>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '13px', color: theme.textPrimary }}>
+                                    {line.description || line.product_name || '—'}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                    {fmtN(line.qty)} {line.uom}
+                                  </div>
+                                </div>
+                                <AmountDisplay
+                                  amount={line.total}
+                                  currency={po.currency_code}
+                                  size="sm"
+                                />
                               </div>
-                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                {fmtN(line.qty)} {line.uom}
-                              </div>
+                              {toBuy > 0 && (
+                                <div
+                                  style={{
+                                    marginTop: '6px',
+                                    marginLeft: '30px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    flexWrap: 'wrap',
+                                  }}
+                                >
+                                  <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                                    Actual price paid ({fmtN(toBuy)} {line.uom}):
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    disabled={!canMarkBought}
+                                    placeholder="Enter actual price…"
+                                    value={
+                                      actualPrices[line.id] ??
+                                      (actualPrice != null ? String(actualPrice) : '')
+                                    }
+                                    onChange={(e) => {
+                                      setActualPrices((p) => ({
+                                        ...p,
+                                        [line.id]: e.target.value,
+                                      }))
+                                    }}
+                                    onBlur={(e) => {
+                                      const val = parseFloat(e.target.value)
+                                      void setLineActualPrice({
+                                        variables: {
+                                          poId: po.id,
+                                          lineId: line.id,
+                                          actualUnitPrice: isNaN(val) ? null : val,
+                                        },
+                                      })
+                                    }}
+                                    style={{
+                                      width: '110px',
+                                      padding: '3px 6px',
+                                      borderRadius: '4px',
+                                      border: `1px solid ${theme.border}`,
+                                      background: 'transparent',
+                                      color: varColor,
+                                      fontSize: '13px',
+                                      fontFamily: 'monospace',
+                                      fontWeight: 600,
+                                      boxSizing: 'border-box' as const,
+                                      outline: 'none',
+                                    }}
+                                  />
+                                  {variancePct != null && Math.abs(variancePct) > 0.01 && (
+                                    <span
+                                      style={{ fontSize: '11px', fontWeight: 600, color: varColor }}
+                                    >
+                                      {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
+                                      {variancePct.toFixed(1)}% vs PO
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            <AmountDisplay amount={line.total} currency={po.currency_code} size="sm" />
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                       <div style={{ fontSize: '11px', color: theme.textMuted }}>
                         {boughtCount} / {po.lines.length} items bought
@@ -3333,47 +3481,22 @@ export default function PurchaseOrderDetail() {
                                             fontSize: '10px',
                                           }}
                                         >
-                                          ({fmtN(toBuy)} {line.uom} purchased)
+                                          ({fmtN(toBuy)} {line.uom} purchased, entered by buyer)
                                         </span>
                                       </div>
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        placeholder="Enter actual price…"
-                                        value={
-                                          actualPrices[line.id] ??
-                                          (actualPrice != null ? String(actualPrice) : '')
-                                        }
-                                        onChange={(e) => {
-                                          setActualPrices((p) => ({
-                                            ...p,
-                                            [line.id]: e.target.value,
-                                          }))
-                                        }}
-                                        onBlur={(e) => {
-                                          const val = parseFloat(e.target.value)
-                                          void setLineActualPrice({
-                                            variables: {
-                                              poId: po.id,
-                                              lineId: line.id,
-                                              actualUnitPrice: isNaN(val) ? null : val,
-                                            },
-                                          })
-                                        }}
+                                      <div
                                         style={{
-                                          width: '100%',
                                           padding: '4px 6px',
-                                          borderRadius: '4px',
-                                          border: `1px solid ${actualPrice == null ? '#fdba74' : variance === 0 ? '#86efac' : variance! > 0 ? '#fca5a5' : '#86efac'}`,
-                                          background: 'transparent',
-                                          color: varColor,
                                           fontSize: '14px',
                                           fontFamily: 'monospace',
                                           fontWeight: 700,
-                                          boxSizing: 'border-box' as const,
-                                          outline: 'none',
+                                          color: actualPrice == null ? theme.textMuted : varColor,
                                         }}
-                                      />
+                                      >
+                                        {actualPrice != null
+                                          ? fmtN(actualPrice)
+                                          : 'Not entered yet — buyer hasn’t recorded a price'}
+                                      </div>
                                       {variancePct != null && Math.abs(variancePct) > 0.01 && (
                                         <div
                                           style={{
@@ -5467,10 +5590,14 @@ export default function PurchaseOrderDetail() {
             if (!newComment.trim() || !id) return
             setAddingComment(true)
             try {
-              await api.post(
-                `/procurement/purchase-orders/${id}/lines/${commentModal.lineId}/comments`,
-                { comment: newComment.trim(), flag: newFlag || undefined },
-              )
+              await addLineComment({
+                variables: {
+                  poId: id,
+                  lineId: commentModal.lineId,
+                  comment: newComment.trim(),
+                  flag: newFlag || undefined,
+                },
+              })
               fetchLineComments()
               setNewComment('')
               setNewFlag('')
@@ -5485,10 +5612,7 @@ export default function PurchaseOrderDetail() {
             if (!id) return
             setResolvingId(commentId)
             try {
-              await api.patch(
-                `/procurement/purchase-orders/${id}/lines/${commentModal.lineId}/comments/${commentId}/resolve`,
-                {},
-              )
+              await resolveLineComment({ variables: { poId: id, commentId } })
               fetchLineComments()
               addToast({ type: 'success', message: 'Flag resolved' })
             } catch {

@@ -44,6 +44,16 @@ api.interceptors.response.use(
   },
   async (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
+      // Pre-authentication endpoints return 401 for expected reasons (wrong
+      // password, wrong/expired 2FA code) that their own callers already show
+      // inline (see useAuth.ts / MFAPage.tsx) — never a "your session expired"
+      // signal, since there's no session yet at this point. Let those bubble up
+      // normally instead of hijacking them into a hard reload to /login.
+      const url = error.config?.url ?? ''
+      if (url.includes('/auth/login') || url.includes('/auth/mfa/verify')) {
+        return Promise.reject(error)
+      }
+
       // Prevent infinite retry loop: if this request was already a retry, bail out
       const config = error.config as (typeof error.config & { _retry?: boolean }) | undefined
       if (config?._retry) {

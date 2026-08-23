@@ -200,10 +200,6 @@ export default function PurchaseOrderForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (purpose !== 'manufacturing' && !form.vendor_id) {
-      addToast({ type: 'error', message: 'Please select a vendor' })
-      return
-    }
     if (purpose === 'project' && !linkedProjectId) {
       addToast({ type: 'error', message: 'Please select a project' })
       return
@@ -420,17 +416,13 @@ export default function PurchaseOrderForm() {
             }}
           >
             <SearchableSelect
-              label={purpose === 'manufacturing' ? 'Vendor (optional)' : 'Vendor *'}
+              label="Vendor (optional)"
               value={form.vendor_id}
               onChange={(v) => {
                 setForm((f) => ({ ...f, vendor_id: v }))
               }}
               options={[
-                {
-                  value: '',
-                  label:
-                    purpose === 'manufacturing' ? 'Select vendor… (optional)' : 'Select vendor…',
-                },
+                { value: '', label: 'Select vendor… (optional — can be set later)' },
                 ...vendors.map((v: { id: string; name: string }) => ({
                   value: v.id,
                   label: v.name,

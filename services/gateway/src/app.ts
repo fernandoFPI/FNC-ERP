@@ -24,6 +24,7 @@ import { userProfileRouter } from './routes/user-profile.js'
 import { verifyRouter } from './routes/verify.js'
 import { systemConfigRouter } from './routes/system-config.js'
 import { documentSequencesRouter } from './routes/document-sequences.js'
+import { poFxRatesRouter } from './routes/po-fx-rates.js'
 import { notificationRoutingRouter } from './routes/notification-routing.js'
 import { searchRouter } from './routes/search.js'
 import { jobRunsRouter } from './routes/job-runs.js'
@@ -151,6 +152,7 @@ export async function createApp(): Promise<express.Application> {
 
   // ── 11b-vi. Document sequences (system_admin only) ───────────
   app.use('/api/v1/admin/document-sequences', documentSequencesRouter)
+  app.use('/api/v1/admin/po-fx-rates', poFxRatesRouter)
 
   // ── 11b-vii. Notification routing (system_admin only) ────────
   app.use('/api/v1/admin/notification-routing', notificationRoutingRouter)
@@ -195,13 +197,10 @@ export async function createApp(): Promise<express.Application> {
   // ── 13. v1 versioned routes (all services) ───────────────────
   app.use('/api/v1/auth', makeProxy(env.AUTH_SERVICE_URL, '/auth'))
   app.use('/api/v1/finance', makeProxy(env.FINANCE_SERVICE_URL, '/finance'))
-  app.use('/api/v1/procurement', makeProxy(env.PROCUREMENT_SERVICE_URL, '/procurement'))
   app.use('/api/v1/inventory', makeProxy(env.INVENTORY_SERVICE_URL, '/inventory'))
-  app.use('/api/v1/interco', makeProxy(env.INTERCO_SERVICE_URL, '/interco'))
   app.use('/api/v1/hr', makeProxy(env.HR_SERVICE_URL, '/hr'))
   app.use('/api/v1/notifications', makeProxy(env.NOTIFICATIONS_SERVICE_URL, '/notifications'))
   app.use('/api/v1/projects', makeProxy(env.PROJECTS_SERVICE_URL, '/projects'))
-  app.use('/api/v1/manufacturing', makeProxy(env.MANUFACTURING_SERVICE_URL, '/manufacturing'))
   app.use('/api/v1/rental', makeProxy(env.RENTAL_SERVICE_URL, '/rental'))
   app.use('/api/v1/reporting', makeProxy(env.REPORTING_SERVICE_URL, '/reporting'))
 
@@ -209,13 +208,10 @@ export async function createApp(): Promise<express.Application> {
   const services = [
     'auth',
     'finance',
-    'procurement',
     'inventory',
-    'interco',
     'hr',
     'notifications',
     'projects',
-    'manufacturing',
     'rental',
     'reporting',
   ]

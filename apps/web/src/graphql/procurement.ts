@@ -200,24 +200,6 @@ export const UPDATE_PO = gql`
   }
 `
 
-export const SUBMIT_PO = gql`
-  mutation SubmitPO($id: ID!) {
-    submitPO(id: $id) {
-      id
-      status
-    }
-  }
-`
-
-export const APPROVE_L1_PO = gql`
-  mutation ApproveL1PO($id: ID!) {
-    approveL1PO(id: $id) {
-      id
-      status
-    }
-  }
-`
-
 export const RECORD_RECEIPT = gql`
   mutation RecordReceipt($poId: ID!, $input: ReceiptInput!) {
     recordReceipt(poId: $poId, input: $input) {
@@ -301,6 +283,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       status
       priority
       currency_code
+      base_currency_code
       total_amount
       subtotal
       vendor_id
@@ -770,11 +753,62 @@ export const SET_PO_RECEIVER = gql`
   }
 `
 
+export const SET_PO_VENDOR = gql`
+  mutation SetPOVendor($id: ID!, $vendorId: ID) {
+    setPOVendor(id: $id, vendorId: $vendorId) {
+      id
+      vendor_id
+      vendor_name
+    }
+  }
+`
+
 export const SET_PO_LINE_ACTUAL_PRICE = gql`
   mutation SetPOLineActualPrice($poId: ID!, $lineId: ID!, $actualUnitPrice: Float) {
     setPOLineActualPrice(poId: $poId, lineId: $lineId, actualUnitPrice: $actualUnitPrice) {
       id
       actual_unit_price
+    }
+  }
+`
+
+export const PO_LINE_COMMENTS_QUERY = gql`
+  query POLineComments($poId: ID!) {
+    poLineComments(poId: $poId) {
+      id
+      po_line_id
+      comment
+      created_by_name
+      created_at
+      flag
+      resolved
+      resolved_by
+      resolved_at
+      resolved_by_email
+    }
+  }
+`
+
+export const ADD_PO_LINE_COMMENT = gql`
+  mutation AddPOLineComment($poId: ID!, $lineId: ID!, $comment: String!, $flag: String) {
+    addPOLineComment(poId: $poId, lineId: $lineId, comment: $comment, flag: $flag) {
+      id
+      po_line_id
+      comment
+      created_by_name
+      created_at
+      flag
+      resolved
+    }
+  }
+`
+
+export const RESOLVE_PO_LINE_COMMENT = gql`
+  mutation ResolvePOLineComment($poId: ID!, $commentId: ID!) {
+    resolvePOLineComment(poId: $poId, commentId: $commentId) {
+      id
+      resolved
+      resolved_at
     }
   }
 `
