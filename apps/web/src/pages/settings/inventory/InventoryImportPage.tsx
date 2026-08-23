@@ -25,11 +25,17 @@ interface ImportRowError {
   message: string
 }
 
+interface SkippedSheet {
+  sheet: string
+  reason: string
+}
+
 interface ImportResult {
   created: number
   updated: number
   total: number
   errors: ImportRowError[]
+  skippedSheets: SkippedSheet[]
 }
 
 export default function InventoryImportPage() {
@@ -175,8 +181,8 @@ export default function InventoryImportPage() {
             </span>
           </div>
           <p style={{ marginTop: '6px', fontSize: '11px', color: theme.textMuted }}>
-            Expected format: multi-sheet workbook named "Store Inventory 2025.xlsx" with one sheet
-            per store
+            Expected format: multi-sheet workbook, one sheet per store (Arabic or English tab
+            names both work for known warehouses)
           </p>
         </div>
 
@@ -304,6 +310,30 @@ export default function InventoryImportPage() {
               </div>
             ))}
           </div>
+
+          {/* Skipped sheets */}
+          {result.skippedSheets.length > 0 && (
+            <div
+              style={{
+                marginBottom: result.errors.length > 0 ? '20px' : 0,
+                padding: '12px 14px',
+                borderRadius: '6px',
+                background: '#fffbeb',
+                border: '1px solid #fcd34d',
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: '13px', color: '#92400e', marginBottom: '6px' }}>
+                Skipped sheets ({result.skippedSheets.length})
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                {result.skippedSheets.map((s) => (
+                  <li key={s.sheet} style={{ fontSize: '12px', color: '#92400e' }}>
+                    <strong>{s.sheet}</strong> — {s.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Error table */}
           {result.errors.length > 0 && (
