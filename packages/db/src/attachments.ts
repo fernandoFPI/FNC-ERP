@@ -21,6 +21,7 @@ export type EntityType =
   | 'rental_contract'
   | 'interco_transaction'
   | 'journal_entry'
+  | 'material_issue'
 
 export interface AttachmentRouteOptions {
   entityType: EntityType

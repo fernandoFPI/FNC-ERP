@@ -811,6 +811,40 @@ async function userIsOrganizerGW(
   return r.rows.length > 0
 }
 
+// document_attachments is polymorphic (entity_type + entity_id, no FK) —
+// the generic attachFile/detachFile/entityAttachments resolvers never
+// verified the target entity actually belongs to the caller's company,
+// only that the *file* did. Every entity-specific upload mutation (RFI,
+// NCR, site instruction, etc.) already guards this itself via its own
+// JOIN; this covers the entity types actually reachable through the
+// generic path from the live frontend (employee documents, Store Out
+// signed copies). Extend this switch if a new entity type starts using
+// attachFile/detachFile/entityAttachments directly.
+async function verifyAttachmentEntityOwnershipGW(
+  entityType: string,
+  entityId: string,
+  companyId: string,
+): Promise<boolean> {
+  switch (entityType) {
+    case 'employee': {
+      const r = await query(`SELECT id FROM employees WHERE id=$1 AND company_id=$2`, [
+        entityId,
+        companyId,
+      ])
+      return r.rows.length > 0
+    }
+    case 'material_issue': {
+      const r = await query(
+        `SELECT id FROM project_material_issues WHERE id=$1 AND company_id=$2`,
+        [entityId, companyId],
+      )
+      return r.rows.length > 0
+    }
+    default:
+      return true
+  }
+}
+
 async function deriveRfqNumber(companyId: string, projectCode: string): Promise<string> {
   const [projSeq, rfqSeq] = await Promise.all([
     query(
@@ -4607,6 +4641,8 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
+        return []
       const result = await getAttachments(
         args.entityType as Parameters<typeof getAttachments>[0],
         args.entityId,
@@ -4945,6 +4981,56 @@ export const resolvers = {
       }
     },
 
+    materialIssue: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return null
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const result = await query(
+        `SELECT pmi.*,
+           p_proj.code AS project_code, p_proj.name AS project_name,
+           po_linked.po_number,
+           COALESCE(u_issued.first_name || ' ' || u_issued.last_name, u_issued.email) AS issued_by_name,
+           COALESCE(
+             JSON_AGG(JSON_BUILD_OBJECT(
+               'id', pmil.id, 'productId', pmil.product_id, 'productName', prod.name,
+               'sku', prod.sku, 'uom', prod.uom,
+               'poLineId', pmil.po_line_id,
+               'fromLocationName', loc_from.name, 'toLocationName', loc_to.name,
+               'qtyIssued', pmil.qty_issued, 'unitCost', pmil.unit_cost,
+               'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced
+             ) ORDER BY pmil.created_at) FILTER (WHERE pmil.id IS NOT NULL),
+             '[]'
+           ) AS lines
+         FROM project_material_issues pmi
+         LEFT JOIN projects p_proj ON p_proj.id = pmi.project_id
+         LEFT JOIN purchase_orders po_linked ON po_linked.id = pmi.po_id
+         LEFT JOIN users u_issued ON u_issued.id = pmi.issued_by
+         LEFT JOIN project_material_issue_lines pmil ON pmil.issue_id = pmi.id
+         LEFT JOIN products prod ON prod.id = pmil.product_id
+         LEFT JOIN stock_locations loc_from ON loc_from.id = pmil.from_location_id
+         LEFT JOIN stock_locations loc_to ON loc_to.id = pmil.to_location_id
+         WHERE pmi.id=$1 AND pmi.company_id=$2
+         GROUP BY pmi.id, p_proj.code, p_proj.name, po_linked.po_number,
+                  u_issued.first_name, u_issued.last_name, u_issued.email`,
+        [args.id, ctx.auth.companyId],
+      )
+      const r = result.rows[0] as Record<string, unknown> | undefined
+      if (!r) return null
+      return {
+        id: r.id,
+        issueNumber: r.issue_number,
+        issueDate: r.issue_date,
+        status: r.status,
+        notes: r.notes ?? null,
+        poId: r.po_id ?? null,
+        poNumber: r.po_number ?? null,
+        projectCode: r.project_code ?? null,
+        projectName: r.project_name ?? null,
+        issuedByName: r.issued_by_name ?? null,
+        createdAt: r.created_at,
+        lines: (r.lines as unknown[] | null) ?? [],
+      }
+    },
+
     materialIssues: async (
       _: unknown,
       args: { projectId?: string; status?: string },
@@ -4972,7 +5058,9 @@ export const resolvers = {
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
                'id', pmil.id, 'productId', pmil.product_id, 'productName', prod.name,
+               'sku', prod.sku, 'uom', prod.uom,
                'poLineId', pmil.po_line_id,
+               'fromLocationName', loc_from.name, 'toLocationName', loc_to.name,
                'qtyIssued', pmil.qty_issued, 'unitCost', pmil.unit_cost,
                'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced
              ) ORDER BY pmil.created_at) FILTER (WHERE pmil.id IS NOT NULL),
@@ -4984,6 +5072,8 @@ export const resolvers = {
          LEFT JOIN users u_issued ON u_issued.id = pmi.issued_by
          LEFT JOIN project_material_issue_lines pmil ON pmil.issue_id = pmi.id
          LEFT JOIN products prod ON prod.id = pmil.product_id
+         LEFT JOIN stock_locations loc_from ON loc_from.id = pmil.from_location_id
+         LEFT JOIN stock_locations loc_to ON loc_to.id = pmil.to_location_id
          WHERE ${where}
          GROUP BY pmi.id, p_proj.code, p_proj.name, po_linked.po_number,
                   u_issued.first_name, u_issued.last_name, u_issued.email
@@ -6647,6 +6737,8 @@ export const resolvers = {
         [args.fileId, ctx.auth.companyId],
       )
       if (!file.rows[0]) throw new Error('File not found or not yet uploaded')
+      if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
+        throw new Error('Entity not found')
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
@@ -6695,6 +6787,8 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
+        throw new Error('Entity not found')
       const client = await pool.connect()
       try {
         await client.query('BEGIN')

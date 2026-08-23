@@ -80,6 +80,7 @@
     projectInvoices(projectId: ID, contractId: ID, status: String): [ProjectInvoice!]!
     projectInvoice(id: ID!): ProjectInvoice
     materialIssues(projectId: ID, status: String): [MaterialIssue!]!
+    materialIssue(id: ID!): MaterialIssue
     availableInvoiceCosts(invoiceId: ID!, sourceType: String): AvailableCosts!
 
     # Interco stock transfers
@@ -1223,7 +1224,11 @@
     id: ID!
     productId: ID!
     productName: String
+    sku: String
+    uom: String
     poLineId: ID
+    fromLocationName: String
+    toLocationName: String
     qtyIssued: Float!
     unitCost: Float!
     totalCost: Float!

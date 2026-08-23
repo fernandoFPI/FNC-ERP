@@ -855,6 +855,15 @@ export default function StoreOutPage() {
                         {si.issuedByName ? `Issued by ${si.issuedByName}` : ''}
                       </span>
                       <div style={{ display: 'flex', gap: '8px' }}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            navigate(`/inventory/store-out/${si.id}`)
+                          }}
+                        >
+                          View / Print
+                        </Button>
                         {si.projectCode && (
                           <Button
                             variant="ghost"
