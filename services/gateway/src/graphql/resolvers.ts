@@ -356,6 +356,7 @@ async function callerHasCompanyWideStoreKeeper(
      JOIN employees e ON e.id = ppa.employee_id
      WHERE e.user_id = $1 AND ppa.company_id = $2 AND ppa.position = 'store_keeper'
        AND ppa.is_active = true AND ppa.project_id IS NULL AND ppa.department_id IS NULL
+       AND ppa.branch_id IS NULL
      LIMIT 1`,
     [userId, companyId],
   )
