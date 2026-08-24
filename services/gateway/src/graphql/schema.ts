@@ -1953,6 +1953,8 @@
     assigned_buyer_name: String
     buyerNames: [String!]
     callerIsBuyer: Boolean
+    callerHasStorePricingPosition: Boolean
+    callerHasMarketPricingPosition: Boolean
     lines: [POLine!]
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]

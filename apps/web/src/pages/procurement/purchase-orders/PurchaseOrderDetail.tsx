@@ -168,6 +168,8 @@ interface PO {
   assigned_buyer_name?: string | null
   buyerNames?: string[] | null
   callerIsBuyer?: boolean | null
+  callerHasStorePricingPosition?: boolean | null
+  callerHasMarketPricingPosition?: boolean | null
   expected_delivery_date?: string
   notes?: string
   created_by_email?: string
@@ -1882,11 +1884,27 @@ export default function PurchaseOrderDetail() {
 
               {po.status === 'store_pricing' &&
                 (() => {
+                  const canPriceStore = isSystemLevel || !!po.callerHasStorePricingPosition
+                  if (!canPriceStore)
+                    return (
+                      <div
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: theme.bgSurface,
+                          border: `1px solid ${theme.border}`,
+                          fontSize: '13px',
+                          color: theme.textMuted,
+                        }}
+                      >
+                        This PO is waiting on Store Pricing. Only someone holding the Store
+                        Pricing position (or an admin) can enter prices here.
+                      </div>
+                    )
                   // Store price now values whatever quantity is being pulled from stock —
                   // including lines that are 100% stock-covered, which never reach market
                   // pricing at all, so this is the only place their total gets set.
                   const stockLines = po.lines.filter((l) => (l.qty_from_stock || 0) > 0)
-                  const isOrganizer = !!currentUserId && po.organizer_id === currentUserId
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
@@ -1900,7 +1918,7 @@ export default function PurchaseOrderDetail() {
                       >
                         Enter store prices for from-stock quantities
                       </div>
-                      {(isSystemLevel || isOrganizer) && stockLines.length > 0 && (
+                      {stockLines.length > 0 && (
                         <div
                           style={{
                             display: 'flex',
@@ -2058,6 +2076,23 @@ export default function PurchaseOrderDetail() {
 
               {po.status === 'market_pricing' &&
                 (() => {
+                  const canPriceMarket = isSystemLevel || !!po.callerHasMarketPricingPosition
+                  if (!canPriceMarket)
+                    return (
+                      <div
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: theme.bgSurface,
+                          border: `1px solid ${theme.border}`,
+                          fontSize: '13px',
+                          color: theme.textMuted,
+                        }}
+                      >
+                        This PO is waiting on Market Pricing. Only someone holding the
+                        Procurement Officer position (or an admin) can enter prices here.
+                      </div>
+                    )
                   const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
                   const stockCovered = po.lines.length - purchaseLines.length
                   const allPricesEntered = purchaseLines.every((l) => {
@@ -2219,8 +2254,29 @@ export default function PurchaseOrderDetail() {
                       >
                         Verify prices then submit for approval
                       </div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 14px',
+                          borderRadius: '7px',
+                          background: theme.bgCanvas,
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', color: theme.textMuted }}>Total</span>
+                        <span style={{ fontSize: '15px', fontWeight: 700, color: theme.textPrimary }}>
+                          {parseFloat(String(po.total_amount)).toLocaleString('en-US', {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2,
+                          })}{' '}
+                          {po.base_currency_code}
+                        </span>
+                      </div>
                       {purchaseLines.map((line) => {
                         const unitPrice = parseFloat(String(line.unit_price))
+                        const lineTotal = unitPrice * parseFloat(String(line.qty))
                         return (
                           <div
                             key={line.id}
@@ -2241,16 +2297,26 @@ export default function PurchaseOrderDetail() {
                                 × {line.qty} {line.uom}
                               </span>
                             </span>
-                            <span
-                              style={{
-                                color: unitPrice > 0 ? theme.textPrimary : '#ef4444',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {unitPrice > 0
-                                ? `${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${line.market_price_currency ?? po.currency_code}`
-                                : 'No price set'}
-                            </span>
+                            {unitPrice > 0 ? (
+                              <span style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                                <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+                                  {unitPrice.toLocaleString('en-US', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  {line.market_price_currency ?? po.currency_code} / unit
+                                </span>
+                                <span style={{ color: theme.textPrimary, fontWeight: 600 }}>
+                                  {lineTotal.toLocaleString('en-US', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  {line.market_price_currency ?? po.currency_code}
+                                </span>
+                              </span>
+                            ) : (
+                              <span style={{ color: '#ef4444', fontWeight: 600 }}>No price set</span>
+                            )}
                           </div>
                         )
                       })}

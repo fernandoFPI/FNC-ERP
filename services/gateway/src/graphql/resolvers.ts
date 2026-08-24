@@ -6086,6 +6086,22 @@ export const resolvers = {
           isAdminForBuyer ||
           isFrozenBuyerForCaller ||
           (await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'))
+        // Mirrors submitPOStorePricing/submitPOMarketPricing's own authorization
+        // exactly (no organizer fallback — see those resolvers' comments), so the
+        // store/market pricing forms can be hidden client-side for someone who'd
+        // just get rejected on submit anyway, instead of letting them type values
+        // into a form they can't actually save.
+        const callerHasStorePricingPosition =
+          isAdminForBuyer ||
+          (await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'))
+        const callerHasMarketPricingPosition =
+          isAdminForBuyer ||
+          (await userHasPositionGW(
+            ctx.auth.userId,
+            ctx.auth.companyId,
+            args.id,
+            'procurement_officer',
+          ))
         let editRequests: unknown[] = []
         try {
           const er = await query(
@@ -6130,6 +6146,8 @@ export const resolvers = {
           edit_requests: editRequests,
           buyerNames,
           callerIsBuyer,
+          callerHasStorePricingPosition,
+          callerHasMarketPricingPosition,
         }
       } catch {
         return null
@@ -24120,14 +24138,14 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_pricing')
-    // The organizer can also skip straight past store pricing (frontend
-    // sends auto-derived, average-cost-based line prices in that case) —
-    // this doesn't remove the store_pricing position's own ability to fill
-    // in real prices, just adds a second path so a PO isn't stuck waiting
-    // on that position to be assigned/available.
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !hasPos && !isOrganizer)
-      throw new Error('store_pricing position or PO organizer required')
+    // No organizer fallback here — only an actual store_pricing position
+    // holder (or admin) may enter store prices. A prior version let the
+    // organizer bypass this to avoid POs getting stuck with no one
+    // assigned, but that let a PO's creator freely price it themselves
+    // with no position at all, defeating the point of the position gate.
+    // If a PO is stuck for lack of an assignee, assign the position via
+    // PO Positions — don't route around it here.
+    if (!isAdmin && !hasPos) throw new Error('store_pricing position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
@@ -24196,12 +24214,12 @@ const phase5MutationResolvers = {
       args.id,
       'procurement_officer',
     )
-    // Same organizer fallback as submitPOStorePricing: without this, a PO with no
-    // procurement_officer assigned in scope could get permanently stuck with no
-    // vendor and no way for anyone but an admin to unblock it.
-    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !hasPos && !isOrganizer)
-      throw new Error('procurement_officer position or PO organizer required')
+    // No organizer fallback — see submitPOStorePricing's comment. Only an
+    // actual procurement_officer (or admin) may enter market prices/pick a
+    // vendor; a PO stuck for lack of an assignee needs the position
+    // assigned via PO Positions, not a bypass here.
+    if (!isAdmin && !hasPos)
+      throw new Error('procurement_officer position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {

@@ -326,6 +326,8 @@ export const PO_LIFECYCLE_QUERY = gql`
       assigned_buyer_name
       buyerNames
       callerIsBuyer
+      callerHasStorePricingPosition
+      callerHasMarketPricingPosition
       expected_delivery_date
       notes
       created_by_email
