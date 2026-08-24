@@ -8,19 +8,49 @@ import {
   CREATE_STOCK_ADJUSTMENT,
   STOCK_SNAPSHOT_QUERY,
 } from '../../../graphql/inventory'
+import { GET_USER_PO_POSITIONS } from '../../../graphql/permissions'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
+import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { useToastStore } from '../../../store/toastStore'
+import { useAuth } from '../../../hooks/useAuth'
+import { usePermission } from '../../../hooks/usePermission'
+
+interface UserPOPosition {
+  position: string
+  isActive: boolean
+  projectId?: string | null
+  departmentId?: string | null
+}
 
 export default function StockAdjustmentForm() {
   const navigate = useNavigate()
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
+  const { user } = useAuth()
+  const { isSystemLevel } = usePermission()
+
+  const { data: posData, loading: posLoading } = useQuery<{
+    userPOPositions: UserPOPosition[]
+  }>(GET_USER_PO_POSITIONS, {
+    variables: { userId: user?.id },
+    skip: !user?.id,
+    fetchPolicy: 'cache-and-network',
+  })
+  // Creating an adjustment requires the company-wide Store Keeper position —
+  // see createStockAdjustment in services/gateway/src/graphql/resolvers.ts for
+  // the matching server-side check. This mirrors it so a user without the
+  // position sees a clear reason instead of filling out the whole form only
+  // to have the submit fail.
+  const hasCompanyWideStoreKeeper = (posData?.userPOPositions ?? []).some(
+    (p) => p.position === 'store_keeper' && p.isActive && !p.projectId && !p.departmentId,
+  )
+  const canAdjust = isSystemLevel || hasCompanyWideStoreKeeper
 
   const [productId, setProductId] = useState('')
   const [locationId, setLocationId] = useState('')
@@ -90,6 +120,73 @@ export default function StockAdjustmentForm() {
     }
   }
 
+  if (posLoading && !posData) {
+    return (
+      <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
+        <PageHeader
+          title="Stock Adjustment"
+          subtitle="Set the actual on-hand quantity for a product at a location"
+          backPath="/inventory/balances"
+        />
+      </div>
+    )
+  }
+
+  if (!canAdjust) {
+    return (
+      <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
+        <PageHeader
+          title="Stock Adjustment"
+          subtitle="Set the actual on-hand quantity for a product at a location"
+          backPath="/inventory/balances"
+        />
+        <Card
+          style={{
+            marginTop: '20px',
+            padding: '48px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: '14px',
+          }}
+        >
+          <div
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              background: theme.dangerBg,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '26px',
+            }}
+          >
+            🔒
+          </div>
+          <div style={{ fontSize: '16px', fontWeight: 600, color: theme.textPrimary }}>
+            Store Keeper Position Required
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textMuted, maxWidth: '380px' }}>
+            Creating stock adjustments requires the company-wide Store Keeper position. Contact
+            your administrator to be assigned this position if you need to adjust inventory
+            quantities.
+          </div>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              navigate('/inventory/balances')
+            }}
+            style={{ marginTop: '4px' }}
+          >
+            Back to Stock Balances
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '680px' }}>
       <PageHeader
@@ -110,22 +207,17 @@ export default function StockAdjustmentForm() {
         >
           {/* Product + Location */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <Select
+            <SearchableSelect
               label="Product"
               value={productId}
-              onChange={(e) => {
-                setProductId(e.target.value)
+              onChange={(value) => {
+                setProductId(value)
                 setUnitCost('')
               }}
+              options={products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku }))}
+              placeholder="Search product…"
               required
-            >
-              <option value="">Select product…</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.sku} — {p.name}
-                </option>
-              ))}
-            </Select>
+            />
 
             <Select
               label="Location"
@@ -167,7 +259,7 @@ export default function StockAdjustmentForm() {
               </div>
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Average cost
+                  Last cost
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                   {currentCost.toFixed(4)}

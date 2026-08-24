@@ -80,7 +80,7 @@ export default function ProductDetail() {
     },
     {
       key: 'average_cost',
-      header: 'Avg Cost',
+      header: 'Last Cost',
       render: (b) => <AmountDisplay amount={parseFloat(b.average_cost)} currency="IQD" />,
     },
     {

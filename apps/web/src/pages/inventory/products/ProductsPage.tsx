@@ -174,7 +174,7 @@ export default function ProductsPage() {
     },
     {
       key: 'average_cost',
-      header: 'Avg Cost',
+      header: 'Last Cost',
       render: (p) => (
         <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
           {parseFloat(p.average_cost).toLocaleString()}

@@ -34,6 +34,7 @@ const SOURCE_OPTIONS = [
   { value: 'mo', label: 'Manufacturing' },
   { value: 'material_issue', label: 'Material Issue' },
   { value: 'interco', label: 'Interco Transfer' },
+  { value: 'adjustment', label: 'Adjustment' },
 ]
 
 export default function StockMovesPage() {

@@ -150,7 +150,7 @@ export default function StockBalancesPage() {
     },
     {
       key: 'average_cost',
-      header: 'Avg Cost',
+      header: 'Last Cost',
       render: (r) => <AmountDisplay amount={parseFloat(r.average_cost)} currency="IQD" />,
     },
     {

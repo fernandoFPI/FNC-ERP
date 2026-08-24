@@ -1937,7 +1937,7 @@ export default function PurchaseOrderDetail() {
                                   {' '}
                                   · from {line.source_company_name} — {line.source_location_name}
                                   {line.source_average_cost != null &&
-                                    ` (avg. cost ${line.source_average_cost.toFixed(2)})`}
+                                    ` (last cost ${line.source_average_cost.toFixed(2)})`}
                                 </span>
                               )}
                             </div>

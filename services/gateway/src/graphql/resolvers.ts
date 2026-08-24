@@ -342,6 +342,26 @@ async function callerHasPOAdmin(userId: string, companyId: string): Promise<bool
   return r.rows.length > 0
 }
 
+// True if the caller holds an active company-wide 'store_keeper' position
+// assignment (project_id IS NULL AND department_id IS NULL). Stock
+// adjustments aren't tied to a PO/project/department — stock_locations has
+// no department_id/project_id column — so unlike userHasPositionGW (which
+// resolves scope from a PO), this only recognizes a company-wide grant.
+async function callerHasCompanyWideStoreKeeper(
+  userId: string,
+  companyId: string,
+): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM po_position_assignments ppa
+     JOIN employees e ON e.id = ppa.employee_id
+     WHERE e.user_id = $1 AND ppa.company_id = $2 AND ppa.position = 'store_keeper'
+       AND ppa.is_active = true AND ppa.project_id IS NULL AND ppa.department_id IS NULL
+     LIMIT 1`,
+    [userId, companyId],
+  )
+  return r.rows.length > 0
+}
+
 // Post a journal entry when a project-linked PO is completed so that the cost
 // flows into project_cost_actuals via trg_sync_project_costs.
 async function postPOCompletionJournal(
@@ -6224,7 +6244,11 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      let sql = `SELECT sm.*, sm.moved_at AS move_date, p.name AS product_name, p.sku,
+      // sm.notes AS reference: the frontend's search filter and the ledger UI
+      // read `reference`, not `notes` — without this alias it's always null for
+      // every move type (already correctly aliased in the lot-detail moves query
+      // below; this is the same fix applied to the main list).
+      let sql = `SELECT sm.*, sm.moved_at AS move_date, sm.notes AS reference, p.name AS product_name, p.sku,
                         fl.name AS from_location_name, tl.name AS to_location_name,
                         sl.lot_number, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS moved_by_email
                  FROM stock_moves sm
@@ -8337,101 +8361,146 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      // Only someone holding the company-wide Store Keeper position (or an
+      // admin) can adjust a quantity, since this bypasses every other
+      // stock-changing workflow's own checks (PO receiving, MO consumption,
+      // Store Out, etc). The sidebar link itself is only gated on general
+      // inventory view access — this is the real authorization.
+      if (
+        !isPermissionBypassGW(auth.role) &&
+        !(await callerHasCompanyWideStoreKeeper(auth.userId, auth.companyId))
+      )
+        throw new Error('Company-wide Store Keeper position required to create a stock adjustment')
+
       const i = args.input
-      const adjustedAt = i.adjustment_date
-        ? `${i.adjustment_date}T00:00:00Z`
-        : new Date().toISOString()
+      // No "Z" suffix: a bare date string is interpreted in the DB session's
+      // timezone (matches recordReceipt's i.receipt_date handling elsewhere
+      // in this file) — appending Z here previously forced UTC-midnight,
+      // which rendered as 03:00 local for a UTC+3 company.
+      const adjustedAt = i.adjustment_date ?? new Date().toISOString()
 
-      const client = await pool.connect()
-      try {
-        await client.query('BEGIN')
-
-        // Get current balance (lot_id IS NULL for non-lot items — constraint is product+location+lot_id)
-        const balRes = await client.query(
-          `SELECT qty_on_hand, average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
-          [i.product_id, i.location_id],
-        )
-        const currentQty = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
-        const currentCost = parseFloat(String(balRes.rows[0]?.average_cost ?? 0))
-        const diff = i.new_qty - currentQty
-        const unitCost = i.unit_cost && i.unit_cost > 0 ? i.unit_cost : currentCost
-
-        if (diff === 0) {
-          await client.query('ROLLBACK')
-          return { id: null, move_date: adjustedAt, qty: 0 }
-        }
-
-        // Directly set stock_balances to the exact new quantity.
-        // We do NOT insert into stock_moves here because the trigger on that table
-        // would update balances automatically, and we cannot use same location for
-        // both from/to (net zero) or null locations (NOT NULL constraint).
-        await client.query(
-          `INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, qty_reserved, average_cost, last_move_at, updated_at)
-           VALUES ($1, $2, NULL, $3, 0, $4, $5, NOW())
-           ON CONFLICT (product_id, location_id, lot_id) DO UPDATE
-             SET qty_on_hand = $3,
-                 average_cost = CASE WHEN $4 > 0 THEN $4 ELSE stock_balances.average_cost END,
-                 last_move_at = $5,
-                 updated_at = NOW()`,
-          [i.product_id, i.location_id, i.new_qty, unitCost, adjustedAt],
-        )
-
-        // Check reorder point after adjustment and notify if now below threshold
-        if (i.new_qty < currentQty) {
-          const lowRes = await client.query(
-            `SELECT p.id, p.name, p.sku, p.reorder_point,
-                    COALESCE(SUM(sb.qty_on_hand), 0) AS qty_on_hand
-             FROM products p
-             LEFT JOIN stock_balances sb ON sb.product_id = p.id
-             LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out')
-             WHERE p.id=$1 AND p.reorder_point IS NOT NULL AND p.company_id=$2 AND (sb.id IS NULL OR sl.id IS NOT NULL)
-             GROUP BY p.id, p.name, p.sku, p.reorder_point
-             HAVING COALESCE(SUM(sb.qty_on_hand), 0) < p.reorder_point`,
-            [i.product_id, ctx.auth.companyId],
+      return withTransaction(
+        { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+        async (client) => {
+          // Get current balance (lot_id IS NULL for non-lot items — constraint is product+location+lot_id)
+          const balRes = await client.query(
+            `SELECT qty_on_hand, average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+            [i.product_id, i.location_id],
           )
-          if (lowRes.rows.length > 0) {
-            const product = lowRes.rows[0] as Record<string, unknown>
-            const qty = parseFloat(String(product.qty_on_hand ?? 0))
-            const reorder = parseFloat(String(product.reorder_point ?? 0))
-            const users = await client.query(
-              `SELECT DISTINCT user_id FROM user_company_roles WHERE company_id=$1 AND module='inventory'`,
-              [ctx.auth.companyId],
+          const currentQty = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+          const currentCost = parseFloat(String(balRes.rows[0]?.average_cost ?? 0))
+          const diff = i.new_qty - currentQty
+          const unitCost = i.unit_cost && i.unit_cost > 0 ? i.unit_cost : currentCost
+
+          if (diff === 0) {
+            return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
+          }
+
+          // Record the adjustment as a real stock_moves row instead of writing
+          // stock_balances directly, so it shows up in the ledger like every other
+          // stock-changing action (PO receipt, MO consumption/output, Store Out,
+          // interco transfer) — same virtual_in/virtual_out counterparty pattern
+          // those already use for "stock appearing/disappearing with no real
+          // counterparty location". The trg_update_stock_balance trigger (008/050)
+          // then updates stock_balances.qty_on_hand automatically from this insert.
+          const virtualType = diff > 0 ? 'virtual_in' : 'virtual_out'
+          let virtualId = (
+            await client.query(
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND type=$2 AND is_active=true LIMIT 1`,
+              [auth.companyId, virtualType],
             )
-            for (const u of users.rows as Record<string, unknown>[]) {
+          ).rows[0]?.id as string | undefined
+          if (!virtualId) {
+            virtualId = (
               await client.query(
-                `INSERT INTO notifications (company_id,user_id,type,title,body,data)
-                 VALUES ($1,$2,'low_stock',$3,$4,$5)`,
+                `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,$2,$3,true) RETURNING id`,
                 [
-                  ctx.auth.companyId,
-                  u.user_id,
-                  `Low Stock: ${String(product.name)}`,
-                  `${String(product.sku)} is below reorder point after stock adjustment. On hand: ${qty.toFixed(2)}, reorder point: ${reorder.toFixed(2)}.`,
-                  JSON.stringify({
-                    product_id: product.id,
-                    qty_on_hand: qty,
-                    reorder_point: reorder,
-                  }),
+                  auth.companyId,
+                  virtualType === 'virtual_in' ? 'Virtual Receipts' : 'Virtual Consumption',
+                  virtualType,
                 ],
               )
+            ).rows[0].id as string
+          }
+          const fromLocationId = diff > 0 ? virtualId : i.location_id
+          const toLocationId = diff > 0 ? i.location_id : virtualId
+          const qty = Math.abs(diff)
+
+          const mv = await client.query(
+            `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'adjustment',$9,$10)
+             RETURNING *, moved_at AS move_date`,
+            [
+              auth.companyId,
+              i.product_id,
+              fromLocationId,
+              toLocationId,
+              adjustedAt,
+              qty,
+              unitCost,
+              qty * unitCost,
+              i.notes ?? null,
+              auth.userId,
+            ],
+          )
+
+          // The trigger blends old/new cost by quantity when a cost is supplied.
+          // Preserve this page's existing behavior instead — an explicit override
+          // replaces the average cost outright, rather than being blended in.
+          if (i.unit_cost && i.unit_cost > 0) {
+            await client.query(
+              `UPDATE stock_balances SET average_cost=$1, updated_at=NOW()
+               WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+              [i.unit_cost, i.product_id, i.location_id],
+            )
+          }
+
+          // Check reorder point after adjustment and notify if now below threshold
+          if (i.new_qty < currentQty) {
+            const lowRes = await client.query(
+              `SELECT p.id, p.name, p.sku, p.reorder_point,
+                      COALESCE(SUM(sb.qty_on_hand), 0) AS qty_on_hand
+               FROM products p
+               LEFT JOIN stock_balances sb ON sb.product_id = p.id
+               LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out')
+               WHERE p.id=$1 AND p.reorder_point IS NOT NULL AND p.company_id=$2 AND (sb.id IS NULL OR sl.id IS NOT NULL)
+               GROUP BY p.id, p.name, p.sku, p.reorder_point
+               HAVING COALESCE(SUM(sb.qty_on_hand), 0) < p.reorder_point`,
+              [i.product_id, auth.companyId],
+            )
+            if (lowRes.rows.length > 0) {
+              const product = lowRes.rows[0] as Record<string, unknown>
+              const qty2 = parseFloat(String(product.qty_on_hand ?? 0))
+              const reorder = parseFloat(String(product.reorder_point ?? 0))
+              const users = await client.query(
+                `SELECT DISTINCT user_id FROM user_company_roles WHERE company_id=$1 AND module='inventory'`,
+                [auth.companyId],
+              )
+              for (const u of users.rows as Record<string, unknown>[]) {
+                await client.query(
+                  `INSERT INTO notifications (company_id,user_id,type,title,body,data)
+                   VALUES ($1,$2,'low_stock',$3,$4,$5)`,
+                  [
+                    auth.companyId,
+                    u.user_id,
+                    `Low Stock: ${String(product.name)}`,
+                    `${String(product.sku)} is below reorder point after stock adjustment. On hand: ${qty2.toFixed(2)}, reorder point: ${reorder.toFixed(2)}.`,
+                    JSON.stringify({
+                      product_id: product.id,
+                      qty_on_hand: qty2,
+                      reorder_point: reorder,
+                    }),
+                  ],
+                )
+              }
             }
           }
-        }
 
-        await client.query('COMMIT')
-        void publishEntityChanged(ctx.auth.companyId, 'stock_balance', i.product_id, 'updated')
-
-        // Return a synthetic move-like object so the frontend mutation response works
-        return {
-          id: `adj-${Date.now()}`,
-          move_date: adjustedAt,
-          qty: String(Math.abs(diff)),
-        }
-      } catch (e) {
-        await client.query('ROLLBACK')
-        throw e
-      } finally {
-        client.release()
-      }
+          void publishEntityChanged(auth.companyId, 'stock_balance', i.product_id, 'updated')
+          return mv.rows[0]
+        },
+      )
     },
 
     // ── Phase 4: Projects ─────────────────────────────────────

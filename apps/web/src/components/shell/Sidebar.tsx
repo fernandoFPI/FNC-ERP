@@ -791,6 +791,12 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['inventory.stock_moves.view'],
       },
       {
+        label: 'Adjust Stock',
+        icon: <Icon name="refresh-cw" />,
+        path: '/inventory/adjust',
+        permKeys: ['inventory.stock_moves.view'],
+      },
+      {
         label: 'Store Out',
         icon: <Icon name="log-out" />,
         path: '/inventory/store-out',

@@ -104,7 +104,7 @@ export default function InventoryValuationReport() {
     },
     {
       key: 'avgCost',
-      header: 'Avg Cost',
+      header: 'Last Cost',
       mobilePriority: 4,
       render: (row) => <AmountDisplay amount={row.avgCost} currency={row.currency} size="sm" />,
     },
