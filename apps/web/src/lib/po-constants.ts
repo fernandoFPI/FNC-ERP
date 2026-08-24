@@ -23,6 +23,12 @@ export const PO_TERMINAL_STATUSES = ['completed', 'rejected', 'cancelled', 'dele
 
 export const PO_POSITIONS = [
   {
+    key: 'buyer',
+    label: 'Buyer',
+    description:
+      'Ticks off PO lines as bought during the Items bought stage, once approved. Typically scoped by branch — the branch a PO belongs to determines whose buyer position applies.',
+  },
+  {
     key: 'store_keeper',
     label: 'Store Keeper',
     description:
@@ -103,6 +109,7 @@ export const PO_STATUS_ACTIONS: Record<
     label: 'Mark items bought',
     description:
       "The assigned buyer ticks each line as bought (tracking only). A receipt still needs to be recorded to move on to goods_received.",
+    requiredPosition: 'buyer',
   },
   goods_received: {
     label: 'Send to finance audit',

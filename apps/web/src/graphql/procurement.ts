@@ -311,6 +311,8 @@ export const PO_LIFECYCLE_QUERY = gql`
       funding_employee_name
       assigned_buyer_user_id
       assigned_buyer_name
+      buyerNames
+      callerIsBuyer
       expected_delivery_date
       notes
       created_by_email
@@ -702,8 +704,8 @@ export const ADMIN_SET_PO_STATUS = gql`
 // ── PO Positions ──────────────────────────────────────────────────────────────
 
 export const PO_POSITIONS_QUERY = gql`
-  query GetPOPositions($projectId: ID, $departmentId: ID) {
-    poPositions(projectId: $projectId, departmentId: $departmentId) {
+  query GetPOPositions($projectId: ID, $departmentId: ID, $branchId: ID) {
+    poPositions(projectId: $projectId, departmentId: $departmentId, branchId: $branchId) {
       id
       employeeId
       employeeName
@@ -712,6 +714,8 @@ export const PO_POSITIONS_QUERY = gql`
       projectName
       departmentId
       departmentName
+      branchId
+      branchName
       isActive
       createdAt
     }
@@ -724,6 +728,8 @@ export const ASSIGN_PO_POSITION = gql`
       id
       employeeName
       position
+      branchId
+      branchName
     }
   }
 `

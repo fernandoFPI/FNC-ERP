@@ -130,6 +130,8 @@ export const GET_USER_PO_POSITIONS = gql`
       projectName
       departmentId
       departmentName
+      branchId
+      branchName
       isActive
       createdAt
     }

@@ -25,6 +25,7 @@ import { ASSIGN_PO_POSITION, REMOVE_PO_POSITION } from '../../../../graphql/proc
 import type { AccessLevel } from '../../../../lib/permissionRegistry'
 
 const PO_POSITION_OPTIONS = [
+  { value: 'buyer', label: 'Buyer' },
   { value: 'store_keeper', label: 'Store Keeper' },
   { value: 'store_pricing', label: 'Store Pricing' },
   { value: 'procurement_officer', label: 'Procurement Officer' },
@@ -54,6 +55,8 @@ interface POPosition {
   projectName?: string | null
   departmentId?: string | null
   departmentName?: string | null
+  branchId?: string | null
+  branchName?: string | null
   isActive: boolean
 }
 
@@ -88,7 +91,7 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
   const [showAddPositionModal, setShowAddPositionModal] = useState(false)
   const [positionForm, setPositionForm] = useState({
     position: '',
-    scopeType: 'project' as 'project' | 'department',
+    scopeType: 'project' as 'project' | 'department' | 'branch',
     scopeId: '',
   })
   const [applyingTemplate, setApplyingTemplate] = useState(false)
@@ -242,7 +245,9 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
             ? `Project: ${pos.projectName}`
             : pos.departmentName
               ? `Dept: ${pos.departmentName}`
-              : '—'}
+              : pos.branchName
+                ? `Branch: ${pos.branchName}`
+                : '—'}
         </span>
       ),
     },
@@ -477,6 +482,8 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                           positionForm.scopeType === 'department'
                             ? positionForm.scopeId
                             : undefined,
+                        branchId:
+                          positionForm.scopeType === 'branch' ? positionForm.scopeId : undefined,
                       },
                     },
                   })
@@ -512,7 +519,7 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                 Scope type *
               </label>
               <div style={{ display: 'flex', gap: '8px' }}>
-                {(['project', 'department'] as const).map((t) => (
+                {(['project', 'department', 'branch'] as const).map((t) => (
                   <button
                     key={t}
                     onClick={() => {
@@ -544,7 +551,12 @@ export default function UserRolesTab({ userId }: UserRolesTabProps) {
                   marginBottom: '4px',
                 }}
               >
-                {positionForm.scopeType === 'project' ? 'Project' : 'Department'} *
+                {positionForm.scopeType === 'project'
+                  ? 'Project'
+                  : positionForm.scopeType === 'department'
+                    ? 'Department'
+                    : 'Branch'}{' '}
+                *
               </label>
               <input
                 value={positionForm.scopeId}

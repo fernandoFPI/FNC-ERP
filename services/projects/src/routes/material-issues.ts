@@ -1,21 +1,11 @@
 import { Router } from 'express'
 import type { IRouter } from 'express'
-import { pool, query } from '@fnc-erp/db'
+import { pool, query, nextDocumentNumber } from '@fnc-erp/db'
 import { logAudit } from '@fnc-erp/audit'
 import { sendOk, sendError } from '../lib/errors.js'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const materialIssuesRouter: IRouter = Router()
-
-async function generateIssueNumber(companyId: string): Promise<string> {
-  const year = new Date().getFullYear()
-  const result = await query<{ count: string }>(
-    `SELECT COUNT(*) AS count FROM project_material_issues WHERE company_id=$1 AND issue_number LIKE $2`,
-    [companyId, `ISS-${year}-%`],
-  )
-  const seq = parseInt(result.rows[0]?.['count'] ?? '0') + 1
-  return `ISS-${year}-${String(seq).padStart(4, '0')}`
-}
 
 // GET /projects/:id/material-issues
 materialIssuesRouter.get('/', requirePermission('projects.view', 'view'), async (req, res) => {
@@ -68,7 +58,7 @@ materialIssuesRouter.post('/', requirePermission('projects.edit', 'edit'), async
     }
     if (!body.lines?.length) return sendError(res, 400, 'VALIDATION_ERROR', 'At least one line is required')
 
-    const issueNumber = await generateIssueNumber(companyId)
+    const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
     const client = await pool.connect()
     try {
       await client.query('BEGIN')

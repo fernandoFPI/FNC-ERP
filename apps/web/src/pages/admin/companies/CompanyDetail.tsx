@@ -1130,24 +1130,36 @@ export default function CompanyDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Default procurement buyer
+                Procurement buyer
               </label>
-              <select
-                value={branchForm.defaultProcurementUserId}
-                onChange={(e) => {
-                  setBranchForm({ ...branchForm, defaultProcurementUserId: e.target.value })
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: `1px solid ${theme.border}`,
+                  background: theme.bgSurface,
                 }}
-                style={inputStyle(theme)}
               >
-                <option value="">— Unassigned —</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.email}
-                  </option>
-                ))}
-              </select>
-              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-                Gets notified and can view (not edit) this branch&apos;s POs once approved.
+                Buyers are now managed on the PO Positions page, scoped per branch.{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigate('/procurement/positions')
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    color: theme.accent,
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Open PO Positions
+                </button>
               </div>
             </div>
             <div
