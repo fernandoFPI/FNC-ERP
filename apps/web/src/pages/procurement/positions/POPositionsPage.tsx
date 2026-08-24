@@ -7,6 +7,8 @@ import {
 } from '../../../graphql/procurement'
 import { EMPLOYEES_QUERY, DEPARTMENTS_QUERY } from '../../../graphql/hr'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
+import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
+import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -28,11 +30,14 @@ interface POPosition {
   projectName?: string
   departmentId?: string
   departmentName?: string
+  branchId?: string
+  branchName?: string
   isActive: boolean
   createdAt: string
 }
 
-const POSITION_VARIANT: Record<string, 'info' | 'warning' | 'accent' | 'neutral'> = {
+const POSITION_VARIANT: Record<string, 'info' | 'warning' | 'accent' | 'neutral' | 'success'> = {
+  buyer: 'success',
   store_keeper: 'info',
   store_pricing: 'info',
   procurement_officer: 'accent',
@@ -170,16 +175,20 @@ function EmployeeCombobox({
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function POPositionsPage() {
   const { theme } = useTheme()
+  const user = useAuthStore((s) => s.user)
   const [showAssignModal, setShowAssignModal] = useState(false)
-  const [scopeFilter, setScopeFilter] = useState<'all' | 'project' | 'department'>('all')
+  const [scopeFilter, setScopeFilter] = useState<'all' | 'project' | 'department' | 'branch'>(
+    'all',
+  )
   const [confirmRemovePosition, setConfirmRemovePosition] = useState<string | null>(null)
 
   // form state
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeOption | null>(null)
   const [position, setPosition] = useState('')
-  const [scopeType, setScopeType] = useState<'none' | 'project' | 'department'>('none')
+  const [scopeType, setScopeType] = useState<'none' | 'project' | 'department' | 'branch'>('none')
   const [projectId, setProjectId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [branchId, setBranchId] = useState('')
 
   function resetForm() {
     setSelectedEmployee(null)
@@ -187,18 +196,23 @@ export default function POPositionsPage() {
     setScopeType('none')
     setProjectId('')
     setDepartmentId('')
+    setBranchId('')
   }
 
   const { data, loading, refetch } = useQuery(PO_POSITIONS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
 
-  // load projects + departments for scope dropdowns
+  // load projects + departments + branches for scope dropdowns
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
     variables: { limit: 200, includeAll: true },
     skip: !showAssignModal,
   })
   const { data: deptData } = useQuery(DEPARTMENTS_QUERY, { skip: !showAssignModal })
+  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
+    variables: { companyId: user?.companyId },
+    skip: !showAssignModal || !user?.companyId,
+  })
 
   const projects = (projectsData?.projects?.data ?? []) as {
     id: string
@@ -209,6 +223,11 @@ export default function POPositionsPage() {
     id: string
     name: string
     is_active: boolean
+  }[]
+  const branches = (branchesData?.companyBranches ?? []) as {
+    id: string
+    name: string
+    isActive: boolean
   }[]
 
   const [assignPosition, { loading: assigning }] = useMutation(ASSIGN_PO_POSITION, {
@@ -227,6 +246,7 @@ export default function POPositionsPage() {
   const filtered = positions.filter((p) => {
     if (scopeFilter === 'project') return !!p.projectId
     if (scopeFilter === 'department') return !!p.departmentId
+    if (scopeFilter === 'branch') return !!p.branchId
     return true
   })
 
@@ -235,7 +255,8 @@ export default function POPositionsPage() {
     !!position &&
     (scopeType === 'none' ||
       (scopeType === 'project' && !!projectId) ||
-      (scopeType === 'department' && !!departmentId))
+      (scopeType === 'department' && !!departmentId) ||
+      (scopeType === 'branch' && !!branchId))
 
   const columns: Column<POPosition>[] = [
     {
@@ -274,7 +295,9 @@ export default function POPositionsPage() {
             ? `Project: ${p.projectName}`
             : p.departmentName
               ? `Dept: ${p.departmentName}`
-              : 'Company-wide'}
+              : p.branchName
+                ? `Branch: ${p.branchName}`
+                : 'Company-wide'}
         </span>
       ),
     },
@@ -311,6 +334,7 @@ export default function POPositionsPage() {
           position,
           projectId: scopeType === 'project' ? projectId : undefined,
           departmentId: scopeType === 'department' ? departmentId : undefined,
+          branchId: scopeType === 'branch' ? branchId : undefined,
         },
       },
     })
@@ -335,7 +359,7 @@ export default function POPositionsPage() {
       />
 
       <div style={{ display: 'flex', gap: '8px', marginTop: '16px', marginBottom: '16px' }}>
-        {(['all', 'project', 'department'] as const).map((s) => (
+        {(['all', 'project', 'department', 'branch'] as const).map((s) => (
           <button
             key={s}
             onClick={() => {
@@ -424,11 +448,12 @@ export default function POPositionsPage() {
                 Scope
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                {(['none', 'project', 'department'] as const).map((s) => {
+                {(['none', 'project', 'department', 'branch'] as const).map((s) => {
                   const labels = {
                     none: 'Company-wide',
                     project: 'Project',
                     department: 'Department',
+                    branch: 'Branch',
                   }
                   const active = scopeType === s
                   return (
@@ -439,6 +464,7 @@ export default function POPositionsPage() {
                         setScopeType(s)
                         setProjectId('')
                         setDepartmentId('')
+                        setBranchId('')
                       }}
                       style={{
                         flex: 1,
@@ -487,6 +513,20 @@ export default function POPositionsPage() {
                   options={departments
                     .filter((d) => d.is_active)
                     .map((d) => ({ value: d.id, label: d.name }))}
+                />
+              )}
+
+              {scopeType === 'branch' && (
+                <Select
+                  label=""
+                  value={branchId}
+                  onChange={(e) => {
+                    setBranchId(e.target.value)
+                  }}
+                  placeholder="Select branch…"
+                  options={branches
+                    .filter((b) => b.isActive)
+                    .map((b) => ({ value: b.id, label: b.name }))}
                 />
               )}
             </div>

@@ -18,7 +18,7 @@
     purchaseOrders(status: String, vendor_id: ID, project_id: ID): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
     myPOQueue: [PurchaseOrder!]
-    poPositions(projectId: ID, departmentId: ID): [POPositionAssignment!]!
+    poPositions(projectId: ID, departmentId: ID, branchId: ID): [POPositionAssignment!]!
     poFxRates: POFxRatesResult!
 
     # Interco
@@ -332,6 +332,8 @@
     projectName: String
     departmentId: ID
     departmentName: String
+    branchId: ID
+    branchName: String
     isActive: Boolean!
     createdAt: String!
   }
@@ -341,6 +343,7 @@
     position: String!
     projectId: ID
     departmentId: ID
+    branchId: ID
   }
 
   input LinePriceInput {
@@ -1948,6 +1951,8 @@
     funding_employee_name: String
     assigned_buyer_user_id: ID
     assigned_buyer_name: String
+    buyerNames: [String!]
+    callerIsBuyer: Boolean
     lines: [POLine!]
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]

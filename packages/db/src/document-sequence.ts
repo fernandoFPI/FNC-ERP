@@ -12,6 +12,7 @@ export const DOC_TYPES = [
   { key: 'employee_advance', label: 'Employee Advance', defaultPrefix: 'ADV' },
   { key: 'advance_settlement', label: 'Advance Settlement', defaultPrefix: 'SET' },
   { key: 'advance_return', label: 'Advance Return', defaultPrefix: 'RET' },
+  { key: 'material_issue', label: 'Store Out', defaultPrefix: 'SO' },
 ] as const
 
 export type DocType = (typeof DOC_TYPES)[number]['key']

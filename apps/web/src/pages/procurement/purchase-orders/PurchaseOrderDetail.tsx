@@ -166,6 +166,8 @@ interface PO {
   funding_employee_name?: string | null
   assigned_buyer_user_id?: string | null
   assigned_buyer_name?: string | null
+  buyerNames?: string[] | null
+  callerIsBuyer?: boolean | null
   expected_delivery_date?: string
   notes?: string
   created_by_email?: string
@@ -2945,8 +2947,12 @@ export default function PurchaseOrderDetail() {
 
               {po.status === 'items_bought' &&
                 (() => {
-                  const isBuyer = !!currentUserId && po.assigned_buyer_user_id === currentUserId
+                  const isBuyer = !!po.callerIsBuyer
                   const canMarkBought = isSystemLevel || isBuyer
+                  const buyerDisplayName =
+                    po.buyerNames && po.buyerNames.length > 0
+                      ? po.buyerNames.join(', ')
+                      : (po.assigned_buyer_name ?? 'The assigned buyer')
                   const fmtN = (n: number | string) =>
                     parseFloat(String(n)).toLocaleString('en-US', {
                       minimumFractionDigits: 0,
@@ -2965,12 +2971,12 @@ export default function PurchaseOrderDetail() {
                           color: theme.accent,
                         }}
                       >
-                        {po.assigned_buyer_name ?? 'The assigned buyer'} ticks each item off as
+                        {buyerDisplayName} ticks each item off as
                         it's bought — this is just tracking. A receipt still needs to be recorded
                         below to move this PO on to Goods Received.
                         {!canMarkBought && (
                           <div style={{ marginTop: '4px', opacity: 0.85 }}>
-                            You're viewing this read-only — only {po.assigned_buyer_name ?? 'the assigned buyer'} or an admin can check items off.
+                            You're viewing this read-only — only {buyerDisplayName} or an admin can check items off.
                           </div>
                         )}
                       </div>

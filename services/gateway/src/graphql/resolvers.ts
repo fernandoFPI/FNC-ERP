@@ -357,6 +357,7 @@ async function callerHasCompanyWideStoreKeeper(
      JOIN employees e ON e.id = ppa.employee_id
      WHERE e.user_id = $1 AND ppa.company_id = $2 AND ppa.position = 'store_keeper'
        AND ppa.is_active = true AND ppa.project_id IS NULL AND ppa.department_id IS NULL
+       AND ppa.branch_id IS NULL
      LIMIT 1`,
     [userId, companyId],
   )
@@ -652,25 +653,23 @@ async function issueStockForPOLines(
     }
   }
 
-  // Auto-create and immediately issue a Store Out for all items leaving stock
-  const cntRes = await client.query(
-    `SELECT COUNT(*) FROM project_material_issues WHERE company_id=$1`,
-    [companyId],
-  )
-  const seq = parseInt(String(cntRes.rows[0]?.count ?? '0')) + 1
-  const issueNumber = `SI-${String(seq).padStart(5, '0')}`
+  // Auto-create a Store Out documenting the stock leaving inventory, as a
+  // draft the store keeper must explicitly confirm (issueMaterialIssue) —
+  // the physical stock_moves above already happened synchronously, but the
+  // paperwork/cost booking is deferred until a human confirms it, same as
+  // any manually-created Store Out.
+  const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
 
   const issueRes = await client.query(
     `INSERT INTO project_material_issues
        (project_id, company_id, po_id, issue_number, issue_date, status,
-        issued_by, issued_at, created_by, notes)
-     VALUES ($1,$2,$3,$4,NOW()::date,'issued',$5,NOW(),$5,
+        created_by, notes)
+     VALUES ($1,$2,$3,$4,NOW()::date,'draft',$5,
              'Auto-created from PO stock issuance')
      RETURNING id`,
     [po.project_id, companyId, poId, issueNumber, userId],
   )
   const issueId = issueRes.rows[0]?.id as string
-  let totalAmount = 0
 
   for (const line of lines) {
     if (!line.product_id) continue
@@ -699,19 +698,10 @@ async function issueStockForPOLines(
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [issueId, line.product_id, line.id, qty, unitCost, lineCost, fromLocationId, ownDestLocationId],
     )
-    totalAmount += lineCost
   }
-
-  if (totalAmount > 0 && po.project_id) {
-    await client.query(
-      `INSERT INTO project_cost_actuals
-         (project_id, source_type, source_id, amount, currency_code, entry_date)
-       VALUES ($1,'stock_issue',$2,$3,'IQD',NOW()::date)
-       ON CONFLICT (source_id) WHERE source_type = 'stock_issue' AND source_id IS NOT NULL
-       DO UPDATE SET amount=EXCLUDED.amount`,
-      [po.project_id, issueId, totalAmount],
-    )
-  }
+  // Cost booking (project_cost_actuals) and issued_by/issued_at stamping are
+  // deferred to issueMaterialIssue, which runs once the store keeper confirms
+  // this draft — see that resolver for the actual upsert.
   return { issueId, issueNumber }
 }
 
@@ -815,20 +805,24 @@ async function userHasPositionGW(
   position: string,
 ): Promise<boolean> {
   const scope = await query(
-    `SELECT po.project_id, e.department_id FROM purchase_orders po LEFT JOIN users ou ON ou.id=po.organizer_id LEFT JOIN employees e ON e.user_id=ou.id WHERE po.id=$1 LIMIT 1`,
+    `SELECT po.project_id, po.branch_id, e.department_id FROM purchase_orders po LEFT JOIN users ou ON ou.id=po.organizer_id LEFT JOIN employees e ON e.user_id=ou.id WHERE po.id=$1 LIMIT 1`,
     [poId],
   )
   if (!scope.rows[0]) return false
   const empId = await getEmployeeIdGW(userId, companyId)
   if (!empId) return false
+  // Company-wide fallback requires ALL scope dimensions to be null on the
+  // assignment row — otherwise a branch-only (or project/department-only)
+  // assignment would incorrectly match every PO regardless of scope.
   const r = await query(
-    `SELECT id FROM po_position_assignments WHERE employee_id=$1 AND position=$2 AND is_active=true AND company_id=$3 AND (($4::uuid IS NOT NULL AND project_id=$4) OR ($5::uuid IS NOT NULL AND department_id=$5) OR (project_id IS NULL AND department_id IS NULL)) LIMIT 1`,
+    `SELECT id FROM po_position_assignments WHERE employee_id=$1 AND position=$2 AND is_active=true AND company_id=$3 AND (($4::uuid IS NOT NULL AND project_id=$4) OR ($5::uuid IS NOT NULL AND department_id=$5) OR ($6::uuid IS NOT NULL AND branch_id=$6) OR (project_id IS NULL AND department_id IS NULL AND branch_id IS NULL)) LIMIT 1`,
     [
       empId,
       position,
       companyId,
       scope.rows[0].project_id ?? null,
       scope.rows[0].department_id ?? null,
+      scope.rows[0].branch_id ?? null,
     ],
   )
   return r.rows.length > 0
@@ -973,12 +967,18 @@ async function branchScopedPOFilterGW(
   if (isPermissionBypassGW(auth.role)) return null
   const perms = await loadPermissions(auth.userId, auth.companyId)
   if (meetsLevel(perms['procurement.po.edit'], 'edit')) return null
-  const branches = await query<{ id: string }>(
-    `SELECT id FROM company_branches WHERE company_id=$1 AND default_procurement_user_id=$2 AND is_active=true`,
-    [auth.companyId, auth.userId],
+  const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+  if (!empId) return null
+  // Only branch-scoped 'buyer' assignments restrict visibility here — a
+  // company-wide buyer assignment correctly falls through to "no restriction"
+  // (null), matching the semantics everywhere else buyer scope is resolved.
+  const branches = await query<{ branch_id: string }>(
+    `SELECT DISTINCT branch_id FROM po_position_assignments
+     WHERE employee_id=$1 AND company_id=$2 AND position='buyer' AND is_active=true AND branch_id IS NOT NULL`,
+    [empId, auth.companyId],
   )
   if (branches.rows.length === 0) return null
-  return branches.rows.map((r) => r.id)
+  return branches.rows.map((r) => r.branch_id)
 }
 
 // The one place "can this user view project X" is decided for single-project
@@ -1064,7 +1064,7 @@ async function notifyPositionHoldersGW(
   notification: POAuthGWNotification,
 ): Promise<void> {
   const poResult = await query(
-    `SELECT po.project_id, ou.id AS organizer_user_id
+    `SELECT po.project_id, po.branch_id, ou.id AS organizer_user_id
      FROM purchase_orders po
      LEFT JOIN users ou ON ou.id = po.organizer_id
      WHERE po.id = $1`,
@@ -1079,6 +1079,9 @@ async function notifyPositionHoldersGW(
   )
   const departmentId = (deptResult.rows[0]?.department_id as string | null) ?? null
 
+  // Company-wide fallback requires ALL scope dimensions to be null on the
+  // assignment row — otherwise a branch-only (or project/department-only)
+  // assignment would incorrectly match every PO regardless of scope.
   const holders = await query(
     `SELECT DISTINCT u.id AS user_id
      FROM po_position_assignments ppa
@@ -1088,9 +1091,10 @@ async function notifyPositionHoldersGW(
        AND (
          ($2::uuid IS NOT NULL AND ppa.project_id = $2)
          OR ($3::uuid IS NOT NULL AND ppa.department_id = $3)
-         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL)
+         OR ($4::uuid IS NOT NULL AND ppa.branch_id = $4)
+         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL)
        )`,
-    [position, po.project_id ?? null, departmentId],
+    [position, po.project_id ?? null, departmentId, po.branch_id ?? null],
   )
   for (const holder of holders.rows) {
     await query(
@@ -3324,7 +3328,15 @@ export const resolvers = {
                -- store_keeper position, so it belongs alongside their other
                -- owner-actioned statuses here rather than a position lookup.
                (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
-               OR (po.status = 'items_bought' AND po.assigned_buyer_user_id = $2)
+               OR (po.status = 'items_bought' AND (
+                 po.assigned_buyer_user_id = $2
+                 OR EXISTS (
+                   SELECT 1 FROM po_position_assignments ppa
+                   WHERE ppa.employee_id = $3 AND ppa.position = 'buyer' AND ppa.is_active = true
+                     AND (ppa.branch_id = po.branch_id
+                       OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))
+                 )
+               ))
                OR (po.status = 'store_pricing' AND EXISTS (
                  SELECT 1 FROM po_position_assignments ppa
                  WHERE ppa.employee_id = $3 AND ppa.position = 'store_pricing' AND ppa.is_active = true
@@ -6052,6 +6064,28 @@ export const resolvers = {
         if (branchScope && !branchScope.includes((po.rows[0] as Record<string, unknown>).branch_id as string)) {
           return null
         }
+        const poRowForBuyer = po.rows[0] as Record<string, unknown>
+        // Buyer authority is now resolved dynamically from the 'buyer'
+        // position rather than a single frozen assignee — compute the
+        // current holder(s) for display, falling back to the legacy
+        // assigned_buyer_name for pre-cutover POs with no matching position.
+        const buyerHolders = await query<{ name: string }>(
+          `SELECT DISTINCT COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS name
+           FROM po_position_assignments ppa
+           JOIN employees e ON e.id = ppa.employee_id
+           JOIN users u ON u.id = e.user_id
+           WHERE ppa.position = 'buyer' AND ppa.is_active = true AND ppa.company_id = $1
+             AND (($2::uuid IS NOT NULL AND ppa.branch_id = $2)
+               OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))`,
+          [ctx.auth.companyId, poRowForBuyer.branch_id ?? null],
+        )
+        const buyerNames = buyerHolders.rows.map((r) => r.name)
+        const isAdminForBuyer = isAdminGW(ctx.auth.role)
+        const isFrozenBuyerForCaller = poRowForBuyer.assigned_buyer_user_id === ctx.auth.userId
+        const callerIsBuyer =
+          isAdminForBuyer ||
+          isFrozenBuyerForCaller ||
+          (await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'))
         let editRequests: unknown[] = []
         try {
           const er = await query(
@@ -6094,6 +6128,8 @@ export const resolvers = {
           receipts: receiptsWithUrls,
           approval_log: approvals.rows,
           edit_requests: editRequests,
+          buyerNames,
+          callerIsBuyer,
         }
       } catch {
         return null
@@ -6125,7 +6161,13 @@ export const resolvers = {
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
                (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected'))
-               OR (po.status='items_bought' AND po.assigned_buyer_user_id=$2)
+               OR (po.status='items_bought' AND (
+                     po.assigned_buyer_user_id=$2
+                     OR EXISTS (
+                       SELECT 1 FROM po_position_assignments ppa
+                       WHERE ppa.employee_id=$3 AND ppa.position='buyer' AND ppa.is_active=true
+                         AND (ppa.branch_id=po.branch_id
+                           OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL)))))
                OR (po.status='inventory_check' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
@@ -6468,11 +6510,13 @@ export const resolvers = {
          (e.first_name || ' ' || e.last_name) AS "employeeName",
          ppa.position, ppa.project_id AS "projectId", proj.name AS "projectName",
          ppa.department_id AS "departmentId", d.name AS "departmentName",
+         ppa.branch_id AS "branchId", cb.name AS "branchName",
          ppa.is_active AS "isActive", ppa.created_at AS "createdAt"
        FROM po_position_assignments ppa
        JOIN employees e ON e.id = ppa.employee_id
        LEFT JOIN projects proj ON proj.id = ppa.project_id
        LEFT JOIN departments d ON d.id = ppa.department_id
+       LEFT JOIN company_branches cb ON cb.id = ppa.branch_id
        WHERE e.user_id = $1`,
         [args.userId],
       )
@@ -7863,31 +7907,20 @@ export const resolvers = {
       // Funding source (vendor AP vs employee advance) isn't decided here —
       // the requester creating the PO usually has no idea how it'll end up
       // being paid, and Finance is better placed to make that call once the
-      // PO reaches 'invoiced' (setPOFunding). Every PO gets the same buyer
-      // default regardless: whoever the branch has assigned as its
-      // procurement buyer, for the items_bought stage after approval.
-      let resolvedBuyerUserId: string | null = null
-      if (i.branch_id) {
-        const branchBuyerRes = await query<{ default_procurement_user_id: string | null }>(
-          `SELECT default_procurement_user_id FROM company_branches WHERE id=$1 AND company_id=$2`,
-          [i.branch_id, ctx.auth.companyId],
-        )
-        resolvedBuyerUserId = branchBuyerRes.rows[0]?.default_procurement_user_id ?? null
-      }
-      // No branch, or the branch has no procurement buyer configured yet —
-      // fall back to whoever's creating the PO. Without this, items_bought
-      // would have no one able to act on it (markPOLineBought requires a
-      // real assigned_buyer_user_id match) and the PO would be stuck until
-      // an admin manually intervened.
-      if (!resolvedBuyerUserId) {
-        resolvedBuyerUserId = ctx.auth.userId
-      }
-      // Snapshotted at creation (rather than joined live) so a later change to
-      // the company's default PO currency doesn't retroactively reinterpret
-      // what an existing PO's total_amount is denominated in. default_po_currency
-      // lives on system_configuration (one row per company), not on companies
-      // itself — and is distinct from system_configuration.default_currency,
-      // which is the company's general default, not PO-specific.
+      // PO reaches 'invoiced' (setPOFunding). Buyer resolution used to happen
+      // here too (from the branch's default_procurement_user_id), but who
+      // can act on items_bought is now resolved dynamically from the 'buyer'
+      // po_position_assignments position for the PO's branch — see
+      // userHasPositionGW. assigned_buyer_user_id is left NULL on new POs;
+      // the column is kept only so pre-cutover POs keep their frozen buyer.
+      //
+      // base_currency_code is snapshotted at creation (rather than joined live)
+      // so a later change to the company's default PO currency doesn't
+      // retroactively reinterpret what an existing PO's total_amount is
+      // denominated in. default_po_currency lives on system_configuration (one
+      // row per company), not on companies itself — and is distinct from
+      // system_configuration.default_currency, which is the company's general
+      // default, not PO-specific.
       const companyCurrencyRes = await query<{ default_po_currency: string }>(
         `SELECT default_po_currency FROM system_configuration WHERE company_id=$1`,
         [ctx.auth.companyId],
@@ -7938,7 +7971,7 @@ export const resolvers = {
               i.assigned_receiver_id ?? null,
               priority,
               i.branch_id ?? null,
-              resolvedBuyerUserId,
+              null, // assigned_buyer_user_id: no longer resolved at creation — see 'buyer' position
               baseCurrencyCode,
             ],
           )
@@ -16905,12 +16938,7 @@ export const resolvers = {
       ]).then((r) => {
         if (!r.rows[0]) throw new Error('Project not found')
       })
-      const countR = await query(
-        'SELECT COUNT(*) FROM project_material_issues WHERE company_id=$1',
-        [ctx.auth.companyId],
-      )
-      const num = parseInt(String(countR.rows[0]?.count ?? '0')) + 1
-      const issueNumber = `SI-${String(num).padStart(5, '0')}`
+      const issueNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_issue', 'SO')
       const r = await query(
         `INSERT INTO project_material_issues
            (project_id, company_id, issue_number, issue_date, notes, po_id, status, created_by)
@@ -17026,6 +17054,24 @@ export const resolvers = {
       const issue = issueR.rows[0] as Record<string, unknown> | undefined
       if (!issue) throw new Error('Material issue not found')
       if (issue.status !== 'draft') throw new Error('Store-out is not in draft status')
+      // PO-originated Store Outs (auto-created from PO stock issuance, where
+      // the physical stock deduction already happened at PO-approval time)
+      // additionally require the store_keeper position before the
+      // paperwork/cost-actual can be confirmed — mirrors the gate
+      // approveStockIssuance already applies before issuing stock. Manual/
+      // ad-hoc Store Outs (po_id IS NULL) keep today's
+      // projects.execution.edit-only check unchanged.
+      if (issue.po_id) {
+        const isAdmin = isAdminGW(ctx.auth.role)
+        const hasPosition = await userHasPositionGW(
+          ctx.auth.userId,
+          ctx.auth.companyId,
+          String(issue.po_id),
+          'store_keeper',
+        )
+        if (!isAdmin && !hasPosition)
+          throw new Error('store_keeper or admin required to confirm a PO-originated store-out')
+      }
       const totalCost = parseFloat(String(issue.total_cost ?? '0'))
       const client = await pool.connect()
       try {
@@ -17092,7 +17138,7 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
       const issueR = await query(
-        'SELECT status, company_id FROM project_material_issues WHERE id=$1',
+        'SELECT status, company_id, po_id FROM project_material_issues WHERE id=$1',
         [args.id],
       )
       const issue = issueR.rows[0] as Record<string, unknown> | undefined
@@ -17100,6 +17146,23 @@ export const resolvers = {
         throw new Error('Material issue not found')
       if (!['draft', 'issued'].includes(String(issue.status)))
         throw new Error('Cannot cancel a cancelled issue')
+      // Same store_keeper gate as issueMaterialIssue, for the same reason: a
+      // PO-originated Store Out documents a physical stock deduction that
+      // already happened at PO-approval time, so cancelling its paperwork
+      // (with no stock reversal and no cost ever booked) shouldn't be open
+      // to anyone with plain projects.execution.edit — only the person who
+      // could have confirmed it should be able to un-confirm/cancel it too.
+      if (issue.po_id) {
+        const isAdmin = isAdminGW(ctx.auth.role)
+        const hasPosition = await userHasPositionGW(
+          ctx.auth.userId,
+          ctx.auth.companyId,
+          String(issue.po_id),
+          'store_keeper',
+        )
+        if (!isAdmin && !hasPosition)
+          throw new Error('store_keeper or admin required to cancel a PO-originated store-out')
+      }
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
@@ -17262,8 +17325,13 @@ export const resolvers = {
       if (!check.rows[0]) throw new Error('PO line not found')
       if (check.rows[0].status !== 'items_bought')
         throw new Error('PO must be in items_bought status to set the actual price')
-      if (!isAdminGW(auth.role) && check.rows[0].assigned_buyer_user_id !== auth.userId)
-        throw new Error('Only the assigned buyer can set the actual price on this PO')
+      // Mirrors markPOLineBought's authorization exactly: admin, OR the
+      // legacy assigned_buyer_user_id fallback (POs created before the buyer
+      // position redesign), OR the new branch-scoped 'buyer' position.
+      const isFrozenBuyer = check.rows[0].assigned_buyer_user_id === auth.userId
+      const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
+      if (!isAdminGW(auth.role) && !isFrozenBuyer && !hasBuyerPosition)
+        throw new Error('Only a buyer position holder for this PO can set the actual price on this PO')
       const r = await query(
         `UPDATE po_lines
          SET actual_unit_price=$1::NUMERIC,
@@ -23585,18 +23653,19 @@ const phase5QueryResolvers = {
 
   poPositions: async (
     _: unknown,
-    args: { projectId?: string; departmentId?: string },
+    args: { projectId?: string; departmentId?: string; branchId?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) return []
     let sql = `
-      SELECT ppa.id, ppa.employee_id, ppa.position, ppa.project_id, ppa.department_id, ppa.is_active, ppa.created_at,
+      SELECT ppa.id, ppa.employee_id, ppa.position, ppa.project_id, ppa.department_id, ppa.branch_id, ppa.is_active, ppa.created_at,
              e.first_name || ' ' || e.last_name AS employee_name,
-             p.name AS project_name, d.name AS department_name
+             p.name AS project_name, d.name AS department_name, cb.name AS branch_name
       FROM po_position_assignments ppa
       JOIN employees e ON e.id = ppa.employee_id
       LEFT JOIN projects p ON p.id = ppa.project_id
       LEFT JOIN departments d ON d.id = ppa.department_id
+      LEFT JOIN company_branches cb ON cb.id = ppa.branch_id
       WHERE ppa.company_id = $1`
     const params: unknown[] = [ctx.auth.companyId]
     let idx = 2
@@ -23607,6 +23676,10 @@ const phase5QueryResolvers = {
     if (args.departmentId) {
       sql += ` AND ppa.department_id=$${idx++}`
       params.push(args.departmentId)
+    }
+    if (args.branchId) {
+      sql += ` AND ppa.branch_id=$${idx++}`
+      params.push(args.branchId)
     }
     sql += ' ORDER BY ppa.created_at DESC'
     const r = await query(sql, params)
@@ -23619,6 +23692,8 @@ const phase5QueryResolvers = {
       projectName: row.project_name,
       departmentId: row.department_id,
       departmentName: row.department_name,
+      branchId: row.branch_id,
+      branchName: row.branch_name,
       isActive: row.is_active,
       createdAt: row.created_at,
     }))
@@ -24468,25 +24543,11 @@ const phase5MutationResolvers = {
         ],
       )
     }
-    if (poRow.rows[0].branch_id) {
-      const branchBuyer = await query<{ default_procurement_user_id: string | null }>(
-        `SELECT default_procurement_user_id FROM company_branches WHERE id=$1`,
-        [poRow.rows[0].branch_id],
-      )
-      const buyerId = branchBuyer.rows[0]?.default_procurement_user_id
-      if (buyerId) {
-        void query(
-          `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications','PO_READY_FOR_PROCUREMENT',$1)`,
-          [
-            JSON.stringify({
-              userId: buyerId,
-              poId: args.id,
-              poNumber: poRow.rows[0].po_number,
-            }),
-          ],
-        )
-      }
-    }
+    void notifyPositionHoldersGW(args.id, 'buyer', {
+      type: 'PO_READY_FOR_PROCUREMENT',
+      title: `PO ready to purchase: ${String(poRow.rows[0].po_number)}`,
+      body: `Purchase order ${String(poRow.rows[0].po_number)} has been approved and is ready to buy.`,
+    })
     void query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('reporting','PO_PDF_REQUESTED',$1)`,
       [JSON.stringify({ po_id: args.id, company_id: auth.companyId })],
@@ -24854,8 +24915,13 @@ const phase5MutationResolvers = {
     if (poRow.rows[0].status !== 'items_bought')
       throw new Error('PO must be in items_bought status to mark lines as bought')
     const isAdmin = isAdminGW(auth.role)
-    if (!isAdmin && poRow.rows[0].assigned_buyer_user_id !== auth.userId)
-      throw new Error('Only the assigned buyer can mark items bought on this PO')
+    // assigned_buyer_user_id is kept as a permanent fallback for POs created
+    // before the buyer position redesign — new POs never set this column, so
+    // they rely purely on the position check.
+    const isFrozenBuyer = poRow.rows[0].assigned_buyer_user_id === auth.userId
+    const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
+    if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
+      throw new Error('Only a buyer position holder for this PO can mark items bought on this PO')
     const result = await query(
       `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
       [args.bought, args.lineId, args.poId],
@@ -25020,7 +25086,13 @@ const phase5MutationResolvers = {
   assignPOPosition: async (
     _: unknown,
     args: {
-      input: { employeeId: string; position: string; projectId?: string; departmentId?: string }
+      input: {
+        employeeId: string
+        position: string
+        projectId?: string
+        departmentId?: string
+        branchId?: string
+      }
     },
     ctx: GQLContext,
   ) => {
@@ -25030,16 +25102,17 @@ const phase5MutationResolvers = {
       !(await callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId))
     )
       throw new Error('system_admin role or PO Admin position required')
-    const { employeeId, position, projectId, departmentId } = args.input
+    const { employeeId, position, projectId, departmentId, branchId } = args.input
     const r = await query(
-      `INSERT INTO po_position_assignments (company_id, employee_id, position, project_id, department_id, assigned_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      `INSERT INTO po_position_assignments (company_id, employee_id, position, project_id, department_id, branch_id, assigned_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
       [
         ctx.auth.companyId,
         employeeId,
         position,
         projectId ?? null,
         departmentId ?? null,
+        branchId ?? null,
         ctx.auth.userId,
       ],
     )
@@ -25054,6 +25127,9 @@ const phase5MutationResolvers = {
     const deptRes = departmentId
       ? await query(`SELECT name FROM departments WHERE id=$1`, [departmentId])
       : null
+    const branchRes = branchId
+      ? await query(`SELECT name FROM company_branches WHERE id=$1`, [branchId])
+      : null
     return {
       id: row.id,
       employeeId: row.employee_id,
@@ -25063,6 +25139,8 @@ const phase5MutationResolvers = {
       projectName: projRes?.rows[0]?.name ?? null,
       departmentId: row.department_id,
       departmentName: deptRes?.rows[0]?.name ?? null,
+      branchId: row.branch_id,
+      branchName: branchRes?.rows[0]?.name ?? null,
       isActive: row.is_active,
       createdAt: row.created_at,
     }
@@ -25985,6 +26063,16 @@ const phase5MutationResolvers = {
     // Seed config row
     await query(
       `INSERT INTO system_configuration (company_id) VALUES ($1) ON CONFLICT DO NOTHING`,
+      [company.id],
+    )
+    // Every other doc type relies on an admin visiting Settings -> Document
+    // Numbering before its counter starts (falling back to a timestamp ID
+    // until then) — Store Out is seeded proactively here so newly created
+    // companies get clean SO-00001-style numbers immediately, matching the
+    // one-time backfill done for existing companies in migration 202.
+    await query(
+      `INSERT INTO document_sequences (company_id, doc_type, prefix, next_number, pad_length, year_in_number, separator)
+       VALUES ($1,'material_issue','SO',1,5,false,'-') ON CONFLICT (company_id, doc_type) DO NOTHING`,
       [company.id],
     )
     return companyRowToDetail(company)
