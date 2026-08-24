@@ -10,6 +10,7 @@ import { api } from '../../../../lib/axios'
 interface PoFxRate {
   currency_code: string
   rate_to_base: number
+  is_default: boolean
   updated_at: string | null
 }
 
@@ -25,6 +26,7 @@ export default function PoFxRatesPage() {
   const [newCurrency, setNewCurrency] = useState('')
   const [newRate, setNewRate] = useState('')
   const [adding, setAdding] = useState(false)
+  const [settingDefault, setSettingDefault] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -65,6 +67,19 @@ export default function PoFxRatesPage() {
       addToast({ type: 'error', message: 'Failed to save rate' })
     } finally {
       setSaving(null)
+    }
+  }
+
+  async function handleSetDefault(currencyCode: string) {
+    setSettingDefault(currencyCode)
+    try {
+      await api.patch(`/admin/po-fx-rates/${currencyCode}/default`)
+      addToast({ type: 'success', message: `${currencyCode} is now the default PO currency` })
+      load()
+    } catch {
+      addToast({ type: 'error', message: 'Failed to set default' })
+    } finally {
+      setSettingDefault(null)
     }
   }
 
@@ -171,8 +186,25 @@ export default function PoFxRatesPage() {
                       i < rates.length - 1 ? `1px solid ${theme.tableBorder}` : 'none',
                   }}
                 >
-                  <div style={{ width: '70px', fontWeight: 600, color: theme.textPrimary }}>
+                  <div
+                    style={{
+                      width: '70px',
+                      fontWeight: 600,
+                      color: theme.textPrimary,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                  >
                     {r.currency_code}
+                    {r.is_default && (
+                      <span
+                        title="Default currency for new POs"
+                        style={{ fontSize: '13px', lineHeight: 1 }}
+                      >
+                        ⭐
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>1 {r.currency_code} =</div>
                   <input
@@ -199,6 +231,16 @@ export default function PoFxRatesPage() {
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginLeft: 'auto' }}>
                       Updated {new Date(r.updated_at).toLocaleDateString()}
                     </div>
+                  )}
+                  {!r.is_default && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      loading={settingDefault === r.currency_code}
+                      onClick={() => void handleSetDefault(r.currency_code)}
+                    >
+                      Set as default
+                    </Button>
                   )}
                   <Button
                     variant={hasEdit ? 'primary' : 'ghost'}

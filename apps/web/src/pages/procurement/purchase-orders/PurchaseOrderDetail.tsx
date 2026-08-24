@@ -13,6 +13,9 @@ import {
   APPROVE_PO,
   REJECT_PO,
   REJECT_PO_TO_MARKET,
+  REJECT_PO_VERIFICATION_TO_MARKET_PRICING,
+  REJECT_PO_VERIFICATION_TO_STORE_PRICING,
+  NOTIFY_PO_OWNER_FOR_EDIT_REQUEST,
   REOPEN_PO,
   CANCEL_PO,
   SEND_PO_TO_AUDIT,
@@ -36,6 +39,7 @@ import {
   PO_LINE_COMMENTS_QUERY,
   ADD_PO_LINE_COMMENT,
   RESOLVE_PO_LINE_COMMENT,
+  PO_FX_RATES_QUERY,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
@@ -76,6 +80,8 @@ interface POLine {
   store_price_currency?: string
   market_price?: number
   market_price_currency?: string
+  fx_rate_to_base?: number | null
+  requested_currency_code?: string
   verified_price?: number
   verified_price_currency?: string
   in_stock?: boolean
@@ -104,19 +110,26 @@ interface POLine {
 // fully covered from stock is never bought from a vendor, so it contributes
 // $0 (mirrors the backend: confirmPOInventoryCheck zeroes total_price the
 // moment a line is fully covered, regardless of which lifecycle path it
-// then takes). Otherwise the total is market price x the full qty ordered.
+// then takes). Otherwise the total is market price x the full qty ordered,
+// converted to the PO's base currency (po.base_currency_code) via
+// fx_rate_to_base — mirrors recalcPO in the gateway resolver exactly, so
+// this always returns a value safe to sum/compare across lines even when
+// they're priced in different currencies. Never label this with
+// po.currency_code (the header's own currency can differ from base).
 function poLineTotal(line: {
   qty: number | string | null | undefined
   qty_from_stock?: number | string
   market_price?: number | string | null
   unit_price?: number | string | null
   total?: number | string | null
+  fx_rate_to_base?: number | string | null
 }): number {
   const qty = parseFloat(String(line.qty ?? 0))
   const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
   if (qty > 0 && fromStock >= qty) return 0
+  const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
   const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
-  return qty * mp || parseFloat(String(line.total ?? 0))
+  return (qty * mp || parseFloat(String(line.total ?? 0))) * fxRate
 }
 
 interface PO {
@@ -406,6 +419,9 @@ export default function PurchaseOrderDetail() {
   const printIframeRef = useRef<HTMLIFrameElement>(null)
   const [flaggingLines, setFlaggingLines] = useState<Record<string, string>>({})
   const [actualPrices, setActualPrices] = useState<Record<string, string>>({})
+  const [actualPriceStatus, setActualPriceStatus] = useState<
+    Record<string, 'saving' | 'saved' | undefined>
+  >({})
 
   // Funding decision picker — shown once a PO reaches 'invoiced' with
   // funding_decided still false (see setPOFunding). Mirrors what used to be
@@ -648,6 +664,27 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
+  const [rejectVerificationToMarket] = useMutation(REJECT_PO_VERIFICATION_TO_MARKET_PRICING, {
+    onCompleted: () => {
+      setRejectReason('')
+      void refetch()
+    },
+    onError: onErr,
+  })
+  const [rejectVerificationToStore] = useMutation(REJECT_PO_VERIFICATION_TO_STORE_PRICING, {
+    onCompleted: () => {
+      setRejectReason('')
+      void refetch()
+    },
+    onError: onErr,
+  })
+  const [notifyOwnerForEdit] = useMutation(NOTIFY_PO_OWNER_FOR_EDIT_REQUEST, {
+    onCompleted: () => {
+      setRejectReason('')
+      addToast({ type: 'success', message: 'Owner notified to submit an edit request' })
+    },
+    onError: onErr,
+  })
   const [reopenPO] = useMutation(REOPEN_PO, mutOpts)
   const [cancelPO] = useMutation(CANCEL_PO, {
     onCompleted: () => {
@@ -779,6 +816,16 @@ export default function PurchaseOrderDetail() {
     fetchPolicy: 'cache-first',
   })
   const vendors: { id: string; name: string }[] = vendorsData?.vendors ?? []
+
+  const { data: fxRatesData } = useQuery(PO_FX_RATES_QUERY, { fetchPolicy: 'cache-first' })
+  const marketPricingCurrencyOptions = (() => {
+    const base = fxRatesData?.poFxRates?.base_currency ?? 'IQD'
+    const configured: string[] = (
+      fxRatesData?.poFxRates?.rates ?? []
+    ).map((r: { currency_code: string }) => r.currency_code)
+    const codes = [base, ...configured.filter((c) => c !== base)]
+    return codes.map((c) => ({ value: c, label: c }))
+  })()
 
   // Only needed once Finance has actually confirmed "employee advance" as
   // the funding source (see the invoiced-status panel below) — before
@@ -1973,11 +2020,7 @@ export default function PurchaseOrderDetail() {
                                     return { ...p, [line.id]: { ...cur, currency: v } }
                                   })
                                 }}
-                                options={[
-                                  { value: 'IQD', label: 'IQD' },
-                                  { value: 'USD', label: 'USD' },
-                                  { value: 'EUR', label: 'EUR' },
-                                ]}
+                                options={marketPricingCurrencyOptions}
                               />
                             </div>
                           </div>
@@ -2050,7 +2093,10 @@ export default function PurchaseOrderDetail() {
                       {purchaseLines.map((line) => {
                         const defaultMp = {
                           price: String(line.market_price ?? ''),
-                          currency: line.market_price_currency ?? po.currency_code,
+                          currency:
+                            line.market_price_currency ??
+                            line.requested_currency_code ??
+                            po.currency_code,
                           quoteRef: '',
                         }
                         const mp = marketPrices[line.id] ?? defaultMp
@@ -2110,11 +2156,7 @@ export default function PurchaseOrderDetail() {
                                     return { ...p, [line.id]: { ...cur, currency: v } }
                                   })
                                 }}
-                                options={[
-                                  { value: 'IQD', label: 'IQD' },
-                                  { value: 'USD', label: 'USD' },
-                                  { value: 'EUR', label: 'EUR' },
-                                ]}
+                                options={marketPricingCurrencyOptions}
                               />
                             </div>
                           </div>
@@ -2137,7 +2179,10 @@ export default function PurchaseOrderDetail() {
                               linePrices: purchaseLines.map((line) => {
                                 const mp = marketPrices[line.id] ?? {
                                   price: String(line.market_price ?? ''),
-                                  currency: line.market_price_currency ?? po.currency_code,
+                                  currency:
+                            line.market_price_currency ??
+                            line.requested_currency_code ??
+                            po.currency_code,
                                   quoteRef: '',
                                 }
                                 return {
@@ -2172,39 +2217,42 @@ export default function PurchaseOrderDetail() {
                       >
                         Verify prices then submit for approval
                       </div>
-                      {purchaseLines.map((line) => (
-                        <div
-                          key={line.id}
-                          style={{
-                            padding: '10px 14px',
-                            borderRadius: '7px',
-                            border: `1px solid ${theme.border}`,
-                            background: theme.bgSurface,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            fontSize: '13px',
-                          }}
-                        >
-                          <span style={{ color: theme.textPrimary }}>
-                            {line.description || line.product_name || '—'}{' '}
-                            <span style={{ color: theme.textMuted }}>
-                              × {line.qty} {line.uom}
-                            </span>
-                          </span>
-                          <span
+                      {purchaseLines.map((line) => {
+                        const unitPrice = parseFloat(String(line.unit_price))
+                        return (
+                          <div
+                            key={line.id}
                             style={{
-                              color: line.unit_price > 0 ? theme.textPrimary : '#ef4444',
-                              fontWeight: 600,
+                              padding: '10px 14px',
+                              borderRadius: '7px',
+                              border: `1px solid ${theme.border}`,
+                              background: theme.bgSurface,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              fontSize: '13px',
                             }}
                           >
-                            {line.unit_price > 0
-                              ? `${line.unit_price.toLocaleString()} ${line.market_price_currency ?? po.currency_code}`
-                              : 'No price set'}
-                          </span>
-                        </div>
-                      ))}
-                      {purchaseLines.some((l) => !(l.unit_price > 0)) && (
+                            <span style={{ color: theme.textPrimary }}>
+                              {line.description || line.product_name || '—'}{' '}
+                              <span style={{ color: theme.textMuted }}>
+                                × {line.qty} {line.uom}
+                              </span>
+                            </span>
+                            <span
+                              style={{
+                                color: unitPrice > 0 ? theme.textPrimary : '#ef4444',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {unitPrice > 0
+                                ? `${unitPrice.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${line.market_price_currency ?? po.currency_code}`
+                                : 'No price set'}
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {purchaseLines.some((l) => !(parseFloat(String(l.unit_price)) > 0)) && (
                         <div
                           style={{
                             fontSize: '12px',
@@ -2234,6 +2282,78 @@ export default function PurchaseOrderDetail() {
                       >
                         Submit for approval
                       </Button>
+
+                      <div style={{ paddingTop: '12px', borderTop: `1px dashed ${theme.border}` }}>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            display: 'block',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          Reject reason (required to reject)
+                        </label>
+                        <textarea
+                          value={rejectReason}
+                          onChange={(e) => {
+                            setRejectReason(e.target.value)
+                          }}
+                          placeholder="Enter reason…"
+                          rows={2}
+                          style={{
+                            width: '100%',
+                            padding: '8px',
+                            borderRadius: '6px',
+                            resize: 'vertical',
+                            border: `1px solid ${rejectReason ? theme.warningBorder : theme.border}`,
+                            background: theme.bgSurface,
+                            color: theme.textPrimary,
+                            fontSize: '13px',
+                            fontFamily: 'inherit',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                          <Button
+                            variant="ghost"
+                            disabled={!rejectReason}
+                            loading={anyLoading}
+                            onClick={() =>
+                              void rejectVerificationToMarket({
+                                variables: { id: po.id, reason: rejectReason },
+                              })
+                            }
+                          >
+                            Reject to market price
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={!rejectReason}
+                            loading={anyLoading}
+                            onClick={() =>
+                              void rejectVerificationToStore({
+                                variables: { id: po.id, reason: rejectReason },
+                              })
+                            }
+                          >
+                            Reject to store price
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={!rejectReason}
+                            loading={anyLoading}
+                            onClick={() =>
+                              void notifyOwnerForEdit({
+                                variables: { id: po.id, reason: rejectReason },
+                              })
+                            }
+                          >
+                            Reject to owner (request edit)
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                   )
                 })()}
@@ -2297,7 +2417,14 @@ export default function PurchaseOrderDetail() {
                             borderBottom: `1px solid ${theme.border}`,
                           }}
                         >
-                          {['Item', 'Qty', 'Market Price', 'Store Price', 'Total', ''].map(
+                          {[
+                            'Item',
+                            'Qty',
+                            'Market Price',
+                            'Store Price',
+                            `Total (${po.base_currency_code})`,
+                            '',
+                          ].map(
                             (h, i) => (
                               <div
                                 key={i}
@@ -2396,7 +2523,10 @@ export default function PurchaseOrderDetail() {
                                     fontVariantNumeric: 'tabular-nums',
                                   }}
                                 >
-                                  {fmtN(line.unit_price)} {po.currency_code}
+                                  {fmtN(line.unit_price)}{' '}
+                                  {line.market_price_currency ??
+                                    line.requested_currency_code ??
+                                    po.currency_code}
                                 </div>
                                 <div
                                   style={{
@@ -2417,7 +2547,7 @@ export default function PurchaseOrderDetail() {
                                     fontVariantNumeric: 'tabular-nums',
                                   }}
                                 >
-                                  {fmtN(lineEffectiveTotal)} {po.currency_code}
+                                  {fmtN(lineEffectiveTotal)} {po.base_currency_code}
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                                   {isFlagged ? (
@@ -2679,11 +2809,7 @@ export default function PurchaseOrderDetail() {
                               fontVariantNumeric: 'tabular-nums',
                             }}
                           >
-                            {fmtN(
-                              po.lines.reduce((sum, l) => sum + poLineTotal(l), 0) ||
-                                po.total_amount,
-                            )}{' '}
-                            {po.currency_code}
+                            {fmtN(po.total_amount)} {po.base_currency_code}
                           </div>
                           <div />
                         </div>
@@ -2922,75 +3048,103 @@ export default function PurchaseOrderDetail() {
                                     {fmtN(line.qty)} {line.uom}
                                   </div>
                                 </div>
+                                {toBuy > 0 && (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                    }}
+                                  >
+                                    <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                                      Actual price paid ({fmtN(toBuy)} {line.uom}):
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      disabled={!canMarkBought}
+                                      placeholder="Enter actual price…"
+                                      value={
+                                        actualPrices[line.id] ??
+                                        (actualPrice != null ? String(actualPrice) : '')
+                                      }
+                                      onChange={(e) => {
+                                        setActualPrices((p) => ({
+                                          ...p,
+                                          [line.id]: e.target.value,
+                                        }))
+                                      }}
+                                      onBlur={(e) => {
+                                        const val = parseFloat(e.target.value)
+                                        const newVal = isNaN(val) ? null : val
+                                        if (newVal === actualPrice) return
+                                        setActualPriceStatus((s) => ({ ...s, [line.id]: 'saving' }))
+                                        setLineActualPrice({
+                                          variables: { poId: po.id, lineId: line.id, actualUnitPrice: newVal },
+                                        })
+                                          .then(() => {
+                                            setActualPriceStatus((s) => ({ ...s, [line.id]: 'saved' }))
+                                            setTimeout(() => {
+                                              setActualPriceStatus((s) => ({ ...s, [line.id]: undefined }))
+                                            }, 2000)
+                                          })
+                                          .catch(() => {
+                                            setActualPriceStatus((s) => ({ ...s, [line.id]: undefined }))
+                                          })
+                                      }}
+                                      style={{
+                                        width: '190px',
+                                        padding: '5px 8px',
+                                        borderRadius: '5px',
+                                        border: `1px solid ${
+                                          actualPriceStatus[line.id] === 'saved'
+                                            ? '#16a34a'
+                                            : theme.border
+                                        }`,
+                                        background: theme.bgSurface,
+                                        color: varColor,
+                                        fontSize: '13px',
+                                        textAlign: 'center',
+                                        fontFamily: 'monospace',
+                                        fontWeight: 600,
+                                        boxSizing: 'border-box' as const,
+                                        outline: 'none',
+                                        transition: 'border-color 0.2s',
+                                      }}
+                                    />
+                                    {actualPriceStatus[line.id] === 'saving' && (
+                                      <span style={{ fontSize: '10px', color: theme.textMuted }}>
+                                        Saving…
+                                      </span>
+                                    )}
+                                    {actualPriceStatus[line.id] === 'saved' && (
+                                      <span
+                                        style={{ fontSize: '10px', fontWeight: 600, color: '#16a34a' }}
+                                      >
+                                        ✓ Saved
+                                      </span>
+                                    )}
+                                    {variancePct != null && Math.abs(variancePct) > 0.01 && (
+                                      <span
+                                        style={{ fontSize: '10px', fontWeight: 600, color: varColor }}
+                                      >
+                                        {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
+                                        {variancePct.toFixed(1)}% vs PO
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
                                 <AmountDisplay
                                   amount={line.total}
-                                  currency={po.currency_code}
+                                  currency={
+                                    line.market_price_currency ??
+                                    line.requested_currency_code ??
+                                    po.currency_code
+                                  }
                                   size="sm"
                                 />
                               </div>
-                              {toBuy > 0 && (
-                                <div
-                                  style={{
-                                    marginTop: '6px',
-                                    marginLeft: '30px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    flexWrap: 'wrap',
-                                  }}
-                                >
-                                  <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                                    Actual price paid ({fmtN(toBuy)} {line.uom}):
-                                  </span>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    disabled={!canMarkBought}
-                                    placeholder="Enter actual price…"
-                                    value={
-                                      actualPrices[line.id] ??
-                                      (actualPrice != null ? String(actualPrice) : '')
-                                    }
-                                    onChange={(e) => {
-                                      setActualPrices((p) => ({
-                                        ...p,
-                                        [line.id]: e.target.value,
-                                      }))
-                                    }}
-                                    onBlur={(e) => {
-                                      const val = parseFloat(e.target.value)
-                                      void setLineActualPrice({
-                                        variables: {
-                                          poId: po.id,
-                                          lineId: line.id,
-                                          actualUnitPrice: isNaN(val) ? null : val,
-                                        },
-                                      })
-                                    }}
-                                    style={{
-                                      width: '110px',
-                                      padding: '3px 6px',
-                                      borderRadius: '4px',
-                                      border: `1px solid ${theme.border}`,
-                                      background: 'transparent',
-                                      color: varColor,
-                                      fontSize: '13px',
-                                      fontFamily: 'monospace',
-                                      fontWeight: 600,
-                                      boxSizing: 'border-box' as const,
-                                      outline: 'none',
-                                    }}
-                                  />
-                                  {variancePct != null && Math.abs(variancePct) > 0.01 && (
-                                    <span
-                                      style={{ fontSize: '11px', fontWeight: 600, color: varColor }}
-                                    >
-                                      {variance! > 0 ? '▲' : '▼'} {variance! > 0 ? '+' : ''}
-                                      {variancePct.toFixed(1)}% vs PO
-                                    </span>
-                                  )}
-                                </div>
-                              )}
                             </div>
                           )
                         })}
@@ -4316,7 +4470,8 @@ export default function PurchaseOrderDetail() {
               mobilePriority: 5,
               render: (line) => (
                 <span style={{ color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
-                  {fmtN(line.unit_price)} {po.currency_code}
+                  {fmtN(line.unit_price)}{' '}
+                  {line.market_price_currency ?? line.requested_currency_code ?? po.currency_code}
                 </span>
               ),
             },
@@ -4339,7 +4494,7 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'total',
-              header: 'Total',
+              header: `Total (${po.base_currency_code})`,
               mobilePriority: 2,
               render: (line) => {
                 const total = poLineTotal(line)
@@ -4351,7 +4506,7 @@ export default function PurchaseOrderDetail() {
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {fmtN(total || line.total)} {po.currency_code}
+                    {fmtN(total || line.total)} {po.base_currency_code}
                   </span>
                 )
               },

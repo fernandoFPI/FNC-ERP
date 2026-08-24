@@ -1,7 +1,13 @@
 import { Router, type IRouter } from 'express'
 import { z } from 'zod'
 import { requireAuth, requireRole } from '@fnc-erp/auth'
-import { listPoFxRates, upsertPoFxRate, deletePoFxRate, pool } from '@fnc-erp/db'
+import {
+  listPoFxRates,
+  upsertPoFxRate,
+  deletePoFxRate,
+  setDefaultPoFxRate,
+  pool,
+} from '@fnc-erp/db'
 import { logger } from '@fnc-erp/logger'
 import type { Request, Response } from 'express'
 
@@ -55,6 +61,24 @@ poFxRatesRouter.put('/:currencyCode', ...requireAdmin, async (req: Request, res:
     res.status(500).json({ error: 'INTERNAL_ERROR' })
   }
 })
+
+// PATCH /api/v1/admin/po-fx-rates/:currencyCode/default — marks this currency
+// as the starting currency for new POs (unsets any other default).
+poFxRatesRouter.patch(
+  '/:currencyCode/default',
+  ...requireAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      await setDefaultPoFxRate(req.auth!.companyId, req.params.currencyCode)
+      res.json({ ok: true })
+    } catch (err) {
+      log.error({ err }, 'po-fx-rates PATCH default failed')
+      res
+        .status(400)
+        .json({ error: 'BAD_REQUEST', message: err instanceof Error ? err.message : 'Failed' })
+    }
+  },
+)
 
 // DELETE /api/v1/admin/po-fx-rates/:currencyCode
 poFxRatesRouter.delete('/:currencyCode', ...requireAdmin, async (req: Request, res: Response) => {

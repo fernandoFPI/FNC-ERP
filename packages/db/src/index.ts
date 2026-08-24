@@ -20,7 +20,12 @@ export {
   DOC_TYPES,
 } from './document-sequence.js'
 export type { DocumentSequence, DocType } from './document-sequence.js'
-export { listPoFxRates, upsertPoFxRate, deletePoFxRate } from './po-fx-rate.js'
+export {
+  listPoFxRates,
+  upsertPoFxRate,
+  deletePoFxRate,
+  setDefaultPoFxRate,
+} from './po-fx-rate.js'
 export type { PoFxRate } from './po-fx-rate.js'
 export {
   isEmailEnabled,

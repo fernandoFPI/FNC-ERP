@@ -165,6 +165,8 @@ export const moStateMachine = new StateMachine<MOStatus, MOAction>({
 // PHASE 1 — INTERNAL ROUTING
 //   draft → inventory_check → store_pricing → market_pricing → price_verification → pending_approval
 //                           ↘ ready_to_issue → completed  (100% in-stock shortcut)
+//   price_verification → market_pricing (reject_verification_to_market_pricing)
+//   price_verification → store_pricing  (reject_verification_to_store_pricing)
 //
 // PHASE 2 — APPROVAL
 //   pending_approval → approved       (approve)
@@ -219,6 +221,8 @@ export type POAction =
   | 'submit_to_price_verification'
   | 'submit_for_approval'
   | 'reject_to_market_pricing'
+  | 'reject_verification_to_market_pricing'
+  | 'reject_verification_to_store_pricing'
   | 'approve'
   | 'reject'
   | 'reopen'
@@ -260,6 +264,16 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     { from: 'store_pricing', to: 'market_pricing', action: 'submit_to_market_pricing' },
     { from: 'market_pricing', to: 'price_verification', action: 'submit_to_price_verification' },
     { from: 'price_verification', to: 'pending_approval', action: 'submit_for_approval' },
+    {
+      from: 'price_verification',
+      to: 'market_pricing',
+      action: 'reject_verification_to_market_pricing',
+    },
+    {
+      from: 'price_verification',
+      to: 'store_pricing',
+      action: 'reject_verification_to_store_pricing',
+    },
 
     // Phase 2 — approval
     { from: 'pending_approval', to: 'approved', action: 'approve' },

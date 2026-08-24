@@ -6,6 +6,7 @@
   removeAttachment,
   withTransaction,
   nextDocumentNumber,
+  listPoFxRates,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
@@ -472,14 +473,14 @@ async function issueStockForPOLines(
   po: Record<string, unknown>,
   companyId: string,
   userId: string,
-): Promise<void> {
+): Promise<{ issueId: string; issueNumber: string } | undefined> {
   const poId = String(po.id)
   const linesRes = await client.query(
     `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
     [poId],
   )
   const lines = linesRes.rows as Record<string, unknown>[]
-  if (lines.length === 0) return
+  if (lines.length === 0) return undefined
 
   const warehouseRes = await client.query(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
@@ -711,6 +712,7 @@ async function issueStockForPOLines(
       [po.project_id, issueId, totalAmount],
     )
   }
+  return { issueId, issueNumber }
 }
 
 // Returns to inventory whatever issueStockForPOLines previously deducted for this
@@ -3273,6 +3275,26 @@ export const resolvers = {
       sql += ' ORDER BY po.created_at DESC LIMIT 200'
       const result = await query(sql, params)
       return result.rows
+    },
+
+    // Any authenticated company user can read these (just currency rates) —
+    // unlike the admin-only REST /admin/po-fx-rates route used to configure
+    // them, this is the read path the PO creation form / market-pricing
+    // currency pickers use.
+    poFxRates: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      const [rates, cfgRes] = await Promise.all([
+        listPoFxRates(auth.companyId),
+        query<{ default_po_currency: string }>(
+          `SELECT default_po_currency FROM system_configuration WHERE company_id=$1`,
+          [auth.companyId],
+        ),
+      ])
+      return {
+        rates,
+        base_currency: cfgRes.rows[0]?.default_po_currency ?? 'IQD',
+      }
     },
 
     myPOQueue: async (_: unknown, __: unknown, ctx: GQLContext) => {
@@ -5977,6 +5999,7 @@ export const resolvers = {
           query(
             `SELECT pol.id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
                     pol.qty_received, pol.unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
+                    pol.requested_currency_code, pol.fx_rate_to_base,
                     pol.actual_unit_price,
                     pol.store_price, pol.store_price_currency,
                     pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
@@ -7828,6 +7851,7 @@ export const resolvers = {
             qty: number
             unit_price: number
             uom?: string
+            requested_currency_code?: string
           }[]
         }
       },
@@ -7922,7 +7946,7 @@ export const resolvers = {
           for (let idx = 0; idx < i.lines.length; idx++) {
             const l = i.lines[idx]
             await client.query(
-              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom,requested_currency_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
               [
                 poRow.id,
                 l.product_id ?? null,
@@ -7932,6 +7956,7 @@ export const resolvers = {
                 l.unit_price,
                 l.qty * l.unit_price,
                 l.uom ?? 'unit',
+                l.requested_currency_code ?? null,
               ],
             )
           }
@@ -17227,12 +17252,18 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
       const check = await query(
-        `SELECT pl.id FROM po_lines pl JOIN purchase_orders po ON po.id=pl.po_id
+        `SELECT pl.id, po.status, po.assigned_buyer_user_id FROM po_lines pl
+         JOIN purchase_orders po ON po.id=pl.po_id
          WHERE pl.id=$1 AND pl.po_id=$2 AND po.company_id=$3`,
-        [args.lineId, args.poId, ctx.auth.companyId],
+        [args.lineId, args.poId, auth.companyId],
       )
       if (!check.rows[0]) throw new Error('PO line not found')
+      if (check.rows[0].status !== 'items_bought')
+        throw new Error('PO must be in items_bought status to set the actual price')
+      if (!isAdminGW(auth.role) && check.rows[0].assigned_buyer_user_id !== auth.userId)
+        throw new Error('Only the assigned buyer can set the actual price on this PO')
       const r = await query(
         `UPDATE po_lines
          SET actual_unit_price=$1::NUMERIC,
@@ -23953,6 +23984,8 @@ const phase5MutationResolvers = {
       throw new Error('store_keeper or admin required to approve stock issuance')
 
     const client = await pool.connect()
+    let issued: { issueId: string; issueNumber: string } | undefined
+    let poNumber = args.id
     try {
       await client.query('BEGIN')
 
@@ -23963,8 +23996,9 @@ const phase5MutationResolvers = {
       )
       const po = poRes.rows[0] as Record<string, unknown>
       if (!po) throw new Error('PO not found')
+      poNumber = String(po.po_number ?? args.id)
 
-      await issueStockForPOLines(client, po, auth.companyId, auth.userId)
+      issued = await issueStockForPOLines(client, po, auth.companyId, auth.userId)
 
       await poTransition(
         client,
@@ -23982,6 +24016,13 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    if (issued) {
+      void notifyPositionHoldersGW(args.id, 'store_keeper', {
+        type: 'STORE_OUT_CREATED',
+        title: 'New Store Out to act on',
+        body: `Store Out ${issued.issueNumber} was auto-created from PO ${poNumber}`,
+      })
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
@@ -24256,6 +24297,120 @@ const phase5MutationResolvers = {
     return getPOForReturn(args.id)
   },
 
+  // The following three actions are only available from 'price_verification'
+  // — same permission as submitPOPriceVerification, since whoever can submit
+  // for approval at this stage should also be able to send it back instead.
+  rejectPOVerificationToMarketPricing: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await poTransition(
+        client,
+        args.id,
+        'price_verification',
+        'market_pricing',
+        'reject_verification_to_market_pricing',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersGW(args.id, 'procurement_officer', {
+      type: 'PO_PRICING_REJECTED',
+      title: 'PO sent back to market pricing',
+      body: `Price verification rejected: ${args.reason}`,
+    })
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+    return getPOForReturn(args.id)
+  },
+
+  rejectPOVerificationToStorePricing: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await poTransition(
+        client,
+        args.id,
+        'price_verification',
+        'store_pricing',
+        'reject_verification_to_store_pricing',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersGW(args.id, 'store_pricing', {
+      type: 'PO_PRICING_REJECTED',
+      title: 'PO sent back to store pricing',
+      body: `Price verification rejected: ${args.reason}`,
+    })
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+    return getPOForReturn(args.id)
+  },
+
+  // No status change — the PO stays at price_verification. This just pings
+  // the PO's creator to fix something themselves via the existing Edit
+  // Request tool (which auto-applies pre-approval, see submitPOEditRequest),
+  // rather than bouncing the whole PO back through an earlier stage.
+  notifyPOOwnerForEditRequest: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const poRow = await query(
+      `SELECT status, created_by FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+      [args.id, auth.companyId],
+    )
+    if (!poRow.rows[0]) throw new Error('PO not found')
+    if (poRow.rows[0].status !== 'price_verification')
+      throw new Error(`Cannot do this from status '${poRow.rows[0].status as string}'`)
+    if (poRow.rows[0].created_by) {
+      void notifyUserGW(poRow.rows[0].created_by as string, auth.companyId, {
+        type: 'PO_EDIT_REQUESTED',
+        title: 'Edit requested on your PO',
+        body: `Price verification flagged an issue: ${args.reason}. Please submit an edit request to fix it.`,
+        poId: args.id,
+      })
+    }
+    return getPOForReturn(args.id)
+  },
+
   approvePO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
@@ -24271,6 +24426,7 @@ const phase5MutationResolvers = {
     if (poRow.rows[0].status !== 'pending_approval')
       throw new Error(`Cannot approve PO in status '${poRow.rows[0].status as string}'`)
     const client = await pool.connect()
+    let issued: { issueId: string; issueNumber: string } | undefined
     try {
       await client.query('BEGIN')
       // Mixed POs (some lines from stock, some purchased) never go through the
@@ -24279,7 +24435,7 @@ const phase5MutationResolvers = {
       // now — this is the point a mixed PO is actually committed to.
       const fullPoRes = await client.query(`SELECT * FROM purchase_orders WHERE id=$1`, [args.id])
       const fullPo = fullPoRes.rows[0] as Record<string, unknown>
-      await issueStockForPOLines(client, fullPo, auth.companyId, auth.userId)
+      issued = await issueStockForPOLines(client, fullPo, auth.companyId, auth.userId)
       await poTransition(client, args.id, 'pending_approval', 'approved', 'approve', auth)
       // Every PO goes through items_bought — the assigned buyer needs to
       // track what's actually been bought and what's left regardless of how
@@ -24292,6 +24448,13 @@ const phase5MutationResolvers = {
       throw e
     } finally {
       client.release()
+    }
+    if (issued) {
+      void notifyPositionHoldersGW(args.id, 'store_keeper', {
+        type: 'STORE_OUT_CREATED',
+        title: 'New Store Out to act on',
+        body: `Store Out ${issued.issueNumber} was auto-created from PO ${String(poRow.rows[0].po_number)}`,
+      })
     }
     if (poRow.rows[0].organizer_id) {
       void query(

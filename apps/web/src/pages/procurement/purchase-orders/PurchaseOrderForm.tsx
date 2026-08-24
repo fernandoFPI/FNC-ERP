@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
-import { CREATE_PO, PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
+import { CREATE_PO, PURCHASE_ORDERS_QUERY, PO_FX_RATES_QUERY } from '../../../graphql/procurement'
 import { VENDORS_QUERY } from '../../../graphql/procurement'
 import { ANALYTIC_ACCOUNTS_QUERY } from '../../../graphql/finance'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
@@ -27,14 +27,19 @@ interface POLine {
   qty: string
   unit_price: string
   uom: string
+  // Suggested currency for this line, picked before a vendor is known.
+  // Doesn't lock anything in — market pricing still has final say once a
+  // real quote exists (see resolvers.ts submitPOMarketPricing).
+  requested_currency_code: string
 }
 
-const emptyLine = (): POLine => ({
+const emptyLine = (defaultCurrency = 'IQD'): POLine => ({
   product_id: '',
   description: '',
   qty: '1',
   unit_price: '0',
   uom: 'pc',
+  requested_currency_code: defaultCurrency,
 })
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
@@ -62,6 +67,7 @@ export default function PurchaseOrderForm() {
   const [linkedProjectId, setLinkedProjectId] = useState('')
   const [linkedMoId, setLinkedMoId] = useState('')
   const [lines, setLines] = useState<POLine[]>([emptyLine()])
+  const [currencyTouched, setCurrencyTouched] = useState(false)
 
   // Pre-fill from URL
   useEffect(() => {
@@ -85,13 +91,50 @@ export default function PurchaseOrderForm() {
     if (prefill) {
       try {
         const parsed = JSON.parse(prefill) as POLine[]
-        if (parsed.length > 0) setLines(parsed)
+        if (parsed.length > 0)
+          setLines(parsed.map((l) => ({ ...l, requested_currency_code: l.requested_currency_code || 'IQD' })))
       } catch {
         /* ignore */
       }
       sessionStorage.removeItem('po_prefill_lines')
     }
   }, [searchParams])
+
+  const { data: fxRatesData } = useQuery(PO_FX_RATES_QUERY)
+  const fxRates: { currency_code: string; rate_to_base: number; is_default: boolean }[] =
+    fxRatesData?.poFxRates?.rates ?? []
+  const baseCurrency: string = fxRatesData?.poFxRates?.base_currency ?? 'IQD'
+
+  // Apply the Settings-configured default PO currency once, the first time
+  // rates load — only if the user hasn't already picked a currency themselves.
+  useEffect(() => {
+    if (currencyTouched || fxRates.length === 0) return
+    const defaultRate = fxRates.find((r) => r.is_default)
+    if (defaultRate) {
+      setForm((f) => ({ ...f, currency_code: defaultRate.currency_code }))
+      setLines((prev) =>
+        prev.map((l) =>
+          l.requested_currency_code === 'IQD'
+            ? { ...l, requested_currency_code: defaultRate.currency_code }
+            : l,
+        ),
+      )
+    }
+  }, [fxRates, currencyTouched])
+
+  // Keep FX Rate in sync with whatever's configured in Settings for the
+  // selected header currency — base currency is always 1:1, an unconfigured
+  // currency falls back to manual entry (see the warning below the field).
+  useEffect(() => {
+    if (form.currency_code === baseCurrency) {
+      setForm((f) => (f.fx_rate === '1' ? f : { ...f, fx_rate: '1' }))
+      return
+    }
+    const configured = fxRates.find((r) => r.currency_code === form.currency_code)
+    if (configured) {
+      setForm((f) => ({ ...f, fx_rate: String(configured.rate_to_base) }))
+    }
+  }, [form.currency_code, baseCurrency, fxRates])
 
   const { data: vendorsData } = useQuery(VENDORS_QUERY, { variables: {} })
   const { data: analyticsData } = useQuery(ANALYTIC_ACCOUNTS_QUERY)
@@ -234,6 +277,7 @@ export default function PurchaseOrderForm() {
             qty: parseFloat(l.qty),
             unit_price: parseFloat(l.unit_price),
             uom: l.uom,
+            requested_currency_code: l.requested_currency_code || undefined,
           })),
       }
       await createPO({
@@ -315,6 +359,34 @@ export default function PurchaseOrderForm() {
             updateLine(i, 'unit_price', e.target.value)
           }}
         />
+      ),
+    },
+    {
+      key: 'requested_currency_code',
+      label: 'Currency',
+      width: '90px',
+      render: (line, i) => (
+        <select
+          value={line.requested_currency_code}
+          onChange={(e) => {
+            updateLine(i, 'requested_currency_code', e.target.value)
+          }}
+          style={{
+            width: '100%',
+            fontSize: '12px',
+            padding: '6px',
+            borderRadius: '4px',
+            border: `1px solid ${theme.border}`,
+            background: 'transparent',
+            color: theme.textPrimary,
+          }}
+        >
+          {CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
       ),
     },
     {
@@ -435,6 +507,7 @@ export default function PurchaseOrderForm() {
               label="Currency"
               value={form.currency_code}
               onChange={(e) => {
+                setCurrencyTouched(true)
                 setForm((f) => ({ ...f, currency_code: e.target.value }))
               }}
             >
@@ -493,16 +566,26 @@ export default function PurchaseOrderForm() {
                 setForm((f) => ({ ...f, expected_delivery_date: e.target.value }))
               }}
             />
-            <Input
-              label="FX Rate"
-              type="number"
-              step="0.0001"
-              min="0"
-              value={form.fx_rate}
-              onChange={(e) => {
-                setForm((f) => ({ ...f, fx_rate: e.target.value }))
-              }}
-            />
+            <div>
+              <Input
+                label={`FX Rate (1 ${form.currency_code} = ? ${baseCurrency})`}
+                type="number"
+                step="0.0001"
+                min="0"
+                disabled={form.currency_code === baseCurrency}
+                value={form.fx_rate}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, fx_rate: e.target.value }))
+                }}
+              />
+              {form.currency_code !== baseCurrency &&
+                !fxRates.some((r) => r.currency_code === form.currency_code) && (
+                  <div style={{ fontSize: '11px', color: theme.warning, marginTop: '3px' }}>
+                    No rate configured for {form.currency_code} — set one in Settings → PO
+                    Exchange Rates, or enter it manually here.
+                  </div>
+                )}
+            </div>
           </div>
 
           {/* Row 4: Received By + Priority */}
@@ -636,7 +719,7 @@ export default function PurchaseOrderForm() {
                 size="sm"
                 type="button"
                 onClick={() => {
-                  setLines((p) => [...p, emptyLine()])
+                  setLines((p) => [...p, emptyLine(form.currency_code)])
                 }}
               >
                 + Add Line

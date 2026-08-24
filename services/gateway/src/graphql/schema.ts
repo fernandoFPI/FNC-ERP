@@ -19,6 +19,7 @@
     purchaseOrder(id: ID!): PurchaseOrder
     myPOQueue: [PurchaseOrder!]
     poPositions(projectId: ID, departmentId: ID): [POPositionAssignment!]!
+    poFxRates: POFxRatesResult!
 
     # Interco
     intercoTransactions(fromCompanyId: ID, toCompanyId: ID, status: String, transactionType: String, fromDate: String, toDate: String, page: Int, limit: Int): IntercoTransactionPage!
@@ -123,6 +124,9 @@
     submitPOMarketPricing(id: ID!, vendorId: ID, linePrices: [MarketPriceInput!]): PurchaseOrder!
     submitPOPriceVerification(id: ID!, verificationNotes: String, lineAdjustments: [PriceAdjustmentInput]): PurchaseOrder!
     rejectPOToMarketPricing(id: ID!, reason: String!): PurchaseOrder!
+    rejectPOVerificationToMarketPricing(id: ID!, reason: String!): PurchaseOrder!
+    rejectPOVerificationToStorePricing(id: ID!, reason: String!): PurchaseOrder!
+    notifyPOOwnerForEditRequest(id: ID!, reason: String!): PurchaseOrder!
     approvePO(id: ID!): PurchaseOrder!
     rejectPO(id: ID!, reason: String!): PurchaseOrder!
     reopenPO(id: ID!): PurchaseOrder!
@@ -1812,6 +1816,7 @@
     actual_unit_price: String
     currency_code: String
     fx_rate_to_base: Float
+    requested_currency_code: String
     store_price: String
     store_price_currency: String
     market_price: String
@@ -1836,6 +1841,17 @@
     cost_center_name: String
     advance_settlement_id: ID
     is_bought: Boolean
+  }
+
+  type POFxRate {
+    currency_code: String!
+    rate_to_base: Float!
+    is_default: Boolean!
+  }
+
+  type POFxRatesResult {
+    rates: [POFxRate!]!
+    base_currency: String!
   }
 
   type POLineComment {
@@ -1962,6 +1978,7 @@
     qty: Float!
     unit_price: Float!
     uom: String
+    requested_currency_code: String
   }
 
   input POInput {

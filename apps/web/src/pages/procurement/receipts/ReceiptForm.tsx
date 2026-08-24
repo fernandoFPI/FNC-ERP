@@ -30,6 +30,11 @@ interface ReceiptLine {
   qty_from_stock: number
   qty_to_receive: string
   po_unit_price: number
+  // Lines start unselected — the store keeper actively picks which items
+  // they're physically receiving instead of every line showing up
+  // pre-filled and editable at once. "Select All" below covers the common
+  // full-shipment case in one click.
+  selected: boolean
 }
 
 type PhotoKind = 'vendor_receipt' | 'materials'
@@ -104,6 +109,7 @@ export default function ReceiptForm() {
               qty_from_stock: fromStock,
               qty_to_receive: String(toReceive),
               po_unit_price: parseFloat(l.unit_price ?? '0'),
+              selected: false,
             }
           },
         ),
@@ -217,8 +223,8 @@ export default function ReceiptForm() {
       addToast({ type: 'error', message: 'Please select who received the goods' })
       return
     }
-    if (!lines.some((l) => parseFloat(l.qty_to_receive) > 0)) {
-      addToast({ type: 'error', message: 'Enter a quantity for at least one line' })
+    if (!lines.some((l) => l.selected && parseFloat(l.qty_to_receive) > 0)) {
+      addToast({ type: 'error', message: 'Select at least one item you\'re receiving' })
       return
     }
     const hasVendorReceipt = pendingPhotos.some((p) => p.kind === 'vendor_receipt')
@@ -238,7 +244,7 @@ export default function ReceiptForm() {
       // If the receipt(s) were already saved (photo retry), skip re-recording
       let receiptIds = savedReceiptIds
       if (receiptIds.length === 0) {
-        const toReceive = lines.filter((l) => parseFloat(l.qty_to_receive) > 0)
+        const toReceive = lines.filter((l) => l.selected && parseFloat(l.qty_to_receive) > 0)
         if (receiveAll) {
           const { data: receiptData } = await recordReceipt({
             variables: {
@@ -356,11 +362,49 @@ export default function ReceiptForm() {
     }
   }
 
+  function remainingQty(line: ReceiptLine): number {
+    return Math.max(0, line.ordered_qty - line.qty_received_so_far - line.qty_from_stock)
+  }
+
+  function toggleLineSelected(poLineId: string, checked: boolean) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.po_line_id !== poLineId) return l
+        // Re-selecting after having zeroed it out should default back to the
+        // full remaining qty rather than staying at 0.
+        const qty =
+          checked && parseFloat(l.qty_to_receive || '0') <= 0
+            ? String(remainingQty(l))
+            : l.qty_to_receive
+        return { ...l, selected: checked, qty_to_receive: qty }
+      }),
+    )
+  }
+
   const receiptLineFields: LineItemField<ReceiptLine>[] = [
+    {
+      key: 'selected',
+      label: 'Receiving?',
+      width: '70px',
+      render: (line) => (
+        <input
+          type="checkbox"
+          checked={line.selected}
+          onChange={(e) => {
+            toggleLineSelected(line.po_line_id, e.target.checked)
+          }}
+          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+        />
+      ),
+    },
     {
       key: 'description',
       label: 'Description',
-      render: (line) => <span style={{ color: theme.textSecondary }}>{line.description}</span>,
+      render: (line) => (
+        <span style={{ color: line.selected ? theme.textSecondary : theme.textMuted }}>
+          {line.description}
+        </span>
+      ),
     },
     {
       key: 'po_unit_price',
@@ -407,19 +451,28 @@ export default function ReceiptForm() {
       key: 'qty_to_receive',
       label: 'To Receive',
       width: '140px',
-      render: (line, i) => (
-        <Input
-          type="number"
-          min="0"
-          step="0.01"
-          value={line.qty_to_receive}
-          onChange={(e) => {
-            setLines((prev) =>
-              prev.map((l, idx) => (idx === i ? { ...l, qty_to_receive: e.target.value } : l)),
-            )
-          }}
-        />
-      ),
+      render: (line, i) => {
+        const max = remainingQty(line)
+        return (
+          <Input
+            type="number"
+            min="0"
+            max={max}
+            step="0.01"
+            disabled={!line.selected}
+            value={line.qty_to_receive}
+            onChange={(e) => {
+              const val = e.target.value
+              // Cap at what's actually left to receive — can't over-receive by typo.
+              const clamped =
+                val !== '' && !isNaN(parseFloat(val)) && parseFloat(val) > max ? String(max) : val
+              setLines((prev) =>
+                prev.map((l, idx) => (idx === i ? { ...l, qty_to_receive: clamped } : l)),
+              )
+            }}
+          />
+        )
+      },
     },
     ...(receiveAll
       ? []
@@ -775,11 +828,52 @@ export default function ReceiptForm() {
             style={{
               padding: '12px 16px',
               borderBottom: `1px solid ${theme.border}`,
-              fontWeight: 600,
-              color: theme.textPrimary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
             }}
           >
-            Lines
+            <div>
+              <div style={{ fontWeight: 600, color: theme.textPrimary }}>Lines</div>
+              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                Check off each item you're actually receiving in this delivery.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setLines((prev) =>
+                    prev.map((l) =>
+                      remainingQty(l) > 0
+                        ? {
+                            ...l,
+                            selected: true,
+                            qty_to_receive:
+                              parseFloat(l.qty_to_receive || '0') > 0
+                                ? l.qty_to_receive
+                                : String(remainingQty(l)),
+                          }
+                        : l,
+                    ),
+                  )
+                }}
+              >
+                Select All
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setLines((prev) => prev.map((l) => ({ ...l, selected: false })))
+                }}
+              >
+                Deselect All
+              </Button>
+            </div>
           </div>
           <div style={{ padding: '12px 16px' }}>
             <LineItemEditor

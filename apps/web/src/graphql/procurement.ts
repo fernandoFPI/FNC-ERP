@@ -1,5 +1,18 @@
 import { gql } from '@apollo/client'
 
+export const PO_FX_RATES_QUERY = gql`
+  query POFxRates {
+    poFxRates {
+      base_currency
+      rates {
+        currency_code
+        rate_to_base
+        is_default
+      }
+    }
+  }
+`
+
 export const VENDORS_QUERY = gql`
   query Vendors {
     vendors {
@@ -329,6 +342,8 @@ export const PO_LIFECYCLE_QUERY = gql`
         store_price_currency
         market_price
         market_price_currency
+        fx_rate_to_base
+        requested_currency_code
         verified_price
         verified_price_currency
         in_stock
@@ -543,6 +558,33 @@ export const SUBMIT_PO_PRICE_VERIFICATION = gql`
 export const REJECT_PO_TO_MARKET = gql`
   mutation RejectPOToMarketPricing($id: ID!, $reason: String!) {
     rejectPOToMarketPricing(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_PO_VERIFICATION_TO_MARKET_PRICING = gql`
+  mutation RejectPOVerificationToMarketPricing($id: ID!, $reason: String!) {
+    rejectPOVerificationToMarketPricing(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_PO_VERIFICATION_TO_STORE_PRICING = gql`
+  mutation RejectPOVerificationToStorePricing($id: ID!, $reason: String!) {
+    rejectPOVerificationToStorePricing(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const NOTIFY_PO_OWNER_FOR_EDIT_REQUEST = gql`
+  mutation NotifyPOOwnerForEditRequest($id: ID!, $reason: String!) {
+    notifyPOOwnerForEditRequest(id: $id, reason: $reason) {
       id
       status
     }
