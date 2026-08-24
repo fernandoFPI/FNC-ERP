@@ -104,12 +104,13 @@ export default function EmployeeDetail() {
     }
   }
 
-  async function handleLinkUser() {
+  async function handleLinkUser(overrideUserId?: string) {
+    const targetUserId = overrideUserId ?? selectedUserId
     try {
-      await linkEmployeeUser({ variables: { employee_id: id, user_id: selectedUserId || null } })
+      await linkEmployeeUser({ variables: { employee_id: id, user_id: targetUserId || null } })
       addToast({
         type: 'success',
-        message: selectedUserId ? 'User linked to employee' : 'User unlinked from employee',
+        message: targetUserId ? 'User linked to employee' : 'User unlinked from employee',
       })
       setLinkUserOpen(false)
       refetch()
@@ -617,7 +618,7 @@ export default function EmployeeDetail() {
                 style={{ color: theme.danger }}
                 onClick={() => {
                   setSelectedUserId('')
-                  handleLinkUser()
+                  void handleLinkUser('')
                 }}
                 loading={linking}
               >
@@ -626,7 +627,9 @@ export default function EmployeeDetail() {
             )}
             <Button
               variant="primary"
-              onClick={handleLinkUser}
+              onClick={() => {
+                void handleLinkUser()
+              }}
               loading={linking}
               disabled={!selectedUserId}
             >
