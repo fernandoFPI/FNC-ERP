@@ -350,7 +350,13 @@ export default function InventoryImportPage() {
                   overflow: 'hidden',
                 }}
               >
-                <Table columns={errorColumns} data={result.errors} emptyMessage="No failed rows" />
+                <Table
+                  columns={errorColumns}
+                  data={result.errors}
+                  emptyMessage="No failed rows"
+                  maxHeight="60vh"
+                  stickyHeader
+                />
               </div>
             </>
           )}

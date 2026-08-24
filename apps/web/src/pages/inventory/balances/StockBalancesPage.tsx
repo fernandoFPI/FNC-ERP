@@ -286,7 +286,13 @@ export default function StockBalancesPage() {
             Low Stock Only
           </button>
         </FilterBar>
-        <Table columns={columns} data={filtered} loading={loading} />
+        <Table
+          columns={columns}
+          data={filtered}
+          loading={loading}
+          maxHeight="70vh"
+          stickyHeader
+        />
       </Card>
     </div>
   )

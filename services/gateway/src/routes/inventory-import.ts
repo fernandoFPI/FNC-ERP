@@ -434,7 +434,7 @@ inventoryImportRouter.post('/', requireAuth(), upload.single('file'), async (req
               `INSERT INTO stock_balances
                    (product_id, location_id, lot_id, qty_on_hand, qty_reserved, average_cost, updated_at)
                  VALUES ($1,$2,NULL,$3,0,$4,NOW())
-                 ON CONFLICT (product_id, location_id, lot_id) DO UPDATE SET
+                 ON CONFLICT (product_id, location_id) WHERE lot_id IS NULL DO UPDATE SET
                    qty_on_hand  = EXCLUDED.qty_on_hand,
                    average_cost = CASE WHEN EXCLUDED.average_cost > 0
                                        THEN EXCLUDED.average_cost

@@ -28,6 +28,11 @@ interface TableProps<T extends object> {
   onRowClick?: (row: T) => void
   rowKey?: string
   stickyHeader?: boolean
+  // Caps the table's own height and adds vertical scroll inside it — without
+  // this, a long list's horizontal scrollbar sits at the bottom of however
+  // many rows there are, requiring a scroll all the way down just to see the
+  // scrollbar that scrolls right. Pair with stickyHeader for long lists.
+  maxHeight?: string
   className?: string
   getRowStyle?: (row: T) => React.CSSProperties
   // Responsive options
@@ -109,6 +114,7 @@ export function Table<T extends object>({
   getRowStyle,
   mobileCard = true,
   stickyFirstColumn = false,
+  maxHeight,
   footerRow,
   renderExpanded,
   getSectionHeader,
@@ -384,6 +390,8 @@ export function Table<T extends object>({
       className={className}
       style={{
         overflowX: 'auto',
+        overflowY: maxHeight ? 'auto' : undefined,
+        maxHeight,
         WebkitOverflowScrolling: 'touch',
         width: '100%',
         margin: isTablet ? '0 -16px' : '0',
