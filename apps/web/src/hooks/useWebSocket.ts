@@ -29,8 +29,25 @@ export function useWebSocket() {
     if (!token) return
     if (isTokenExpired(token)) return
 
-    const base = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000').replace(/^http/, 'ws')
-    const ws = new WebSocket(`${base}/api/v1/ws?token=${token}`)
+    // VITE_API_URL is deliberately empty in production (apps/web/.env.production)
+    // so axios can use relative same-origin paths — but WebSocket, unlike fetch,
+    // rejects relative URLs outright ("Failed to construct 'WebSocket'"), so an
+    // empty/unset env var must fall back to the page's own origin instead of a
+    // literal string that only makes sense in local dev.
+    const envApiUrl = import.meta.env.VITE_API_URL
+    const base = envApiUrl
+      ? envApiUrl.replace(/^http/, 'ws')
+      : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    // new WebSocket() throws synchronously on a malformed URL — unlike the
+    // event handlers below, nothing catches that on its own, so a bad URL
+    // here would otherwise crash the whole app instead of just leaving
+    // realtime notifications disconnected.
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(`${base}/api/v1/ws?token=${token}`)
+    } catch {
+      return
+    }
     wsRef.current = ws
 
     ws.onopen = () => {
