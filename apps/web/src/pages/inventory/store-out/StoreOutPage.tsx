@@ -261,11 +261,11 @@ export default function StoreOutPage() {
   }
 
   async function handleCreate() {
-    if (!formProjectId || !formDate || pendingLines.length === 0) return
+    if (!formDate || pendingLines.length === 0) return
     try {
       const res = await createIssue({
         variables: {
-          projectId: formProjectId,
+          projectId: formProjectId || null,
           poId: formPoId || null,
           issueDate: formDate,
           notes: formNotes || null,
@@ -314,7 +314,10 @@ export default function StoreOutPage() {
   )
 
   // Table columns for existing issue lines (read + delete)
-  function linesColumns(isDraft: boolean, issueId: string): Column<MILine>[] {
+  // `editable` should be false for PO-originated store-outs — those lines were
+  // already decided during the PO's inventory-check step, so letting a store
+  // keeper add/remove items here would let stock deduction diverge from the PO.
+  function linesColumns(editable: boolean, issueId: string): Column<MILine>[] {
     return [
       {
         key: 'productName',
@@ -351,7 +354,7 @@ export default function StoreOutPage() {
           </span>
         ),
       },
-      ...(isDraft
+      ...(editable
         ? [
             {
               key: '_del',
@@ -756,10 +759,12 @@ export default function StoreOutPage() {
                   <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px' }}>
                     {/* Lines table */}
                     <Table<MILine>
-                      columns={linesColumns(isDraft, si.id)}
+                      columns={linesColumns(isDraft && !si.poId, si.id)}
                       data={si.lines}
                       rowKey="id"
-                      emptyMessage="No items yet — add one below."
+                      emptyMessage={
+                        si.poId ? 'No items on this store-out.' : 'No items yet — add one below.'
+                      }
                     />
 
                     {/* Total row */}
@@ -780,8 +785,10 @@ export default function StoreOutPage() {
                       </div>
                     )}
 
-                    {/* Add item row — draft only */}
-                    {isDraft && (
+                    {/* Add item row — manual/ad-hoc drafts only. PO-originated store-outs
+                        already had their lines fixed during the PO's inventory-check step,
+                        so no reselect/add UI is shown for those. */}
+                    {isDraft && !si.poId && (
                       <div
                         style={{
                           border: `1px dashed ${theme.border}`,
@@ -943,6 +950,7 @@ export default function StoreOutPage() {
       <Modal
         open={showModal}
         onClose={resetModal}
+        closeOnBackdrop={false}
         title="New Store Out"
         description="Record inventory items being issued to a project."
         size="lg"
@@ -954,7 +962,7 @@ export default function StoreOutPage() {
             <Button
               variant="primary"
               size="md"
-              disabled={!formProjectId || !formDate || pendingLines.length === 0 || creating}
+              disabled={!formDate || pendingLines.length === 0 || creating}
               loading={creating}
               onClick={() => void handleCreate()}
             >
@@ -985,15 +993,14 @@ export default function StoreOutPage() {
             }}
           />
           <SearchableSelect
-            label="Project"
-            required
+            label="Project (optional)"
             value={formProjectId}
             onChange={(val) => {
               setFormProjectId(val)
               setFormPoId('')
             }}
             options={projectOptions}
-            placeholder="Select project…"
+            placeholder="No project"
           />
           <SearchableSelect
             label="Link to PO (optional)"

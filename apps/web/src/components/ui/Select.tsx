@@ -37,7 +37,7 @@ export function Select({
 }: SelectProps) {
   const { theme, themeKey } = useTheme()
   const { isPhone } = useBreakpoint()
-  const isDark = themeKey.startsWith('dark')
+  const isDark = themeKey === 'black'
 
   // When options array is provided (no raw JSX children) use the searchable portal select
   if (options && !children) {

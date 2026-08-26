@@ -4610,7 +4610,7 @@ export const MATERIAL_ISSUE_QUERY = gql`
 `
 
 export const CREATE_MATERIAL_ISSUE = gql`
-  mutation CreateMaterialIssue($projectId: ID!, $poId: ID, $issueDate: String!, $notes: String) {
+  mutation CreateMaterialIssue($projectId: ID, $poId: ID, $issueDate: String!, $notes: String) {
     createMaterialIssue(projectId: $projectId, poId: $poId, issueDate: $issueDate, notes: $notes) { ${MI_FIELDS} }
   }
 `

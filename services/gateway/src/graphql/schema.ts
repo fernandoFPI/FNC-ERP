@@ -2785,7 +2785,7 @@
     adminSetProjectStatus(id: ID!, status: String!): Project!
     adminSetPhase(id: ID!, phase: String!): Project!
     advancePhase(id: ID!, targetPhase: String!): Project!
-    createMaterialIssue(projectId: ID!, poId: ID, issueDate: String!, notes: String): MaterialIssue!
+    createMaterialIssue(projectId: ID, poId: ID, issueDate: String!, notes: String): MaterialIssue!
     addMaterialIssueLine(issueId: ID!, productId: ID!, poLineId: ID, qtyIssued: Float!, unitCost: Float!, fromLocationId: ID): MaterialIssueLine!
     deleteMaterialIssueLine(id: ID!, issueId: ID!): Boolean!
     issueMaterialIssue(id: ID!): MaterialIssue!

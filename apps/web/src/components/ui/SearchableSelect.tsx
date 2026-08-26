@@ -6,6 +6,11 @@ export interface SearchableSelectOption {
   value: string
   label: string
   sublabel?: string
+  // A second line shown under the label (in the trigger and the dropdown
+  // list) and also matched by search — e.g. an Arabic translation. Kept
+  // separate from sublabel, which is a short-code badge (SKU, employee
+  // number) rather than a full line of text.
+  keywords?: string
 }
 
 interface Props {
@@ -32,7 +37,7 @@ export function SearchableSelect({
   minDropdownWidth = 260,
 }: Props) {
   const { theme, themeKey } = useTheme()
-  const isDark = themeKey.startsWith('dark')
+  const isDark = themeKey === 'black'
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -48,7 +53,8 @@ export function SearchableSelect({
     ? options.filter(
         (o) =>
           o.label.toLowerCase().includes(query.toLowerCase()) ||
-          (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase()),
+          (o.sublabel ?? '').toLowerCase().includes(query.toLowerCase()) ||
+          (o.keywords ?? '').toLowerCase().includes(query.toLowerCase()),
       )
     : options
 
@@ -193,8 +199,8 @@ export function SearchableSelect({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 10px',
-          height: '36px',
+          padding: selected?.keywords ? '6px 10px' : '0 10px',
+          minHeight: '36px',
           borderRadius: '6px',
           cursor: disabled ? 'not-allowed' : 'pointer',
           border: `1px solid ${error ? theme.dangerBorder : open ? theme.accent : theme.borderInput}`,
@@ -204,54 +210,76 @@ export function SearchableSelect({
           outline: 'none',
         }}
       >
-        {selected?.sublabel ? (
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              overflow: 'hidden',
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            <span
-              style={{
-                fontFamily: 'monospace',
-                fontSize: '11px',
-                color: theme.textMuted,
-                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                padding: '1px 5px',
-                borderRadius: '3px',
-                flexShrink: 0,
-              }}
-            >
-              {selected.sublabel}
-            </span>
-            <span
-              style={{
-                fontSize: '13px',
-                color: theme.textPrimary,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {selected.label}
-            </span>
+        {selected ? (
+          <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '2px' }}>
+            {selected.sublabel ? (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                    color: theme.textMuted,
+                    background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                    padding: '1px 5px',
+                    borderRadius: '3px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {selected.sublabel}
+                </span>
+                <span
+                  style={{
+                    fontSize: '13px',
+                    color: theme.textPrimary,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {selected.label}
+                </span>
+              </span>
+            ) : (
+              <span
+                style={{
+                  fontSize: '13px',
+                  color: theme.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {selected.label}
+              </span>
+            )}
+            {selected.keywords && (
+              <span
+                dir="rtl"
+                style={{
+                  fontSize: '13px',
+                  color: theme.textMuted,
+                  textAlign: 'left',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {selected.keywords}
+              </span>
+            )}
           </span>
         ) : (
           <span
             style={{
               fontSize: '13px',
-              color: selected ? theme.textPrimary : theme.textMuted,
+              color: theme.textMuted,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               flex: 1,
             }}
           >
-            {selected ? selected.label : placeholder}
+            {placeholder}
           </span>
         )}
         <svg
@@ -388,54 +416,68 @@ export function SearchableSelect({
                             : 'transparent',
                       }}
                     >
-                      {opt.sublabel ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span
-                            style={{
-                              fontFamily: 'monospace',
-                              fontSize: '11px',
-                              color: isSelected ? theme.accent : theme.textMuted,
-                              background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                              padding: '1px 6px',
-                              borderRadius: '4px',
-                              flexShrink: 0,
-                            }}
-                          >
-                            {opt.sublabel}
-                          </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        {opt.sublabel ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span
+                              style={{
+                                fontFamily: 'monospace',
+                                fontSize: '11px',
+                                color: isSelected ? theme.accent : theme.textMuted,
+                                background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {opt.sublabel}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '13px',
+                                color: isSelected
+                                  ? theme.accent
+                                  : isDark
+                                    ? theme.textPrimary
+                                    : '#1a1a2e',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {opt.label}
+                            </span>
+                          </div>
+                        ) : (
                           <span
                             style={{
                               fontSize: '13px',
+                              fontStyle: isCustom ? 'italic' : 'normal',
                               color: isSelected
                                 ? theme.accent
-                                : isDark
-                                  ? theme.textPrimary
-                                  : '#1a1a2e',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
+                                : isCustom
+                                  ? theme.textMuted
+                                  : isDark
+                                    ? theme.textPrimary
+                                    : '#1a1a2e',
                             }}
                           >
                             {opt.label}
                           </span>
-                        </div>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: '13px',
-                            fontStyle: isCustom ? 'italic' : 'normal',
-                            color: isSelected
-                              ? theme.accent
-                              : isCustom
-                                ? theme.textMuted
-                                : isDark
-                                  ? theme.textPrimary
-                                  : '#1a1a2e',
-                          }}
-                        >
-                          {opt.label}
-                        </span>
-                      )}
+                        )}
+                        {opt.keywords && (
+                          <span
+                            dir="rtl"
+                            style={{
+                              fontSize: '13px',
+                              textAlign: 'left',
+                              color: isSelected ? theme.accent : theme.textMuted,
+                            }}
+                          >
+                            {opt.keywords}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )
                 })

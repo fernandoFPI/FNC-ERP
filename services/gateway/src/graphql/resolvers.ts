@@ -17145,24 +17145,26 @@ export const resolvers = {
 
     createMaterialIssue: async (
       _: unknown,
-      args: { projectId: string; poId?: string; issueDate: string; notes?: string },
+      args: { projectId?: string; poId?: string; issueDate: string; notes?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
-      await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
-        args.projectId,
-        ctx.auth.companyId,
-      ]).then((r) => {
-        if (!r.rows[0]) throw new Error('Project not found')
-      })
+      if (args.projectId) {
+        await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+          args.projectId,
+          ctx.auth.companyId,
+        ]).then((r) => {
+          if (!r.rows[0]) throw new Error('Project not found')
+        })
+      }
       const issueNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_issue', 'SO')
       const r = await query(
         `INSERT INTO project_material_issues
            (project_id, company_id, issue_number, issue_date, notes, po_id, status, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7) RETURNING *`,
         [
-          args.projectId,
+          args.projectId ?? null,
           ctx.auth.companyId,
           issueNumber,
           args.issueDate,
@@ -17543,7 +17545,9 @@ export const resolvers = {
            WHERE id=$2`,
           [ctx.auth.userId, args.id],
         )
-        if (totalCost > 0) {
+        // Store-outs with no project (allowed since migration 213) are a
+        // plain stock decrement — nothing to post to project cost actuals.
+        if (totalCost > 0 && issue.project_id) {
           await client.query(
             `INSERT INTO project_cost_actuals
                (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
