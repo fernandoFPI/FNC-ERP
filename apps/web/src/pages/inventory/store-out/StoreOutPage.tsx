@@ -162,7 +162,8 @@ export default function StoreOutPage() {
   const productOptions = products.map((p) => ({
     value: p.id,
     label: p.name,
-    sublabel: p.name_ar ? `${p.sku} · ${p.name_ar}` : p.sku,
+    sublabel: p.sku,
+    keywords: p.name_ar ?? undefined,
   }))
   const locationOptions = [
     { value: '', label: 'Default warehouse' },
@@ -829,6 +830,7 @@ export default function StoreOutPage() {
                             }}
                             options={productOptions}
                             placeholder="Search name or SKU…"
+                            minDropdownWidth={420}
                           />
                           <Select
                             label="From Location"
@@ -1102,6 +1104,7 @@ export default function StoreOutPage() {
                 }}
                 options={productOptions}
                 placeholder="Search name or SKU…"
+                minDropdownWidth={420}
               />
               <Select
                 label="From Location"

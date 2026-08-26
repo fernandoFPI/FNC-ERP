@@ -103,8 +103,9 @@ export default function IntercoStockTransferForm() {
           options={products.map(
             (p: { id: string; name: string; sku: string; name_ar?: string | null }) => ({
               value: p.id,
-              label: `${p.sku} — ${p.name}`,
-              sublabel: p.name_ar ?? undefined,
+              label: p.name,
+              sublabel: p.sku,
+              keywords: p.name_ar ?? undefined,
             }),
           )}
         />

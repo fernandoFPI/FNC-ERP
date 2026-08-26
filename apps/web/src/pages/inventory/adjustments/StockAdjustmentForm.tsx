@@ -223,7 +223,8 @@ export default function StockAdjustmentForm() {
               options={products.map((p) => ({
                 value: p.id,
                 label: p.name,
-                sublabel: p.name_ar ? `${p.sku} · ${p.name_ar}` : p.sku,
+                sublabel: p.sku,
+                keywords: p.name_ar ?? undefined,
               }))}
               placeholder="Search product…"
               required

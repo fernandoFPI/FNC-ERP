@@ -91,11 +91,14 @@ export default function BOMForm() {
     }
   }, [bomData])
 
-  const productOptions = products.map((p: { id: string; name: string; name_ar?: string | null }) => ({
-    value: p.id,
-    label: p.name,
-    sublabel: p.name_ar ?? undefined,
-  }))
+  const productOptions = products.map(
+    (p: { id: string; name: string; sku: string; name_ar?: string | null }) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: p.sku,
+      keywords: p.name_ar ?? undefined,
+    }),
+  )
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

@@ -131,7 +131,8 @@ export function BOMLinesEditor({
           options={products.map((p) => ({
             value: p.id,
             label: p.name,
-            sublabel: [p.sku, p.name_ar].filter(Boolean).join(' · ') || undefined,
+            sublabel: p.sku,
+            keywords: p.name_ar ?? undefined,
           }))}
           placeholder="Select product…"
         />
