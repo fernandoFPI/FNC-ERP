@@ -7,6 +7,7 @@ import { ThemeProvider } from './theme/ThemeContext'
 import { apolloClient } from './lib/apollo'
 import { queryClient } from './lib/queryClient'
 import { router } from './router'
+import { VersionCheck } from './components/VersionCheck'
 import './theme/themes.css'
 
 const root = document.getElementById('root')
@@ -17,6 +18,7 @@ ReactDOM.createRoot(root).render(
     <ApolloProvider client={apolloClient}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
+          <VersionCheck />
           <RouterProvider router={router} />
         </ThemeProvider>
       </QueryClientProvider>

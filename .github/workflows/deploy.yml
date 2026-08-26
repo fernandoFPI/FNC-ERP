@@ -113,6 +113,11 @@ jobs:
             pnpm install --frozen-lockfile
             pnpm build --concurrency=4
 
+            # Lets open tabs detect a new deploy and refresh themselves —
+            # see apps/web/src/components/VersionCheck.tsx. dist/ is
+            # gitignored and rebuilt every deploy, so this never touches git.
+            git rev-parse HEAD > apps/web/dist/version.txt
+
             set -a
             source .env
             set +a
