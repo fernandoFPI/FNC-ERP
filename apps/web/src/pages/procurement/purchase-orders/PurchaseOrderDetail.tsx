@@ -65,6 +65,8 @@ import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import { Input } from '../../../components/ui/Input'
+import { Textarea } from '../../../components/ui/Textarea'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
 
@@ -247,6 +249,116 @@ interface EditDraft {
 
 type Tab = 'lines' | 'receipts' | 'returns' | 'approval_log' | 'changes'
 
+// Same fixed enterprise accent palette used on the redesigned Record Receipt
+// and New Purchase Order pages — kept as literal values (not theme tokens)
+// so all three read as one visual system regardless of active theme.
+const BRAND_BLUE = '#2563EB'
+const BRAND_GREEN = '#16A34A'
+// Bold-fill treatment for a stage's primary CTA in the Next Step panel —
+// matches the header/footer submit buttons on the Record Receipt and New
+// Purchase Order pages, instead of Button's default soft-tint primary look.
+const PRIMARY_CTA_STYLE: React.CSSProperties = {
+  background: BRAND_BLUE,
+  border: `1px solid ${BRAND_BLUE}`,
+  color: '#ffffff',
+  fontWeight: 600,
+}
+
+function IconBarChart({ size = 17 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  )
+}
+
+function IconArrowRight({ size = 17 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  )
+}
+
+function IconCheckCircle({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  )
+}
+
+function IconDocument({ size = 17 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="16" y2="17" />
+      <line x1="8" y1="9" x2="10" y2="9" />
+    </svg>
+  )
+}
+
+function IconBox({ size = 17 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+      <line x1="12" y1="22.08" x2="12" y2="12" />
+    </svg>
+  )
+}
+
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -256,7 +368,6 @@ export default function PurchaseOrderDetail() {
   const pagePadding = usePagePadding()
   const [activeTab, setActiveTab] = useState<Tab>('lines')
   const [rejectReason, setRejectReason] = useState('')
-  const [actionNotes, setActionNotes] = useState('')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [lbScale, setLbScale] = useState(1)
   const [lbOffset, setLbOffset] = useState({ x: 0, y: 0 })
@@ -639,7 +750,6 @@ export default function PurchaseOrderDetail() {
   }
   const mutOpts = {
     onCompleted: () => {
-      setActionNotes('')
       setLineStockQtys({})
       setLineSourceLocation({})
       void refetch()
@@ -703,7 +813,6 @@ export default function PurchaseOrderDetail() {
   const [passAudit, { loading: lPass }] = useMutation(PASS_PO_AUDIT, mutOpts)
   const [failAudit] = useMutation(FAIL_PO_AUDIT, {
     onCompleted: () => {
-      setActionNotes('')
       void refetch()
     },
     onError: onErr,
@@ -891,7 +1000,7 @@ export default function PurchaseOrderDetail() {
           ? 'calc(env(safe-area-inset-bottom, 0px) + 120px)'
           : pagePadding.paddingBottom,
         margin: '0 auto',
-        maxWidth: '1300px',
+        maxWidth: '1800px',
       }}
     >
       <PageHeader
@@ -931,6 +1040,28 @@ export default function PurchaseOrderDetail() {
                 },
               ]
               const current = po.priority ?? 'low'
+              // Priority is only editable while still in draft — it shouldn't
+              // change once inventory/pricing/approval decisions have started
+              // being made around it.
+              if (po.status !== 'draft') {
+                const currentP = PRIORITIES.find((p) => p.key === current) ?? PRIORITIES[0]
+                return (
+                  <span
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '7px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      background: currentP.activeBg,
+                      color: currentP.color,
+                      border: `1px solid ${currentP.border}`,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {currentP.label}
+                  </span>
+                )
+              }
               return (
                 <div
                   style={{
@@ -1351,130 +1482,237 @@ export default function PurchaseOrderDetail() {
         />
       </div>
 
-      {/* Summary row */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: '12px',
-          marginBottom: '16px',
-        }}
-      >
-        {[
-          {
-            label: 'Total',
-            // total_amount is always in base_currency_code (lines can be priced in
-            // other currencies and converted — see recalcPO/resolveFxRateToBase in
-            // the gateway resolvers), not the header currency_code field.
-            value: <AmountDisplay amount={po.total_amount} currency={po.base_currency_code} />,
-          },
-          { label: 'Expected delivery', value: po.expected_delivery_date ?? '—' },
-          { label: 'Created by', value: po.created_by_email ?? '—' },
-        ].map(({ label, value }) => (
-          <Card key={label} style={{ padding: '12px' }}>
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-              {label}
-            </div>
-            <div style={{ fontSize: '13px', color: theme.textPrimary }}>{value}</div>
-          </Card>
-        ))}
-        {/* Vendor card — editable up through market_pricing (vendor is normally chosen
-            there, per 030_po_lifecycle_redesign.sql), read-only after */}
-        <Card style={{ padding: '12px' }}>
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-            Vendor
-          </div>
-          {['draft', 'inventory_check', 'store_pricing', 'market_pricing'].includes(po.status) ? (
-            <select
-              value={po.vendor_id ?? ''}
-              onChange={(e) =>
-                void setVendor({ variables: { id: po.id, vendorId: e.target.value || null } })
-              }
+      {/* PO Summary */}
+      <Card style={{ padding: '24px', marginBottom: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontWeight: 600,
+            fontSize: '15px',
+            color: theme.textPrimary,
+            marginBottom: '16px',
+          }}
+        >
+          <span style={{ color: theme.textMuted, display: 'flex' }}>
+            <IconBarChart />
+          </span>
+          PO Summary
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            gap: '12px',
+          }}
+        >
+          {[
+            {
+              label: 'Total',
+              // total_amount is always in base_currency_code (lines can be priced in
+              // other currencies and converted — see recalcPO/resolveFxRateToBase in
+              // the gateway resolvers), not the header currency_code field.
+              value: (
+                <span style={{ color: BRAND_GREEN }}>
+                  <AmountDisplay amount={po.total_amount} currency={po.base_currency_code} size="lg" />
+                </span>
+              ),
+            },
+            { label: 'Expected delivery', value: po.expected_delivery_date ?? '—' },
+            { label: 'Created by', value: po.created_by_email ?? '—' },
+          ].map(({ label, value }) => (
+            <div
+              key={label}
               style={{
-                width: '100%',
-                fontSize: '13px',
-                color: po.vendor_id ? theme.textPrimary : theme.textMuted,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                cursor: 'pointer',
-                padding: 0,
+                padding: '14px',
+                borderRadius: '10px',
+                background: theme.bgCanvas,
+                border: `1px solid ${theme.border}`,
+                minWidth: 0,
               }}
             >
-              <option value="">— Not yet selected —</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-              {po.vendor_name ?? '—'}
+              <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+                {label}
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: theme.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {value}
+              </div>
             </div>
-          )}
-        </Card>
-        {po.funding_source === 'employee_advance' && (
-          <Card style={{ padding: '12px' }}>
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-              Funded by advance
-            </div>
-            <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-              {po.funding_advance_id ? (
-                <a
-                  href={`/finance/advances/${po.funding_advance_id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ color: theme.accent }}
-                >
-                  {po.funding_advance_number ?? 'View advance'}
-                </a>
-              ) : (
-                '—'
-              )}
-              {po.funding_employee_name ? ` · ${po.funding_employee_name}` : ''}
-            </div>
-          </Card>
-        )}
-        {/* Receiver card — always editable */}
-        <Card style={{ padding: '12px' }}>
-          <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>
-            Assigned receiver
-          </div>
-          <select
-            value={po.assigned_receiver_id ?? ''}
-            onChange={(e) =>
-              void setReceiver({ variables: { id: po.id, employeeId: e.target.value || null } })
-            }
+          ))}
+          {/* Vendor tile — editable up through market_pricing (vendor is normally chosen
+              there, per 030_po_lifecycle_redesign.sql), read-only after */}
+          <div
             style={{
-              width: '100%',
-              fontSize: '13px',
-              color: po.assigned_receiver_id ? theme.textPrimary : theme.textMuted,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              cursor: 'pointer',
-              padding: 0,
+              padding: '14px',
+              borderRadius: '10px',
+              background: theme.bgCanvas,
+              border: `1px solid ${theme.border}`,
+              minWidth: 0,
             }}
           >
-            <option value="">— Unassigned —</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.first_name} {e.last_name}
-                {e.job_title ? ` (${e.job_title})` : ''}
-              </option>
-            ))}
-          </select>
-        </Card>
-      </div>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+              Vendor
+            </div>
+            {['draft', 'inventory_check', 'store_pricing', 'market_pricing'].includes(po.status) ? (
+              <select
+                value={po.vendor_id ?? ''}
+                onChange={(e) =>
+                  void setVendor({ variables: { id: po.id, vendorId: e.target.value || null } })
+                }
+                style={{
+                  width: '100%',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: po.vendor_id ? theme.textPrimary : theme.textMuted,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                <option value="">— Not yet selected —</option>
+                {vendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: theme.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {po.vendor_name ?? '—'}
+              </div>
+            )}
+          </div>
+          {po.funding_source === 'employee_advance' && (
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: '10px',
+                background: theme.bgCanvas,
+                border: `1px solid ${theme.border}`,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+                Funded by advance
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: theme.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {po.funding_advance_id ? (
+                  <a
+                    href={`/finance/advances/${po.funding_advance_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: BRAND_BLUE }}
+                  >
+                    {po.funding_advance_number ?? 'View advance'}
+                  </a>
+                ) : (
+                  '—'
+                )}
+                {po.funding_employee_name ? ` · ${po.funding_employee_name}` : ''}
+              </div>
+            </div>
+          )}
+          {/* Receiver tile — editable only in draft; who receives goods shouldn't
+              change once the PO is underway */}
+          <div
+            style={{
+              padding: '14px',
+              borderRadius: '10px',
+              background: theme.bgCanvas,
+              border: `1px solid ${theme.border}`,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+              Assigned receiver
+            </div>
+            {po.status === 'draft' ? (
+              <select
+                value={po.assigned_receiver_id ?? ''}
+                onChange={(e) =>
+                  void setReceiver({ variables: { id: po.id, employeeId: e.target.value || null } })
+                }
+                style={{
+                  width: '100%',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: po.assigned_receiver_id ? theme.textPrimary : theme.textMuted,
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                <option value="">— Unassigned —</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.first_name} {e.last_name}
+                    {e.job_title ? ` (${e.job_title})` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: theme.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {po.assigned_receiver_name ?? '— Unassigned —'}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
 
-      {/* Inline action panel — replaces the former Action tab */}
-      {!['completed', 'deleted', 'cancelled'].includes(po.status) && (
+      {/* Next Step (left) and Tabs/Lines (right) side by side instead of
+          stacked — both are tall on their own, and the page has plenty of
+          unused horizontal room on wide screens. Each column's content is
+          otherwise completely untouched. */}
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: '1 1 460px', minWidth: 0 }}>
+          {/* Inline action panel — replaces the former Action tab */}
+          {!['completed', 'deleted', 'cancelled'].includes(po.status) && (
         <Card
           style={{
             marginBottom: '16px',
-            padding: '16px 20px',
-            borderLeft: `3px solid ${theme.accent}`,
+            padding: '24px',
+            borderLeft: `4px solid ${BRAND_BLUE}`,
           }}
         >
           {/* This panel covers every PO lifecycle stage's actions in one place —
@@ -1483,33 +1721,29 @@ export default function PurchaseOrderDetail() {
               edit lock, instead of hand-tagging dozens of scattered buttons. */}
           <fieldset disabled={lock.lockedByOther} style={{ border: 'none', padding: 0, margin: 0 }}>
             <div
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                marginBottom: '16px',
+              }}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke={theme.accent}
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              <span
+              <div
                 style={{
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  color: theme.accent,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.07em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontWeight: 600,
+                  fontSize: '15px',
+                  color: theme.textPrimary,
                 }}
               >
-                Next step
-              </span>
+                <span style={{ color: BRAND_BLUE, display: 'flex' }}>
+                  <IconArrowRight />
+                </span>
+                Next Step
+              </div>
               <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
             </div>
 
@@ -1533,9 +1767,17 @@ export default function PurchaseOrderDetail() {
                     <Button
                       variant="primary"
                       loading={anyLoading}
+                      icon={<IconCheckCircle size={16} />}
+                      style={{
+                        background: BRAND_BLUE,
+                        border: `1px solid ${BRAND_BLUE}`,
+                        color: '#ffffff',
+                        fontWeight: 600,
+                        alignSelf: 'flex-start',
+                      }}
                       onClick={() =>
                         void submitToInventory({
-                          variables: { id: po.id, notes: actionNotes || undefined },
+                          variables: { id: po.id },
                         })
                       }
                     >
@@ -1546,9 +1788,17 @@ export default function PurchaseOrderDetail() {
                   <Button
                     variant="primary"
                     loading={anyLoading}
+                    icon={<IconCheckCircle size={16} />}
+                    style={{
+                      background: BRAND_BLUE,
+                      border: `1px solid ${BRAND_BLUE}`,
+                      color: '#ffffff',
+                      fontWeight: 600,
+                      alignSelf: 'flex-start',
+                    }}
                     onClick={() =>
                       void submitToInventory({
-                        variables: { id: po.id, notes: actionNotes || undefined },
+                        variables: { id: po.id },
                       })
                     }
                   >
@@ -1557,17 +1807,15 @@ export default function PurchaseOrderDetail() {
                 ))}
 
               {po.status === 'inventory_check' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      color: theme.textMuted,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    Stock availability — enter quantity to take from stock
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                      Stock Availability
+                    </div>
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                      Enter the quantity to take from stock for each line — the rest will be
+                      purchased.
+                    </div>
                   </div>
                   {stockAvailability.length === 0 && (
                     <div style={{ fontSize: '13px', color: theme.textMuted }}>
@@ -1597,20 +1845,37 @@ export default function PurchaseOrderDetail() {
                       <div
                         key={avail.lineId}
                         style={{
-                          padding: '12px 14px',
-                          borderRadius: '7px',
+                          padding: '16px',
+                          borderRadius: '10px',
                           border: `1px solid ${theme.border}`,
                           background: theme.bgSurface,
                         }}
                       >
                         <div
                           style={{
-                            fontSize: '13px',
-                            color: theme.textPrimary,
-                            marginBottom: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            marginBottom: '8px',
                           }}
                         >
-                          {avail.description || avail.productName || '—'}
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+                            {avail.description || avail.productName || '—'}
+                          </div>
+                          <span
+                            style={{
+                              padding: '2px 10px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              flexShrink: 0,
+                              background: `${statusColor}18`,
+                              color: statusColor,
+                            }}
+                          >
+                            {statusLabel}
+                          </span>
                         </div>
                         <div
                           style={{
@@ -1619,7 +1884,7 @@ export default function PurchaseOrderDetail() {
                             fontSize: '12px',
                             color: theme.textMuted,
                             flexWrap: 'wrap',
-                            marginBottom: '8px',
+                            marginBottom: '12px',
                           }}
                         >
                           <span>
@@ -1640,130 +1905,131 @@ export default function PurchaseOrderDetail() {
                               {avail.qtyAvailable.toFixed(2)}
                             </strong>
                           </span>
-                          <span style={{ color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
                         </div>
-                        {avail.byLocation.length > 0 && (
-                          <div
-                            style={{
-                              marginBottom: '10px',
-                              border: `1px solid ${theme.border}`,
-                              borderRadius: '6px',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1fr 1fr 90px',
-                                padding: '5px 10px',
-                                background: theme.bgCanvas,
-                                fontSize: '10px',
-                                fontWeight: 600,
-                                color: theme.textMuted,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.04em',
-                              }}
-                            >
-                              <span>Company</span>
-                              <span>Location</span>
-                              <span>Available</span>
-                            </div>
-                            {avail.byLocation.map((loc) => (
-                              <div
-                                key={loc.locationId}
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns: '1fr 1fr 90px',
-                                  padding: '5px 10px',
-                                  fontSize: '12px',
-                                  borderTop: `1px solid ${theme.border}`,
-                                  color:
-                                    lineSourceLocation[avail.lineId] === loc.locationId
-                                      ? theme.accent
-                                      : theme.textSecondary,
-                                  fontWeight:
-                                    lineSourceLocation[avail.lineId] === loc.locationId ? 600 : 400,
-                                }}
-                              >
-                                <span>{loc.companyName}</span>
-                                <span>{loc.locationName}</span>
-                                <span>{loc.qtyAvailable.toFixed(2)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: '12px',
-                            alignItems: 'flex-end',
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <div>
+                        {avail.byLocation.length > 0 ? (
+                          <div style={{ marginBottom: '12px' }}>
                             <label
                               style={{
-                                fontSize: '11px',
-                                color: theme.textMuted,
+                                fontSize: '12px',
+                                fontWeight: 500,
+                                color: theme.textSecondary,
                                 display: 'block',
-                                marginBottom: '4px',
+                                marginBottom: '6px',
                               }}
                             >
                               Source location
                             </label>
-                            <select
-                              value={lineSourceLocation[avail.lineId] ?? ''}
-                              onChange={(e) => {
-                                const newLocId = e.target.value
-                                setLineSourceLocation((p) => ({ ...p, [avail.lineId]: newLocId }))
-                                const newCap = avail.byLocation.find(
-                                  (l) => l.locationId === newLocId,
-                                )?.qtyAvailable
-                                if (newCap !== undefined && fromStock > newCap) {
-                                  setLineStockQtys((p) => ({
-                                    ...p,
-                                    [avail.lineId]: Math.max(0, newCap),
-                                  }))
-                                }
-                              }}
-                              disabled={avail.byLocation.length === 0}
-                              style={{
-                                width: '220px',
-                                padding: '6px 10px',
-                                borderRadius: '6px',
-                                border: `1px solid ${theme.border}`,
-                                background: theme.bgCanvas,
-                                color: theme.textPrimary,
-                                fontSize: '13px',
-                              }}
-                            >
-                              <option value="">
-                                {avail.byLocation.length === 0 ? 'No stock available' : 'Choose…'}
-                              </option>
-                              {avail.byLocation.map((loc) => (
-                                <option key={loc.locationId} value={loc.locationId}>
-                                  {loc.companyName} — {loc.locationName} (
-                                  {loc.qtyAvailable.toFixed(2)} avail.)
-                                </option>
-                              ))}
-                            </select>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {avail.byLocation.map((loc) => {
+                                const selected = lineSourceLocation[avail.lineId] === loc.locationId
+                                return (
+                                  <button
+                                    key={loc.locationId}
+                                    type="button"
+                                    onClick={() => {
+                                      setLineSourceLocation((p) => ({
+                                        ...p,
+                                        [avail.lineId]: loc.locationId,
+                                      }))
+                                      if (fromStock > loc.qtyAvailable) {
+                                        setLineStockQtys((p) => ({
+                                          ...p,
+                                          [avail.lineId]: Math.max(0, loc.qtyAvailable),
+                                        }))
+                                      }
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: '12px',
+                                      padding: '10px 14px',
+                                      borderRadius: '8px',
+                                      textAlign: 'left',
+                                      cursor: 'pointer',
+                                      fontFamily: 'inherit',
+                                      border: `1px solid ${selected ? BRAND_BLUE : theme.border}`,
+                                      background: selected
+                                        ? 'rgba(37,99,235,0.10)'
+                                        : theme.bgCanvas,
+                                    }}
+                                  >
+                                    <span
+                                      style={{ display: 'flex', alignItems: 'center', gap: '10px' }}
+                                    >
+                                      <span
+                                        style={{
+                                          width: '14px',
+                                          height: '14px',
+                                          borderRadius: '50%',
+                                          border: `2px solid ${selected ? BRAND_BLUE : theme.border}`,
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        {selected && (
+                                          <span
+                                            style={{
+                                              width: '6px',
+                                              height: '6px',
+                                              borderRadius: '50%',
+                                              background: BRAND_BLUE,
+                                            }}
+                                          />
+                                        )}
+                                      </span>
+                                      <span>
+                                        <div
+                                          style={{
+                                            fontSize: '13px',
+                                            fontWeight: selected ? 600 : 500,
+                                            color: selected ? BRAND_BLUE : theme.textPrimary,
+                                          }}
+                                        >
+                                          {loc.locationName}
+                                        </div>
+                                        <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                          {loc.companyName}
+                                        </div>
+                                      </span>
+                                    </span>
+                                    <span
+                                      style={{
+                                        fontSize: '13px',
+                                        fontWeight: 600,
+                                        color: selected ? BRAND_BLUE : theme.textSecondary,
+                                        whiteSpace: 'nowrap',
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {loc.qtyAvailable.toFixed(2)} avail.
+                                    </span>
+                                  </button>
+                                )
+                              })}
+                            </div>
                           </div>
-                          <div>
-                            <label
-                              style={{
-                                fontSize: '11px',
-                                color: theme.textMuted,
-                                display: 'block',
-                                marginBottom: '4px',
-                              }}
-                            >
-                              From stock
-                            </label>
-                            <input
+                        ) : (
+                          <div
+                            style={{
+                              marginBottom: '12px',
+                              fontSize: '12px',
+                              color: theme.textMuted,
+                            }}
+                          >
+                            No stock available at any location for this item.
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                          <div style={{ width: '140px' }}>
+                            <Input
+                              label="From stock"
                               type="number"
-                              min={0}
-                              max={maxFromStock}
-                              value={fromStock}
+                              min="0"
+                              max={String(maxFromStock)}
+                              value={String(fromStock)}
                               onChange={(e) => {
                                 const v = Math.max(
                                   0,
@@ -1771,41 +2037,10 @@ export default function PurchaseOrderDetail() {
                                 )
                                 setLineStockQtys((p) => ({ ...p, [avail.lineId]: v }))
                               }}
-                              style={{
-                                width: '120px',
-                                padding: '6px 10px',
-                                borderRadius: '6px',
-                                border: `1px solid ${theme.border}`,
-                                background: theme.bgCanvas,
-                                color: theme.textPrimary,
-                                fontSize: '13px',
-                              }}
                             />
                           </div>
-                          <div>
-                            <label
-                              style={{
-                                fontSize: '11px',
-                                color: theme.textMuted,
-                                display: 'block',
-                                marginBottom: '4px',
-                              }}
-                            >
-                              To purchase
-                            </label>
-                            <div
-                              style={{
-                                width: '120px',
-                                padding: '6px 10px',
-                                borderRadius: '6px',
-                                border: `1px solid ${theme.border}`,
-                                background: theme.bgCanvas,
-                                color: theme.textMuted,
-                                fontSize: '13px',
-                              }}
-                            >
-                              {toPurchase}
-                            </div>
+                          <div style={{ width: '140px' }}>
+                            <Input label="To purchase" value={String(toPurchase)} disabled readOnly />
                           </div>
                         </div>
                       </div>
@@ -1813,6 +2048,7 @@ export default function PurchaseOrderDetail() {
                   })}
                   <Button
                     variant="primary"
+                    style={PRIMARY_CTA_STYLE}
                     loading={anyLoading}
                     onClick={() =>
                       void confirmInventory({
@@ -1823,7 +2059,6 @@ export default function PurchaseOrderDetail() {
                             qtyFromStock: lineStockQtys[avail.lineId] ?? 0,
                             sourceLocationId: lineSourceLocation[avail.lineId] || undefined,
                           })),
-                          notes: actionNotes || undefined,
                         },
                       })
                     }
@@ -1872,10 +2107,11 @@ export default function PurchaseOrderDetail() {
                     ))}
                   <Button
                     variant="primary"
+                    style={PRIMARY_CTA_STYLE}
                     loading={anyLoading}
                     onClick={() =>
                       void approveIssuance({
-                        variables: { id: po.id, notes: actionNotes || undefined },
+                        variables: { id: po.id },
                       })
                     }
                   >
@@ -2050,6 +2286,7 @@ export default function PurchaseOrderDetail() {
                       })}
                       <Button
                         variant="primary"
+                        style={PRIMARY_CTA_STYLE}
                         loading={anyLoading}
                         onClick={() =>
                           void submitStorePricing({
@@ -2208,6 +2445,7 @@ export default function PurchaseOrderDetail() {
                       )}
                       <Button
                         variant="primary"
+                        style={PRIMARY_CTA_STYLE}
                         loading={anyLoading}
                         disabled={!allPricesEntered}
                         onClick={() =>
@@ -2339,12 +2577,12 @@ export default function PurchaseOrderDetail() {
                       )}
                       <Button
                         variant="primary"
+                        style={PRIMARY_CTA_STYLE}
                         loading={anyLoading}
                         onClick={() =>
                           void submitPriceVerification({
                             variables: {
                               id: po.id,
-                              verificationNotes: actionNotes || undefined,
                               lineAdjustments: [],
                             },
                           })
@@ -2353,41 +2591,33 @@ export default function PurchaseOrderDetail() {
                         Submit for approval
                       </Button>
 
-                      <div style={{ paddingTop: '12px', borderTop: `1px dashed ${theme.border}` }}>
-                        <label
-                          style={{
-                            fontSize: '12px',
-                            color: theme.textMuted,
-                            display: 'block',
-                            marginBottom: '4px',
-                          }}
-                        >
-                          Reject reason (required to reject)
-                        </label>
-                        <textarea
+                      <div
+                        style={{
+                          marginTop: '4px',
+                          padding: '16px',
+                          borderRadius: '10px',
+                          background: theme.bgCanvas,
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
+                          Not ready to approve?
+                        </div>
+                        <Textarea
+                          label="Reject reason (required to reject)"
                           value={rejectReason}
                           onChange={(e) => {
                             setRejectReason(e.target.value)
                           }}
                           placeholder="Enter reason…"
                           rows={2}
-                          style={{
-                            width: '100%',
-                            padding: '8px',
-                            borderRadius: '6px',
-                            resize: 'vertical',
-                            border: `1px solid ${rejectReason ? theme.warningBorder : theme.border}`,
-                            background: theme.bgSurface,
-                            color: theme.textPrimary,
-                            fontSize: '13px',
-                            fontFamily: 'inherit',
-                            outline: 'none',
-                            boxSizing: 'border-box',
-                          }}
                         />
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, margin: '12px 0 6px' }}>
+                          Send back to
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             disabled={!rejectReason}
                             loading={anyLoading}
                             onClick={() =>
@@ -2396,10 +2626,10 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Reject to market price
+                            Market Pricing
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             disabled={!rejectReason}
                             loading={anyLoading}
                             onClick={() =>
@@ -2408,10 +2638,10 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Reject to store price
+                            Store Pricing
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             disabled={!rejectReason}
                             loading={anyLoading}
                             onClick={() =>
@@ -2420,7 +2650,7 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Reject to owner (request edit)
+                            Owner (Request Edit)
                           </Button>
                         </div>
                       </div>
@@ -2907,6 +3137,7 @@ export default function PurchaseOrderDetail() {
                       {/* ── Approve ───────────────────────────────────────────────── */}
                       <Button
                         variant="primary"
+                        style={PRIMARY_CTA_STYLE}
                         loading={anyLoading}
                         disabled={hasFlaggedLines}
                         onClick={() => void approvePO({ variables: { id: po.id } })}
@@ -2915,50 +3146,32 @@ export default function PurchaseOrderDetail() {
                       </Button>
 
                       {/* ── Reject ────────────────────────────────────────────────── */}
-                      <div style={{ paddingTop: '12px', borderTop: `1px dashed ${theme.border}` }}>
-                        <label
-                          style={{
-                            fontSize: '12px',
-                            color: theme.textMuted,
-                            display: 'block',
-                            marginBottom: '4px',
-                          }}
-                        >
-                          Rejection reason{' '}
-                          {hasFlaggedLines
-                            ? '(pre-filled from flags — edit as needed)'
-                            : '(required to reject)'}
-                        </label>
-                        <textarea
+                      <div
+                        style={{
+                          marginTop: '4px',
+                          padding: '16px',
+                          borderRadius: '10px',
+                          background: theme.bgCanvas,
+                          border: `1px solid ${theme.border}`,
+                        }}
+                      >
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
+                          Not ready to approve?
+                        </div>
+                        <Textarea
+                          label={`Rejection reason ${
+                            hasFlaggedLines
+                              ? '(pre-filled from flags — edit as needed)'
+                              : '(required to reject)'
+                          }`}
                           value={effectiveRejectReason}
                           onChange={(e) => {
                             setRejectReason(e.target.value)
                           }}
                           placeholder="Enter reason…"
                           rows={hasFlaggedLines ? 3 : 2}
-                          style={{
-                            width: '100%',
-                            padding: '8px',
-                            borderRadius: '6px',
-                            resize: 'vertical',
-                            border: `1px solid ${effectiveRejectReason ? theme.warningBorder : theme.border}`,
-                            background: theme.bgSurface,
-                            color: theme.textPrimary,
-                            fontSize: '13px',
-                            fontFamily: 'inherit',
-                            outline: 'none',
-                            boxSizing: 'border-box',
-                          }}
-                          onFocus={(e) => {
-                            e.currentTarget.style.borderColor = theme.accent
-                          }}
-                          onBlur={(e) => {
-                            e.currentTarget.style.borderColor = effectiveRejectReason
-                              ? theme.warningBorder
-                              : theme.border
-                          }}
                         />
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                           <Button
                             variant="danger"
                             disabled={!effectiveRejectReason}
@@ -2971,7 +3184,7 @@ export default function PurchaseOrderDetail() {
                             Reject PO
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="secondary"
                             disabled={!effectiveRejectReason}
                             onClick={() =>
                               void rejectToMarket({
@@ -2979,7 +3192,7 @@ export default function PurchaseOrderDetail() {
                               })
                             }
                           >
-                            Reject to market pricing
+                            Send Back to Market Pricing
                           </Button>
                         </div>
                       </div>
@@ -3003,6 +3216,7 @@ export default function PurchaseOrderDetail() {
                   </div>
                   <Button
                     variant="primary"
+                    style={PRIMARY_CTA_STYLE}
                     size="sm"
                     onClick={() => {
                       navigate(`/procurement/purchase-orders/${po.id}/receive`)
@@ -3228,6 +3442,7 @@ export default function PurchaseOrderDetail() {
                       </div>
                       <Button
                         variant="primary"
+                        style={PRIMARY_CTA_STYLE}
                         size="sm"
                         onClick={() => {
                           navigate(`/procurement/purchase-orders/${po.id}/receive`)
@@ -3375,6 +3590,7 @@ export default function PurchaseOrderDetail() {
                   </div>
                   <Button
                     variant="primary"
+                    style={PRIMARY_CTA_STYLE}
                     loading={lAudit}
                     onClick={() => void sendToAudit({ variables: { id: po.id } })}
                   >
@@ -3949,6 +4165,7 @@ export default function PurchaseOrderDetail() {
                       <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                         <Button
                           variant="primary"
+                          style={PRIMARY_CTA_STYLE}
                           loading={lPass}
                           disabled={!canPass}
                           onClick={() => void passAudit({ variables: { id: po.id } })}
@@ -3961,7 +4178,7 @@ export default function PurchaseOrderDetail() {
                           variant="ghost"
                           onClick={() =>
                             void failAudit({
-                              variables: { id: po.id, notes: actionNotes || undefined },
+                              variables: { id: po.id },
                             })
                           }
                         >
@@ -4079,6 +4296,7 @@ export default function PurchaseOrderDetail() {
                       )}
                       <Button
                         variant="primary"
+                        style={PRIMARY_CTA_STYLE}
                         loading={settingFunding}
                         disabled={
                           !fundingChoice ||
@@ -4214,6 +4432,7 @@ export default function PurchaseOrderDetail() {
                           </div>
                           <Button
                             variant="primary"
+                            style={PRIMARY_CTA_STYLE}
                             loading={anyLoading}
                             disabled={unclassifiedCount > 0}
                             onClick={() => void completePO({ variables: { id: po.id } })}
@@ -4314,6 +4533,7 @@ export default function PurchaseOrderDetail() {
                         </div>
                         <Button
                           variant="primary"
+                          style={PRIMARY_CTA_STYLE}
                           size="sm"
                           onClick={() => {
                             navigate(`/finance/ap/new?po_id=${po.id}`)
@@ -4398,44 +4618,13 @@ export default function PurchaseOrderDetail() {
                 </div>
               )}
 
-              {!['rejected', 'goods_received', 'finance_audit', 'pending_approval'].includes(
-                po.status,
-              ) && (
-                <div style={{ paddingTop: '8px', borderTop: `1px dashed ${theme.border}` }}>
-                  <label
-                    style={{
-                      fontSize: '12px',
-                      color: theme.textMuted,
-                      display: 'block',
-                      marginBottom: '4px',
-                    }}
-                  >
-                    Action notes (optional)
-                  </label>
-                  <textarea
-                    value={actionNotes}
-                    onChange={(e) => {
-                      setActionNotes(e.target.value)
-                    }}
-                    rows={2}
-                    style={{
-                      width: '100%',
-                      padding: '8px',
-                      borderRadius: '6px',
-                      border: `1px solid ${theme.border}`,
-                      background: theme.bgSurface,
-                      color: theme.textPrimary,
-                      fontSize: '13px',
-                      resize: 'vertical',
-                    }}
-                  />
-                </div>
-              )}
             </div>
           </fieldset>
         </Card>
       )}
+        </div>
 
+        <div style={{ flex: '1 1 460px', minWidth: 0 }}>
       {/* Tabs */}
       <div style={{ marginBottom: '16px' }}>
         <TabBar
@@ -4533,7 +4722,13 @@ export default function PurchaseOrderDetail() {
               header: 'Qty',
               mobilePriority: 4,
               render: (line) => (
-                <span style={{ color: theme.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+                <span
+                  style={{
+                    color: theme.textPrimary,
+                    fontFamily: 'monospace',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
                   {fmtN(line.qty)} {line.uom}
                 </span>
               ),
@@ -4543,7 +4738,13 @@ export default function PurchaseOrderDetail() {
               header: 'Market Price',
               mobilePriority: 5,
               render: (line) => (
-                <span style={{ color: theme.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
+                <span
+                  style={{
+                    color: theme.textSecondary,
+                    fontFamily: 'monospace',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
                   {fmtN(line.unit_price)}{' '}
                   {line.market_price_currency ?? line.requested_currency_code ?? po.currency_code}
                 </span>
@@ -4556,13 +4757,18 @@ export default function PurchaseOrderDetail() {
               render: (line) => {
                 const sp = parseFloat(String(line.store_price ?? 0))
                 return sp > 0 ? (
-                  <span style={{ color: theme.success, fontVariantNumeric: 'tabular-nums' }}>
+                  <span
+                    style={{
+                      color: BRAND_GREEN,
+                      fontWeight: 600,
+                      fontFamily: 'monospace',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
                     {fmtN(sp)} {line.store_price_currency ?? po.currency_code}
                   </span>
                 ) : (
-                  <span style={{ color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>
-                    —
-                  </span>
+                  <span style={{ color: theme.textMuted, fontFamily: 'monospace' }}>—</span>
                 )
               },
             },
@@ -4575,8 +4781,9 @@ export default function PurchaseOrderDetail() {
                 return (
                   <span
                     style={{
-                      fontWeight: 600,
-                      color: theme.textPrimary,
+                      fontWeight: 700,
+                      color: BRAND_GREEN,
+                      fontFamily: 'monospace',
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
@@ -4591,16 +4798,25 @@ export default function PurchaseOrderDetail() {
               mobilePriority: 3,
               render: (line) => {
                 const received = line.qty_received >= line.qty
+                const partial = line.qty_received > 0 && !received
+                const color = received ? BRAND_GREEN : partial ? '#D97706' : theme.textMuted
                 return (
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    <span style={{ color: received ? theme.accent : theme.textMuted }}>
-                      {fmtN(line.qty_received)}/{fmtN(line.qty)}
-                    </span>
-                    {received && (
-                      <span style={{ marginLeft: '5px', fontSize: '11px', color: theme.accent }}>
-                        ✓
-                      </span>
-                    )}
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: '999px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      fontFamily: 'monospace',
+                      background: `${color}18`,
+                      color,
+                    }}
+                  >
+                    {received && '✓ '}
+                    {fmtN(line.qty_received)}/{fmtN(line.qty)}
                   </span>
                 )
               },
@@ -4693,6 +4909,31 @@ export default function PurchaseOrderDetail() {
 
           return (
             <Card>
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderBottom: `1px solid ${theme.border}`,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontWeight: 600,
+                    fontSize: '15px',
+                    color: theme.textPrimary,
+                  }}
+                >
+                  <span style={{ color: theme.textMuted, display: 'flex' }}>
+                    <IconBox />
+                  </span>
+                  Purchase Order Lines
+                </div>
+                <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                  {po.lines.length} item{po.lines.length === 1 ? '' : 's'} on this order.
+                </div>
+              </div>
               <Table
                 columns={lineColumns}
                 data={po.lines}
@@ -4730,6 +4971,7 @@ export default function PurchaseOrderDetail() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
               <Button
                 variant="primary"
+                style={PRIMARY_CTA_STYLE}
                 size="sm"
                 onClick={() => {
                   navigate(`/procurement/purchase-orders/${po.id}/receive`)
@@ -4754,101 +4996,166 @@ export default function PurchaseOrderDetail() {
                 key: 'description',
                 header: 'Description',
                 mobilePrimary: true,
-                render: (rl) => <span style={{ color: theme.textPrimary }}>{rl.description}</span>,
+                render: (rl) => (
+                  <span style={{ color: theme.textPrimary, fontWeight: 500 }}>{rl.description}</span>
+                ),
               },
               {
                 key: 'qty_received',
                 header: 'Qty received',
                 mobilePriority: 1,
-                render: (rl) => <span style={{ color: theme.textPrimary }}>{rl.qty_received}</span>,
+                render: (rl) => (
+                  <span style={{ color: BRAND_GREEN, fontWeight: 700, fontFamily: 'monospace' }}>
+                    {rl.qty_received}
+                  </span>
+                ),
               },
             ]
             return (
-              <Card key={r.id} style={{ marginBottom: '12px', padding: '16px' }}>
-                {r.status === 'draft' && (
-                  <div style={{ marginBottom: '10px' }}>
-                    <Badge variant="warning">draft — not yet added to inventory</Badge>
-                  </div>
-                )}
-                {r.status === 'cancelled' && (
-                  <div style={{ marginBottom: '10px' }}>
-                    <Badge variant="danger">cancelled</Badge>
-                  </div>
-                )}
+              <Card key={r.id} style={{ marginBottom: '12px' }}>
                 <div
-                  style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', marginBottom: '12px' }}
+                  style={{
+                    padding: '16px 20px',
+                    borderBottom: `1px solid ${theme.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                  }}
                 >
-                  <div>
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Date: </span>
-                    <span style={{ fontSize: '13px' }}>{r.receipt_date}</span>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Location: </span>
-                    <span style={{ fontSize: '13px' }}>{r.location_name ?? '—'}</span>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Received by: </span>
-                    <span style={{ fontSize: '13px' }}>
-                      {r.received_by_name ?? r.received_by_email ?? '—'}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      fontWeight: 600,
+                      fontSize: '15px',
+                      color: theme.textPrimary,
+                    }}
+                  >
+                    <span style={{ color: theme.textMuted, display: 'flex' }}>
+                      <IconBox />
                     </span>
+                    Receipt — {r.receipt_date}
                   </div>
+                  {r.status === 'draft' && (
+                    <Badge variant="warning">draft — not yet added to inventory</Badge>
+                  )}
+                  {r.status === 'cancelled' && <Badge variant="danger">cancelled</Badge>}
                 </div>
-                {r.location_notes && (
+                <div style={{ padding: '16px 20px' }}>
                   <div
-                    style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      marginBottom: '16px',
+                    }}
                   >
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>
-                      Jobsite/Location notes:{' '}
-                    </span>
-                    {r.location_notes}
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: theme.bgCanvas,
+                        border: `1px solid ${theme.border}`,
+                        minWidth: '160px',
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '3px' }}>
+                        Location
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                        {r.location_name ?? '—'}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: theme.bgCanvas,
+                        border: `1px solid ${theme.border}`,
+                        minWidth: '160px',
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '3px' }}>
+                        Received By
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                        {r.received_by_name ?? r.received_by_email ?? '—'}
+                      </div>
+                    </div>
                   </div>
-                )}
-                {r.notes && (
-                  <div
-                    style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
-                  >
-                    <span style={{ fontSize: '11px', color: theme.textMuted }}>Notes: </span>
-                    {r.notes}
-                  </div>
-                )}
-                {r.photos && r.photos.length > 0 && (
-                  <div style={{ marginBottom: '16px' }}>
-                    {(() => {
-                      const vendorDocs = r.photos.filter((ph) => ph.category === 'po_receipt_document')
-                      // Legacy receipts predate the vendor-doc/materials split — everything they
-                      // have was captured under the old single 'po_receipt_photo' category, so it
-                      // falls in here rather than vanishing from the group entirely.
-                      const materialPhotos = r.photos.filter(
-                        (ph) => ph.category !== 'po_receipt_document',
-                      )
-                      const groups: { title: string; photos: typeof r.photos }[] = [
-                        ...(vendorDocs.length ? [{ title: 'Vendor Receipt', photos: vendorDocs }] : []),
-                        ...(materialPhotos.length
-                          ? [{ title: 'Materials Received', photos: materialPhotos }]
-                          : []),
-                      ]
-                      return groups.map((g) => (
-                        <div key={g.title} style={{ marginBottom: '12px' }}>
-                          <div
-                            style={{
-                              fontSize: '11px',
-                              color: theme.textMuted,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.06em',
-                              marginBottom: '8px',
-                            }}
-                          >
-                            {g.title} ({g.photos.length})
+                  {r.location_notes && (
+                    <div
+                      style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
+                    >
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                        Jobsite/Location notes:{' '}
+                      </span>
+                      {r.location_notes}
+                    </div>
+                  )}
+                  {r.notes && (
+                    <div
+                      style={{ marginBottom: '10px', fontSize: '13px', color: theme.textSecondary }}
+                    >
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>Notes: </span>
+                      {r.notes}
+                    </div>
+                  )}
+                  {r.photos && r.photos.length > 0 && (
+                    <div style={{ marginBottom: '16px' }}>
+                      {(() => {
+                        const vendorDocs = r.photos.filter(
+                          (ph) => ph.category === 'po_receipt_document',
+                        )
+                        // Legacy receipts predate the vendor-doc/materials split — everything they
+                        // have was captured under the old single 'po_receipt_photo' category, so it
+                        // falls in here rather than vanishing from the group entirely.
+                        const materialPhotos = r.photos.filter(
+                          (ph) => ph.category !== 'po_receipt_document',
+                        )
+                        const groups: { title: string; photos: typeof r.photos }[] = [
+                          ...(vendorDocs.length
+                            ? [{ title: 'Vendor Receipt', photos: vendorDocs }]
+                            : []),
+                          ...(materialPhotos.length
+                            ? [{ title: 'Materials Received', photos: materialPhotos }]
+                            : []),
+                        ]
+                        return groups.map((g) => (
+                          <div key={g.title} style={{ marginBottom: '16px' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'baseline',
+                                gap: '6px',
+                                marginBottom: '8px',
+                              }}
+                            >
+                              <span
+                                style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}
+                              >
+                                {g.title}
+                              </span>
+                              <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                                ({g.photos.length})
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                              {g.photos.map((ph) => renderPhotoThumb(ph))}
+                            </div>
                           </div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                            {g.photos.map((ph) => renderPhotoThumb(ph))}
-                          </div>
-                        </div>
-                      ))
-                    })()}
+                        ))
+                      })()}
+                    </div>
+                  )}
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
+                    Items Received
                   </div>
-                )}
-                <Table columns={receiptLineColumns} data={r.lines} />
+                  <Table columns={receiptLineColumns} data={r.lines} />
+                </div>
               </Card>
             )
           })}
@@ -4872,6 +5179,7 @@ export default function PurchaseOrderDetail() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
                 <Button
                   variant="primary"
+                  style={PRIMARY_CTA_STYLE}
                   size="sm"
                   onClick={() => {
                     navigate(`/procurement/purchase-orders/${po.id}/returns/new`)
@@ -4949,6 +5257,23 @@ export default function PurchaseOrderDetail() {
 
       {activeTab === 'approval_log' && (
         <Card>
+          <div
+            style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontWeight: 600,
+              fontSize: '15px',
+              color: theme.textPrimary,
+            }}
+          >
+            <span style={{ color: theme.textMuted, display: 'flex' }}>
+              <IconDocument />
+            </span>
+            Approval Log
+          </div>
           {po.notes && (
             <div
               style={{
@@ -5127,7 +5452,19 @@ export default function PurchaseOrderDetail() {
                       marginBottom: '16px',
                     }}
                   >
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontWeight: 600,
+                        fontSize: '15px',
+                        color: theme.textPrimary,
+                      }}
+                    >
+                      <span style={{ color: theme.textMuted, display: 'flex' }}>
+                        <IconDocument />
+                      </span>
                       Request an edit
                     </div>
                     {hasPending && <Badge variant="warning">Pending review — submit locked</Badge>}
@@ -5426,6 +5763,7 @@ export default function PurchaseOrderDetail() {
                           <div>
                             <Button
                               variant="primary"
+                              style={PRIMARY_CTA_STYLE}
                               loading={leR}
                               onClick={() => {
                                 const changes = buildChanges(editDraft)
@@ -5452,12 +5790,18 @@ export default function PurchaseOrderDetail() {
                     style={{
                       padding: '16px 20px',
                       borderBottom: `1px solid ${theme.border}`,
-                      fontSize: '13px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
                       fontWeight: 600,
+                      fontSize: '15px',
                       color: theme.textPrimary,
                     }}
                   >
-                    Edit request history
+                    <span style={{ color: theme.textMuted, display: 'flex' }}>
+                      <IconBox />
+                    </span>
+                    Edit Request History
                   </div>
                   {(po.edit_requests ?? []).length === 0 && (
                     <div
@@ -5630,6 +5974,7 @@ export default function PurchaseOrderDetail() {
                             <Button
                               size="sm"
                               variant="primary"
+                              style={PRIMARY_CTA_STYLE}
                               loading={leA}
                               onClick={() =>
                                 void approveEditRequest({
@@ -5680,6 +6025,8 @@ export default function PurchaseOrderDetail() {
             </div>
           )
         })()}
+        </div>
+      </div>
 
       {/* assignDeptHead reserved for future use */}
 
