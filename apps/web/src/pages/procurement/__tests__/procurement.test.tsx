@@ -70,8 +70,9 @@ describe('PurchaseOrderForm', () => {
   it('shows total amount panel', async () => {
     const PurchaseOrderForm = (await import('../purchase-orders/PurchaseOrderForm')).default
     wrap(<PurchaseOrderForm />)
-    // The form renders "Total: 0 IQD" in the lines section footer
-    expect(screen.getByText(/total:/i)).toBeInTheDocument()
+    // The form shows the running total in both the lines-section footer and
+    // the sticky summary bar — at least one must be present.
+    expect(screen.getAllByText(/total:/i).length).toBeGreaterThan(0)
   })
 
   it('shows Order Lines section heading', async () => {
@@ -83,7 +84,11 @@ describe('PurchaseOrderForm', () => {
   it('shows Create Purchase Order submit button', async () => {
     const PurchaseOrderForm = (await import('../purchase-orders/PurchaseOrderForm')).default
     wrap(<PurchaseOrderForm />)
-    expect(screen.getByRole('button', { name: /create purchase order/i })).toBeInTheDocument()
+    // The form has both a header shortcut and a sticky-footer submit button,
+    // both labeled "Create Purchase Order" — assert the real submit button
+    // (type="submit") is among them.
+    const buttons = screen.getAllByRole('button', { name: /create purchase order/i })
+    expect(buttons.some((b) => b.getAttribute('type') === 'submit')).toBe(true)
   })
 })
 
