@@ -44,6 +44,7 @@ export default function ProductForm() {
   const [form, setForm] = useState({
     sku: '',
     name: '',
+    name_ar: '',
     description: '',
     category: '',
     sub_category: '',
@@ -66,6 +67,7 @@ export default function ProductForm() {
     setForm({
       sku: p.sku ?? '',
       name: p.name ?? '',
+      name_ar: p.name_ar ?? '',
       description: p.description ?? '',
       category: p.category ?? '',
       sub_category: p.sub_category ?? '',
@@ -93,6 +95,7 @@ export default function ProductForm() {
       const input = {
         sku: form.sku,
         name: form.name,
+        name_ar: form.name_ar || undefined,
         description: form.description || undefined,
         category: form.category || undefined,
         sub_category: form.sub_category || undefined,
@@ -139,7 +142,7 @@ export default function ProductForm() {
             gap: '16px',
           }}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 2fr', gap: '16px' }}>
             <Input
               label="SKU"
               value={form.sku}
@@ -149,6 +152,13 @@ export default function ProductForm() {
               disabled={isEdit}
             />
             <Input label="Product Name" value={form.name} onChange={field('name')} required />
+            <Input
+              label="Arabic Name"
+              value={form.name_ar}
+              onChange={field('name_ar')}
+              placeholder="الاسم بالعربي"
+              style={{ direction: 'rtl' }}
+            />
           </div>
 
           <Textarea

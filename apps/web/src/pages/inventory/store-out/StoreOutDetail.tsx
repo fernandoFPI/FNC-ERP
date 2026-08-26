@@ -8,7 +8,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Table } from '../../../components/ui/Table'
 import type { Column } from '../../../components/ui/Table'
-import { StoreOutAttachments } from '../../../components/inventory/StoreOutAttachments'
+import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { buildStoreOutHTML } from '../../../lib/storeOutHtml'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -192,7 +192,7 @@ export default function StoreOutDetail() {
       </Card>
 
       <div style={{ marginTop: '20px' }}>
-        <StoreOutAttachments issueId={mi.id} />
+        <EntityAttachments entityType="material_issue" entityId={mi.id} recordLabel="this Store Out" />
       </div>
 
       {/* Print dialog */}

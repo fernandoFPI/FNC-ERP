@@ -11,7 +11,7 @@ import {
   PROJECTS_QUERY,
 } from '../../../graphql/projects'
 import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
-import { PRODUCTS_QUERY } from '../../../graphql/inventory'
+import { PRODUCTS_QUERY, STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Badge } from '../../../components/ui/Badge'
@@ -56,6 +56,7 @@ interface MI {
 interface Product {
   id: string
   name: string
+  name_ar?: string | null
   sku: string
   average_cost: number | null
   uom: string | null
@@ -67,6 +68,7 @@ interface PendingLine {
   sku: string
   qty: string
   unitCost: string
+  fromLocationId: string
 }
 
 const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = {
@@ -105,11 +107,13 @@ export default function StoreOutPage() {
   const [newProductId, setNewProductId] = useState('')
   const [newQty, setNewQty] = useState('')
   const [newUnit, setNewUnit] = useState('')
+  const [newFromLocationId, setNewFromLocationId] = useState('')
 
   // Add-line state for existing drafts
   const [draftProductId, setDraftProductId] = useState('')
   const [draftQty, setDraftQty] = useState('')
   const [draftUnit, setDraftUnit] = useState('')
+  const [draftFromLocationId, setDraftFromLocationId] = useState('')
 
   // Queries
   const { data, loading, refetch } = useQuery(MATERIAL_ISSUES_QUERY, {
@@ -131,6 +135,7 @@ export default function StoreOutPage() {
   const { data: productsData } = useQuery(PRODUCTS_QUERY, {
     fetchPolicy: 'cache-and-network',
   })
+  const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
 
   const issues = (data?.materialIssues ?? []) as MI[]
   const projects = (projectsData?.projects?.data ?? []) as {
@@ -139,6 +144,11 @@ export default function StoreOutPage() {
     name: string
   }[]
   const products = (productsData?.products ?? []) as Product[]
+  const locations = (locationsData?.stockLocations ?? []) as {
+    id: string
+    name: string
+    code?: string
+  }[]
   interface POOption {
     id: string
     po_number: string
@@ -149,7 +159,15 @@ export default function StoreOutPage() {
 
   // Options for SearchableSelect / Select
   const projectOptions = projects.map((p) => ({ value: p.id, label: p.name, sublabel: p.code }))
-  const productOptions = products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku }))
+  const productOptions = products.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sublabel: p.name_ar ? `${p.sku} · ${p.name_ar}` : p.sku,
+  }))
+  const locationOptions = [
+    { value: '', label: 'Default warehouse' },
+    ...locations.map((l) => ({ value: l.id, label: l.code ? `${l.name} (${l.code})` : l.name })),
+  ]
   const poOptions = [
     { value: '', label: 'No PO link' },
     ...projectPOs.map((po) => ({
@@ -172,6 +190,7 @@ export default function StoreOutPage() {
       setDraftProductId('')
       setDraftQty('')
       setDraftUnit('')
+      setDraftFromLocationId('')
       void refetch()
     },
     onError: (e) => {
@@ -217,6 +236,7 @@ export default function StoreOutPage() {
     setNewProductId('')
     setNewQty('')
     setNewUnit('')
+    setNewFromLocationId('')
   }
 
   function addPendingLine() {
@@ -231,11 +251,13 @@ export default function StoreOutPage() {
         sku: prod.sku,
         qty: newQty,
         unitCost: newUnit,
+        fromLocationId: newFromLocationId,
       },
     ])
     setNewProductId('')
     setNewQty('')
     setNewUnit('')
+    setNewFromLocationId('')
   }
 
   async function handleCreate() {
@@ -258,6 +280,7 @@ export default function StoreOutPage() {
             productId: line.productId,
             qtyIssued: parseFloat(line.qty),
             unitCost: parseFloat(line.unitCost),
+            fromLocationId: line.fromLocationId || undefined,
           },
         }).catch((e: Error) => {
           addToast({ type: 'error', message: `"${line.productName}": ${e.message}` })
@@ -783,7 +806,7 @@ export default function StoreOutPage() {
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '1fr 90px 140px auto',
+                            gridTemplateColumns: '1fr 160px 90px 140px auto',
                             gap: '10px',
                             alignItems: 'flex-end',
                           }}
@@ -799,6 +822,14 @@ export default function StoreOutPage() {
                             }}
                             options={productOptions}
                             placeholder="Search name or SKU…"
+                          />
+                          <Select
+                            label="From Location"
+                            value={draftFromLocationId}
+                            onChange={(e) => {
+                              setDraftFromLocationId(e.target.value)
+                            }}
+                            options={locationOptions}
                           />
                           <Input
                             label="Qty"
@@ -833,6 +864,7 @@ export default function StoreOutPage() {
                                   productId: draftProductId,
                                   qtyIssued: parseFloat(draftQty),
                                   unitCost: parseFloat(draftUnit),
+                                  fromLocationId: draftFromLocationId || undefined,
                                 },
                               })
                             }
@@ -1048,7 +1080,7 @@ export default function StoreOutPage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 80px 130px auto',
+                gridTemplateColumns: '1fr 150px 80px 130px auto',
                 gap: '10px',
                 alignItems: 'flex-end',
               }}
@@ -1063,6 +1095,14 @@ export default function StoreOutPage() {
                 }}
                 options={productOptions}
                 placeholder="Search name or SKU…"
+              />
+              <Select
+                label="From Location"
+                value={newFromLocationId}
+                onChange={(e) => {
+                  setNewFromLocationId(e.target.value)
+                }}
+                options={locationOptions}
               />
               <Input
                 label="Qty"

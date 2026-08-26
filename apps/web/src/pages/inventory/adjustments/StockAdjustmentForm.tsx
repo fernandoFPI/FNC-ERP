@@ -71,8 +71,14 @@ export default function StockAdjustmentForm() {
     refetchQueries: [{ query: STOCK_SNAPSHOT_QUERY }],
   })
 
-  const products: { id: string; sku: string; name: string; uom: string; average_cost: string }[] =
-    productsData?.products ?? []
+  const products: {
+    id: string
+    sku: string
+    name: string
+    name_ar?: string | null
+    uom: string
+    average_cost: string
+  }[] = productsData?.products ?? []
   const locations: { id: string; name: string; code: string; type: string }[] =
     locationsData?.stockLocations ?? []
   const warehouses = locations.filter((l) => l.type === 'warehouse')
@@ -214,7 +220,11 @@ export default function StockAdjustmentForm() {
                 setProductId(value)
                 setUnitCost('')
               }}
-              options={products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku }))}
+              options={products.map((p) => ({
+                value: p.id,
+                label: p.name,
+                sublabel: p.name_ar ? `${p.sku} · ${p.name_ar}` : p.sku,
+              }))}
               placeholder="Search product…"
               required
             />

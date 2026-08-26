@@ -118,6 +118,9 @@ export const PURCHASE_ORDER_QUERY = gql`
       assigned_receiver_name
       branch_id
       branch_name
+      purpose
+      delivery_destination
+      linkedProjectId
       funding_source
       funding_advance_id
       funding_advance_number
@@ -126,6 +129,7 @@ export const PURCHASE_ORDER_QUERY = gql`
         id
         product_id
         product_name
+        sku
         description
         qty
         unit_price
@@ -142,6 +146,7 @@ export const PURCHASE_ORDER_QUERY = gql`
       }
       receipts {
         id
+        status
         receipt_date
         location_id
         location_name
@@ -217,9 +222,110 @@ export const RECORD_RECEIPT = gql`
   mutation RecordReceipt($poId: ID!, $input: ReceiptInput!) {
     recordReceipt(poId: $poId, input: $input) {
       id
+      status
       receipt_date
       received_by_name
+      received_from_name
       location_notes
+    }
+  }
+`
+
+export const CONFIRM_RECEIPT = gql`
+  mutation ConfirmReceipt($id: ID!) {
+    confirmReceipt(id: $id) {
+      id
+      status
+    }
+  }
+`
+
+export const CANCEL_RECEIPT = gql`
+  mutation CancelReceipt($id: ID!) {
+    cancelReceipt(id: $id) {
+      id
+      status
+    }
+  }
+`
+
+export const RECORD_DIRECT_DELIVERY = gql`
+  mutation RecordDirectDelivery($poId: ID!, $input: DirectDeliveryInput!) {
+    recordDirectDelivery(poId: $poId, input: $input) {
+      poId
+      status
+    }
+  }
+`
+
+// ── Store In (PO receipts, company-wide) ──────────────────────────────────────
+
+const PO_RECEIPT_FIELDS = `
+  id
+  po_id
+  po_number
+  vendor_name
+  received_from_name
+  base_currency_code
+  receipt_number
+  receipt_date
+  location_name
+  notes
+  received_by_email
+  received_by_name
+  location_notes
+  created_at
+  is_invoiced
+  status
+  confirmed_at
+  lines {
+    po_line_id
+    description
+    product_name
+    sku
+    uom
+    unit_price
+    currency_code
+    fx_rate_to_base
+    qty_received
+  }
+  photos {
+    id
+    fileId
+    label
+    category
+    originalFilename
+    downloadUrl
+    createdAt
+  }
+`
+
+export const RECEIVABLE_PURCHASE_ORDERS_QUERY = gql`
+  query ReceivablePurchaseOrders($projectId: ID) {
+    receivablePurchaseOrders(projectId: $projectId) {
+      id
+      po_number
+      vendor_name
+      status
+      project_id
+      projectCode
+      projectName
+    }
+  }
+`
+
+export const PO_RECEIPTS_QUERY = gql`
+  query POReceipts {
+    poReceipts {
+      ${PO_RECEIPT_FIELDS}
+    }
+  }
+`
+
+export const PO_RECEIPT_QUERY = gql`
+  query POReceipt($id: ID!) {
+    poReceipt(id: $id) {
+      ${PO_RECEIPT_FIELDS}
     }
   }
 `
@@ -311,6 +417,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       assigned_receiver_id
       assigned_receiver_name
       purpose
+      delivery_destination
       linkedProjectId
       linkedMoId
       projectCode
@@ -373,6 +480,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       }
       receipts {
         id
+        status
         receipt_date
         location_name
         received_by_email

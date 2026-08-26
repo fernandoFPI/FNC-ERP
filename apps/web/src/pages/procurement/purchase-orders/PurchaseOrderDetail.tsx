@@ -53,6 +53,7 @@ import { useRecordLock } from '../../../hooks/useRecordLock'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
+import { EntityAttachments } from '../../../components/inventory/EntityAttachments'
 import { Button, StickyActionBar } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
 import { TabBar } from '../../../components/ui/TabBar'
@@ -178,6 +179,7 @@ interface PO {
   lines: POLine[]
   receipts: {
     id: string
+    status: string
     receipt_date: string
     location_name?: string
     received_by_email?: string
@@ -4763,6 +4765,16 @@ export default function PurchaseOrderDetail() {
             ]
             return (
               <Card key={r.id} style={{ marginBottom: '12px', padding: '16px' }}>
+                {r.status === 'draft' && (
+                  <div style={{ marginBottom: '10px' }}>
+                    <Badge variant="warning">draft — not yet added to inventory</Badge>
+                  </div>
+                )}
+                {r.status === 'cancelled' && (
+                  <div style={{ marginBottom: '10px' }}>
+                    <Badge variant="danger">cancelled</Badge>
+                  </div>
+                )}
                 <div
                   style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', marginBottom: '12px' }}
                 >
@@ -4840,6 +4852,16 @@ export default function PurchaseOrderDetail() {
               </Card>
             )
           })}
+          <div style={{ marginTop: '16px' }}>
+            <EntityAttachments
+              entityType="purchase_order"
+              entityId={po.id}
+              recordLabel="this PO"
+              title="Delivery Photos"
+              description="Photos attached when a receipt or a direct-to-jobsite delivery was recorded against this PO."
+              uploadButtonLabel="Upload photo"
+            />
+          </div>
         </div>
       )}
 

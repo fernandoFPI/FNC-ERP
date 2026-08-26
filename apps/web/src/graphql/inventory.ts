@@ -6,6 +6,7 @@ export const PRODUCTS_QUERY = gql`
       id
       sku
       name
+      name_ar
       category
       sub_category
       uom
@@ -24,6 +25,7 @@ export const PRODUCT_QUERY = gql`
       id
       sku
       name
+      name_ar
       description
       category
       sub_category

@@ -65,6 +65,13 @@ export default function PurchaseOrderForm() {
   const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [linkedProjectId, setLinkedProjectId] = useState('')
+  // Only meaningful for purpose='project' — decided now, at creation, because
+  // it has to be known before approval (it gates whether the from-stock
+  // auto Store Out fires) and receiving (whether Record Receipt creates a
+  // Store In or a direct-to-jobsite delivery).
+  const [deliveryDestination, setDeliveryDestination] = useState<'inventory' | 'jobsite'>(
+    'inventory',
+  )
   const [linkedMoId, setLinkedMoId] = useState('')
   const [lines, setLines] = useState<POLine[]>([emptyLine()])
   const [currencyTouched, setCurrencyTouched] = useState(false)
@@ -156,7 +163,7 @@ export default function PurchaseOrderForm() {
 
   const vendors = vendorsData?.vendors ?? []
   const analytics = analyticsData?.analyticAccounts ?? []
-  const products: { id: string; sku: string; name: string; uom: string }[] =
+  const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
     productsData?.products ?? []
   const projects: {
     id: string
@@ -178,7 +185,11 @@ export default function PurchaseOrderForm() {
 
   const productOptions = [
     { value: '', label: 'Custom item' },
-    ...products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku })),
+    ...products.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: p.name_ar ? `${p.sku} · ${p.name_ar}` : p.sku,
+    })),
   ]
 
   const projectOptions = [
@@ -264,6 +275,7 @@ export default function PurchaseOrderForm() {
         notes: form.notes || undefined,
         fx_rate: parseFloat(form.fx_rate) || 1,
         purpose,
+        delivery_destination: purpose === 'project' ? deliveryDestination : undefined,
         priority,
         assigned_receiver_id: form.assigned_receiver_id || undefined,
         branch_id: form.branch_id || undefined,
@@ -457,6 +469,18 @@ export default function PurchaseOrderForm() {
                 placeholder="Search project…"
                 minDropdownWidth={360}
               />
+            )}
+            {purpose === 'project' && (
+              <Select
+                label="Delivery Destination"
+                value={deliveryDestination}
+                onChange={(e) => {
+                  setDeliveryDestination(e.target.value as 'inventory' | 'jobsite')
+                }}
+              >
+                <option value="inventory">Delivered to inventory</option>
+                <option value="jobsite">Delivered directly to the jobsite</option>
+              </Select>
             )}
             {purpose === 'manufacturing' && (
               <Select

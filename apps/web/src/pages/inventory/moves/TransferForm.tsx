@@ -54,9 +54,10 @@ export default function TransferForm() {
           required
         >
           <option value="">Select product…</option>
-          {products.map((p: { id: string; sku: string; name: string }) => (
+          {products.map((p: { id: string; sku: string; name: string; name_ar?: string | null }) => (
             <option key={p.id} value={p.id}>
               {p.sku} — {p.name}
+              {p.name_ar ? ` (${p.name_ar})` : ''}
             </option>
           ))}
         </Select>

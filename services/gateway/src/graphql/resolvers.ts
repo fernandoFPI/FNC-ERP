@@ -460,21 +460,29 @@ async function postPOCompletionJournal(
   )
 }
 
-// Deducts stock for every po_lines row with qty_from_stock > 0 on a PO, and
-// auto-creates the matching Store Out. Used both by the 100%-stock-covered fast
-// path (approveStockIssuance, ready_to_issue → completed) and by the normal
-// approval path for mixed POs (approvePO) — a PO with no from-stock lines is a
-// safe no-op either way. Each line sources from its own po_lines.source_location_id
-// if one was picked (falling back to the requesting company's own warehouse for
-// older/unpicked lines); if that location belongs to a different company, the
-// deduction is done as a same-cost (AVCO) interco stock transfer rather than a
-// plain same-company move, mirroring createIntercoStockTransfer's own pattern.
+// Auto-creates a draft Store Out for every po_lines row with qty_from_stock > 0
+// on a PO — no stock actually moves here anymore. Used both by the
+// 100%-stock-covered fast path (approveStockIssuance, ready_to_issue →
+// completed) and by the normal approval path for mixed POs (approvePO) — a PO
+// with no from-stock lines is a safe no-op either way. Each line records
+// where it would come from (po_lines.source_location_id, falling back to the
+// company's own warehouse) and its cost, but the actual stock_moves (and, for
+// a cross-company source location, the interco transfer) only happen when a
+// human confirms the Store Out — see issueMaterialIssue.
 async function issueStockForPOLines(
   client: PoolClient,
   po: Record<string, unknown>,
   companyId: string,
   userId: string,
 ): Promise<{ issueId: string; issueNumber: string } | undefined> {
+  // A project PO explicitly marked "delivered to inventory" isn't consuming
+  // anything yet — its from-stock quantity should just stay put (no auto
+  // Store Out), the same way its freshly-purchased lines skip Store In under
+  // recordDirectDelivery's counterpart. Only 'jobsite' (or a non-project PO,
+  // where this destination concept doesn't apply) still issues stock out to
+  // the project.
+  if (po.purpose === 'project' && po.delivery_destination === 'inventory') return undefined
+
   const poId = String(po.id)
   const linesRes = await client.query(
     `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
@@ -497,167 +505,24 @@ async function issueStockForPOLines(
   if (!defaultFromLocationId) throw new Error('No warehouse location found for company')
 
   const destRes = await client.query(
-    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual' AND is_active=true LIMIT 1`,
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
     [companyId],
   )
-  const ownDestLocationId = (destRes.rows[0]?.id ?? defaultFromLocationId) as string
-  const poNumber = String(po.po_number ?? poId)
-
-  for (const line of lines) {
-    if (!line.product_id) continue
-    const qty = parseFloat(String(line.qty_from_stock ?? 0))
-    if (qty <= 0) continue
-
-    const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
-    const fromLocRes = await client.query(`SELECT company_id FROM stock_locations WHERE id=$1`, [
-      fromLocationId,
-    ])
-    const fromCompanyId = fromLocRes.rows[0]?.company_id as string | undefined
-    if (!fromCompanyId) throw new Error('Source stock location not found')
-
-    if (fromCompanyId === companyId) {
+  // Falling back to defaultFromLocationId here would move stock from the
+  // warehouse right back to itself (a net no-op) once confirming actually
+  // moves it — auto-create the "consumed by project" placeholder instead,
+  // mirroring how virtual_in/virtual_out already get auto-created below.
+  const ownDestLocationId: string = (destRes.rows[0]?.id ??
+    (
       await client.query(
-        `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-         VALUES ($1,$2,$3,$4,NOW(),$5,
-           (SELECT average_cost FROM stock_balances WHERE product_id=$2 AND location_id=$3 LIMIT 1),
-           $5 * COALESCE((SELECT average_cost FROM stock_balances WHERE product_id=$2 AND location_id=$3 LIMIT 1), 0),
-           'po_stock_issuance',$6,$7,$8)`,
-        [
-          companyId,
-          line.product_id,
-          fromLocationId,
-          ownDestLocationId,
-          qty,
-          poId,
-          `PO ${poNumber} stock issuance`,
-          userId,
-        ],
-      )
-    } else {
-      const avcoRes = await client.query(
-        `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 LIMIT 1`,
-        [line.product_id, fromLocationId],
-      )
-      const avco = parseFloat(String(avcoRes.rows[0]?.average_cost ?? 0))
-
-      const vOutRes = await client.query(
-        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
-        [fromCompanyId],
-      )
-      const virtualOutId: string = (vOutRes.rows[0]?.id ??
-        (
-          await client.query(
-            `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Consumption','virtual_out',true) RETURNING id`,
-            [fromCompanyId],
-          )
-        ).rows[0].id) as string
-
-      const vInRes = await client.query(
-        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+        `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Project Consumption','virtual_out',true) RETURNING id`,
         [companyId],
       )
-      const virtualInId: string = (vInRes.rows[0]?.id ??
-        (
-          await client.query(
-            `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
-            [companyId],
-          )
-        ).rows[0].id) as string
+    ).rows[0].id) as string
 
-      const fromMove = await client.query(
-        `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-         VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_stock_issuance',$8,$9,$10) RETURNING id`,
-        [
-          fromCompanyId,
-          line.product_id,
-          fromLocationId,
-          virtualOutId,
-          qty,
-          avco,
-          qty * avco,
-          poId,
-          `PO ${poNumber} stock issuance to company ${companyId}`,
-          userId,
-        ],
-      )
-      const toMove = await client.query(
-        `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-         VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_stock_issuance',$8,$9,$10) RETURNING id`,
-        [
-          companyId,
-          line.product_id,
-          virtualInId,
-          ownDestLocationId,
-          qty,
-          avco,
-          qty * avco,
-          poId,
-          `PO ${poNumber} stock issuance from company ${fromCompanyId}`,
-          userId,
-        ],
-      )
-
-      const transferNum = `IST-PO-${Date.now()}-${String(line.line_number ?? '0')}`
-      const transfer = await client.query(
-        `INSERT INTO interco_stock_transfers
-         (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
-         VALUES ($1,$2,'manual',$3,$4,CURRENT_DATE,'avco','posted',$5,$6,NOW()) RETURNING id`,
-        [
-          fromCompanyId,
-          companyId,
-          poId,
-          transferNum,
-          userId,
-          `Auto-created from PO ${poNumber} stock issuance`,
-        ],
-      )
-      const transferId = transfer.rows[0].id as string
-      await client.query(
-        `INSERT INTO interco_stock_transfer_lines
-         (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$6,$7,'IQD',$8,$9)`,
-        [
-          transferId,
-          line.product_id,
-          fromLocationId,
-          ownDestLocationId,
-          qty,
-          avco,
-          qty * avco,
-          fromMove.rows[0].id,
-          toMove.rows[0].id,
-        ],
-      )
-    }
-
-    if (po.linked_mo_id) {
-      await client.query(
-        `UPDATE mo_consumptions SET qty_consumed=LEAST(qty_planned, qty_consumed+$1)
-         WHERE mo_id=$2 AND component_product_id=$3`,
-        [qty, po.linked_mo_id, line.product_id],
-      )
-    }
-  }
-
-  if (po.linked_mo_id) {
-    const moCheck = await client.query(
-      `SELECT COUNT(*) FILTER (WHERE qty_consumed < qty_planned) AS unsatisfied
-       FROM mo_consumptions WHERE mo_id=$1`,
-      [po.linked_mo_id],
-    )
-    if (parseInt(String(moCheck.rows[0]?.unsatisfied ?? '1')) === 0) {
-      await client.query(
-        `UPDATE manufacturing_orders SET status='confirmed', updated_at=NOW() WHERE id=$1 AND status='draft'`,
-        [po.linked_mo_id],
-      )
-    }
-  }
-
-  // Auto-create a Store Out documenting the stock leaving inventory, as a
-  // draft the store keeper must explicitly confirm (issueMaterialIssue) —
-  // the physical stock_moves above already happened synchronously, but the
-  // paperwork/cost booking is deferred until a human confirms it, same as
-  // any manually-created Store Out.
+  // Draft Store Out — the store keeper must explicitly confirm it
+  // (issueMaterialIssue) before stock actually leaves inventory, exactly
+  // like a manually-created one.
   const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
 
   const issueRes = await client.query(
@@ -867,6 +732,21 @@ async function verifyAttachmentEntityOwnershipGW(
         `SELECT id FROM project_material_issues WHERE id=$1 AND company_id=$2`,
         [entityId, companyId],
       )
+      return r.rows.length > 0
+    }
+    case 'po_receipt': {
+      const r = await query(
+        `SELECT por.id FROM po_receipts por JOIN purchase_orders po ON po.id=por.po_id
+         WHERE por.id=$1 AND po.company_id=$2`,
+        [entityId, companyId],
+      )
+      return r.rows.length > 0
+    }
+    case 'purchase_order': {
+      const r = await query(`SELECT id FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
+        entityId,
+        companyId,
+      ])
       return r.rows.length > 0
     }
     default:
@@ -3299,6 +3179,125 @@ export const resolvers = {
         rates,
         base_currency: cfgRes.rows[0]?.default_po_currency ?? 'IQD',
       }
+    },
+
+    // "Store In" — company-wide list of PO receipts, the receiving-side
+    // counterpart to materialIssues ("Store Out"). po_receipts already IS the
+    // record created when goods come in (Record Receipt); this just exposes
+    // it outside a single PO's page, mirroring the same query shape used by
+    // purchaseOrder's nested `receipts` field.
+    poReceipts: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      const branchScope = await branchScopedPOFilterGW(auth)
+      const params: unknown[] = [auth.companyId]
+      let branchClause = ''
+      if (branchScope) {
+        params.push(branchScope)
+        branchClause = `AND po.branch_id = ANY($2::uuid[])`
+      }
+      const r = await query(
+        `SELECT por.id, por.po_id, po.po_number, v.name AS vendor_name, po.base_currency_code,
+                por.receipt_number, por.received_date AS receipt_date,
+                por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+                sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
+                COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+                COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
+         FROM po_receipts por
+         JOIN purchase_orders po ON po.id=por.po_id
+         LEFT JOIN vendors v ON v.id=po.vendor_id
+         LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
+         LEFT JOIN users u ON u.id=por.received_by
+         LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
+         LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
+         LEFT JOIN products p ON p.id=pol.product_id
+         LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
+         LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
+         WHERE po.company_id=$1 ${branchClause}
+         GROUP BY por.id, po.po_number, v.name, po.base_currency_code, sl.name, u.email, u.first_name, u.last_name
+         ORDER BY por.received_date DESC, por.created_at DESC`,
+        params,
+      )
+      return r.rows
+    },
+
+    poReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      const r = await query(
+        `SELECT por.id, por.po_id, po.po_number, v.name AS vendor_name, po.base_currency_code,
+                por.receipt_number, por.received_date AS receipt_date,
+                por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+                sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
+                COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+                COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
+         FROM po_receipts por
+         JOIN purchase_orders po ON po.id=por.po_id
+         LEFT JOIN vendors v ON v.id=po.vendor_id
+         LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
+         LEFT JOIN users u ON u.id=por.received_by
+         LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
+         LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
+         LEFT JOIN products p ON p.id=pol.product_id
+         LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
+         LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
+         WHERE por.id=$1 AND po.company_id=$2
+         GROUP BY por.id, po.po_number, v.name, po.base_currency_code, sl.name, u.email, u.first_name, u.last_name`,
+        [args.id, auth.companyId],
+      )
+      if (!r.rows[0]) return null
+      const branchScope = await branchScopedPOFilterGW(auth)
+      if (branchScope) {
+        const poRow = await query<{ branch_id: string | null }>(
+          `SELECT branch_id FROM purchase_orders WHERE id=$1`,
+          [(r.rows[0] as Record<string, unknown>).po_id as string],
+        )
+        if (!poRow.rows[0]?.branch_id || !branchScope.includes(poRow.rows[0].branch_id)) return null
+      }
+      return r.rows[0]
+    },
+
+    // POs a receipt can actually be recorded against right now — mirrors
+    // recordReceipt's own status guard exactly, plus (unlike that guard) also
+    // requires at least one line with real outstanding quantity. A PO can sit
+    // at 'goods_received' with every line already fully received-or-stocked
+    // (that's exactly how it got there), which is a valid status for
+    // recordReceipt to accept but a dead end for a human picking a PO to
+    // receive against — nothing left to enter.
+    receivablePurchaseOrders: async (
+      _: unknown,
+      args: { projectId?: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const auth = ctx.auth as GWAuth
+      const branchScope = await branchScopedPOFilterGW(auth)
+      const params: unknown[] = [auth.companyId]
+      let clause = ''
+      if (args.projectId) {
+        params.push(args.projectId)
+        clause += ` AND po.project_id = $${params.length}`
+      }
+      if (branchScope) {
+        params.push(branchScope)
+        clause += ` AND po.branch_id = ANY($${params.length}::uuid[])`
+      }
+      const r = await query(
+        `SELECT po.id, po.po_number, v.name AS vendor_name, po.status,
+                po.project_id, proj.code AS "projectCode", proj.name AS "projectName"
+         FROM purchase_orders po
+         LEFT JOIN vendors v ON v.id=po.vendor_id
+         LEFT JOIN projects proj ON proj.id=po.project_id
+         WHERE po.company_id=$1 AND po.status IN ('approved','items_bought','goods_received')
+           AND EXISTS (
+             SELECT 1 FROM po_lines pol
+             WHERE pol.po_id=po.id AND pol.qty_ordered - pol.qty_received - pol.qty_from_stock > 0
+           )
+           ${clause}
+         ORDER BY po.po_number DESC`,
+        params,
+      )
+      return r.rows
     },
 
     myPOQueue: async (_: unknown, __: unknown, ctx: GQLContext) => {
@@ -6020,7 +6019,7 @@ export const resolvers = {
                     sl.company_id AS source_company_id, sc.name AS source_company_name,
                     sb.average_cost AS source_average_cost,
                     pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
-                    pol.line_number, p.name AS product_name,
+                    pol.line_number, p.name AS product_name, p.sku,
                     pol.account_id, coa.code AS account_code, coa.name AS account_name,
                     pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
                     pol.is_bought
@@ -6036,17 +6035,18 @@ export const resolvers = {
           ),
           query(
             `SELECT por.id, por.po_id, por.receipt_number, por.received_date AS receipt_date,
-                    por.received_by, por.received_by_name, por.location_notes, por.notes, por.created_at, por.is_invoiced,
+                    por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
                     sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
-                    COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''))) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
-                    COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL), '[]') AS photos
+                    COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+                    COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
              FROM po_receipts por
              LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
              LEFT JOIN users u ON u.id=por.received_by
              LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
              LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
+             LEFT JOIN products p ON p.id=pol.product_id
              LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
-             LEFT JOIN files f ON f.id=da.file_id AND f.status='uploaded'
+             LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
              WHERE por.po_id=$1
              GROUP BY por.id, sl.name, u.email, u.first_name, u.last_name ORDER BY por.received_date`,
             [args.id],
@@ -7903,6 +7903,7 @@ export const resolvers = {
           assigned_receiver_id?: string
           fx_rate?: number
           purpose?: string
+          delivery_destination?: string
           priority?: string
           linkedProjectId?: string
           linkedMoId?: string
@@ -7969,8 +7970,8 @@ export const resolvers = {
             ? i.priority
             : 'low'
           const po = await client.query(
-            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,assigned_buyer_user_id,base_currency_code)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18,$19) RETURNING *`,
+            `INSERT INTO purchase_orders (company_id,po_number,vendor_id,currency_code,analytic_account_id,expected_delivery_date,notes,assigned_to,assigned_receiver_id,fx_rate,subtotal,total_amount,status,purpose,project_id,linked_project_id,linked_mo_id,created_by,priority,branch_id,organizer_id,assigned_buyer_user_id,base_currency_code,delivery_destination)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$15,$9,$10,$10,'draft',$11,$12,$12,$13,$14,$16,$17,$14,$18,$19,$20) RETURNING *`,
             [
               ctx.auth!.companyId,
               poNum,
@@ -7991,6 +7992,7 @@ export const resolvers = {
               i.branch_id ?? null,
               null, // assigned_buyer_user_id: no longer resolved at creation — see 'buyer' position
               baseCurrencyCode,
+              i.purpose === 'project' ? (i.delivery_destination ?? null) : null,
             ],
           )
           const poRow = po.rows[0] as Record<string, unknown>
@@ -8056,6 +8058,10 @@ export const resolvers = {
       return upd.rows[0]
     },
 
+    // Creates a draft Store In only — no qty_received, stock_moves, MO
+    // consumption, or PO transition happens here. Those only happen when the
+    // draft is confirmed via confirmReceipt, mirroring createMaterialIssue /
+    // issueMaterialIssue's draft/confirm split for Store Out.
     recordReceipt: async (
       _: unknown,
       args: {
@@ -8065,6 +8071,7 @@ export const resolvers = {
           location_id?: string
           notes?: string
           received_by_name?: string
+          received_from_name?: string
           location_notes?: string
           lines: { po_line_id: string; qty_received: number; actual_unit_price?: number }[]
         }
@@ -8089,7 +8096,7 @@ export const resolvers = {
           const poStatus = po.rows[0].status as string
           // 'items_bought' included alongside the legacy 'approved' window
           // (no PO rests there in practice anymore — approvePO now always
-          // chains straight into items_bought) — recording a real receipt
+          // chains straight into items_bought) — recording a receipt
           // is equally authoritative as the buyer's checklist and
           // shouldn't be blocked behind it.
           if (!['approved', 'items_bought', 'goods_received'].includes(poStatus)) {
@@ -8097,8 +8104,8 @@ export const resolvers = {
           }
           const receiptNumber = `RCPT-${Date.now()}`
           const receipt = await client.query(
-            `INSERT INTO po_receipts (po_id,receipt_number,received_date,warehouse_location_id,notes,received_by,received_by_name,location_notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            `INSERT INTO po_receipts (po_id,receipt_number,received_date,warehouse_location_id,notes,received_by,received_by_name,received_from_name,location_notes,status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft') RETURNING *`,
             [
               args.poId,
               receiptNumber,
@@ -8107,6 +8114,7 @@ export const resolvers = {
               i.notes ?? null,
               ctx.auth!.userId,
               i.received_by_name ?? null,
+              i.received_from_name ?? null,
               i.location_notes ?? null,
             ],
           )
@@ -8116,11 +8124,77 @@ export const resolvers = {
             receipt_date: dbRow.received_date,
             location_id: dbRow.warehouse_location_id,
           }
+          for (const l of i.lines) {
+            await client.query(
+              `INSERT INTO po_receipt_lines (receipt_id,po_line_id,qty_received,actual_unit_price) VALUES ($1,$2,$3,$4)`,
+              [rRow.id, l.po_line_id, l.qty_received, l.actual_unit_price ?? null],
+            )
+          }
+          return {
+            ...rRow,
+            lines: i.lines.map((l) => ({
+              po_line_id: l.po_line_id,
+              qty_received: String(l.qty_received),
+              description: null,
+            })),
+          }
+        },
+      )
+    },
+
+    // The point a draft Store In actually becomes consequential: bumps
+    // po_lines.qty_received, records the base-currency-converted stock move
+    // (real inventory increase), updates linked-MO consumption, and
+    // auto-transitions the PO — everything recordReceipt used to do
+    // immediately. Requires both required photo categories to already be
+    // attached (enforced here too, not just in the UI, since this is the
+    // real physical/financial commit point).
+    confirmReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
+        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+      }
+      return withTransaction(
+        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
+        async (client) => {
+          const receiptRes = await client.query(
+            `SELECT por.*, po.company_id, po.status AS po_status
+             FROM po_receipts por JOIN purchase_orders po ON po.id=por.po_id
+             WHERE por.id=$1`,
+            [args.id],
+          )
+          const receipt = receiptRes.rows[0] as Record<string, unknown> | undefined
+          if (!receipt || receipt.company_id !== ctx.auth!.companyId)
+            throw new Error('Receipt not found')
+          if (receipt.status !== 'draft') throw new Error('Only a draft receipt can be confirmed')
+
+          const photoCheck = await client.query(
+            `SELECT DISTINCT f.category FROM document_attachments da JOIN files f ON f.id=da.file_id
+             WHERE da.entity_type='po_receipt' AND da.entity_id=$1 AND f.status != 'deleted'`,
+            [args.id],
+          )
+          const categories = new Set(
+            photoCheck.rows.map((r) => (r as Record<string, unknown>).category as string),
+          )
+          if (!categories.has('po_receipt_document') || !categories.has('po_receipt_photo')) {
+            throw new Error(
+              'Attach both the vendor receipt and materials photos before confirming this receipt',
+            )
+          }
+
+          const linesRes = await client.query(
+            `SELECT * FROM po_receipt_lines WHERE receipt_id=$1`,
+            [args.id],
+          )
+          const lines = linesRes.rows as Record<string, unknown>[]
+
           // "Receiving Location" is optional on the form, but stock_moves.to_location_id
           // is NOT NULL — fall back to the company's default warehouse (same lookup
           // used elsewhere for stock-issuance moves, see issueStockForPOLines above)
           // rather than crash when no location was picked.
-          let resolvedToLocationId = i.location_id
+          let resolvedToLocationId = receipt.warehouse_location_id as string | null
           if (!resolvedToLocationId) {
             const warehouseRes = await client.query(
               `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
@@ -8132,35 +8206,40 @@ export const resolvers = {
             )
             resolvedToLocationId = (warehouseRes.rows[0]?.id ?? fallbackRes.rows[0]?.id) as
               | string
-              | undefined
+              | null
+              | undefined ?? null
             if (!resolvedToLocationId)
               throw new Error(
                 'No active stock location is configured for this company. Set one up in Inventory, or pick a receiving location on this receipt.',
               )
           }
+
           let virtualInId: string | undefined
-          for (const l of i.lines) {
-            await client.query(
-              `INSERT INTO po_receipt_lines (receipt_id,po_line_id,qty_received) VALUES ($1,$2,$3)`,
-              [rRow.id, l.po_line_id, l.qty_received],
-            )
-            if (l.actual_unit_price != null && l.actual_unit_price > 0) {
+          for (const l of lines) {
+            const qtyReceived = parseFloat(String(l.qty_received))
+            const actualUnitPrice =
+              l.actual_unit_price != null ? parseFloat(String(l.actual_unit_price)) : null
+            if (actualUnitPrice != null && actualUnitPrice > 0) {
               await client.query(
                 `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1, actual_unit_price=$2 WHERE id=$3`,
-                [l.qty_received, l.actual_unit_price, l.po_line_id],
+                [qtyReceived, actualUnitPrice, l.po_line_id],
               )
             } else {
               await client.query(
                 `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1 WHERE id=$2`,
-                [l.qty_received, l.po_line_id],
+                [qtyReceived, l.po_line_id],
               )
             }
             const polRes = await client.query(
-              `SELECT product_id, unit_price FROM po_lines WHERE id=$1`,
+              `SELECT product_id, unit_price, fx_rate_to_base FROM po_lines WHERE id=$1`,
               [l.po_line_id],
             )
             const polProductId = polRes.rows[0]?.product_id as string | null
-            const polUnitPrice = parseFloat(String(polRes.rows[0]?.unit_price ?? 0))
+            const polFxRate = parseFloat(String(polRes.rows[0]?.fx_rate_to_base ?? 1)) || 1
+            // Stock cost basis must be in the company's base currency — a PO line
+            // priced in a foreign currency (e.g. USD via market pricing) would
+            // otherwise record its raw foreign-currency number as the IQD cost.
+            const polUnitPrice = parseFloat(String(polRes.rows[0]?.unit_price ?? 0)) * polFxRate
             if (polProductId) {
               if (!virtualInId) {
                 const virtInRes = await client.query(
@@ -8184,25 +8263,26 @@ export const resolvers = {
                   polProductId,
                   virtualInId,
                   resolvedToLocationId,
-                  i.receipt_date,
-                  l.qty_received,
+                  receipt.received_date,
+                  qtyReceived,
                   polUnitPrice,
-                  polUnitPrice * l.qty_received,
-                  rRow.id,
-                  i.notes ?? null,
+                  polUnitPrice * qtyReceived,
+                  args.id,
+                  receipt.notes ?? null,
                   ctx.auth!.userId,
                 ],
               )
             }
           }
+
           // If PO is linked to an MO, update mo_consumptions for received components
           const poForMO = await client.query(
             `SELECT linked_mo_id FROM purchase_orders WHERE id=$1`,
-            [args.poId],
+            [receipt.po_id],
           )
           const linkedMoId = poForMO.rows[0]?.linked_mo_id as string | null
           if (linkedMoId) {
-            for (const l of i.lines) {
+            for (const l of lines) {
               const lineRes = await client.query(`SELECT product_id FROM po_lines WHERE id=$1`, [
                 l.po_line_id,
               ])
@@ -8211,7 +8291,7 @@ export const resolvers = {
                 await client.query(
                   `UPDATE mo_consumptions SET qty_consumed=LEAST(qty_planned, qty_consumed+$1)
                  WHERE mo_id=$2 AND component_product_id=$3`,
-                  [l.qty_received, linkedMoId, productId],
+                  [parseFloat(String(l.qty_received)), linkedMoId, productId],
                 )
               }
             }
@@ -8226,11 +8306,132 @@ export const resolvers = {
               )
             }
           }
-          // Auto-transition into goods_received on first receipt — from the
-          // legacy 'approved' window or from 'items_bought' (a real receipt
+
+          // Auto-transition into goods_received on first confirmed receipt — from
+          // the legacy 'approved' window or from 'items_bought' (a real receipt
           // is equally authoritative as the buyer finishing their checklist,
           // and shouldn't require it first).
-          const currentStatus = po.rows[0].status as POStatus
+          const currentStatus = receipt.po_status as POStatus
+          if (currentStatus === 'approved' || currentStatus === 'items_bought') {
+            await poTransition(
+              client,
+              receipt.po_id as string,
+              currentStatus,
+              'goods_received',
+              currentStatus === 'approved' ? 'receive_goods' : 'finish_buying',
+              ctx.auth!,
+              'Auto-transitioned on receipt confirmation',
+            )
+          }
+
+          const updated = await client.query(
+            `UPDATE po_receipts SET status='confirmed', confirmed_at=NOW() WHERE id=$1 RETURNING *`,
+            [args.id],
+          )
+          return { ...(updated.rows[0] as Record<string, unknown>), lines: [], photos: [] }
+        },
+      )
+    },
+
+    // A draft with nothing confirmed has touched no inventory or PO state,
+    // so cancelling is just a status flip — mirrors cancelMaterialIssue's
+    // draft path.
+    cancelReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
+        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+      }
+      const r = await query(
+        `UPDATE po_receipts por SET status='cancelled'
+         FROM purchase_orders po
+         WHERE por.id=$1 AND po.id=por.po_id AND po.company_id=$2 AND por.status='draft'
+         RETURNING por.*`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!r.rows[0]) throw new Error('Only a draft receipt can be cancelled')
+      return { ...(r.rows[0] as Record<string, unknown>), lines: [], photos: [] }
+    },
+
+    // For PO lines delivered straight to a project's jobsite instead of
+    // company inventory — no Store In record, no stock_moves, no draft/photos.
+    // Just marks the lines received and posts their cost straight to the
+    // linked project, mirroring how project_material_issues posts a stock
+    // issuance's cost but without ever creating a stock_balances row here.
+    recordDirectDelivery: async (
+      _: unknown,
+      args: {
+        poId: string
+        input: {
+          received_date: string
+          notes?: string
+          lines: { po_line_id: string; qty_received: number; actual_unit_price?: number }[]
+        }
+      },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
+        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+      }
+      const i = args.input
+      return withTransaction(
+        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
+        async (client) => {
+          const po = await client.query(
+            'SELECT * FROM purchase_orders WHERE id=$1 AND company_id=$2',
+            [args.poId, ctx.auth!.companyId],
+          )
+          if (!po.rows[0]) throw new Error('PO not found')
+          const poRow = po.rows[0] as Record<string, unknown>
+          const poStatus = poRow.status as string
+          if (!['approved', 'items_bought', 'goods_received'].includes(poStatus)) {
+            throw new Error(`Cannot record a delivery on a PO with status '${poStatus}'`)
+          }
+          if (
+            poRow.purpose !== 'project' ||
+            !poRow.linked_project_id ||
+            poRow.delivery_destination !== 'jobsite'
+          ) {
+            throw new Error(
+              'Direct-to-jobsite delivery requires a project-linked PO marked "delivered to jobsite"',
+            )
+          }
+
+          for (const l of i.lines) {
+            if (l.actual_unit_price != null && l.actual_unit_price > 0) {
+              await client.query(
+                `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1, actual_unit_price=$2 WHERE id=$3`,
+                [l.qty_received, l.actual_unit_price, l.po_line_id],
+              )
+            } else {
+              await client.query(
+                `UPDATE po_lines SET qty_received=COALESCE(qty_received,0)+$1 WHERE id=$2`,
+                [l.qty_received, l.po_line_id],
+              )
+            }
+            const polRes = await client.query(
+              `SELECT unit_price, fx_rate_to_base FROM po_lines WHERE id=$1`,
+              [l.po_line_id],
+            )
+            const polFxRate = parseFloat(String(polRes.rows[0]?.fx_rate_to_base ?? 1)) || 1
+            const polUnitPrice = parseFloat(String(polRes.rows[0]?.unit_price ?? 0)) * polFxRate
+            const cost = polUnitPrice * l.qty_received
+            if (cost > 0) {
+              await client.query(
+                `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
+                 VALUES ($1, 'po_direct_delivery', $2, 'materials', $3, 'IQD', $4::date)
+                 ON CONFLICT (source_id) WHERE source_type = 'po_direct_delivery' AND source_id IS NOT NULL
+                 DO UPDATE SET amount = project_cost_actuals.amount + EXCLUDED.amount`,
+                [poRow.linked_project_id, l.po_line_id, cost, i.received_date],
+              )
+            }
+          }
+
+          const currentStatus = poStatus as POStatus
           if (currentStatus === 'approved' || currentStatus === 'items_bought') {
             await poTransition(
               client,
@@ -8239,17 +8440,14 @@ export const resolvers = {
               'goods_received',
               currentStatus === 'approved' ? 'receive_goods' : 'finish_buying',
               ctx.auth!,
-              'Auto-transitioned on first receipt',
+              i.notes ? `Delivered directly to jobsite — ${i.notes}` : 'Delivered directly to jobsite',
             )
           }
-          return {
-            ...rRow,
-            lines: i.lines.map((l) => ({
-              po_line_id: l.po_line_id,
-              qty_received: String(l.qty_received),
-              description: null,
-            })),
-          }
+
+          const updated = await client.query(`SELECT status FROM purchase_orders WHERE id=$1`, [
+            args.poId,
+          ])
+          return { poId: args.poId, status: (updated.rows[0] as Record<string, unknown>).status }
         },
       )
     },
@@ -8300,12 +8498,13 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
       const r = await query(
-        `INSERT INTO products (company_id,sku,name,description,category,sub_category,uom,valuation_method,standard_cost,reorder_point,reorder_qty,is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,reorder_point,reorder_qty,is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [
           ctx.auth.companyId,
           i.sku,
           i.name,
+          i.name_ar ?? null,
           i.description ?? null,
           i.category ?? null,
           i.sub_category ?? null,
@@ -8329,15 +8528,16 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
       const r = await query(
-        `UPDATE products SET name=COALESCE($3,name), description=COALESCE($4,description), category=COALESCE($5,category),
-           sub_category=COALESCE($6,sub_category), uom=COALESCE($7,uom), standard_cost=COALESCE($8,standard_cost),
-           reorder_point=COALESCE($9,reorder_point), reorder_qty=COALESCE($10,reorder_qty),
-           is_active=COALESCE($11,is_active), updated_at=NOW()
+        `UPDATE products SET name=COALESCE($3,name), name_ar=COALESCE($4,name_ar), description=COALESCE($5,description), category=COALESCE($6,category),
+           sub_category=COALESCE($7,sub_category), uom=COALESCE($8,uom), standard_cost=COALESCE($9,standard_cost),
+           reorder_point=COALESCE($10,reorder_point), reorder_qty=COALESCE($11,reorder_qty),
+           is_active=COALESCE($12,is_active), updated_at=NOW()
          WHERE id=$1 AND company_id=$2 RETURNING *`,
         [
           args.id,
           ctx.auth.companyId,
           i.name ?? null,
+          i.name_ar ?? null,
           i.description ?? null,
           i.category ?? null,
           i.sub_category ?? null,
@@ -16994,6 +17194,7 @@ export const resolvers = {
         poLineId?: string
         qtyIssued: number
         unitCost: number
+        fromLocationId?: string
       },
       ctx: GQLContext,
     ) => {
@@ -17008,10 +17209,39 @@ export const resolvers = {
         throw new Error('Material issue not found')
       if (issue.status !== 'draft') throw new Error('Can only add lines to a draft store-out')
       const totalCost = args.qtyIssued * args.unitCost
+      // Manual lines need a source location too, same as PO-originated ones,
+      // so confirming this Store Out can actually deduct the right stock —
+      // default to the company's warehouse if the caller didn't pick one.
+      // The destination is always the company's own "virtual" consumption
+      // location, matching issueStockForPOLines.
+      let fromLocationId = args.fromLocationId ?? null
+      if (!fromLocationId) {
+        const wh = await query(
+          `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+          [ctx.auth.companyId],
+        )
+        const fb = await query(
+          `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
+          [ctx.auth.companyId],
+        )
+        fromLocationId = (wh.rows[0]?.id ?? fb.rows[0]?.id ?? null) as string | null
+      }
+      const destRes = await query(
+        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
+        [ctx.auth.companyId],
+      )
+      const toLocationId: string | null =
+        (destRes.rows[0]?.id as string | undefined) ??
+        (
+          await query(
+            `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Project Consumption','virtual_out',true) RETURNING id`,
+            [ctx.auth.companyId],
+          )
+        ).rows[0].id
       const r = await query(
         `INSERT INTO project_material_issue_lines
-           (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+           (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost, from_location_id, to_location_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
         [
           args.issueId,
           args.productId,
@@ -17019,6 +17249,8 @@ export const resolvers = {
           args.qtyIssued,
           args.unitCost,
           totalCost,
+          fromLocationId,
+          toLocationId,
         ],
       )
       const prodR = await query('SELECT name FROM products WHERE id=$1', [args.productId])
@@ -17094,6 +17326,217 @@ export const resolvers = {
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
+
+        // Confirming is the point stock actually leaves inventory — for both
+        // a PO-originated Store Out (issueStockForPOLines only records where
+        // it would come from/go to; nothing physically moved yet) and a
+        // manual one (addMaterialIssueLine resolves the same fields). Lines
+        // from before this existed may still lack a location — fall back to
+        // the company's default warehouse / virtual consumption location so
+        // confirming an old draft never breaks.
+        const companyId = ctx.auth.companyId
+        const issueLinesRes = await client.query(
+          `SELECT * FROM project_material_issue_lines WHERE issue_id=$1`,
+          [args.id],
+        )
+        let fallbackFromLocationId: string | undefined
+        let fallbackToLocationId: string | undefined
+        for (const line of issueLinesRes.rows as Record<string, unknown>[]) {
+          const productId = line.product_id as string | null
+          const qty = parseFloat(String(line.qty_issued ?? 0))
+          if (!productId || qty <= 0) continue
+
+          let fromLocationId = line.from_location_id as string | null
+          if (!fromLocationId) {
+            if (!fallbackFromLocationId) {
+              const wh = await client.query(
+                `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+                [companyId],
+              )
+              const fb = await client.query(
+                `SELECT id FROM stock_locations WHERE company_id=$1 AND is_active=true LIMIT 1`,
+                [companyId],
+              )
+              fallbackFromLocationId = (wh.rows[0]?.id ?? fb.rows[0]?.id) as string | undefined
+            }
+            fromLocationId = fallbackFromLocationId ?? null
+          }
+          let toLocationId = line.to_location_id as string | null
+          if (!toLocationId) {
+            if (!fallbackToLocationId) {
+              const dest = await client.query(
+                `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
+                [companyId],
+              )
+              fallbackToLocationId = (dest.rows[0]?.id ??
+                (
+                  await client.query(
+                    `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Project Consumption','virtual_out',true) RETURNING id`,
+                    [companyId],
+                  )
+                ).rows[0].id) as string | undefined
+            }
+            toLocationId = fallbackToLocationId ?? null
+          }
+          if (!fromLocationId || !toLocationId) continue
+
+          const fromLocRes = await client.query(
+            `SELECT company_id FROM stock_locations WHERE id=$1`,
+            [fromLocationId],
+          )
+          const fromCompanyId = fromLocRes.rows[0]?.company_id as string | undefined
+          if (!fromCompanyId) continue
+
+          const unitCost = parseFloat(String(line.unit_cost ?? 0))
+
+          if (fromCompanyId === companyId) {
+            await client.query(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10)`,
+              [
+                companyId,
+                productId,
+                fromLocationId,
+                toLocationId,
+                qty,
+                unitCost,
+                qty * unitCost,
+                args.id,
+                `Store Out ${String(issue.issue_number)}`,
+                ctx.auth.userId,
+              ],
+            )
+          } else {
+            // Cross-company source — mirrors createIntercoStockTransfer's pattern.
+            const avcoRes = await client.query(
+              `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 LIMIT 1`,
+              [productId, fromLocationId],
+            )
+            const avco = parseFloat(String(avcoRes.rows[0]?.average_cost ?? unitCost))
+
+            const vOutRes = await client.query(
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
+              [fromCompanyId],
+            )
+            const virtualOutId: string = (vOutRes.rows[0]?.id ??
+              (
+                await client.query(
+                  `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Consumption','virtual_out',true) RETURNING id`,
+                  [fromCompanyId],
+                )
+              ).rows[0].id) as string
+
+            const vInRes = await client.query(
+              `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+              [companyId],
+            )
+            const virtualInId: string = (vInRes.rows[0]?.id ??
+              (
+                await client.query(
+                  `INSERT INTO stock_locations (company_id,name,type,is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
+                  [companyId],
+                )
+              ).rows[0].id) as string
+
+            const fromMove = await client.query(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10) RETURNING id`,
+              [
+                fromCompanyId,
+                productId,
+                fromLocationId,
+                virtualOutId,
+                qty,
+                avco,
+                qty * avco,
+                args.id,
+                `Store Out ${String(issue.issue_number)} to company ${companyId}`,
+                ctx.auth.userId,
+              ],
+            )
+            const toMove = await client.query(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10) RETURNING id`,
+              [
+                companyId,
+                productId,
+                virtualInId,
+                toLocationId,
+                qty,
+                avco,
+                qty * avco,
+                args.id,
+                `Store Out ${String(issue.issue_number)} from company ${fromCompanyId}`,
+                ctx.auth.userId,
+              ],
+            )
+
+            const transferNum = `IST-SO-${Date.now()}-${String(line.id).slice(0, 8)}`
+            const transfer = await client.query(
+              `INSERT INTO interco_stock_transfers
+               (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
+               VALUES ($1,$2,'manual',$3,$4,CURRENT_DATE,'avco','posted',$5,$6,NOW()) RETURNING id`,
+              [
+                fromCompanyId,
+                companyId,
+                args.id,
+                transferNum,
+                ctx.auth.userId,
+                `Auto-created from Store Out ${String(issue.issue_number)}`,
+              ],
+            )
+            const transferId = transfer.rows[0].id as string
+            await client.query(
+              `INSERT INTO interco_stock_transfer_lines
+               (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$6,$7,'IQD',$8,$9)`,
+              [
+                transferId,
+                productId,
+                fromLocationId,
+                toLocationId,
+                qty,
+                avco,
+                qty * avco,
+                fromMove.rows[0].id,
+                toMove.rows[0].id,
+              ],
+            )
+          }
+        }
+
+        // If this Store Out is linked to a PO tied to a manufacturing order,
+        // confirming it is now the point those BOM components are actually
+        // consumed — matches the stock move above happening here instead of
+        // at PO approval.
+        if (issue.po_id) {
+          const poRes = await client.query(
+            `SELECT linked_mo_id FROM purchase_orders WHERE id=$1`,
+            [issue.po_id],
+          )
+          const linkedMoId = poRes.rows[0]?.linked_mo_id as string | null
+          if (linkedMoId) {
+            for (const line of issueLinesRes.rows as Record<string, unknown>[]) {
+              if (!line.product_id) continue
+              await client.query(
+                `UPDATE mo_consumptions SET qty_consumed=LEAST(qty_planned, qty_consumed+$1)
+                 WHERE mo_id=$2 AND component_product_id=$3`,
+                [parseFloat(String(line.qty_issued ?? 0)), linkedMoId, line.product_id],
+              )
+            }
+            const moCheck = await client.query(
+              `SELECT COUNT(*) FILTER (WHERE qty_consumed < qty_planned) AS unsatisfied FROM mo_consumptions WHERE mo_id=$1`,
+              [linkedMoId],
+            )
+            if (parseInt(String(moCheck.rows[0]?.unsatisfied ?? '1')) === 0) {
+              await client.query(
+                `UPDATE manufacturing_orders SET status='confirmed', updated_at=NOW() WHERE id=$1 AND status='draft'`,
+                [linkedMoId],
+              )
+            }
+          }
+        }
+
         await client.query(
           `UPDATE project_material_issues
              SET status='issued', issued_by=$1, issued_at=NOW()

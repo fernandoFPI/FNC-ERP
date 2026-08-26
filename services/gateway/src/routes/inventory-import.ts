@@ -193,7 +193,7 @@ const AR_EN_TRANSLATIONS: Record<string, string> = {
 interface ParsedItem {
   sku: string
   name: string
-  description?: string
+  nameAr?: string
   subCat: string
   uom: string
   unitCost: number
@@ -316,13 +316,13 @@ function parseExcel(buffer: Buffer): { items: ParsedItem[]; skipped: SkippedShee
 
       const translated = arabicName ? AR_EN_TRANSLATIONS[normalizeKey(arabicName)] : undefined
       const name = englishName ? englishName : (translated ?? arabicName)
-      const description = arabicName && name !== arabicName ? arabicName : undefined
+      const nameAr = arabicName && name !== arabicName ? arabicName : undefined
 
       const sku = `${category.prefix}-${String(seq).padStart(3, '0')}`
       seq++
 
       const item: ParsedItem = { sku, name, subCat: category.subCat, uom, unitCost, qty }
-      if (description !== undefined) item.description = description
+      if (nameAr !== undefined) item.nameAr = nameAr
       items.push(item)
     }
   }
@@ -403,12 +403,12 @@ inventoryImportRouter.post('/', requireAuth(), upload.single('file'), async (req
 
             const upsert = await client.query<{ id: string; xmax: string }>(
               `INSERT INTO products
-                   (company_id, sku, name, description, category, sub_category, uom,
+                   (company_id, sku, name, name_ar, category, sub_category, uom,
                     valuation_method, standard_cost, average_cost, is_active)
                  VALUES ($1,$2,$3,$4,'raw_material',$5,$6,'avco',$7,$7,true)
                  ON CONFLICT (company_id, sku) DO UPDATE SET
                    name          = EXCLUDED.name,
-                   description   = COALESCE(EXCLUDED.description, products.description),
+                   name_ar       = COALESCE(EXCLUDED.name_ar, products.name_ar),
                    sub_category  = EXCLUDED.sub_category,
                    uom           = EXCLUDED.uom,
                    standard_cost = EXCLUDED.standard_cost,
@@ -418,7 +418,7 @@ inventoryImportRouter.post('/', requireAuth(), upload.single('file'), async (req
                 company_id,
                 item.sku,
                 item.name,
-                item.description ?? null,
+                item.nameAr ?? null,
                 item.subCat,
                 item.uom,
                 item.unitCost,

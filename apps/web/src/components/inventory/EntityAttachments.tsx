@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useLazyQuery } from '@apollo/client'
 import {
   ENTITY_ATTACHMENTS_QUERY,
@@ -45,10 +45,27 @@ function fileIcon(mimeType: string): string {
   return '📎'
 }
 
-// Lets the store-out get printed, physically signed, then the scanned/photographed
-// copy uploaded back onto the record — reuses the same generic document_attachments
-// mechanism as EmployeeDocumentsTab, just pointed at entityType='material_issue'.
-export function StoreOutAttachments({ issueId }: { issueId: string }) {
+// Lets a printable document (Store Out, Store In, ...) get printed, physically
+// signed, then the scanned/photographed copy uploaded back onto the record —
+// reuses the same generic document_attachments mechanism as
+// EmployeeDocumentsTab, just pointed at whichever entityType/entityId owns it.
+// entityType must be handled in verifyAttachmentEntityOwnershipGW (gateway
+// resolvers.ts) or attachment writes for it are unscoped.
+export function EntityAttachments({
+  entityType,
+  entityId,
+  recordLabel = 'this record',
+  title = 'Signed Documents',
+  description,
+  uploadButtonLabel = 'Upload signed copy',
+}: {
+  entityType: string
+  entityId: string
+  recordLabel?: string
+  title?: string
+  description?: string
+  uploadButtonLabel?: string
+}) {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -61,7 +78,7 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
   const [deleteTarget, setDeleteTarget] = useState<Attachment | null>(null)
 
   const { data, loading, refetch } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
-    variables: { entityType: 'material_issue', entityId: issueId },
+    variables: { entityType, entityId },
     fetchPolicy: 'cache-and-network',
   })
 
@@ -71,6 +88,39 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
   const [getDownloadUrl] = useLazyQuery(FILE_DOWNLOAD_URL_QUERY)
 
   const attachments: Attachment[] = data?.entityAttachments ?? []
+
+  // Image thumbnails — fetched lazily per file since the signed download URL
+  // (unlike the file list) isn't returned by ENTITY_ATTACHMENTS_QUERY.
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const [thumbFailed, setThumbFailed] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    const toFetch = attachments.filter(
+      (a) => a.file.mimeType.startsWith('image/') && !thumbnails[a.file.id] && !thumbFailed[a.file.id],
+    )
+    if (toFetch.length === 0) return
+    let cancelled = false
+    Promise.all(
+      toFetch.map(async (att) => {
+        try {
+          const { data: dlData } = await getDownloadUrl({ variables: { fileId: att.file.id } })
+          const url = dlData?.fileDownloadUrl?.downloadUrl
+          return url ? ([att.file.id, url] as const) : null
+        } catch {
+          return null
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return
+      const next: Record<string, string> = {}
+      for (const r of results) if (r) next[r[0]] = r[1]
+      if (Object.keys(next).length) setThumbnails((prev) => ({ ...prev, ...next }))
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
   function openFilePicker() {
     fileInputRef.current?.click()
@@ -118,9 +168,9 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
       await attachFile({
         variables: {
           fileId,
-          entityType: 'material_issue',
-          entityId: issueId,
-          label: uploadLabel || 'Signed Store Out',
+          entityType,
+          entityId,
+          label: uploadLabel || `Signed ${recordLabel}`,
         },
       })
 
@@ -158,8 +208,8 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
       const res = await detachFile({
         variables: {
           attachmentId: deleteTarget.id,
-          entityType: 'material_issue',
-          entityId: issueId,
+          entityType,
+          entityId,
         },
       })
       if (res.data?.detachFile) {
@@ -196,15 +246,15 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
         >
           <div>
             <div style={{ fontWeight: 600, fontSize: '13px', color: theme.textPrimary }}>
-              Signed Documents ({attachments.length})
+              {title} ({attachments.length})
             </div>
             <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-              Print the Store Out, get it signed, then upload a photo or scan of the signed copy
-              here.
+              {description ??
+                `Print ${recordLabel}, get it signed, then upload a photo or scan of the signed copy here.`}
             </div>
           </div>
           <Button variant="primary" size="sm" onClick={openFilePicker}>
-            Upload signed copy
+            {uploadButtonLabel}
           </Button>
         </div>
 
@@ -248,9 +298,39 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
                     i < attachments.length - 1 ? `1px solid ${theme.border}` : undefined,
                 }}
               >
-                <span style={{ fontSize: '22px', flexShrink: 0 }}>
-                  {fileIcon(att.file.mimeType)}
-                </span>
+                {thumbnails[att.file.id] ? (
+                  <img
+                    src={thumbnails[att.file.id]}
+                    alt=""
+                    onError={() => {
+                      setThumbFailed((prev) => ({ ...prev, [att.file.id]: true }))
+                      setThumbnails((prev) => {
+                        const next = { ...prev }
+                        delete next[att.file.id]
+                        return next
+                      })
+                    }}
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      objectFit: 'cover',
+                      borderRadius: '6px',
+                      border: `1px solid ${theme.border}`,
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : (
+                  <span
+                    style={{
+                      fontSize: '22px',
+                      width: '40px',
+                      textAlign: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {fileIcon(att.file.mimeType)}
+                  </span>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -388,8 +468,8 @@ export function StoreOutAttachments({ issueId }: { issueId: string }) {
         }
       >
         <p style={{ margin: 0, color: theme.textPrimary, fontSize: '13px' }}>
-          Remove <strong>{deleteTarget?.label || deleteTarget?.file.originalFilename}</strong> from
-          this Store Out? The file will be detached but not permanently deleted.
+          Remove <strong>{deleteTarget?.label || deleteTarget?.file.originalFilename}</strong> from{' '}
+          {recordLabel}? The file will be detached but not permanently deleted.
         </p>
       </Modal>
     </div>

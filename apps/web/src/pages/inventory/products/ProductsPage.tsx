@@ -27,6 +27,7 @@ interface Product {
   id: string
   sku: string
   name: string
+  name_ar?: string | null
   category?: string
   sub_category?: string
   uom: string
@@ -102,7 +103,12 @@ export default function ProductsPage() {
   const filtered = products.filter((p) => {
     if (search) {
       const q = search.toLowerCase()
-      if (!p.sku.toLowerCase().includes(q) && !p.name.toLowerCase().includes(q)) return false
+      if (
+        !p.sku.toLowerCase().includes(q) &&
+        !p.name.toLowerCase().includes(q) &&
+        !(p.name_ar ?? '').toLowerCase().includes(q)
+      )
+        return false
     }
     if (subCategoryFilter && p.sub_category !== subCategoryFilter) return false
     if (showLowStock) {
@@ -133,6 +139,11 @@ export default function ProductsPage() {
             <span style={{ color: theme.textPrimary }}>{p.name}</span>
             {bomProductIds.has(p.id) && <Badge variant="accent">BOM</Badge>}
           </div>
+          {p.name_ar && (
+            <div style={{ color: theme.textMuted, fontSize: '11px', direction: 'rtl', textAlign: 'left' }}>
+              {p.name_ar}
+            </div>
+          )}
           {p.sub_category ? (
             <div style={{ color: theme.textMuted, fontSize: '11px' }}>{p.sub_category}</div>
           ) : (

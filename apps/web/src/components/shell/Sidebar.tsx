@@ -803,6 +803,12 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['inventory.stock_moves.view'],
       },
       {
+        label: 'Store In',
+        icon: <Icon name="inbox" />,
+        path: '/inventory/store-in',
+        permKeys: ['inventory.stock_moves.view'],
+      },
+      {
         label: 'Lots',
         icon: <Icon name="tag" />,
         path: '/inventory/lots',

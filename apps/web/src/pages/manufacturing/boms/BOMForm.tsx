@@ -34,13 +34,17 @@ export default function BOMForm() {
   const products = (productsData?.products ?? []).map(
     (p: {
       id: string
+      sku: string
       name: string
+      name_ar?: string | null
       average_cost: string
       standard_cost?: string
       uom: string
     }) => ({
       id: p.id,
+      sku: p.sku,
       name: p.name,
+      name_ar: p.name_ar,
       standard_cost: parseFloat(p.standard_cost ?? p.average_cost ?? '0'),
       uom: p.uom,
     }),
@@ -87,9 +91,10 @@ export default function BOMForm() {
     }
   }, [bomData])
 
-  const productOptions = products.map((p: { id: string; name: string }) => ({
+  const productOptions = products.map((p: { id: string; name: string; name_ar?: string | null }) => ({
     value: p.id,
     label: p.name,
+    sublabel: p.name_ar ?? undefined,
   }))
 
   async function handleSubmit(e: React.FormEvent) {

@@ -100,10 +100,13 @@ export default function IntercoStockTransferForm() {
             updateLine(line.id, 'product_id', v)
           }}
           placeholder="Select product…"
-          options={products.map((p: { id: string; name: string; sku: string }) => ({
-            value: p.id,
-            label: `${p.sku} — ${p.name}`,
-          }))}
+          options={products.map(
+            (p: { id: string; name: string; sku: string; name_ar?: string | null }) => ({
+              value: p.id,
+              label: `${p.sku} — ${p.name}`,
+              sublabel: p.name_ar ?? undefined,
+            }),
+          )}
         />
       ),
     },

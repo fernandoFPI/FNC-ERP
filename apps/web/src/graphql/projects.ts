@@ -4616,8 +4616,8 @@ export const CREATE_MATERIAL_ISSUE = gql`
 `
 
 export const ADD_MATERIAL_ISSUE_LINE = gql`
-  mutation AddMaterialIssueLine($issueId: ID!, $productId: ID!, $poLineId: ID, $qtyIssued: Float!, $unitCost: Float!) {
-    addMaterialIssueLine(issueId: $issueId, productId: $productId, poLineId: $poLineId, qtyIssued: $qtyIssued, unitCost: $unitCost) { ${MI_LINE_FIELDS} }
+  mutation AddMaterialIssueLine($issueId: ID!, $productId: ID!, $poLineId: ID, $qtyIssued: Float!, $unitCost: Float!, $fromLocationId: ID) {
+    addMaterialIssueLine(issueId: $issueId, productId: $productId, poLineId: $poLineId, qtyIssued: $qtyIssued, unitCost: $unitCost, fromLocationId: $fromLocationId) { ${MI_LINE_FIELDS} }
   }
 `
 

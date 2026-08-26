@@ -99,7 +99,7 @@ export default function ProductDetail() {
     <div style={{ padding: '24px', margin: '0 auto', maxWidth: '1300px' }}>
       <PageHeader
         title={product.name}
-        subtitle={product.sku}
+        subtitle={product.name_ar ? `${product.sku} · ${product.name_ar}` : product.sku}
         backPath="/inventory/products"
         status={
           <Badge variant={product.is_active ? 'success' : 'neutral'}>

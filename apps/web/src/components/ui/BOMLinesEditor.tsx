@@ -14,7 +14,14 @@ export interface BOMLine {
 interface Props {
   lines: BOMLine[]
   onChange: (lines: BOMLine[]) => void
-  products: { id: string; name: string; standard_cost: number; uom?: string }[]
+  products: {
+    id: string
+    name: string
+    name_ar?: string | null
+    sku?: string
+    standard_cost: number
+    uom?: string
+  }[]
   costPreview?: number
   currency?: string
 }
@@ -121,7 +128,11 @@ export function BOMLinesEditor({
           onChange={(pid) => {
             selectProduct(line.id, pid)
           }}
-          options={products.map((p) => ({ value: p.id, label: p.name }))}
+          options={products.map((p) => ({
+            value: p.id,
+            label: p.name,
+            sublabel: [p.sku, p.name_ar].filter(Boolean).join(' · ') || undefined,
+          }))}
           placeholder="Select product…"
         />
       ),

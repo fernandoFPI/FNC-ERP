@@ -20,6 +20,9 @@
     myPOQueue: [PurchaseOrder!]
     poPositions(projectId: ID, departmentId: ID, branchId: ID): [POPositionAssignment!]!
     poFxRates: POFxRatesResult!
+    poReceipts: [POReceipt!]!
+    poReceipt(id: ID!): POReceipt
+    receivablePurchaseOrders(projectId: ID): [ReceivablePO!]!
 
     # Interco
     intercoTransactions(fromCompanyId: ID, toCompanyId: ID, status: String, transactionType: String, fromDate: String, toDate: String, page: Int, limit: Int): IntercoTransactionPage!
@@ -1810,6 +1813,7 @@
     id: ID!
     product_id: ID
     product_name: String
+    sku: String
     description: String
     qty: String!
     unit_price: String!
@@ -1846,6 +1850,16 @@
     is_bought: Boolean
   }
 
+  type ReceivablePO {
+    id: ID!
+    po_number: String!
+    vendor_name: String
+    status: String!
+    project_id: ID
+    projectCode: String
+    projectName: String
+  }
+
   type POFxRate {
     currency_code: String!
     rate_to_base: Float!
@@ -1873,6 +1887,12 @@
   type POReceiptLine {
     po_line_id: ID!
     description: String
+    product_name: String
+    sku: String
+    uom: String
+    unit_price: String
+    currency_code: String
+    fx_rate_to_base: String
     qty_received: String!
   }
 
@@ -1888,6 +1908,12 @@
 
   type POReceipt {
     id: ID!
+    po_id: ID
+    po_number: String
+    vendor_name: String
+    received_from_name: String
+    base_currency_code: String
+    receipt_number: String
     receipt_date: String
     location_id: ID
     location_name: String
@@ -1896,6 +1922,9 @@
     received_by_name: String
     location_notes: String
     created_at: String
+    is_invoiced: Boolean
+    status: String!
+    confirmed_at: String
     lines: [POReceiptLine!]!
     photos: [ReceiptPhoto!]!
   }
@@ -1938,6 +1967,7 @@
     tax_amount: String
     submitted_at: String
     purpose: String
+    delivery_destination: String
     linkedProjectId: ID
     linkedMoId: ID
     projectCode: String
@@ -1998,6 +2028,7 @@
     assigned_receiver_id: ID
     fx_rate: Float
     purpose: String
+    delivery_destination: String
     priority: String
     linkedProjectId: ID
     linkedMoId: ID
@@ -2016,8 +2047,20 @@
     location_id: ID
     notes: String
     received_by_name: String
+    received_from_name: String
     location_notes: String
     lines: [ReceiptLineInput!]!
+  }
+
+  input DirectDeliveryInput {
+    received_date: String!
+    notes: String
+    lines: [ReceiptLineInput!]!
+  }
+
+  type DirectDeliveryResult {
+    poId: ID!
+    status: String!
   }
 
   input VendorInput {
@@ -2050,6 +2093,9 @@
     createPurchaseOrder(input: POInput!): PurchaseOrder!
     updatePurchaseOrder(id: ID!, input: POInput!): PurchaseOrder!
     recordReceipt(poId: ID!, input: ReceiptInput!): POReceipt!
+    confirmReceipt(id: ID!): POReceipt!
+    cancelReceipt(id: ID!): POReceipt!
+    recordDirectDelivery(poId: ID!, input: DirectDeliveryInput!): DirectDeliveryResult!
     attachReceiptPhoto(receiptId: ID!, fileId: ID!, label: String): ReceiptPhoto!
   }
 
@@ -2057,6 +2103,7 @@
 
   extend type Product {
     description: String
+    name_ar: String
     category: String
     sub_category: String
     standard_cost: String
@@ -2167,6 +2214,7 @@
   input ProductInput {
     sku: String!
     name: String!
+    name_ar: String
     description: String
     category: String
     sub_category: String
@@ -2738,7 +2786,7 @@
     adminSetPhase(id: ID!, phase: String!): Project!
     advancePhase(id: ID!, targetPhase: String!): Project!
     createMaterialIssue(projectId: ID!, poId: ID, issueDate: String!, notes: String): MaterialIssue!
-    addMaterialIssueLine(issueId: ID!, productId: ID!, poLineId: ID, qtyIssued: Float!, unitCost: Float!): MaterialIssueLine!
+    addMaterialIssueLine(issueId: ID!, productId: ID!, poLineId: ID, qtyIssued: Float!, unitCost: Float!, fromLocationId: ID): MaterialIssueLine!
     deleteMaterialIssueLine(id: ID!, issueId: ID!): Boolean!
     issueMaterialIssue(id: ID!): MaterialIssue!
     cancelMaterialIssue(id: ID!): MaterialIssue!
