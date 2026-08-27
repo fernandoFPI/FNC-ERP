@@ -74,13 +74,19 @@ export function EntitySwitcher({ compact = false }: EntitySwitcherProps) {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.post<{ accessToken: string }>('/auth/company/switch', {
-        companyId: company.id,
-      })
+      const res = await api.post<{ accessToken: string; employeeId: string | null }>(
+        '/auth/company/switch',
+        { companyId: company.id },
+      )
       const newToken = res.data.accessToken
       setAccessToken(newToken)
       const decoded = decodeJWT(newToken)
-      if (decoded) setUser({ companyId: decoded.companyId, role: decoded.role })
+      if (decoded)
+        setUser({
+          companyId: decoded.companyId,
+          role: decoded.role,
+          employeeId: res.data.employeeId,
+        })
       await apolloClient.clearStore()
       setActiveCompany(company)
       setOpen(false)

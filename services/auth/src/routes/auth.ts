@@ -95,12 +95,10 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
   const userAgent = req.headers['user-agent'] ?? ''
 
   try {
-    const userResult = await query<UserRow>(
+    const userResult = await query<Omit<UserRow, 'employee_id'>>(
       `SELECT u.id, u.email, u.password_hash, u.mfa_enabled, u.mfa_secret,
-              u.failed_login_attempts, u.locked_until, u.is_active, u.profile_completed,
-              e.id AS employee_id
+              u.failed_login_attempts, u.locked_until, u.is_active, u.profile_completed
        FROM users u
-       LEFT JOIN employees e ON e.user_id = u.id
        WHERE u.email = $1`,
       [email.toLowerCase()],
     )
@@ -182,6 +180,17 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
       sendError(res, HTTP_STATUS.FORBIDDEN, ERROR_CODES.FORBIDDEN, 'No active company roles found')
       return
     }
+
+    // Scoped to the company the session is actually logging into — a user
+    // who's a legitimate employee in more than one company has one employees
+    // row per company sharing this same user_id, so an unscoped lookup here
+    // returned whichever row Postgres happened to return first, not
+    // necessarily the one for this login's company.
+    const employeeResult = await query<{ id: string }>(
+      `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
+      [user.id, firstRole.company_id],
+    )
+    const employeeId = employeeResult.rows[0]?.id ?? null
 
     const companiesResult = await query<CompanyRow>(
       `SELECT id, name, currency_code FROM companies
@@ -281,7 +290,7 @@ authRouter.post('/login', async (req: Request, res: Response): Promise<void> => 
           email: user.email,
           mfaEnabled: user.mfa_enabled,
           profileCompleted: user.profile_completed,
-          employeeId: user.employee_id,
+          employeeId,
         },
         companies: companiesResult.rows,
       },
@@ -319,9 +328,9 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
       return
     }
 
-    const userResult = await query<UserRow>(
-      `SELECT u.id, u.email, u.mfa_secret, u.mfa_enabled, u.profile_completed, e.id AS employee_id
-       FROM users u LEFT JOIN employees e ON e.user_id = u.id
+    const userResult = await query<Omit<UserRow, 'employee_id'>>(
+      `SELECT u.id, u.email, u.mfa_secret, u.mfa_enabled, u.profile_completed
+       FROM users u
        WHERE u.id = $1 AND u.is_active = true`,
       [tempPayload.sub],
     )
@@ -355,6 +364,14 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
       sendError(res, HTTP_STATUS.FORBIDDEN, ERROR_CODES.FORBIDDEN, 'No active company roles found')
       return
     }
+
+    // See the equivalent lookup in /login — scoped to the company this
+    // session is actually logging into, not just any of the user's companies.
+    const employeeResult = await query<{ id: string }>(
+      `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
+      [user.id, firstRole.company_id],
+    )
+    const employeeId = employeeResult.rows[0]?.id ?? null
 
     const { accessToken, refreshToken } = await withSystemTransaction(async (client) => {
       const tokens = await createSession({
@@ -399,7 +416,7 @@ authRouter.post('/mfa/verify', async (req: Request, res: Response): Promise<void
           email: user.email,
           mfaEnabled: user.mfa_enabled,
           profileCompleted: user.profile_completed,
-          employeeId: user.employee_id,
+          employeeId,
         },
         companies: companiesResult.rows,
         deviceToken: trustDevice ? signDeviceTrustToken(user.id) : undefined,
@@ -704,8 +721,10 @@ authRouter.get('/me', requireAuth(), async (req: Request, res: Response): Promis
       employee_id: string | null
     }>(
       `SELECT u.id, u.email, u.mfa_enabled, u.last_login, u.created_at, e.id AS employee_id
-       FROM users u LEFT JOIN employees e ON e.user_id = u.id WHERE u.id = $1`,
-      [auth.userId],
+       FROM users u
+       LEFT JOIN employees e ON e.user_id = u.id AND e.company_id = $2
+       WHERE u.id = $1`,
+      [auth.userId, auth.companyId],
     )
     const user = userResult.rows[0]
     if (!user) {
@@ -839,7 +858,21 @@ authRouter.post(
         userAgent: auth.userAgent,
       })
 
-      res.status(HTTP_STATUS.OK).json({ success: true, data: { accessToken: newAccessToken } })
+      // The switched-to company can have a different (or no) employees row
+      // than whichever company the client's cached employeeId came from at
+      // login — resolve it fresh for the company actually being switched to,
+      // same as /login and /auth/me, so the client can update its cache
+      // instead of carrying a stale employeeId across the switch.
+      const employeeResult = await query<{ id: string }>(
+        `SELECT id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
+        [auth.userId, role.company_id],
+      )
+      const employeeId = employeeResult.rows[0]?.id ?? null
+
+      res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: { accessToken: newAccessToken, employeeId },
+      })
     } catch (err) {
       console.error('[auth] company/switch error:', err)
       sendInternalError(res)
@@ -892,9 +925,9 @@ authRouter.post(
       const userResult = await query<UserRow>(
         `SELECT u.id, u.email, u.mfa_enabled, u.profile_completed, u.is_active, e.id AS employee_id
          FROM users u
-         LEFT JOIN employees e ON e.user_id = u.id
+         LEFT JOIN employees e ON e.user_id = u.id AND e.company_id = $2
          WHERE u.id = $1`,
-        [targetUserId],
+        [targetUserId, companyId],
       )
       const targetUser = userResult.rows[0]
       if (!targetUser || !targetUser.is_active) {
