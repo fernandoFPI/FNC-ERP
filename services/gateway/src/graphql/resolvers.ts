@@ -6019,7 +6019,7 @@ export const resolvers = {
                     sl.company_id AS source_company_id, sc.name AS source_company_name,
                     sb.average_cost AS source_average_cost,
                     pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
-                    pol.line_number, p.name AS product_name, p.sku,
+                    pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
                     pol.account_id, coa.code AS account_code, coa.name AS account_name,
                     pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
                     pol.is_bought

@@ -1813,6 +1813,7 @@
     id: ID!
     product_id: ID
     product_name: String
+    product_name_ar: String
     sku: String
     description: String
     qty: String!

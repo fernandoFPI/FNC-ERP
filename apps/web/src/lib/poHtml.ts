@@ -1,3 +1,9 @@
+export interface POPrintLineNote {
+  text: string
+  author: string
+  date: string
+}
+
 export interface POPrintLine {
   description: string
   product_name?: string | null
@@ -5,10 +11,12 @@ export interface POPrintLine {
   uom: string
   unit_price: number
   total: number
+  notes?: POPrintLineNote[]
 }
 
 export interface POPrintData {
   po_number: string
+  /** Display-ready label (e.g. "Finance Audit"), not the raw status code — pass through getPOStatusLabel first. */
   status: string
   priority: string
   created_at: string
@@ -65,6 +73,16 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">
         ${l.product_name ? `<div style="font-weight:600;color:#1a1a1a">${l.product_name}</div><div style="color:#888;margin-top:2px">${l.description}</div>` : `<div>${l.description}</div>`}
+        ${
+          l.notes && l.notes.length > 0
+            ? `<div style="margin-top:6px;padding-left:8px;border-left:2px solid #e5e7eb">${l.notes
+                .map(
+                  (n) =>
+                    `<div style="font-size:11px;color:#666;margin-top:3px"><span style="font-weight:600;color:#444">${n.author}</span> · <span style="color:#aaa">${fmtDate(n.date)}</span><br>${n.text}</div>`,
+                )
+                .join('')}</div>`
+            : ''
+        }
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right">${l.qty}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;color:#666">${l.uom}</td>
@@ -106,14 +124,19 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
     <div style="text-align:right">
       <div style="font-size:24px;font-weight:700;color:#1a3c5e;text-transform:uppercase;letter-spacing:2px">Purchase Order</div>
       <div style="font-size:15px;font-family:monospace;color:#1a3c5e;margin-top:4px;font-weight:600">${po.po_number}</div>
-      ${
-        po.priority !== 'low'
-          ? `
-      <div style="margin-top:6px;display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;background:${priorityColor}18;color:${priorityColor};border:1px solid ${priorityColor}40">
-        ${priorityLabel}
-      </div>`
-          : ''
-      }
+      <div style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">
+        <div style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;background:#1a3c5e18;color:#1a3c5e;border:1px solid #1a3c5e40">
+          ${po.status}
+        </div>
+        ${
+          po.priority !== 'low'
+            ? `
+        <div style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;background:${priorityColor}18;color:${priorityColor};border:1px solid ${priorityColor}40">
+          ${priorityLabel}
+        </div>`
+            : ''
+        }
+      </div>
     </div>
   </div>
 

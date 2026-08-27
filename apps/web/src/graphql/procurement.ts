@@ -444,6 +444,7 @@ export const PO_LIFECYCLE_QUERY = gql`
         id
         product_id
         product_name
+        product_name_ar
         description
         qty
         uom

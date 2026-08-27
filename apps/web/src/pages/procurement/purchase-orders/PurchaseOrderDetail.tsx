@@ -74,6 +74,7 @@ interface POLine {
   id: string
   product_id: string
   product_name: string
+  product_name_ar?: string | null
   description: string
   qty: number
   uom: string
@@ -533,6 +534,7 @@ export default function PurchaseOrderDetail() {
   const [addingComment, setAddingComment] = useState(false)
   const [resolvingId, setResolvingId] = useState<string | null>(null)
   const [showPrintModal, setShowPrintModal] = useState(false)
+  const [printWithNotes, setPrintWithNotes] = useState(false)
   const printIframeRef = useRef<HTMLIFrameElement>(null)
   const [flaggingLines, setFlaggingLines] = useState<Record<string, string>>({})
   const [actualPrices, setActualPrices] = useState<Record<string, string>>({})
@@ -1152,6 +1154,7 @@ export default function PurchaseOrderDetail() {
                 size="sm"
                 fullWidthOnMobile
                 onClick={() => {
+                  setPrintWithNotes(false)
                   setShowPrintModal(true)
                 }}
               >
@@ -4700,18 +4703,32 @@ export default function PurchaseOrderDetail() {
                       {line.product_name}
                     </div>
                   )}
-                  {line.description && (
+                  {line.product_name_ar ? (
                     <div
+                      dir="rtl"
                       style={{
                         fontSize: '12px',
                         color: theme.textMuted,
+                        textAlign: 'left',
                         marginTop: line.product_name ? '2px' : 0,
                       }}
                     >
-                      {line.description}
+                      {line.product_name_ar}
                     </div>
+                  ) : (
+                    line.description && (
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: theme.textMuted,
+                          marginTop: line.product_name ? '2px' : 0,
+                        }}
+                      >
+                        {line.description}
+                      </div>
+                    )
                   )}
-                  {!line.product_name && !line.description && (
+                  {!line.product_name && !line.product_name_ar && !line.description && (
                     <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
                   )}
                 </>
@@ -4721,17 +4738,47 @@ export default function PurchaseOrderDetail() {
               key: 'qty',
               header: 'Qty',
               mobilePriority: 4,
-              render: (line) => (
-                <span
-                  style={{
-                    color: theme.textPrimary,
-                    fontFamily: 'monospace',
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {fmtN(line.qty)} {line.uom}
-                </span>
-              ),
+              render: (line) => {
+                const fromStock = parseFloat(String(line.qty_from_stock ?? 0)) || 0
+                const toPurchase = Math.max(0, line.qty - fromStock)
+                return (
+                  <div>
+                    <span
+                      style={{
+                        color: theme.textPrimary,
+                        fontFamily: 'monospace',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {fmtN(line.qty)} {line.uom}
+                    </span>
+                    {fromStock > 0 && (
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: BRAND_BLUE,
+                          fontFamily: 'monospace',
+                          marginTop: '2px',
+                        }}
+                      >
+                        From inventory: {fmtN(fromStock)}
+                      </div>
+                    )}
+                    {fromStock > 0 && toPurchase > 0 && (
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          fontFamily: 'monospace',
+                          marginTop: '2px',
+                        }}
+                      >
+                        To purchase: {fmtN(toPurchase)}
+                      </div>
+                    )}
+                  </div>
+                )
+              },
             },
             {
               key: 'market_price',
@@ -6609,7 +6656,7 @@ export default function PurchaseOrderDetail() {
                 ref={printIframeRef}
                 srcDoc={buildPurchaseOrderHTML({
                   po_number: po.po_number,
-                  status: po.status,
+                  status: getPOStatusLabel(po.status),
                   priority: po.priority ?? 'low',
                   created_at: po.created_at,
                   expected_delivery_date: po.expected_delivery_date,
@@ -6626,6 +6673,13 @@ export default function PurchaseOrderDetail() {
                     uom: l.uom,
                     unit_price: l.unit_price,
                     total: l.total,
+                    notes: printWithNotes
+                      ? (lineComments[l.id] ?? []).map((c) => ({
+                          text: c.comment,
+                          author: c.created_by_name,
+                          date: c.created_at,
+                        }))
+                      : undefined,
                   })),
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
@@ -6637,29 +6691,52 @@ export default function PurchaseOrderDetail() {
             <div
               style={{
                 display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '8px',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
                 padding: '14px 20px',
                 borderTop: `1px solid ${theme.border}`,
                 flexShrink: 0,
               }}
             >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowPrintModal(false)
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  fontSize: '12px',
+                  color: theme.textSecondary,
+                  cursor: 'pointer',
+                  userSelect: 'none',
                 }}
               >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => printIframeRef.current?.contentWindow?.print()}
-              >
-                Print / Save as PDF
-              </Button>
+                <input
+                  type="checkbox"
+                  checked={printWithNotes}
+                  onChange={(e) => {
+                    setPrintWithNotes(e.target.checked)
+                  }}
+                />
+                Include internal line notes (not for vendor copies)
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowPrintModal(false)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => printIframeRef.current?.contentWindow?.print()}
+                >
+                  Print / Save as PDF
+                </Button>
+              </div>
             </div>
           </div>
         </div>
