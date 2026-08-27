@@ -2213,7 +2213,7 @@
   }
 
   input ProductInput {
-    sku: String!
+    sku: String
     name: String!
     name_ar: String
     description: String

@@ -17,21 +17,29 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { Checkbox } from '../../../components/ui/Checkbox'
 import { useToastStore } from '../../../store/toastStore'
 
+// Matches the real store list in use across the product catalog — each of
+// these has its own SKU prefix (see PRODUCT_STORE_SKU_PREFIXES in
+// @fnc-erp/db) that a new product's SKU is auto-generated from.
 const RAW_MATERIAL_SUB_CATEGORIES = [
-  'Steel Store',
-  'General Store',
-  'Electrical Equipment Store',
-  'Plumbing Store',
-  'PVC Store',
-  'Paint Store',
   'AC Unit Store',
-  'Furniture Store',
-  'Work Tools Store',
-  'Sandwich, Plywood, Vinyl',
-  'Safety Store',
-  'General Construction Store',
   'Cleaning Materials Store',
+  'Ducts Store',
+  'Electrical Equipment Store',
+  'Factory Store',
+  'Frame Store',
+  'Furniture Store',
+  'General Construction Store',
+  'General Store',
+  'Iron Doors Store',
+  'Old Iron Boards Store',
   'Outside Area Cables',
+  'Paint Store',
+  'Plumbing Store',
+  'PVC & Aluminum Store',
+  'PVC Store',
+  'Safety Store',
+  'Sandwich, Plywood, Vinyl',
+  'Steel Store',
 ]
 
 export default function ProductForm() {
@@ -46,7 +54,11 @@ export default function ProductForm() {
     name: '',
     name_ar: '',
     description: '',
-    category: '',
+    // Defaults to Raw Material since that's what ~99.9% of real products
+    // are — otherwise the Store dropdown (which only shows for that
+    // category, and is what actually drives SKU auto-generation) stays
+    // hidden until the user picks it manually, which isn't obvious.
+    category: 'raw_material',
     sub_category: '',
     uom: 'pc',
     valuation_method: 'avco',
@@ -93,7 +105,7 @@ export default function ProductForm() {
     e.preventDefault()
     try {
       const input = {
-        sku: form.sku,
+        sku: form.sku.trim() || undefined,
         name: form.name,
         name_ar: form.name_ar || undefined,
         description: form.description || undefined,
@@ -144,11 +156,10 @@ export default function ProductForm() {
         >
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 2fr', gap: '16px' }}>
             <Input
-              label="SKU"
+              label={isEdit ? 'SKU' : 'SKU (optional)'}
               value={form.sku}
               onChange={field('sku')}
-              required
-              placeholder="e.g. INK-001"
+              placeholder={isEdit ? undefined : 'Auto-generated from Category/Store below'}
               disabled={isEdit}
             />
             <Input label="Product Name" value={form.name} onChange={field('name')} required />

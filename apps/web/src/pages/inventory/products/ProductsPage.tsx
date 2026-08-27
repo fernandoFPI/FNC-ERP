@@ -45,21 +45,28 @@ const CATEGORY_OPTIONS = [
   { value: 'service', label: 'Service' },
 ]
 
+// Matches the real store list in use across the product catalog — see the
+// same list in ProductForm.tsx / PRODUCT_STORE_SKU_PREFIXES in @fnc-erp/db.
 const RAW_MATERIAL_SUB_CATEGORIES = [
-  { value: 'Steel Store', label: 'Steel Store' },
-  { value: 'General Store', label: 'General Store' },
-  { value: 'Electrical Equipment Store', label: 'Electrical Equipment Store' },
-  { value: 'Plumbing Store', label: 'Plumbing Store' },
-  { value: 'PVC Store', label: 'PVC Store' },
-  { value: 'Paint Store', label: 'Paint Store' },
   { value: 'AC Unit Store', label: 'AC Unit Store' },
-  { value: 'Furniture Store', label: 'Furniture Store' },
-  { value: 'Work Tools Store', label: 'Work Tools Store' },
-  { value: 'Sandwich, Plywood, Vinyl', label: 'Sandwich, Plywood, Vinyl' },
-  { value: 'Safety Store', label: 'Safety Store' },
-  { value: 'General Construction Store', label: 'General Construction Store' },
   { value: 'Cleaning Materials Store', label: 'Cleaning Materials Store' },
+  { value: 'Ducts Store', label: 'Ducts Store' },
+  { value: 'Electrical Equipment Store', label: 'Electrical Equipment Store' },
+  { value: 'Factory Store', label: 'Factory Store' },
+  { value: 'Frame Store', label: 'Frame Store' },
+  { value: 'Furniture Store', label: 'Furniture Store' },
+  { value: 'General Construction Store', label: 'General Construction Store' },
+  { value: 'General Store', label: 'General Store' },
+  { value: 'Iron Doors Store', label: 'Iron Doors Store' },
+  { value: 'Old Iron Boards Store', label: 'Old Iron Boards Store' },
   { value: 'Outside Area Cables', label: 'Outside Area Cables' },
+  { value: 'Paint Store', label: 'Paint Store' },
+  { value: 'Plumbing Store', label: 'Plumbing Store' },
+  { value: 'PVC & Aluminum Store', label: 'PVC & Aluminum Store' },
+  { value: 'PVC Store', label: 'PVC Store' },
+  { value: 'Safety Store', label: 'Safety Store' },
+  { value: 'Sandwich, Plywood, Vinyl', label: 'Sandwich, Plywood, Vinyl' },
+  { value: 'Steel Store', label: 'Steel Store' },
 ]
 
 export default function ProductsPage() {

@@ -124,7 +124,7 @@ export default function StoreOutPage() {
     fetchPolicy: 'cache-and-network',
   })
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
-    variables: { limit: 200 },
+    variables: { limit: 200, includeAll: true },
     fetchPolicy: 'cache-and-network',
   })
   const { data: poData } = useQuery(PURCHASE_ORDERS_QUERY, {

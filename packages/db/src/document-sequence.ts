@@ -13,9 +13,48 @@ export const DOC_TYPES = [
   { key: 'advance_settlement', label: 'Advance Settlement', defaultPrefix: 'SET' },
   { key: 'advance_return', label: 'Advance Return', defaultPrefix: 'RET' },
   { key: 'material_issue', label: 'Store Out', defaultPrefix: 'SO' },
+  { key: 'product', label: 'Product SKU', defaultPrefix: 'PRD' },
 ] as const
 
 export type DocType = (typeof DOC_TYPES)[number]['key']
+
+// Product SKU prefixes, keyed by products.sub_category ("store") — continues
+// the exact convention already used by the real imported catalog (confirmed
+// 1:1 store->prefix correlation across ~6,900 products, zero exceptions, at
+// the time this was written — see migration 215_product_sku_store_sequences).
+// Each entry gets its own document_sequences row (doc_type 'product_<slug>',
+// migration 215), separate from the generic 'product' one above, which is
+// only the last-resort fallback for a product created with no category/store
+// at all.
+export const PRODUCT_STORE_SKU_PREFIXES: Record<string, { prefix: string; slug: string }> = {
+  'AC Unit Store': { prefix: 'AC', slug: 'ac' },
+  'Cleaning Materials Store': { prefix: 'CLEAN', slug: 'clean' },
+  'Ducts Store': { prefix: 'DUCT', slug: 'duct' },
+  'Electrical Equipment Store': { prefix: 'ELEC', slug: 'elec' },
+  'Factory Store': { prefix: 'FACT', slug: 'fact' },
+  'Frame Store': { prefix: 'FRAME', slug: 'frame' },
+  'Furniture Store': { prefix: 'FURN', slug: 'furn' },
+  'General Construction Store': { prefix: 'CONST', slug: 'const' },
+  'General Store': { prefix: 'GEN', slug: 'gen' },
+  'Iron Doors Store': { prefix: 'DOOR', slug: 'door' },
+  'Old Iron Boards Store': { prefix: 'OIB', slug: 'oib' },
+  'Outside Area Cables': { prefix: 'CABLE', slug: 'cable' },
+  'Paint Store': { prefix: 'PAINT', slug: 'paint' },
+  'Plumbing Store': { prefix: 'PLMB', slug: 'plmb' },
+  'PVC & Aluminum Store': { prefix: 'PVCAL', slug: 'pvcal' },
+  'PVC Store': { prefix: 'PVC', slug: 'pvc' },
+  'Safety Store': { prefix: 'SAFE', slug: 'safe' },
+  'Sandwich, Plywood, Vinyl': { prefix: 'SPV', slug: 'spv' },
+  'Steel Store': { prefix: 'STEEL', slug: 'steel' },
+}
+
+// Fallback prefixes for the (currently almost-unused) non-raw-material
+// categories, which have no store to derive a prefix from.
+export const PRODUCT_CATEGORY_SKU_PREFIXES: Record<string, { prefix: string; slug: string }> = {
+  finished_goods: { prefix: 'FG', slug: 'cat_finished_goods' },
+  consumable: { prefix: 'CONS', slug: 'cat_consumable' },
+  service: { prefix: 'SVC', slug: 'cat_service' },
+}
 
 interface SequenceRow {
   prefix: string

@@ -7,6 +7,8 @@
   withTransaction,
   nextDocumentNumber,
   listPoFxRates,
+  PRODUCT_STORE_SKU_PREFIXES,
+  PRODUCT_CATEGORY_SKU_PREFIXES,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
@@ -8497,12 +8499,28 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
+      const manualSku = typeof i.sku === 'string' ? i.sku.trim() : ''
+      // Store (sub_category) determines the prefix for raw materials — this
+      // continues the exact convention the real ~6,900-product catalog
+      // already uses (see PRODUCT_STORE_SKU_PREFIXES). Falls back to a
+      // category-level prefix for the other categories, and finally to a
+      // flat PRD- counter when no category/store was picked at all.
+      const storeEntry =
+        typeof i.sub_category === 'string' ? PRODUCT_STORE_SKU_PREFIXES[i.sub_category] : undefined
+      const categoryEntry =
+        typeof i.category === 'string' ? PRODUCT_CATEGORY_SKU_PREFIXES[i.category] : undefined
+      const generated = storeEntry ?? categoryEntry
+      const sku =
+        manualSku ||
+        (generated
+          ? await nextDocumentNumber(ctx.auth.companyId, `product_${generated.slug}`, generated.prefix)
+          : await nextDocumentNumber(ctx.auth.companyId, 'product', 'PRD'))
       const r = await query(
         `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,reorder_point,reorder_qty,is_active)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [
           ctx.auth.companyId,
-          i.sku,
+          sku,
           i.name,
           i.name_ar ?? null,
           i.description ?? null,

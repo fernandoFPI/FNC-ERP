@@ -18,6 +18,8 @@ export {
   listDocumentSequences,
   upsertDocumentSequence,
   DOC_TYPES,
+  PRODUCT_STORE_SKU_PREFIXES,
+  PRODUCT_CATEGORY_SKU_PREFIXES,
 } from './document-sequence.js'
 export type { DocumentSequence, DocType } from './document-sequence.js'
 export {
