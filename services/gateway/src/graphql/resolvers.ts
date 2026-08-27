@@ -24820,7 +24820,9 @@ const phase5MutationResolvers = {
     const isAdmin = isAdminGW(auth.role)
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
-    if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to reject this PO')
+    const isPOAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isPOAdmin)
+      throw new Error('Not authorized to reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.id])
     if (!poRow.rows[0]) throw new Error('PO not found')
@@ -24975,7 +24977,9 @@ const phase5MutationResolvers = {
     const isAdmin = isAdminGW(auth.role)
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
-    if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to approve this PO')
+    const isPOAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isPOAdmin)
+      throw new Error('Not authorized to approve this PO')
     const poRow = await query(
       `SELECT status, organizer_id, po_number, branch_id FROM purchase_orders WHERE id=$1`,
       [args.id],
@@ -25045,7 +25049,9 @@ const phase5MutationResolvers = {
     const isAdmin = isAdminGW(auth.role)
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
-    if (!isAdmin && !isDeptHead && !isApprover) throw new Error('Not authorized to reject this PO')
+    const isPOAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isPOAdmin)
+      throw new Error('Not authorized to reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
     const poRow = await query(`SELECT status, organizer_id FROM purchase_orders WHERE id=$1`, [
       args.id,
