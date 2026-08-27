@@ -19712,6 +19712,20 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      // A user_id can only ever belong to one employees row — this is what
+      // project/position visibility keys off (see requireProjectViewGW).
+      // Re-linking someone to a different employee record (the standard
+      // "unlink and relink to fix it" move) must clear any OTHER row still
+      // holding this user_id first, or that stale row keeps the link too
+      // and whichever project_members/po_position_assignments rows point
+      // at it silently stop resolving for this user again.
+      if (args.user_id) {
+        await query(
+          `UPDATE employees SET user_id=NULL, updated_at=NOW()
+           WHERE company_id=$1 AND user_id=$2 AND id != $3`,
+          [ctx.auth.companyId, args.user_id, args.employee_id],
+        )
+      }
       await query(
         `UPDATE employees SET user_id=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3`,
         [args.user_id ?? null, args.employee_id, ctx.auth.companyId],
