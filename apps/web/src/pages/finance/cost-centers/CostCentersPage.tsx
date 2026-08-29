@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
@@ -65,6 +66,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function CostCentersPage() {
   const { theme } = useTheme()
+  const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
   const companyId = useAuthStore((s) => s.user?.companyId ?? '')
   const { data: usersData } = useQuery(COMPANY_USERS_QUERY, {
@@ -229,7 +231,12 @@ export default function CostCentersPage() {
       key: 'actions',
       header: 'Actions',
       render: (cc) => (
-        <div style={{ display: 'flex', gap: '6px' }}>
+        <div
+          style={{ display: 'flex', gap: '6px' }}
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
+        >
           <Button
             variant="ghost"
             size="sm"
@@ -326,6 +333,9 @@ export default function CostCentersPage() {
           loading={loading}
           emptyMessage="No cost centers found"
           getRowStyle={(cc) => (cc.is_active ? {} : { opacity: 0.5 })}
+          onRowClick={(cc) => {
+            navigate(`/finance/cost-centers/${cc.id}`)
+          }}
         />
       </Card>
 

@@ -54,6 +54,56 @@ costCentersRouter.get(
   },
 )
 
+costCentersRouter.get(
+  '/:id',
+  requirePermission('finance.cost_centers.view', 'view'),
+  async (req, res) => {
+    try {
+      const companyId = req.auth!.companyId
+      const ccRes = await query(
+        `
+      SELECT cc.*, u.email AS default_recharge_fulfiller_email,
+        parent.code AS parent_code, parent.name AS parent_name,
+        COUNT(DISTINCT jl.id)::integer AS journal_line_count,
+        COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_debits,
+        COALESCE(SUM(CASE WHEN jl.credit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_credits
+      FROM cost_centers cc
+      LEFT JOIN cost_centers parent ON parent.id = cc.parent_id
+      LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
+      LEFT JOIN journal_lines jl ON jl.cost_center_id = cc.id
+      WHERE cc.id = $1 AND cc.company_id = $2
+      GROUP BY cc.id, u.email, parent.code, parent.name
+    `,
+        [req.params['id'], companyId],
+      )
+      if (!ccRes.rows[0]) {
+        sendError(res, 404, 'NOT_FOUND', 'Cost center not found')
+        return
+      }
+
+      const linesRes = await query(
+        `
+      SELECT jl.id, jl.description, jl.debit, jl.credit, jl.currency_code,
+             jl.fx_rate, jl.amount_company_currency,
+             je.reference, je.entry_date AS je_date, je.source_type, je.status AS je_status,
+             coa.name AS account_name, coa.code AS account_code
+      FROM journal_lines jl
+      JOIN journal_entries je ON je.id = jl.journal_entry_id
+      JOIN chart_of_accounts coa ON coa.id = jl.account_id
+      WHERE jl.cost_center_id = $1
+      ORDER BY je.entry_date DESC, je.reference
+      LIMIT 200
+    `,
+        [req.params['id']],
+      )
+
+      sendOk(res, { ...ccRes.rows[0], lines: linesRes.rows })
+    } catch (err) {
+      sendError(res, 500, 'INTERNAL_ERROR', 'Failed to fetch cost center', err)
+    }
+  },
+)
+
 costCentersRouter.post(
   '/',
   requirePermission('finance.cost_centers.edit', 'edit'),

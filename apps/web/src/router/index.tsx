@@ -34,6 +34,7 @@ const APDashboard = lazy(() => import('../pages/finance/ap/APDashboard'))
 const VendorInvoiceDetail = lazy(() => import('../pages/finance/ap/VendorInvoiceDetail'))
 const VendorInvoiceForm = lazy(() => import('../pages/finance/ap/VendorInvoiceForm'))
 const CostCentersPage = lazy(() => import('../pages/finance/cost-centers/CostCentersPage'))
+const CostCenterDetail = lazy(() => import('../pages/finance/cost-centers/CostCenterDetail'))
 const AdvanceConfigPage = lazy(() => import('../pages/finance/advance-config/AdvanceConfigPage'))
 const AnalyticAccountsPage = lazy(
   () => import('../pages/finance/analytic-accounts/AnalyticAccountsPage'),
@@ -418,6 +419,10 @@ export const router = createBrowserRouter([
           {
             path: 'cost-centers',
             element: withPerm('finance.cost_centers.view', <CostCentersPage />),
+          },
+          {
+            path: 'cost-centers/:id',
+            element: withPerm('finance.cost_centers.view', <CostCenterDetail />),
           },
           {
             path: 'advance-config',
