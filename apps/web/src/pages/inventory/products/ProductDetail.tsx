@@ -10,6 +10,16 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 
+// Every product is valued at last-recorded-cost (see migration
+// 203_stock_balance_last_cost.sql) — legacy values kept mapped in case any
+// row predates the 217 backfill.
+const VALUATION_LABELS: Record<string, string> = {
+  last_cost: 'Last Recorded Cost',
+  avco: 'Last Recorded Cost',
+  fifo: 'Last Recorded Cost',
+  standard: 'Last Recorded Cost',
+}
+
 interface ProductBalance {
   location_id: string
   location_name?: string
@@ -143,7 +153,7 @@ export default function ProductDetail() {
           ['Category', product.category ?? '—'],
           ...(product.sub_category ? [['Store', product.sub_category] as [string, string]] : []),
           ['UOM', product.uom],
-          ['Valuation', product.valuation_method],
+          ['Valuation', VALUATION_LABELS[product.valuation_method] ?? product.valuation_method],
           ['Std Cost', parseFloat(product.standard_cost ?? '0').toLocaleString()],
           ['Total On Hand', totalOnHand.toLocaleString()],
           ['Total Value', totalValue.toLocaleString()],

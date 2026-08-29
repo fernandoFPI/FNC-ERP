@@ -61,7 +61,7 @@ export default function ProductForm() {
     category: 'raw_material',
     sub_category: '',
     uom: 'pc',
-    valuation_method: 'avco',
+    valuation_method: 'last_cost',
     standard_cost: '0',
     reorder_point: '',
     reorder_qty: '',
@@ -84,7 +84,7 @@ export default function ProductForm() {
       category: p.category ?? '',
       sub_category: p.sub_category ?? '',
       uom: p.uom ?? 'pc',
-      valuation_method: p.valuation_method ?? 'avco',
+      valuation_method: p.valuation_method ?? 'last_cost',
       standard_cost: String(p.standard_cost ?? '0'),
       reorder_point: p.reorder_point ? String(p.reorder_point) : '',
       reorder_qty: p.reorder_qty ? String(p.reorder_qty) : '',
@@ -219,14 +219,8 @@ export default function ProductForm() {
               </Select>
             )}
             <Input label="UOM" value={form.uom} onChange={field('uom')} placeholder="pc, kg, L…" />
-            <Select
-              label="Valuation"
-              value={form.valuation_method}
-              onChange={field('valuation_method')}
-            >
-              <option value="avco">AVCO</option>
-              <option value="fifo">FIFO</option>
-              <option value="standard">Standard Cost</option>
+            <Select label="Valuation" value="last_cost" disabled onChange={() => {}}>
+              <option value="last_cost">Last Recorded Cost</option>
             </Select>
           </div>
 

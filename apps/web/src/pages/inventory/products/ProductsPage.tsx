@@ -165,7 +165,7 @@ export default function ProductsPage() {
     {
       key: 'valuation_method',
       header: 'Valuation',
-      render: (p) => <Badge variant="info">{p.valuation_method}</Badge>,
+      render: () => <Badge variant="info">Last Recorded Cost</Badge>,
     },
     {
       key: 'qty_on_hand',
