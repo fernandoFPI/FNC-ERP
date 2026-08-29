@@ -3,12 +3,15 @@ import { useQuery, useMutation } from '@apollo/client'
 import {
   RECHARGE_BUNDLES_QUERY,
   RECHARGE_COST_CENTER_QUERY,
+  RECHARGE_ACCOUNTS_QUERY,
   CREATE_RECHARGE_BUNDLE,
   UPDATE_RECHARGE_BUNDLE,
   DELETE_RECHARGE_BUNDLE,
   SET_RECHARGE_COST_CENTER,
+  SET_RECHARGE_ACCOUNTS,
 } from '../../../graphql/recharge'
-import { COST_CENTERS_QUERY } from '../../../graphql/finance'
+import { COST_CENTERS_QUERY, ACCOUNTS_QUERY } from '../../../graphql/finance'
+import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
 import { useToastStore } from '../../../store/toastStore'
@@ -25,6 +28,12 @@ interface CostCenterOption {
   id: string
   name: string
   code: string
+}
+
+interface AccountOption {
+  id: string
+  code: string
+  name: string
 }
 
 interface Bundle {
@@ -74,6 +83,41 @@ export default function RechargeBundlesPage() {
       await setRechargeCostCenter({ variables: { costCenterId: selectedCCId } })
       addToast({ type: 'success', message: 'Recharge cost center updated' })
       void refetchCurrentCC()
+    } catch (e: unknown) {
+      addToast({ type: 'error', message: (e as Error).message })
+    }
+  }
+
+  const { data: accountsData } = useQuery(ACCOUNTS_QUERY, { variables: { isActive: true } })
+  const {
+    data: currentAccountsData,
+    loading: currentAccountsLoading,
+    refetch: refetchCurrentAccounts,
+  } = useQuery(RECHARGE_ACCOUNTS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const [setRechargeAccounts, { loading: savingAccounts }] = useMutation(SET_RECHARGE_ACCOUNTS)
+  const [expenseAccountId, setExpenseAccountId] = useState('')
+  const [fundingAccountId, setFundingAccountId] = useState('')
+
+  const accounts: AccountOption[] = accountsData?.accounts ?? []
+  const currentAccounts = currentAccountsData?.rechargeAccounts as
+    | { expenseAccountId: string | null; fundingAccountId: string | null }
+    | undefined
+
+  useEffect(() => {
+    setExpenseAccountId(currentAccounts?.expenseAccountId ?? '')
+    setFundingAccountId(currentAccounts?.fundingAccountId ?? '')
+  }, [currentAccounts])
+
+  async function handleSaveAccounts() {
+    try {
+      await setRechargeAccounts({
+        variables: {
+          expenseAccountId: expenseAccountId || null,
+          fundingAccountId: fundingAccountId || null,
+        },
+      })
+      addToast({ type: 'success', message: 'Recharge accounts updated' })
+      void refetchCurrentAccounts()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
     }
@@ -187,6 +231,57 @@ export default function RechargeBundlesPage() {
             loading={savingCC}
             disabled={!selectedCCId || selectedCCId === currentCC?.id}
             onClick={() => void handleSaveCostCenter()}
+          >
+            Save
+          </Button>
+        </div>
+      </Card>
+
+      <Card style={{ padding: '20px', marginTop: '16px' }}>
+        <div
+          style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}
+        >
+          Recharge GL Accounts
+        </div>
+        <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '12px' }}>
+          When a request is fulfilled, its cost is posted as a journal entry — debiting the
+          expense account, crediting the funding account — tagged with the recharge cost center
+          above. Leave either blank to skip posting (requests still track normally, just nothing
+          hits the books).
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '10px',
+            alignItems: 'flex-end',
+            maxWidth: '600px',
+          }}
+        >
+          <SearchableSelect
+            label="Expense Account (debit)"
+            value={expenseAccountId}
+            onChange={setExpenseAccountId}
+            placeholder={currentAccountsLoading ? 'Loading…' : 'None'}
+            options={accounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` }))}
+          />
+          <SearchableSelect
+            label="Funding Account (credit)"
+            value={fundingAccountId}
+            onChange={setFundingAccountId}
+            placeholder={currentAccountsLoading ? 'Loading…' : 'None'}
+            options={accounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` }))}
+          />
+        </div>
+        <div style={{ marginTop: '10px' }}>
+          <Button
+            variant="primary"
+            loading={savingAccounts}
+            disabled={
+              expenseAccountId === (currentAccounts?.expenseAccountId ?? '') &&
+              fundingAccountId === (currentAccounts?.fundingAccountId ?? '')
+            }
+            onClick={() => void handleSaveAccounts()}
           >
             Save
           </Button>

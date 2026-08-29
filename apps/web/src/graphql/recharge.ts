@@ -125,6 +125,25 @@ export const SET_RECHARGE_COST_CENTER = gql`
   }
 `
 
+export const RECHARGE_ACCOUNTS_QUERY = gql`
+  query RechargeAccounts {
+    rechargeAccounts {
+      expenseAccountId
+      expenseAccountCode
+      expenseAccountName
+      fundingAccountId
+      fundingAccountCode
+      fundingAccountName
+    }
+  }
+`
+
+export const SET_RECHARGE_ACCOUNTS = gql`
+  mutation SetRechargeAccounts($expenseAccountId: ID, $fundingAccountId: ID) {
+    setRechargeAccounts(expenseAccountId: $expenseAccountId, fundingAccountId: $fundingAccountId)
+  }
+`
+
 export const CREATE_RECHARGE_REQUEST = gql`
   mutation CreateRechargeRequest($input: RechargeRequestInput!) {
     createRechargeRequest(input: $input) {

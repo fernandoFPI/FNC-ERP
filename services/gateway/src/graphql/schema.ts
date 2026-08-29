@@ -42,6 +42,7 @@
     rechargeRequests(scope: String, status: String): [RechargeRequest!]!
     rechargeRequest(id: ID!): RechargeRequest
     rechargeCostCenter: RechargeCostCenterInfo
+    rechargeAccounts: RechargeAccountsInfo!
     rechargeMonthlySummary(year: Int, month: Int): [RechargeMonthlySummaryEntry!]!
     bankDetailsSummary(employee_id: ID!): BankDetailsSummary
     shiftConfigs: [ShiftConfig]
@@ -201,6 +202,7 @@
     updateRechargeBundle(id: ID!, input: RechargeBundleInput!): RechargeBundle!
     deleteRechargeBundle(id: ID!): Boolean!
     setRechargeCostCenter(costCenterId: ID!): Boolean!
+    setRechargeAccounts(expenseAccountId: ID, fundingAccountId: ID): Boolean!
     createRechargeRequest(input: RechargeRequestInput!): RechargeRequest!
     cancelRechargeRequest(id: ID!): RechargeRequest!
     fulfillRechargeRequest(id: ID!, fileId: ID!): RechargeRequest!
@@ -729,6 +731,17 @@
     code: String!
     defaultFulfillerId: ID
     defaultFulfillerEmail: String
+  }
+
+  # The two accounts fulfillRechargeRequest posts a journal entry with —
+  # either can be null if never configured, in which case posting is skipped.
+  type RechargeAccountsInfo {
+    expenseAccountId: ID
+    expenseAccountCode: String
+    expenseAccountName: String
+    fundingAccountId: ID
+    fundingAccountCode: String
+    fundingAccountName: String
   }
 
   # Per-requester totals for a given month — the fulfiller's "who received

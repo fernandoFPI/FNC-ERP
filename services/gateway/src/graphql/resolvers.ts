@@ -3710,6 +3710,41 @@ export const resolvers = {
       }
     },
 
+    // The two accounts fulfillRechargeRequest posts a journal entry with —
+    // both must be configured for posting to actually happen (see the
+    // mutation), so this exposes whatever's currently set, or nulls if never
+    // configured.
+    rechargeAccounts: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const r = await query<{
+        expense_account_id: string | null
+        expense_account_code: string | null
+        expense_account_name: string | null
+        funding_account_id: string | null
+        funding_account_code: string | null
+        funding_account_name: string | null
+      }>(
+        `SELECT sc.recharge_expense_account_id AS expense_account_id,
+                ea.code AS expense_account_code, ea.name AS expense_account_name,
+                sc.recharge_funding_account_id AS funding_account_id,
+                fa.code AS funding_account_code, fa.name AS funding_account_name
+         FROM system_configuration sc
+         LEFT JOIN chart_of_accounts ea ON ea.id = sc.recharge_expense_account_id
+         LEFT JOIN chart_of_accounts fa ON fa.id = sc.recharge_funding_account_id
+         WHERE sc.company_id=$1`,
+        [ctx.auth.companyId],
+      )
+      const row = r.rows[0]
+      return {
+        expenseAccountId: row?.expense_account_id ?? null,
+        expenseAccountCode: row?.expense_account_code ?? null,
+        expenseAccountName: row?.expense_account_name ?? null,
+        fundingAccountId: row?.funding_account_id ?? null,
+        fundingAccountCode: row?.funding_account_code ?? null,
+        fundingAccountName: row?.funding_account_name ?? null,
+      }
+    },
+
     // Per-requester totals for a given month (defaults to the current one) —
     // the fulfiller's "who's received what" view. Only the assigned
     // fulfiller, hr.recharge.admin holders, or an admin-bypass role can see
@@ -20166,6 +20201,34 @@ export const resolvers = {
       return true
     },
 
+    // Configures the two accounts fulfillRechargeRequest posts a journal
+    // entry with (debit expenseAccountId, credit fundingAccountId). Either
+    // can be cleared independently by passing null — posting only actually
+    // happens once both are set.
+    setRechargeAccounts: async (
+      _: unknown,
+      args: { expenseAccountId?: string | null; fundingAccountId?: string | null },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+      for (const id of [args.expenseAccountId, args.fundingAccountId]) {
+        if (!id) continue
+        const check = await query(`SELECT 1 FROM chart_of_accounts WHERE id=$1 AND company_id=$2`, [
+          id,
+          ctx.auth.companyId,
+        ])
+        if (!check.rows[0]) throw new Error('Account not found')
+      }
+      await query(
+        `UPDATE system_configuration
+           SET recharge_expense_account_id=$2, recharge_funding_account_id=$3, updated_at=NOW()
+         WHERE company_id=$1`,
+        [ctx.auth.companyId, args.expenseAccountId ?? null, args.fundingAccountId ?? null],
+      )
+      return true
+    },
+
     createRechargeRequest: async (
       _: unknown,
       args: { input: Record<string, unknown> },
@@ -20232,8 +20295,13 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const reqRow = await query<{ cost_center_id: string; requested_by: string; status: string }>(
-        `SELECT cost_center_id, requested_by, status FROM recharge_requests WHERE id=$1 AND company_id=$2`,
+      const reqRow = await query<{
+        cost_center_id: string
+        requested_by: string
+        status: string
+        bundle_id: string
+      }>(
+        `SELECT cost_center_id, requested_by, status, bundle_id FROM recharge_requests WHERE id=$1 AND company_id=$2`,
         [args.id, ctx.auth.companyId],
       )
       if (!reqRow.rows[0]) throw new Error('Request not found')
@@ -20274,6 +20342,65 @@ export const resolvers = {
       )
       if (!fulfilled.rows[0]) {
         throw new Error('Request is no longer pending — it may have already been fulfilled')
+      }
+      // Posts the actual expense to the GL, same graceful-skip-if-unconfigured
+      // pattern as petty cash spend: only happens once an admin has set both
+      // accounts (Recharge Settings page); otherwise the request stays fully
+      // tracked operationally but with nothing posted, same as before this
+      // existed, rather than blocking fulfillment on Finance configuration.
+      const glConfig = await query<{
+        recharge_expense_account_id: string | null
+        recharge_funding_account_id: string | null
+      }>(
+        `SELECT recharge_expense_account_id, recharge_funding_account_id
+         FROM system_configuration WHERE company_id=$1`,
+        [ctx.auth.companyId],
+      )
+      const expenseAccountId = glConfig.rows[0]?.recharge_expense_account_id
+      const fundingAccountId = glConfig.rows[0]?.recharge_funding_account_id
+      if (expenseAccountId && fundingAccountId) {
+        const bundle = await query<{ amount: string; currency_code: string }>(
+          `SELECT amount, currency_code FROM recharge_bundles WHERE id=$1`,
+          [reqRow.rows[0].bundle_id],
+        )
+        const amount = parseFloat(bundle.rows[0]?.amount ?? '0')
+        const currencyCode = bundle.rows[0]?.currency_code ?? 'IQD'
+        if (amount > 0) {
+          let fxRate = 1
+          if (currencyCode !== 'IQD') {
+            const rate = await query<{ rate: string }>(
+              `SELECT rate FROM fx_rates WHERE from_currency=$1 AND to_currency='IQD' ORDER BY rate_date DESC LIMIT 1`,
+              [currencyCode],
+            )
+            fxRate = parseFloat(rate.rows[0]?.rate ?? '1')
+          }
+          const amountBase = amount * fxRate
+          const je = await query<{ id: string }>(
+            `INSERT INTO journal_entries (company_id, reference, description, entry_date, status, source_type, source_id, created_by, posted_at, posted_by)
+             VALUES ($1,'RECHARGE',$2,CURRENT_DATE,'posted','recharge_fulfillment',$3,$4,NOW(),$4) RETURNING id`,
+            [
+              ctx.auth.companyId,
+              `Phone recharge fulfilled — request ${args.id}`,
+              args.id,
+              ctx.auth.userId,
+            ],
+          )
+          const jeId = je.rows[0]!.id
+          await query(
+            `INSERT INTO journal_lines (journal_entry_id, account_id, cost_center_id, currency_code, fx_rate, debit, credit, amount_company_currency)
+             VALUES ($1,$2,$5,$3,$4,$6,0,$7),($1,$8,$5,$3,$4,0,$6,$7)`,
+            [
+              jeId,
+              expenseAccountId,
+              currencyCode,
+              fxRate,
+              reqRow.rows[0].cost_center_id,
+              amount,
+              amountBase,
+              fundingAccountId,
+            ],
+          )
+        }
       }
       void notifyRechargeUserGW(reqRow.rows[0].requested_by, ctx.auth.companyId, {
         type: 'RECHARGE_REQUEST_FULFILLED',
