@@ -11,6 +11,7 @@ import { Table } from '../../../components/ui/Table'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
+import { formatDate } from '../../../lib/format'
 
 interface StockMove {
   id: string
@@ -26,6 +27,24 @@ interface StockMove {
   reference?: string
   lot_number?: string
   moved_by_email?: string
+}
+
+// Adjustments etc. carry a user-picked effective date with no time-of-day
+// (stored as midnight) — showing "00:00" for those would read as a real
+// timestamp when it's actually just a date. Only append the time when one
+// was genuinely recorded.
+function formatMoveDate(value: string): string {
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return value
+  const hasTime = d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0 || d.getUTCSeconds() !== 0
+  const datePart = formatDate(d)
+  if (!hasTime) return datePart
+  const timePart = d.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'UTC',
+  })
+  return `${datePart}, ${timePart}`
 }
 
 const SOURCE_OPTIONS = [
@@ -74,7 +93,9 @@ export default function StockMovesPage() {
       key: 'move_date',
       header: 'Date',
       render: (m) => (
-        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>{m.move_date}</span>
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
+          {formatMoveDate(m.move_date)}
+        </span>
       ),
     },
     {
@@ -134,12 +155,47 @@ export default function StockMovesPage() {
       render: (m) => <Badge variant="neutral">{m.source_type}</Badge>,
     },
     {
+      key: 'moved_by_email',
+      header: 'By',
+      tabletHide: true,
+      render: (m) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
+          {m.moved_by_email ?? 'System'}
+        </span>
+      ),
+    },
+    {
       key: 'lot_number',
       header: 'Lot',
+      tabletHide: true,
       render: (m) =>
         m.lot_number ? (
           <span style={{ fontFamily: 'monospace', color: theme.textSecondary, fontSize: '12px' }}>
             {m.lot_number}
+          </span>
+        ) : (
+          <span style={{ color: theme.textMuted }}>—</span>
+        ),
+    },
+    {
+      key: 'reference',
+      header: 'Reason / Notes',
+      render: (m) =>
+        m.reference ? (
+          <span
+            title={m.reference}
+            style={{
+              color: theme.textSecondary,
+              fontSize: '13px',
+              display: 'inline-block',
+              maxWidth: '240px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'bottom',
+            }}
+          >
+            {m.reference}
           </span>
         ) : (
           <span style={{ color: theme.textMuted }}>—</span>
