@@ -24616,6 +24616,67 @@ async function requireUserRoleManagePermission(
   }
 }
 
+// A module_admin role by itself grants no actual capability — permission
+// levels live entirely in the separate user_permissions table (see
+// loadPermissions), and system_admin/company_admin are the only roles that
+// bypass it. Without this, setting someone's role to module_admin for a
+// module silently does nothing from their perspective. Grants 'admin' level
+// on every permission key under that module; revoke does the mirror-image
+// cleanup when a role moves away from module_admin (or to a different
+// module) so a downgrade doesn't leave stale elevated access behind. Only
+// ever touches keys still sitting at exactly 'admin' on revoke, so a grant
+// made independently through the Permissions tab at some other level is
+// left alone.
+async function applyModuleAdminPermissions(
+  userId: string,
+  companyId: string,
+  module: string,
+  grantedBy: string,
+): Promise<void> {
+  await query(
+    `INSERT INTO user_permissions (user_id, company_id, permission_key, access_level, granted_by)
+     SELECT $1, $2, key, 'admin', $4 FROM permissions WHERE module = $3
+     ON CONFLICT (user_id, company_id, permission_key)
+       DO UPDATE SET access_level = 'admin', granted_by = $4, updated_at = NOW()`,
+    [userId, companyId, module, grantedBy],
+  )
+  await invalidatePermissionCache(userId, companyId)
+}
+
+async function revokeModuleAdminPermissions(
+  userId: string,
+  companyId: string,
+  module: string,
+): Promise<void> {
+  await query(
+    `DELETE FROM user_permissions
+     WHERE user_id = $1 AND company_id = $2 AND access_level = 'admin'
+       AND permission_key IN (SELECT key FROM permissions WHERE module = $3)`,
+    [userId, companyId, module],
+  )
+  await invalidatePermissionCache(userId, companyId)
+}
+
+// Diffs an old vs new (role, module) pair and applies exactly the grant/
+// revoke needed — a no-op when the module_admin+module combination didn't
+// actually change.
+async function syncModuleAdminPermissions(
+  userId: string,
+  companyId: string,
+  grantedBy: string,
+  before: { role: string | null; module: string | null },
+  after: { role: string | null; module: string | null },
+): Promise<void> {
+  const wasModuleAdmin = before.role === 'module_admin' && !!before.module
+  const isModuleAdmin = after.role === 'module_admin' && !!after.module
+  if (wasModuleAdmin && (!isModuleAdmin || before.module !== after.module)) {
+    await revokeModuleAdminPermissions(userId, companyId, before.module!)
+  }
+  if (isModuleAdmin && (!wasModuleAdmin || before.module !== after.module)) {
+    await applyModuleAdminPermissions(userId, companyId, after.module!, grantedBy)
+  }
+}
+
 const phase5MutationResolvers = {
   // ── PO edit requests ──────────────────────────────────────────────────────
 
@@ -26752,6 +26813,14 @@ const phase5MutationResolvers = {
     )
     const cn = await query(`SELECT name FROM companies WHERE id=$1`, [args.input.companyId])
     const row = r.rows[0] as Record<string, unknown>
+    if (args.input.role === 'module_admin' && args.input.module) {
+      await applyModuleAdminPermissions(
+        args.userId,
+        args.input.companyId,
+        args.input.module,
+        ctx.auth!.userId,
+      )
+    }
     return {
       id: row.id,
       companyId: row.company_id,
@@ -26768,6 +26837,13 @@ const phase5MutationResolvers = {
     ctx: GQLContext,
   ) => {
     await requireUserRoleManagePermission(ctx, args.input.role)
+    const existing = await query(
+      `SELECT user_id, company_id, role, module FROM user_company_roles WHERE id = $1`,
+      [args.roleId],
+    )
+    if (!existing.rows[0]) throw new Error('Role not found')
+    const before = existing.rows[0] as Record<string, unknown>
+
     const roleProvided = 'role' in args.input
     const moduleProvided = 'module' in args.input
     const isActiveProvided = 'isActive' in args.input
@@ -26791,6 +26867,13 @@ const phase5MutationResolvers = {
     )
     if (!r.rows[0]) throw new Error('Role not found')
     const row = r.rows[0] as Record<string, unknown>
+    await syncModuleAdminPermissions(
+      before.user_id as string,
+      row.company_id as string,
+      ctx.auth!.userId,
+      { role: before.role as string | null, module: before.module as string | null },
+      { role: row.role as string | null, module: row.module as string | null },
+    )
     const cn = await query(`SELECT name FROM companies WHERE id=$1`, [row.company_id])
     return {
       id: row.id,
@@ -27248,6 +27331,14 @@ const phase5MutationResolvers = {
     )
     const cn = await query(`SELECT name FROM companies WHERE id=$1`, [i.company_id])
     const row = r.rows[0] as Record<string, unknown>
+    if (i.role === 'module_admin' && i.module) {
+      await applyModuleAdminPermissions(
+        i.user_id as string,
+        i.company_id as string,
+        i.module as string,
+        ctx.auth!.userId,
+      )
+    }
     return {
       id: row.id,
       companyId: row.company_id,
