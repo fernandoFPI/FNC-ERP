@@ -14,6 +14,7 @@ const Schema = z.object({
   type: z.enum(['department', 'project', 'entity', 'overhead']),
   parent_id: z.string().uuid().optional(),
   default_recharge_fulfiller_id: z.string().uuid().nullable().optional(),
+  default_recharge_fulfiller_id_2: z.string().uuid().nullable().optional(),
   is_active: z.boolean().optional(),
 })
 
@@ -37,12 +38,14 @@ costCentersRouter.get(
       const result = await query(
         `
       SELECT cc.*, u.email AS default_recharge_fulfiller_email,
+        u2.email AS default_recharge_fulfiller_email_2,
         COUNT(DISTINCT jl.id)::integer AS journal_line_count
       FROM cost_centers cc
       LEFT JOIN journal_lines jl ON jl.cost_center_id = cc.id
       LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
+      LEFT JOIN users u2 ON u2.id = cc.default_recharge_fulfiller_id_2
       WHERE ${conditions.join(' AND ')}
-      GROUP BY cc.id, u.email
+      GROUP BY cc.id, u.email, u2.email
       ORDER BY cc.code
     `,
         values,
@@ -63,6 +66,7 @@ costCentersRouter.get(
       const ccRes = await query(
         `
       SELECT cc.*, u.email AS default_recharge_fulfiller_email,
+        u2.email AS default_recharge_fulfiller_email_2,
         parent.code AS parent_code, parent.name AS parent_name,
         COUNT(DISTINCT jl.id)::integer AS journal_line_count,
         COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.amount_company_currency ELSE 0 END), 0) AS total_debits,
@@ -70,9 +74,10 @@ costCentersRouter.get(
       FROM cost_centers cc
       LEFT JOIN cost_centers parent ON parent.id = cc.parent_id
       LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
+      LEFT JOIN users u2 ON u2.id = cc.default_recharge_fulfiller_id_2
       LEFT JOIN journal_lines jl ON jl.cost_center_id = cc.id
       WHERE cc.id = $1 AND cc.company_id = $2
-      GROUP BY cc.id, u.email, parent.code, parent.name
+      GROUP BY cc.id, u.email, u2.email, parent.code, parent.name
     `,
         [req.params['id'], companyId],
       )
@@ -150,23 +155,39 @@ costCentersRouter.put(
         sendError(res, 400, 'VALIDATION_ERROR', 'Invalid input', parsed.error.flatten())
         return
       }
-      // default_recharge_fulfiller_id needs to support explicit clearing (set
-      // back to null), unlike the COALESCE'd fields above — so it's only
-      // touched at all when the caller actually sent it in the body.
+      // default_recharge_fulfiller_id (and _2) need to support explicit
+      // clearing (set back to null), unlike the COALESCE'd fields above —
+      // so each is only touched at all when the caller actually sent it in
+      // the body.
       const fulfillerProvided = 'default_recharge_fulfiller_id' in req.body
-      if (fulfillerProvided && parsed.data.default_recharge_fulfiller_id) {
+      const fulfiller2Provided = 'default_recharge_fulfiller_id_2' in req.body
+      for (const fulfillerId of [
+        fulfillerProvided ? parsed.data.default_recharge_fulfiller_id : undefined,
+        fulfiller2Provided ? parsed.data.default_recharge_fulfiller_id_2 : undefined,
+      ]) {
+        if (!fulfillerId) continue
         const userCheck = await query(
           `SELECT 1 FROM user_company_roles WHERE user_id = $1 AND company_id = $2 AND is_active = true`,
-          [parsed.data.default_recharge_fulfiller_id, companyId],
+          [fulfillerId, companyId],
         )
         if (!userCheck.rows[0]) {
           sendError(res, 400, 'VALIDATION_ERROR', 'That user does not belong to this company')
           return
         }
       }
+      if (
+        fulfillerProvided &&
+        fulfiller2Provided &&
+        parsed.data.default_recharge_fulfiller_id &&
+        parsed.data.default_recharge_fulfiller_id === parsed.data.default_recharge_fulfiller_id_2
+      ) {
+        sendError(res, 400, 'VALIDATION_ERROR', 'The two recharge fulfillers must be different people')
+        return
+      }
       const result = await query(
         `UPDATE cost_centers SET name = COALESCE($1, name), type = COALESCE($2, type), is_active = COALESCE($3, is_active),
-         default_recharge_fulfiller_id = CASE WHEN $6 THEN $7::uuid ELSE default_recharge_fulfiller_id END
+         default_recharge_fulfiller_id = CASE WHEN $6 THEN $7::uuid ELSE default_recharge_fulfiller_id END,
+         default_recharge_fulfiller_id_2 = CASE WHEN $8 THEN $9::uuid ELSE default_recharge_fulfiller_id_2 END
        WHERE id = $4 AND company_id = $5 RETURNING *`,
         [
           parsed.data.name ?? null,
@@ -176,6 +197,8 @@ costCentersRouter.put(
           companyId,
           fulfillerProvided,
           parsed.data.default_recharge_fulfiller_id ?? null,
+          fulfiller2Provided,
+          parsed.data.default_recharge_fulfiller_id_2 ?? null,
         ],
       )
       if (!result.rows[0]) {

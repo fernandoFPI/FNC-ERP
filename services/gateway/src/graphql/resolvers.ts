@@ -2872,11 +2872,17 @@ async function canViewRechargeRequestGW(
   if (ctx.auth.userId === row.requested_by) return true
   const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
   if (meetsLevel(perms['hr.recharge.admin'], 'admin')) return true
-  const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
-    `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+  const cc = await query<{
+    default_recharge_fulfiller_id: string | null
+    default_recharge_fulfiller_id_2: string | null
+  }>(
+    `SELECT default_recharge_fulfiller_id, default_recharge_fulfiller_id_2 FROM cost_centers WHERE id=$1`,
     [row.cost_center_id],
   )
-  return cc.rows[0]?.default_recharge_fulfiller_id === ctx.auth.userId
+  return (
+    cc.rows[0]?.default_recharge_fulfiller_id === ctx.auth.userId ||
+    cc.rows[0]?.default_recharge_fulfiller_id_2 === ctx.auth.userId
+  )
 }
 
 export const resolvers = {
@@ -3646,8 +3652,9 @@ export const resolvers = {
       // combined with status:'confirmed', silently returning nothing.
       if (scope === 'toFulfill') {
         conditions.push(
-          `rr.cost_center_id IN (SELECT id FROM cost_centers WHERE default_recharge_fulfiller_id = $${idx++})`,
+          `rr.cost_center_id IN (SELECT id FROM cost_centers WHERE default_recharge_fulfiller_id = $${idx} OR default_recharge_fulfiller_id_2 = $${idx})`,
         )
+        idx++
         params.push(ctx.auth.userId)
         if (!args.status) conditions.push(`rr.status = 'pending'`)
       } else {
@@ -3690,12 +3697,17 @@ export const resolvers = {
         code: string
         default_recharge_fulfiller_id: string | null
         default_recharge_fulfiller_email: string | null
+        default_recharge_fulfiller_id_2: string | null
+        default_recharge_fulfiller_email_2: string | null
       }>(
         `SELECT cc.id, cc.name, cc.code, cc.default_recharge_fulfiller_id,
-                u.email AS default_recharge_fulfiller_email
+                u.email AS default_recharge_fulfiller_email,
+                cc.default_recharge_fulfiller_id_2,
+                u2.email AS default_recharge_fulfiller_email_2
          FROM system_configuration sc
          JOIN cost_centers cc ON cc.id = sc.recharge_cost_center_id
          LEFT JOIN users u ON u.id = cc.default_recharge_fulfiller_id
+         LEFT JOIN users u2 ON u2.id = cc.default_recharge_fulfiller_id_2
          WHERE sc.company_id=$1`,
         [ctx.auth.companyId],
       )
@@ -3707,6 +3719,8 @@ export const resolvers = {
         code: row.code,
         defaultFulfillerId: row.default_recharge_fulfiller_id,
         defaultFulfillerEmail: row.default_recharge_fulfiller_email,
+        defaultFulfillerId2: row.default_recharge_fulfiller_id_2,
+        defaultFulfillerEmail2: row.default_recharge_fulfiller_email_2,
       }
     },
 
@@ -3759,14 +3773,20 @@ export const resolvers = {
         const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
         const isAdmin = meetsLevel(perms['hr.recharge.admin'], 'admin')
         if (!isAdmin) {
-          const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
-            `SELECT cc.default_recharge_fulfiller_id
+          const cc = await query<{
+            default_recharge_fulfiller_id: string | null
+            default_recharge_fulfiller_id_2: string | null
+          }>(
+            `SELECT cc.default_recharge_fulfiller_id, cc.default_recharge_fulfiller_id_2
              FROM system_configuration sc
              JOIN cost_centers cc ON cc.id = sc.recharge_cost_center_id
              WHERE sc.company_id=$1`,
             [ctx.auth.companyId],
           )
-          if (cc.rows[0]?.default_recharge_fulfiller_id !== ctx.auth.userId) {
+          if (
+            cc.rows[0]?.default_recharge_fulfiller_id !== ctx.auth.userId &&
+            cc.rows[0]?.default_recharge_fulfiller_id_2 !== ctx.auth.userId
+          ) {
             throw new Error('Not authorized to view the recharge summary')
           }
         }
@@ -20487,14 +20507,24 @@ export const resolvers = {
         [ctx.auth.companyId, ctx.auth.userId, costCenterId, i.bundleId, i.phoneNumber, i.notes ?? null],
       )
       const requestId = r.rows[0].id as string
-      // No approval step — the fulfiller assigned to the recharge cost
-      // center is notified directly, the moment the request comes in.
-      const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
-        `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+      // No approval step — the fulfiller(s) assigned to the recharge cost
+      // center are notified directly, the moment the request comes in. If
+      // the requester is themselves one of the two fulfillers, they're
+      // excluded — they can't fulfill their own request, so notifying them
+      // about it would just be noise (see fulfillRechargeRequest's
+      // separation-of-duties check).
+      const cc = await query<{
+        default_recharge_fulfiller_id: string | null
+        default_recharge_fulfiller_id_2: string | null
+      }>(
+        `SELECT default_recharge_fulfiller_id, default_recharge_fulfiller_id_2 FROM cost_centers WHERE id=$1`,
         [costCenterId],
       )
-      const fulfillerId = cc.rows[0]?.default_recharge_fulfiller_id
-      if (fulfillerId) {
+      const fulfillerIds = [
+        cc.rows[0]?.default_recharge_fulfiller_id,
+        cc.rows[0]?.default_recharge_fulfiller_id_2,
+      ].filter((id): id is string => !!id && id !== ctx.auth!.userId)
+      for (const fulfillerId of new Set(fulfillerIds)) {
         void notifyRechargeUserGW(fulfillerId, ctx.auth.companyId, {
           type: 'RECHARGE_REQUEST_SUBMITTED',
           title: 'New recharge request',
@@ -20542,11 +20572,17 @@ export const resolvers = {
         throw new Error('You cannot fulfill your own recharge request')
       }
       if (!isPermissionBypassGW(ctx.auth.role)) {
-        const cc = await query<{ default_recharge_fulfiller_id: string | null }>(
-          `SELECT default_recharge_fulfiller_id FROM cost_centers WHERE id=$1`,
+        const cc = await query<{
+          default_recharge_fulfiller_id: string | null
+          default_recharge_fulfiller_id_2: string | null
+        }>(
+          `SELECT default_recharge_fulfiller_id, default_recharge_fulfiller_id_2 FROM cost_centers WHERE id=$1`,
           [reqRow.rows[0].cost_center_id],
         )
-        if (cc.rows[0]?.default_recharge_fulfiller_id !== ctx.auth.userId) {
+        if (
+          cc.rows[0]?.default_recharge_fulfiller_id !== ctx.auth.userId &&
+          cc.rows[0]?.default_recharge_fulfiller_id_2 !== ctx.auth.userId
+        ) {
           throw new Error('Not authorized to fulfill this request')
         }
       }

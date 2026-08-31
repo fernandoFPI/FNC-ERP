@@ -27,6 +27,8 @@ interface CostCenter {
   journal_line_count: number
   default_recharge_fulfiller_id?: string | null
   default_recharge_fulfiller_email?: string | null
+  default_recharge_fulfiller_id_2?: string | null
+  default_recharge_fulfiller_email_2?: string | null
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -48,6 +50,7 @@ const EMPTY_FORM = {
   type: 'department' as CostCenter['type'],
   parent_id: '',
   default_recharge_fulfiller_id: '',
+  default_recharge_fulfiller_id_2: '',
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -118,6 +121,7 @@ export default function CostCentersPage() {
       type: cc.type,
       parent_id: cc.parent_id ?? '',
       default_recharge_fulfiller_id: cc.default_recharge_fulfiller_id ?? '',
+      default_recharge_fulfiller_id_2: cc.default_recharge_fulfiller_id_2 ?? '',
     })
     setModalOpen(true)
   }
@@ -131,6 +135,13 @@ export default function CostCentersPage() {
       addToast({ type: 'error', message: 'Name is required' })
       return
     }
+    if (
+      form.default_recharge_fulfiller_id &&
+      form.default_recharge_fulfiller_id === form.default_recharge_fulfiller_id_2
+    ) {
+      addToast({ type: 'error', message: 'The two recharge fulfillers must be different people' })
+      return
+    }
     setSaving(true)
     const payload = {
       ...form,
@@ -138,6 +149,7 @@ export default function CostCentersPage() {
       // Always present (UUID or null) rather than omitted when empty, so the
       // backend can tell "clear the fulfiller" apart from "field not sent."
       default_recharge_fulfiller_id: form.default_recharge_fulfiller_id || null,
+      default_recharge_fulfiller_id_2: form.default_recharge_fulfiller_id_2 || null,
     }
     try {
       if (editing) {
@@ -403,7 +415,7 @@ export default function CostCentersPage() {
             options={parentOptions.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
           />
         </Field>
-        <Field label="Default recharge fulfiller (optional)">
+        <Field label="Recharge fulfiller (optional)">
           <SearchableSelect
             value={form.default_recharge_fulfiller_id}
             onChange={(v) => {
@@ -412,8 +424,20 @@ export default function CostCentersPage() {
             placeholder="Unassigned"
             options={companyUsers.map((u) => ({ value: u.id, label: u.email }))}
           />
+        </Field>
+        <Field label="Second recharge fulfiller (optional)">
+          <SearchableSelect
+            value={form.default_recharge_fulfiller_id_2}
+            onChange={(v) => {
+              setForm((p) => ({ ...p, default_recharge_fulfiller_id_2: v }))
+            }}
+            placeholder="Unassigned"
+            options={companyUsers.map((u) => ({ value: u.id, label: u.email }))}
+          />
           <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
-            Gets notified and can fulfill phone recharge requests charged to this cost center.
+            Both get notified and can fulfill phone recharge requests charged to this cost
+            center. Each can fulfill the other's own request — a fulfiller can never fulfill
+            their own.
           </div>
         </Field>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>

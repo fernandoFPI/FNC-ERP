@@ -35,6 +35,7 @@ interface CostCenterDetail {
   parent_code?: string | null
   parent_name?: string | null
   default_recharge_fulfiller_email?: string | null
+  default_recharge_fulfiller_email_2?: string | null
   journal_line_count: number
   total_debits: string
   total_credits: string
@@ -180,7 +181,7 @@ export default function CostCenterDetail() {
       </div>
 
       {/* Parent / fulfiller info */}
-      {(cc.parent_id || cc.default_recharge_fulfiller_email) && (
+      {(cc.parent_id || cc.default_recharge_fulfiller_email || cc.default_recharge_fulfiller_email_2) && (
         <Card padding="sm" style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
             {cc.parent_id && (
@@ -199,10 +200,20 @@ export default function CostCenterDetail() {
             {cc.default_recharge_fulfiller_email && (
               <div>
                 <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-                  Default Recharge Fulfiller
+                  Recharge Fulfiller
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
                   {cc.default_recharge_fulfiller_email}
+                </div>
+              </div>
+            )}
+            {cc.default_recharge_fulfiller_email_2 && (
+              <div>
+                <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
+                  Second Recharge Fulfiller
+                </div>
+                <div style={{ fontWeight: 600, color: theme.textPrimary }}>
+                  {cc.default_recharge_fulfiller_email_2}
                 </div>
               </div>
             )}

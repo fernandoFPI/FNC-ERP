@@ -731,6 +731,8 @@
     code: String!
     defaultFulfillerId: ID
     defaultFulfillerEmail: String
+    defaultFulfillerId2: ID
+    defaultFulfillerEmail2: String
   }
 
   # The two accounts fulfillRechargeRequest posts a journal entry with —
