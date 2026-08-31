@@ -102,6 +102,31 @@ async function autoLinkEmployeeRecord(
       return
     }
 
+    // Someone can legitimately hold two separate logins in the same company
+    // (e.g. a personal account plus a role-based one) — an email match won't
+    // catch that since the emails genuinely differ. Rather than blindly
+    // creating a second employee record for what might be the same real
+    // person under a different name field, check for an exact name match
+    // against ANY existing record in the company (linked or not) first. If
+    // one exists, skip creating and leave this account unlinked — same as
+    // before this feature existed — so an admin can decide by hand instead
+    // of ending up with a duplicate "ghost" employee.
+    const nameCollision = await query(
+      `SELECT id FROM employees WHERE company_id = $1 AND lower(first_name) = lower($2) AND lower(last_name) = lower($3) LIMIT 1`,
+      [companyId, profile.firstName, profile.lastName],
+    )
+    if (nameCollision.rows[0]) {
+      await logAudit({
+        userId,
+        companyId,
+        action: 'AUTO_CREATE_EMPLOYEE_SKIPPED_NAME_COLLISION',
+        tableName: 'employees',
+        recordId: nameCollision.rows[0]['id'] as string,
+        newValues: { skippedUserId: userId, submittedEmail: profile.email },
+      })
+      return
+    }
+
     const created = await query(
       `INSERT INTO employees (company_id, user_id, first_name, last_name, email, phone, job_title, hire_date, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $2)
