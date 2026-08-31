@@ -24635,6 +24635,85 @@ const phase5MutationResolvers = {
           auth,
           args.notes,
         )
+
+        // Store Pricing is no longer a human step: auto-fill every from-stock
+        // line's value from the product's cached last real market price (set
+        // by submitPOMarketPricing), falling back to the stock's own
+        // average_cost at the chosen source location for a product that's
+        // never been market-priced before — the same fallback the old manual
+        // "Skip" button used. Then advance straight through to market_pricing
+        // in the same transaction, so no PO is ever observably left waiting
+        // at 'store_pricing'. (rejectPOVerificationToStorePricing is left
+        // alone — that's a deliberate "someone flagged this, look again" path,
+        // not the routine forward flow, so it still needs a human.)
+        const baseCcyRes = await client.query<{ base_currency_code: string }>(
+          `SELECT base_currency_code FROM purchase_orders WHERE id=$1`,
+          [args.id],
+        )
+        const baseCurrencyCode = baseCcyRes.rows[0]?.base_currency_code ?? 'IQD'
+
+        const stockLinesRes = await client.query<{
+          id: string
+          product_id: string | null
+          sku: string | null
+          last_market_price: string | null
+          last_market_price_currency: string | null
+          fallback_avg_cost: string | null
+        }>(
+          `SELECT pol.id, pol.product_id, p.sku,
+                  p.last_market_price, p.last_market_price_currency,
+                  sb.average_cost AS fallback_avg_cost
+           FROM po_lines pol
+           LEFT JOIN products p ON p.id = pol.product_id
+           LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
+             AND sb.location_id = pol.source_location_id AND sb.lot_id IS NULL
+           WHERE pol.po_id=$1 AND pol.qty_from_stock > 0`,
+          [args.id],
+        )
+
+        const autoFilledLines: Record<string, unknown>[] = []
+        for (const line of stockLinesRes.rows) {
+          const cachedPrice =
+            line.last_market_price != null ? parseFloat(line.last_market_price) : null
+          const usingCache = cachedPrice != null && cachedPrice > 0
+          const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
+          const storeCurrency = usingCache
+            ? (line.last_market_price_currency ?? baseCurrencyCode)
+            : baseCurrencyCode
+          await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
+            storePrice,
+            storeCurrency,
+            line.id,
+          ])
+          autoFilledLines.push({
+            lineId: line.id,
+            productId: line.product_id,
+            sku: line.sku,
+            storePrice,
+            storeCurrency,
+            source: usingCache ? 'cached_market_price' : 'average_cost_fallback',
+          })
+        }
+
+        await recalcPO(client, args.id)
+        await poTransition(
+          client,
+          args.id,
+          'store_pricing',
+          'market_pricing',
+          'submit_to_market_pricing',
+          auth,
+          'Store pricing auto-filled from cached market price',
+        )
+        await logAudit({
+          userId: auth.userId,
+          companyId: auth.companyId,
+          action: 'AUTO_STORE_PRICING',
+          tableName: 'po_lines',
+          recordId: args.id,
+          newValues: { lines: autoFilledLines },
+          client,
+        })
       } else {
         await poTransition(
           client,
@@ -24660,10 +24739,10 @@ const phase5MutationResolvers = {
       client.release()
     }
     if (needsPurchase) {
-      void notifyPositionHoldersGW(args.id, 'store_pricing', {
-        type: 'PO_STORE_PRICING_REQUIRED',
-        title: 'Store pricing required',
-        body: 'PO requires internal pricing',
+      void notifyPositionHoldersGW(args.id, 'procurement_officer', {
+        type: 'PO_MARKET_PRICING_REQUIRED',
+        title: 'Market pricing required',
+        body: 'PO requires external vendor quotes',
       })
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
@@ -24849,13 +24928,25 @@ const phase5MutationResolvers = {
         // Total is market price x the full qty_ordered, regardless of how much
         // of it is coming from stock — store_price is a record only and never
         // factors into the total (see submitPOStorePricing).
-        await client.query(
+        const updated = await client.query<{ product_id: string | null }>(
           `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3,
              currency_code=$2, fx_rate_to_base=$6,
              total_price = qty_ordered * $1
-           WHERE id=$4 AND po_id=$5`,
+           WHERE id=$4 AND po_id=$5
+           RETURNING product_id`,
           [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id, fxRateToBase],
         )
+        // Cache this real, vendor-quoted price+currency on the product itself —
+        // confirmPOInventoryCheck's auto-fill of Store Pricing reads it back for
+        // the next PO that needs this product, instead of guessing a currency.
+        const productId = updated.rows[0]?.product_id
+        if (productId && lp.marketPrice > 0) {
+          await client.query(
+            `UPDATE products SET last_market_price=$1, last_market_price_currency=$2, last_market_price_at=NOW()
+             WHERE id=$3`,
+            [lp.marketPrice, lp.currencyCode, productId],
+          )
+        }
       }
       if (args.vendorId)
         await client.query(`UPDATE purchase_orders SET vendor_id=$1 WHERE id=$2`, [

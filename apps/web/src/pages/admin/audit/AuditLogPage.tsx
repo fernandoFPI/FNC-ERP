@@ -226,6 +226,7 @@ export default function AuditLogPage() {
                 { value: 'delete', label: 'Delete' },
                 { value: 'login', label: 'Login' },
                 { value: 'logout', label: 'Logout' },
+                { value: 'AUTO_STORE_PRICING', label: 'Store Pricing Auto-Fill' },
               ],
             },
           ]}
