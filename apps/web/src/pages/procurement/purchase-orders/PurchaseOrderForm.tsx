@@ -20,6 +20,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import { useTourStore } from '../../../store/tourStore'
 
 interface POLine {
   product_id: string
@@ -154,6 +155,11 @@ export default function PurchaseOrderForm() {
     assigned_receiver_id: '',
     branch_id: '',
   })
+  // Interactive tour: a real project shouldn't be picked (or even opened —
+  // its dropdown lists real company data) during a walkthrough that never
+  // saves anything. Also lets handleSubmit skip the "select a project"
+  // validation below, since the tour's demo PO is entirely synthetic.
+  const isTourMode = useTourStore((s) => s.isActive)
   const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [linkedProjectId, setLinkedProjectId] = useState('')
@@ -371,7 +377,7 @@ export default function PurchaseOrderForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (purpose === 'project' && !linkedProjectId) {
+    if (purpose === 'project' && !linkedProjectId && !isTourMode) {
       addToast({ type: 'error', message: 'Please select a project' })
       return
     }
@@ -605,8 +611,9 @@ export default function PurchaseOrderForm() {
                         setLinkedProjectId(v)
                       }}
                       options={projectOptions}
-                      placeholder="Search project…"
+                      placeholder={isTourMode ? 'Not needed for this walkthrough' : 'Search project…'}
                       minDropdownWidth={360}
+                      disabled={isTourMode}
                     />
                   </div>
                 )}

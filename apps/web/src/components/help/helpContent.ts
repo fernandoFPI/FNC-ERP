@@ -340,29 +340,47 @@ const PURCHASE_ORDERS: HelpTopic = {
   key: 'purchase-orders',
   title: 'Purchase Orders',
   emoji: '🛒',
-  summary: 'Raise, approve, and receive purchase orders from vendors.',
+  summary:
+    'The full procurement pipeline — from a rough estimate at creation to a vendor-priced, approved, bought, received, and audited purchase.',
   steps: [
     {
-      title: 'Create a PO',
-      body: 'Click New PO. Select the vendor, delivery address, and required date. Add line items with quantity and agreed unit price.',
+      title: 'Create the PO',
+      body: 'Click New PO. Pick a purpose — General Stock, Project Supply, or Manufacturing/BOM — it decides how the cost gets routed once the PO is priced. Vendor is optional here — leave it blank and set it later once you actually have a quote. For each line, pick a catalog product, or leave it as a free-text "Custom item" if it is not in the catalog yet.',
     },
     {
-      title: 'Submit for approval',
-      body: "Click Submit. The PO routes through the approval workflow based on your company's amount thresholds.",
+      title: 'Inventory check',
+      body: 'The PO owner records how much of each line is already sitting in stock. A line fully covered from stock skips straight to Ready to Issue — it never goes through pricing or approval. Whatever is still needed continues on to pricing.',
     },
     {
-      title: 'Receive goods',
-      body: 'Once delivered, open the PO and click Receive. Enter the actual quantities received — partial receipts are supported.',
+      title: 'Pricing',
+      body: 'Store Pricing — valuing whatever portion is coming from existing stock — is automatic: the system fills it in from the last real vendor price recorded for that product, no one has to type it in. Market Pricing is where a real vendor and a real price and currency get attached to the portion actually being purchased, entered by whoever holds the Procurement Officer position.',
     },
     {
-      title: 'Match to invoice',
-      body: 'After receiving, go to AP and create a vendor invoice referencing this PO. The system verifies amounts against received quantities.',
+      title: 'Verification & approval',
+      body: "A second reviewer (Procurement 2nd) checks the market price before it goes to approval, and can send it back if something looks off. Approval then routes to the right person based on your company's thresholds and PO positions. An Emergency-priority PO skips straight from Draft to approval, bypassing inventory check and pricing entirely.",
+    },
+    {
+      title: 'Buying — the actual price',
+      body: 'Once approved, the PO moves straight into Items Bought. The buyer ticks each line as bought and enters the actual price paid there — that real number, not the original estimate, is what flows through to Finance.',
+    },
+    {
+      title: 'Receiving',
+      body: 'For a normal purchase, open the PO and click Record Receipt — enter quantities received (partial receipts are fine) and attach a vendor-receipt photo plus a materials photo; it only counts once both are attached and confirmed. For a project PO marked "delivered to jobsite," the same screen becomes a simpler Mark Delivered step — it never touches warehouse stock, the cost posts straight to the project instead.',
+    },
+    {
+      title: 'New items get cataloged',
+      body: 'A line left as a free-text "Custom item" lands in Inventory → New Items to Catalog once it actually arrives. The store keeper either catalogs it as a real product — so it is searchable and reorderable next time — or links it to an existing product if it turns out to already be in the catalog under a different name.',
+    },
+    {
+      title: 'Finance audit & invoicing',
+      body: 'Finance reviews the actual price against the original estimate (flagged if it varies) before the PO can move to Invoiced. The funding source — vendor accounts payable or an employee advance — is decided at that point, and the vendor invoice is created against the PO.',
     },
   ],
   tips: [
-    'POs above the approval threshold require manager sign-off before being sent to the vendor.',
-    'Use My Queue to see POs awaiting your approval action.',
-    'Add internal notes and file attachments to any PO line.',
+    'Vendor and currency can both be left unset at creation — they only need to be locked in once Market Pricing happens.',
+    'Use My Queue to see POs waiting on you specifically, and Approval Queue for everything awaiting sign-off.',
+    'A rejected PO goes back to Draft with a reason attached — fix it and resubmit.',
+    'Add internal notes and file attachments to any PO line at any stage.',
   ],
   tourKey: 'purchase-order',
 }

@@ -8,6 +8,7 @@ import {
   RECORD_RECEIPT,
   RECORD_DIRECT_DELIVERY,
 } from '../../../graphql/procurement'
+import { TOUR_DEMO_PO_ID, buildTourDemoReceiptPO } from '../../../components/help/tourDemoPO'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { EMPLOYEES_QUERY, ATTACH_FILE } from '../../../graphql/hr'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -191,6 +192,9 @@ function IconCamera({ size = 20 }: { size?: number }) {
 export default function ReceiptForm() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // Interactive PO tour: same reserved id as PurchaseOrderDetail.tsx — see
+  // tourDemoPO.ts.
+  const isTourDemo = id === TOUR_DEMO_PO_ID
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
@@ -225,12 +229,17 @@ export default function ReceiptForm() {
     {},
   )
 
-  const { data: poData } = useQuery(PURCHASE_ORDER_QUERY, { variables: { id }, skip: !id })
+  const { data: poData } = useQuery(PURCHASE_ORDER_QUERY, {
+    variables: { id },
+    skip: !id || isTourDemo,
+  })
+  const demoPurchaseOrder = isTourDemo ? buildTourDemoReceiptPO() : undefined
 
   useEffect(() => {
-    if (poData?.purchaseOrder && !initialized) {
+    const purchaseOrder = demoPurchaseOrder ?? poData?.purchaseOrder
+    if (purchaseOrder && !initialized) {
       setLines(
-        poData.purchaseOrder.lines.map(
+        purchaseOrder.lines.map(
           (l: {
             id: string
             description?: string
@@ -259,7 +268,7 @@ export default function ReceiptForm() {
         ),
       )
       // Pre-fill receiver from PO's designated receiver if set
-      const poReceiverName = poData.purchaseOrder.assigned_receiver_name as string | null
+      const poReceiverName = purchaseOrder.assigned_receiver_name as string | null
       if (poReceiverName) {
         // Find this employee in the list to get their ID, or just store the name
         const matched = employees.find((e) => `${e.first_name} ${e.last_name}` === poReceiverName)
@@ -271,7 +280,7 @@ export default function ReceiptForm() {
       }
       setInitialized(true)
     }
-  }, [poData, initialized])
+  }, [poData, demoPurchaseOrder, initialized])
 
   const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
   const { data: employeesData } = useQuery(EMPLOYEES_QUERY, { variables: { is_active: true } })
@@ -279,7 +288,7 @@ export default function ReceiptForm() {
   const [recordDirectDelivery] = useMutation(RECORD_DIRECT_DELIVERY)
   const [attachFile] = useMutation(ATTACH_FILE)
 
-  const po = poData?.purchaseOrder
+  const po = demoPurchaseOrder ?? poData?.purchaseOrder
   // Decided once, at PO creation (PurchaseOrderForm) — not a per-receipt
   // choice, since the from-stock portion's auto Store Out already has to
   // know this at PO approval time, long before anyone reaches receiving.
@@ -875,6 +884,7 @@ export default function ReceiptForm() {
         backPath={`/procurement/purchase-orders/${id}`}
         actions={
           <Button
+            data-tour="po-mark-delivered-btn"
             type="button"
             variant="primary"
             icon={isJobsite ? <IconCheckCircle size={16} /> : <IconSave size={16} />}
@@ -1104,7 +1114,10 @@ export default function ReceiptForm() {
                 />
 
                 <Card style={{ padding: '20px' }}>
-                  <div style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}>
+                  <div
+                    data-tour="po-jobsite-photos"
+                    style={{ fontWeight: 600, color: theme.textPrimary, marginBottom: '12px' }}
+                  >
                     Vendor Receipt (required)
                   </div>
                   {renderPhotoGrid('vendor_receipt')}

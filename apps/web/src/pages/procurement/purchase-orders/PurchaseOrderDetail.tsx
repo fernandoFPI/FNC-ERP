@@ -1,5 +1,5 @@
 ﻿import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   PO_LIFECYCLE_QUERY,
@@ -69,8 +69,13 @@ import { Input } from '../../../components/ui/Input'
 import { Textarea } from '../../../components/ui/Textarea'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
+import {
+  TOUR_DEMO_PO_ID,
+  buildTourDemoPO,
+  buildTourDemoStockAvailability,
+} from '../../../components/help/tourDemoPO'
 
-interface POLine {
+export interface POLine {
   id: string
   product_id: string
   product_name: string
@@ -136,7 +141,7 @@ function poLineTotal(line: {
   return (qty * mp || parseFloat(String(line.total ?? 0))) * fxRate
 }
 
-interface PO {
+export interface PO {
   id: string
   po_number: string
   status: string
@@ -363,6 +368,11 @@ function IconBox({ size = 17 }: { size?: number }) {
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // Interactive PO tour: a reserved id renders a synthetic, client-only demo
+  // PO instead of querying the real backend — see tourDemoPO.ts.
+  const [searchParams] = useSearchParams()
+  const isTourDemo = id === TOUR_DEMO_PO_ID
+  const tourStatus = searchParams.get('tourStatus') ?? 'inventory_check'
   const { theme } = useTheme()
   const lock = useRecordLock('purchase_order', id)
   const { isPhone } = useBreakpoint()
@@ -646,7 +656,7 @@ export default function PurchaseOrderDetail() {
     poLineComments: RawComment[]
   }>(PO_LINE_COMMENTS_QUERY, {
     variables: { poId: id },
-    skip: !id,
+    skip: !id || isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   const fetchLineComments = React.useCallback(() => {
@@ -672,10 +682,11 @@ export default function PurchaseOrderDetail() {
 
   const { data, loading, refetch } = useQuery(PO_LIFECYCLE_QUERY, {
     variables: { id },
+    skip: isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('purchase_order', () => void refetch())
-  const po: PO | undefined = data?.purchaseOrder
+  const po: PO | undefined = isTourDemo ? buildTourDemoPO(tourStatus) : data?.purchaseOrder
 
   // Derived rejection reason — built from per-line flag notes when approving
   const flagAutoReason = po
@@ -691,7 +702,7 @@ export default function PurchaseOrderDetail() {
   const effectiveRejectReason = rejectReason || flagAutoReason
 
   useEffect(() => {
-    if (!id) return
+    if (!id || isTourDemo) return
     interface APInv {
       id: string
       invoice_number: string
@@ -723,7 +734,7 @@ export default function PurchaseOrderDetail() {
 
   const { data: stockData } = useQuery(PO_STOCK_AVAILABILITY_QUERY, {
     variables: { poId: id },
-    skip: po?.status !== 'inventory_check',
+    skip: po?.status !== 'inventory_check' || isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   const stockAvailability: {
@@ -744,7 +755,7 @@ export default function PurchaseOrderDetail() {
       qtyAvailable: number
       averageCost: number | null
     }[]
-  }[] = stockData?.poStockAvailability ?? []
+  }[] = isTourDemo && po ? buildTourDemoStockAvailability(po) : (stockData?.poStockAvailability ?? [])
   const [lineSourceLocation, setLineSourceLocation] = useState<Record<string, string>>({})
 
   const onErr = (e: { message: string }) => {
@@ -1810,7 +1821,10 @@ export default function PurchaseOrderDetail() {
                 ))}
 
               {po.status === 'inventory_check' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div
+                  data-tour="po-inventory-check"
+                  style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+                >
                   <div>
                     <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
                       Stock Availability
@@ -2342,7 +2356,10 @@ export default function PurchaseOrderDetail() {
                     return parseFloat(mp.price) > 0
                   })
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div
+                      data-tour="po-market-pricing"
+                      style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+                    >
                       <div
                         style={{
                           fontSize: '12px',
@@ -2485,7 +2502,10 @@ export default function PurchaseOrderDetail() {
                 (() => {
                   const purchaseLines = po.lines.filter((l) => l.qty - (l.qty_from_stock || 0) > 0)
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div
+                      data-tour="po-price-verification"
+                      style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+                    >
                       <div
                         style={{
                           fontSize: '12px',
@@ -3139,6 +3159,7 @@ export default function PurchaseOrderDetail() {
 
                       {/* ── Approve ───────────────────────────────────────────────── */}
                       <Button
+                        data-tour="po-approve-btn"
                         variant="primary"
                         style={PRIMARY_CTA_STYLE}
                         loading={anyLoading}
@@ -3218,6 +3239,7 @@ export default function PurchaseOrderDetail() {
                     PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.
                   </div>
                   <Button
+                    data-tour="po-record-receipt-btn"
                     variant="primary"
                     style={PRIMARY_CTA_STYLE}
                     size="sm"
@@ -3303,6 +3325,7 @@ export default function PurchaseOrderDetail() {
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 <button
+                                  data-tour="po-mark-bought-btn"
                                   disabled={!canMarkBought}
                                   onClick={() =>
                                     void markLineBought({
@@ -3352,6 +3375,7 @@ export default function PurchaseOrderDetail() {
                                       Actual price paid ({fmtN(toBuy)} {line.uom}):
                                     </span>
                                     <input
+                                      data-tour="po-actual-price-input"
                                       type="number"
                                       min={0}
                                       disabled={!canMarkBought}
@@ -3444,6 +3468,7 @@ export default function PurchaseOrderDetail() {
                         {boughtCount} / {po.lines.length} items bought
                       </div>
                       <Button
+                        data-tour="po-record-receipt-btn"
                         variant="primary"
                         style={PRIMARY_CTA_STYLE}
                         size="sm"
@@ -3610,7 +3635,10 @@ export default function PurchaseOrderDetail() {
                   ).length
                   const canPass = flaggedCount === 0 && pendingCount === 0
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div
+                      data-tour="po-finance-audit"
+                      style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+                    >
                       <div
                         style={{
                           fontSize: '12px',

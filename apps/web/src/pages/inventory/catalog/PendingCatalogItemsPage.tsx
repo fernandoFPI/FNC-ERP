@@ -241,7 +241,7 @@ export default function PendingCatalogItemsPage() {
   }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
+    <div data-tour="pending-catalog-page" style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
       <PageHeader
         title="New Items to Catalog"
         subtitle={`${items.length} item${items.length === 1 ? '' : 's'} awaiting cataloging`}
