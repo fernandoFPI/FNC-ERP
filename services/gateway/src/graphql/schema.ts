@@ -62,7 +62,7 @@
     unreadNotificationCount: Int!
 
     # Projects
-    projects(status: [String], projectType: String, projectManagerId: ID, search: String, page: Int, limit: Int, includeAll: Boolean): ProjectList!
+    projects(status: [String], projectType: String, projectManagerId: ID, search: String, page: Int, limit: Int, includeAll: Boolean, myProjectsOnly: Boolean): ProjectList!
     project(id: ID!): Project
 
     # Manufacturing

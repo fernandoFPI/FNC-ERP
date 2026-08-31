@@ -72,6 +72,7 @@ export const PROJECTS_QUERY = gql`
     $page: Int
     $limit: Int
     $includeAll: Boolean
+    $myProjectsOnly: Boolean
   ) {
     projects(
       status: $status
@@ -81,6 +82,7 @@ export const PROJECTS_QUERY = gql`
       page: $page
       limit: $limit
       includeAll: $includeAll
+      myProjectsOnly: $myProjectsOnly
     ) {
       data {
         id

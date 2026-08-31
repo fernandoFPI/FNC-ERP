@@ -4197,6 +4197,7 @@ export const resolvers = {
         page?: number
         limit?: number
         includeAll?: boolean
+        myProjectsOnly?: boolean
       },
       ctx: GQLContext,
     ) => {
@@ -4208,7 +4209,12 @@ export const resolvers = {
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
 
-      const isAdmin = isAdminGW(ctx.auth.role)
+      // isPermissionBypassGW (system_admin/company_admin only), not isAdminGW
+      // (which also includes module_admin) — a module_admin for Projects can
+      // create/edit projects but, like everyone else, should still only see
+      // projects they created or are actually on, not the whole company's
+      // list. See isAdminGW's own comment for why it must not be used here.
+      const isAdmin = isPermissionBypassGW(ctx.auth.role)
       // includeAll (used by PO/rental-contract picker dropdowns to populate
       // the full company project list) requires projects.view — otherwise it
       // silently falls back to the normal assigned-projects-only restriction
@@ -4239,6 +4245,21 @@ export const resolvers = {
               )
             )
           )
+        )`)
+        params.push(ctx.auth.userId)
+        idx++
+      }
+      // myProjectsOnly: the "My Projects" toggle on the list page — strictly
+      // "am I an active team member on this project," not creator or PM.
+      // Deliberately a separate, stricter AND-ed condition rather than
+      // reusing the block above: an admin/module_admin who created a project
+      // but never actually joined its team should NOT see it here either —
+      // that's exactly the gap this toggle exists to close.
+      if (args.myProjectsOnly) {
+        conditions.push(`EXISTS (
+          SELECT 1 FROM project_members pm_mine
+          JOIN employees emp_mine ON emp_mine.id = pm_mine.employee_id
+          WHERE pm_mine.project_id = p.id AND emp_mine.user_id = $${idx} AND pm_mine.is_active = true
         )`)
         params.push(ctx.auth.userId)
         idx++

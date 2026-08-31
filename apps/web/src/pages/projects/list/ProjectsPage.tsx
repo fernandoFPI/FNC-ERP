@@ -84,6 +84,7 @@ export default function ProjectsPage() {
     params.get('status') ? [params.get('status')!] : [],
   )
   const [projectType, setProjectType] = useState(params.get('projectType') ?? '')
+  const [myProjectsOnly, setMyProjectsOnly] = useState(false)
   const [page, setPage] = useState(1)
   const limit = 20
 
@@ -92,6 +93,7 @@ export default function ProjectsPage() {
       status: statuses.length > 0 ? statuses : undefined,
       projectType: projectType || undefined,
       search: search || undefined,
+      myProjectsOnly: myProjectsOnly || undefined,
       page,
       limit,
     },
@@ -359,6 +361,25 @@ export default function ProjectsPage() {
 
         {/* Status chips */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+          <button
+            onClick={() => {
+              setMyProjectsOnly((v) => !v)
+              setPage(1)
+            }}
+            style={{
+              padding: '4px 12px',
+              borderRadius: '999px',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              border: `1px solid ${myProjectsOnly ? theme.success : theme.border}`,
+              background: myProjectsOnly ? theme.success : theme.bgCanvas,
+              color: myProjectsOnly ? '#fff' : theme.textMuted,
+            }}
+          >
+            👤 My Projects
+          </button>
+          <div style={{ width: '1px', background: theme.border, margin: '2px 4px' }} />
           {STATUS_OPTIONS.map((o) => {
             const active = statuses.includes(o.value)
             return (
