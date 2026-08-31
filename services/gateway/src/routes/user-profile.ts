@@ -3,6 +3,7 @@ import multer from 'multer'
 import { z } from 'zod'
 import { query } from '@fnc-erp/db'
 import { uploadBuffer, generateDownloadUrl } from '@fnc-erp/storage'
+import { logAudit } from '@fnc-erp/audit'
 
 export const userProfileRouter: ExpressRouter = Router()
 
@@ -26,6 +27,96 @@ async function freshAvatarUrl(fileKey: unknown): Promise<string | null> {
     return downloadUrl
   } catch {
     return null
+  }
+}
+
+// Ties a freshly-completed profile to an HR employee record so an admin doesn't
+// have to manually create/link one for every new hire. Deliberately never touches
+// a row that's already linked to a DIFFERENT user_id — only fills a gap (no existing
+// link in this company) or claims an unlinked (user_id IS NULL) placeholder row.
+// That's what makes it safe against the duplicate-user_id bug from earlier
+// (employees_company_user_unique, migration 216): there is never a moment where
+// two rows in the same company hold this user_id.
+async function autoLinkEmployeeRecord(
+  companyId: string,
+  userId: string,
+  profile: { firstName: string; lastName: string; jobTitle: string | null; phone: string | null; email: string },
+): Promise<void> {
+  try {
+    const existing = await query(
+      `SELECT id FROM employees WHERE company_id = $1 AND user_id = $2`,
+      [companyId, userId],
+    )
+    if (existing.rows[0]) {
+      const existingId = existing.rows[0]['id'] as string
+      // first/last name always come from the profile form (required fields);
+      // job title/phone only overwrite when the user actually provided a
+      // value, so leaving an optional field blank never wipes out something
+      // HR already had on file for it.
+      const synced = await query(
+        `UPDATE employees
+         SET first_name = $1, last_name = $2,
+             job_title = COALESCE($3::varchar, job_title),
+             phone = COALESCE($4::varchar, phone),
+             updated_at = NOW()
+         WHERE id = $5
+           AND (first_name IS DISTINCT FROM $1 OR last_name IS DISTINCT FROM $2
+                OR ($3::varchar IS NOT NULL AND job_title IS DISTINCT FROM $3::varchar)
+                OR ($4::varchar IS NOT NULL AND phone IS DISTINCT FROM $4::varchar))
+         RETURNING id`,
+        [profile.firstName, profile.lastName, profile.jobTitle, profile.phone, existingId],
+      )
+      if (synced.rows[0]) {
+        await logAudit({
+          userId,
+          companyId,
+          action: 'AUTO_SYNC_EMPLOYEE_ON_PROFILE_UPDATE',
+          tableName: 'employees',
+          recordId: existingId,
+        })
+      }
+      return
+    }
+
+    const placeholder = await query(
+      `SELECT id FROM employees WHERE company_id = $1 AND user_id IS NULL AND lower(email) = lower($2) LIMIT 1`,
+      [companyId, profile.email],
+    )
+    if (placeholder.rows[0]) {
+      const placeholderId = placeholder.rows[0]['id'] as string
+      const linked = await query(
+        `UPDATE employees SET user_id = $1, updated_at = NOW()
+         WHERE id = $2 AND company_id = $3 AND user_id IS NULL
+         RETURNING id`,
+        [userId, placeholderId, companyId],
+      )
+      if (linked.rows[0]) {
+        await logAudit({
+          userId,
+          companyId,
+          action: 'AUTO_LINK_EMPLOYEE_ON_PROFILE_COMPLETE',
+          tableName: 'employees',
+          recordId: placeholderId,
+        })
+      }
+      return
+    }
+
+    const created = await query(
+      `INSERT INTO employees (company_id, user_id, first_name, last_name, email, phone, job_title, hire_date, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE, $2)
+       RETURNING id`,
+      [companyId, userId, profile.firstName, profile.lastName, profile.email, profile.phone, profile.jobTitle],
+    )
+    await logAudit({
+      userId,
+      companyId,
+      action: 'AUTO_CREATE_EMPLOYEE_ON_PROFILE_COMPLETE',
+      tableName: 'employees',
+      recordId: created.rows[0]!['id'] as string,
+    })
+  } catch (err) {
+    console.error('[user-profile] auto-link/create employee record failed:', err)
   }
 }
 
@@ -96,6 +187,18 @@ userProfileRouter.put('/me/profile', async (req: Request, res: Response): Promis
   )
 
   const u = r.rows[0] as Record<string, unknown>
+
+  const companyId = req.auth?.companyId
+  if (companyId) {
+    await autoLinkEmployeeRecord(companyId, userId, {
+      firstName,
+      lastName,
+      jobTitle: jobTitle ?? null,
+      phone: phone ?? null,
+      email: u.email as string,
+    })
+  }
+
   res.json({
     success: true,
     data: {
