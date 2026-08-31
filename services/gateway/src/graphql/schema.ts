@@ -2281,6 +2281,21 @@
     stockMoves(productId: ID, fromLocationId: ID, toLocationId: ID, sourceType: String, fromDate: String, toDate: String, page: Int, limit: Int): [StockMove!]!
     stockLots(productId: ID): [StockLot!]!
     stockLot(id: ID!): StockLot
+    pendingProductCatalogItems: [PendingProductCatalogItem!]!
+  }
+
+  type PendingProductCatalogItem {
+    id: ID!
+    po_id: ID!
+    po_number: String!
+    po_line_id: ID!
+    description: String!
+    qty: String
+    uom: String
+    unit_price: String
+    currency_code: String
+    source: String!
+    created_at: String!
   }
 
   extend type Mutation {
@@ -2289,6 +2304,8 @@
     createStockLocation(input: LocationInput!): StockLocation!
     createManualTransfer(input: TransferInput!): StockMove!
     createStockAdjustment(input: StockAdjustmentInput!): StockMove!
+    createProductFromPendingCatalogItem(id: ID!, input: ProductInput!): Product!
+    linkPendingCatalogItemToProduct(id: ID!, productId: ID!): Boolean!
   }
 
   # ── Phase 4: Projects ────────────────────────────────────────

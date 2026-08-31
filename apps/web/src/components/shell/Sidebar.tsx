@@ -773,6 +773,12 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['inventory.products.view'],
       },
       {
+        label: 'New Items to Catalog',
+        icon: <Icon name="clipboard" />,
+        path: '/inventory/pending-catalog',
+        permKeys: ['inventory.products.view'],
+      },
+      {
         label: 'Locations',
         icon: <Icon name="map-pin" />,
         path: '/inventory/locations',

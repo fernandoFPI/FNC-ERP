@@ -227,6 +227,8 @@ export default function AuditLogPage() {
                 { value: 'login', label: 'Login' },
                 { value: 'logout', label: 'Logout' },
                 { value: 'AUTO_STORE_PRICING', label: 'Store Pricing Auto-Fill' },
+                { value: 'CATALOG_NEW_PRODUCT_FROM_PO', label: 'Catalog: New Product' },
+                { value: 'CATALOG_LINK_EXISTING_PRODUCT_FROM_PO', label: 'Catalog: Linked Existing' },
               ],
             },
           ]}

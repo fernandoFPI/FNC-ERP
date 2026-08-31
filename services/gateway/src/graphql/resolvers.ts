@@ -6460,6 +6460,29 @@ export const resolvers = {
       return { ...lot.rows[0], moves: moves.rows }
     },
 
+    // The store keeper's worklist: PO lines that arrived (Store In or
+    // direct-to-jobsite delivery) with no catalog product picked — see
+    // confirmReceipt/recordDirectDelivery, which queue these instead of
+    // blocking receiving. Company-wide store_keeper position (or admin)
+    // only, same gate as createStockAdjustment.
+    pendingProductCatalogItems: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (
+        !isPermissionBypassGW(ctx.auth.role) &&
+        !(await callerHasCompanyWideStoreKeeper(ctx.auth.userId, ctx.auth.companyId))
+      )
+        throw new Error('Company-wide Store Keeper position required')
+      const r = await query(
+        `SELECT ppci.*, po.po_number
+         FROM pending_product_catalog_items ppci
+         JOIN purchase_orders po ON po.id = ppci.po_id
+         WHERE ppci.company_id=$1 AND ppci.status='pending'
+         ORDER BY ppci.created_at`,
+        [ctx.auth.companyId],
+      )
+      return r.rows
+    },
+
     // ── Permission System ─────────────────────────────────────────────────────────
 
     userPermissions: async (
@@ -8268,7 +8291,7 @@ export const resolvers = {
               )
             }
             const polRes = await client.query(
-              `SELECT product_id, unit_price, fx_rate_to_base FROM po_lines WHERE id=$1`,
+              `SELECT product_id, unit_price, fx_rate_to_base, description, uom, currency_code FROM po_lines WHERE id=$1`,
               [l.po_line_id],
             )
             const polProductId = polRes.rows[0]?.product_id as string | null
@@ -8277,6 +8300,29 @@ export const resolvers = {
             // priced in a foreign currency (e.g. USD via market pricing) would
             // otherwise record its raw foreign-currency number as the IQD cost.
             const polUnitPrice = parseFloat(String(polRes.rows[0]?.unit_price ?? 0)) * polFxRate
+            if (!polProductId) {
+              // Buyer typed a free-text item with no catalog product picked —
+              // queue it for the store keeper to catalog or link to an existing
+              // product, rather than silently receiving stock with no reorderable
+              // identity. ON CONFLICT: a line received across several partial
+              // receipts only gets queued once.
+              await client.query(
+                `INSERT INTO pending_product_catalog_items
+                   (company_id, po_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'store_in')
+                 ON CONFLICT (po_line_id) DO NOTHING`,
+                [
+                  ctx.auth!.companyId,
+                  receipt.po_id,
+                  l.po_line_id,
+                  polRes.rows[0]?.description ?? '',
+                  qtyReceived,
+                  polRes.rows[0]?.uom ?? 'unit',
+                  polRes.rows[0]?.unit_price ?? null,
+                  polRes.rows[0]?.currency_code ?? null,
+                ],
+              )
+            }
             if (polProductId) {
               if (!virtualInId) {
                 const virtInRes = await client.query(
@@ -8451,7 +8497,7 @@ export const resolvers = {
               )
             }
             const polRes = await client.query(
-              `SELECT unit_price, fx_rate_to_base FROM po_lines WHERE id=$1`,
+              `SELECT product_id, unit_price, fx_rate_to_base, description, uom, currency_code FROM po_lines WHERE id=$1`,
               [l.po_line_id],
             )
             const polFxRate = parseFloat(String(polRes.rows[0]?.fx_rate_to_base ?? 1)) || 1
@@ -8464,6 +8510,28 @@ export const resolvers = {
                  ON CONFLICT (source_id) WHERE source_type = 'po_direct_delivery' AND source_id IS NOT NULL
                  DO UPDATE SET amount = project_cost_actuals.amount + EXCLUDED.amount`,
                 [poRow.linked_project_id, l.po_line_id, cost, i.received_date],
+              )
+            }
+            // Direct-to-jobsite items never touch stock/confirmReceipt, so this
+            // is the only arrival point they have — queue the same way for a
+            // custom (no product_id) line, so the store keeper's worklist
+            // covers jobsite deliveries too, not just warehouse receipts.
+            if (!polRes.rows[0]?.product_id) {
+              await client.query(
+                `INSERT INTO pending_product_catalog_items
+                   (company_id, po_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'direct_delivery')
+                 ON CONFLICT (po_line_id) DO NOTHING`,
+                [
+                  ctx.auth!.companyId,
+                  args.poId,
+                  l.po_line_id,
+                  polRes.rows[0]?.description ?? '',
+                  l.qty_received,
+                  polRes.rows[0]?.uom ?? 'unit',
+                  polRes.rows[0]?.unit_price ?? null,
+                  polRes.rows[0]?.currency_code ?? null,
+                ],
               )
             }
           }
@@ -8604,6 +8672,144 @@ export const resolvers = {
       if (!r.rows[0]) throw new Error('Product not found')
       void publishEntityChanged(ctx.auth.companyId, 'product', args.id, 'updated')
       return r.rows[0]
+    },
+
+    // Store keeper resolves a pendingProductCatalogItems row by cataloging it
+    // as a genuinely new product — same SKU auto-generation as createProduct,
+    // plus seeding the market-price cache from whatever price was captured
+    // when it arrived (confirmReceipt/recordDirectDelivery).
+    createProductFromPendingCatalogItem: async (
+      _: unknown,
+      args: { id: string; input: Record<string, unknown> },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (
+        !isPermissionBypassGW(ctx.auth.role) &&
+        !(await callerHasCompanyWideStoreKeeper(ctx.auth.userId, ctx.auth.companyId))
+      )
+        throw new Error('Company-wide Store Keeper position required')
+      const pendingRes = await query(
+        `SELECT * FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
+        [args.id, ctx.auth.companyId],
+      )
+      const pending = pendingRes.rows[0] as Record<string, unknown> | undefined
+      if (!pending) throw new Error('Pending catalog item not found (or already resolved)')
+
+      const i = args.input
+      const manualSku = typeof i.sku === 'string' ? i.sku.trim() : ''
+      const storeEntry =
+        typeof i.sub_category === 'string' ? PRODUCT_STORE_SKU_PREFIXES[i.sub_category] : undefined
+      const categoryEntry =
+        typeof i.category === 'string' ? PRODUCT_CATEGORY_SKU_PREFIXES[i.category] : undefined
+      const generated = storeEntry ?? categoryEntry
+      const sku =
+        manualSku ||
+        (generated
+          ? await nextDocumentNumber(ctx.auth.companyId, `product_${generated.slug}`, generated.prefix)
+          : await nextDocumentNumber(ctx.auth.companyId, 'product', 'PRD'))
+
+      return withTransaction(
+        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
+        async (client) => {
+          const hasPrice = pending.unit_price != null
+          const productRes = await client.query(
+            `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,is_active,
+               last_market_price,last_market_price_currency,last_market_price_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'last_cost',true,$9,$10,${hasPrice ? 'NOW()' : 'NULL'}) RETURNING *`,
+            [
+              ctx.auth!.companyId,
+              sku,
+              i.name,
+              i.name_ar ?? null,
+              i.description ?? null,
+              i.category ?? null,
+              i.sub_category ?? null,
+              (i.uom as string | undefined) ?? pending.uom ?? 'unit',
+              pending.unit_price ?? null,
+              pending.currency_code ?? null,
+            ],
+          )
+          const product = productRes.rows[0] as Record<string, unknown>
+          await client.query(`UPDATE po_lines SET product_id=$1 WHERE id=$2`, [
+            product.id,
+            pending.po_line_id,
+          ])
+          await client.query(
+            `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
+            [product.id, ctx.auth!.userId, args.id],
+          )
+          await logAudit({
+            userId: ctx.auth!.userId,
+            companyId: ctx.auth!.companyId,
+            action: 'CATALOG_NEW_PRODUCT_FROM_PO',
+            tableName: 'products',
+            recordId: product.id as string,
+            newValues: { fromDescription: pending.description, poLineId: pending.po_line_id },
+            client,
+          })
+          void publishEntityChanged(ctx.auth!.companyId, 'product', product.id as string, 'created')
+          return product
+        },
+      )
+    },
+
+    // Store keeper resolves a pendingProductCatalogItems row by recognizing
+    // it as an item that already exists in the catalog under a different
+    // description — links the PO line to it instead of creating a duplicate.
+    linkPendingCatalogItemToProduct: async (
+      _: unknown,
+      args: { id: string; productId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (
+        !isPermissionBypassGW(ctx.auth.role) &&
+        !(await callerHasCompanyWideStoreKeeper(ctx.auth.userId, ctx.auth.companyId))
+      )
+        throw new Error('Company-wide Store Keeper position required')
+      const pendingRes = await query(
+        `SELECT * FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
+        [args.id, ctx.auth.companyId],
+      )
+      const pending = pendingRes.rows[0] as Record<string, unknown> | undefined
+      if (!pending) throw new Error('Pending catalog item not found (or already resolved)')
+      const productCheck = await query(`SELECT id FROM products WHERE id=$1 AND company_id=$2`, [
+        args.productId,
+        ctx.auth.companyId,
+      ])
+      if (!productCheck.rows[0]) throw new Error('Product not found')
+
+      return withTransaction(
+        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
+        async (client) => {
+          await client.query(`UPDATE po_lines SET product_id=$1 WHERE id=$2`, [
+            args.productId,
+            pending.po_line_id,
+          ])
+          if (pending.unit_price != null) {
+            await client.query(
+              `UPDATE products SET last_market_price=$1, last_market_price_currency=$2, last_market_price_at=NOW() WHERE id=$3`,
+              [pending.unit_price, pending.currency_code ?? 'IQD', args.productId],
+            )
+          }
+          await client.query(
+            `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
+            [args.productId, ctx.auth!.userId, args.id],
+          )
+          await logAudit({
+            userId: ctx.auth!.userId,
+            companyId: ctx.auth!.companyId,
+            action: 'CATALOG_LINK_EXISTING_PRODUCT_FROM_PO',
+            tableName: 'products',
+            recordId: args.productId,
+            newValues: { fromDescription: pending.description, poLineId: pending.po_line_id },
+            client,
+          })
+          void publishEntityChanged(ctx.auth!.companyId, 'product', args.productId, 'updated')
+          return true
+        },
+      )
     },
 
     createStockLocation: async (

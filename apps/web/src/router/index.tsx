@@ -269,6 +269,9 @@ const TransferForm = lazy(() => import('../pages/inventory/moves/TransferForm'))
 const LotsPage = lazy(() => import('../pages/inventory/lots/LotsPage'))
 const LotTraceability = lazy(() => import('../pages/inventory/lots/LotTraceability'))
 const StockAdjustmentForm = lazy(() => import('../pages/inventory/adjustments/StockAdjustmentForm'))
+const PendingCatalogItemsPage = lazy(
+  () => import('../pages/inventory/catalog/PendingCatalogItemsPage'),
+)
 
 // Redirect helpers for old /admin/:id routes
 function AdminUserRedirect() {
@@ -557,6 +560,10 @@ export const router = createBrowserRouter([
             element: withPerm('inventory.stock_moves.view', <StockBalancesPage />),
           },
           { path: 'products', element: withPerm('inventory.products.view', <ProductsPage />) },
+          {
+            path: 'pending-catalog',
+            element: withPerm('inventory.products.view', <PendingCatalogItemsPage />),
+          },
           {
             path: 'products/new',
             element: withPerm('inventory.products.edit', <ProductForm />, 'edit'),

@@ -71,6 +71,40 @@ export const UPDATE_PRODUCT = gql`
   }
 `
 
+export const PENDING_PRODUCT_CATALOG_ITEMS_QUERY = gql`
+  query PendingProductCatalogItems {
+    pendingProductCatalogItems {
+      id
+      po_id
+      po_number
+      po_line_id
+      description
+      qty
+      uom
+      unit_price
+      currency_code
+      source
+      created_at
+    }
+  }
+`
+
+export const CREATE_PRODUCT_FROM_PENDING_CATALOG_ITEM = gql`
+  mutation CreateProductFromPendingCatalogItem($id: ID!, $input: ProductInput!) {
+    createProductFromPendingCatalogItem(id: $id, input: $input) {
+      id
+      sku
+      name
+    }
+  }
+`
+
+export const LINK_PENDING_CATALOG_ITEM_TO_PRODUCT = gql`
+  mutation LinkPendingCatalogItemToProduct($id: ID!, $productId: ID!) {
+    linkPendingCatalogItemToProduct(id: $id, productId: $productId)
+  }
+`
+
 export const STOCK_LOCATIONS_QUERY = gql`
   query StockLocations($type: String, $isActive: Boolean, $companyId: ID) {
     stockLocations(type: $type, isActive: $isActive, companyId: $companyId) {
