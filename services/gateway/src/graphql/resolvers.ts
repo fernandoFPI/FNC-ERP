@@ -24672,7 +24672,11 @@ async function syncModuleAdminPermissions(
   if (wasModuleAdmin && (!isModuleAdmin || before.module !== after.module)) {
     await revokeModuleAdminPermissions(userId, companyId, before.module!)
   }
-  if (isModuleAdmin && (!wasModuleAdmin || before.module !== after.module)) {
+  // Unconditional (not just on transition into module_admin): granting is
+  // idempotent, and a row can already be module_admin from before this
+  // auto-grant existed — re-saving identical values must still grant, not
+  // look like a no-op change.
+  if (isModuleAdmin) {
     await applyModuleAdminPermissions(userId, companyId, after.module!, grantedBy)
   }
 }
