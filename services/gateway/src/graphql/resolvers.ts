@@ -26751,7 +26751,15 @@ const phase5MutationResolvers = {
       ],
     )
     const cn = await query(`SELECT name FROM companies WHERE id=$1`, [args.input.companyId])
-    return { ...r.rows[0], companyName: cn.rows[0]?.name ?? '' }
+    const row = r.rows[0] as Record<string, unknown>
+    return {
+      id: row.id,
+      companyId: row.company_id,
+      companyName: cn.rows[0]?.name ?? '',
+      module: row.module ?? '',
+      role: row.role,
+      isActive: row.is_active,
+    }
   },
 
   updateUserRole: async (
@@ -26784,7 +26792,14 @@ const phase5MutationResolvers = {
     if (!r.rows[0]) throw new Error('Role not found')
     const row = r.rows[0] as Record<string, unknown>
     const cn = await query(`SELECT name FROM companies WHERE id=$1`, [row.company_id])
-    return { ...row, companyName: cn.rows[0]?.name ?? '' }
+    return {
+      id: row.id,
+      companyId: row.company_id,
+      companyName: cn.rows[0]?.name ?? '',
+      module: row.module ?? '',
+      role: row.role,
+      isActive: row.is_active,
+    }
   },
 
   removeUserRole: async (_: unknown, args: { roleId: string }, ctx: GQLContext) => {
