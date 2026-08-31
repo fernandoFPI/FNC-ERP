@@ -212,6 +212,14 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
         ],
       },
       {
+        key: 'overview',
+        label: 'Project Overview',
+        permissions: [
+          { key: 'projects.overview.view', label: 'View Project Overview', sortOrder: 305 },
+          { key: 'projects.overview.edit', label: 'Edit Project Overview', sortOrder: 306 },
+        ],
+      },
+      {
         key: 'stages',
         label: 'Project Stages',
         permissions: [
@@ -345,6 +353,22 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           { key: 'projects.qaqc.view', label: 'View Site QA/QC Records', sortOrder: 390 },
           { key: 'projects.qaqc.edit', label: 'Manage Site QA/QC Records', sortOrder: 391 },
           { key: 'projects.qaqc.approve', label: 'Approve Site QA/QC Records', sortOrder: 392 },
+        ],
+      },
+      {
+        key: 'team',
+        label: 'Project Team',
+        permissions: [
+          { key: 'projects.team.view', label: 'View Project Team', sortOrder: 395 },
+          { key: 'projects.team.edit', label: 'Manage Project Team', sortOrder: 396 },
+        ],
+      },
+      {
+        key: 'attachments',
+        label: 'Attachments',
+        permissions: [
+          { key: 'projects.attachments.view', label: 'View Attachments', sortOrder: 397 },
+          { key: 'projects.attachments.edit', label: 'Manage Attachments', sortOrder: 398 },
         ],
       },
     ],
