@@ -539,9 +539,35 @@ async function issueStockForPOLines(
   const issueId = issueRes.rows[0]?.id as string
 
   for (const line of lines) {
-    if (!line.product_id) continue
     const qty = parseFloat(String(line.qty_from_stock ?? 0))
     if (qty <= 0) continue
+    if (!line.product_id) {
+      // A store keeper can mark any line as covered from stock during
+      // inventory check, including one for a free-text item never matched
+      // to a catalog product — there's no product identity to book a stock
+      // move or a material-issue line against, so it used to just vanish
+      // here silently (the store keeper believed it was issued; nothing
+      // was ever recorded). Queue it on the same worklist store_in/
+      // direct_delivery already use for this exact situation, instead of
+      // dropping it.
+      await client.query(
+        `INSERT INTO pending_product_catalog_items
+           (company_id, po_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'stock_issuance')
+         ON CONFLICT (po_line_id) DO NOTHING`,
+        [
+          companyId,
+          poId,
+          line.id,
+          line.description ?? '',
+          qty,
+          line.uom ?? 'unit',
+          line.unit_price ?? null,
+          line.currency_code ?? null,
+        ],
+      )
+      continue
+    }
     const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
 
     // Use store_price if set on the line; fall back to average_cost from stock

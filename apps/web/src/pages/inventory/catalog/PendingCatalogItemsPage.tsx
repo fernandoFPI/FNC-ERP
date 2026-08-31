@@ -322,7 +322,11 @@ export default function PendingCatalogItemsPage() {
                         </span>
                       )}
                       <Badge variant="neutral" size="sm">
-                        {item.source === 'direct_delivery' ? 'Direct to Jobsite' : 'Store In'}
+                        {item.source === 'direct_delivery'
+                          ? 'Direct to Jobsite'
+                          : item.source === 'stock_issuance'
+                            ? 'Issued from Stock'
+                            : 'Store In'}
                       </Badge>
                       <span>{formatDate(item.created_at)}</span>
                     </div>
