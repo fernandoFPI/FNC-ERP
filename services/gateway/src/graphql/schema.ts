@@ -3497,6 +3497,7 @@
   type AuditLogPage { items: [AuditEntry!]! total: Int! page: Int! limit: Int! }
 
   input RoleInput { companyId: ID! module: String! role: String! isActive: Boolean }
+  input UpdateRoleInput { role: String module: String isActive: Boolean }
   input EventConfigInput { maxAttempts: Int initialRetryDelaySeconds: Int backoffMultiplier: Float maxRetryDelaySeconds: Int dlqPriority: String alertOnDlq: Boolean }
 
   # ─── Phase 5: Settings ────────────────────────────────────────────────────
@@ -3612,7 +3613,7 @@
     updateIntercoPricing(companyId: ID!, input: IntercoPricingInput!): IntercoPricingSettings!
 
     addUserRole(userId: ID!, input: RoleInput!): UserRole!
-    updateUserRole(roleId: ID!, input: RoleInput!): UserRole!
+    updateUserRole(roleId: ID!, input: UpdateRoleInput!): UserRole!
     removeUserRole(roleId: ID!): Boolean!
     deactivateUser(userId: ID!): UserDetail!
     unlockUser(userId: ID!): UserDetail!

@@ -14,6 +14,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { useToastStore } from '../../../store/toastStore'
+import { usePermission } from '../../../hooks/usePermission'
 
 const UserRolesTab = lazy(() => import('./tabs/UserRolesTab'))
 import {
@@ -105,6 +106,8 @@ export default function UserDetail() {
   const { theme } = useTheme()
   const { id } = useParams<{ id: string }>()
   const addToast = useToastStore((s) => s.addToast)
+  const { can } = usePermission()
+  const canManageRoles = can('admin.users.edit', 'edit')
 
   const [activeTab, setActiveTab] = useState('overview')
   const [confirmUnlock, setConfirmUnlock] = useState(false)
@@ -115,6 +118,8 @@ export default function UserDetail() {
   const [removeRoleId, setRemoveRoleId] = useState<string | null>(null)
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
   const [roleForm, setRoleForm] = useState({ companyId: '', role: '', module: '' })
+  const [editingRole, setEditingRole] = useState<UserRole | null>(null)
+  const [editRoleForm, setEditRoleForm] = useState({ role: '', module: '' })
   const [showSetPasswordModal, setShowSetPasswordModal] = useState(false)
   const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' })
   const [passwordError, setPasswordError] = useState('')
@@ -219,9 +224,10 @@ export default function UserDetail() {
     },
   })
 
-  const [toggleRoleActive] = useMutation(UPDATE_USER_ROLE, {
+  const [updateRole, { loading: updatingRole }] = useMutation(UPDATE_USER_ROLE, {
     onCompleted: () => {
       addToast({ type: 'success', message: 'Role updated' })
+      setEditingRole(null)
       refetchUser()
     },
     onError: (e) => {
@@ -322,33 +328,44 @@ export default function UserDetail() {
       header: '',
       mobileLabel: 'Actions',
       mobilePriority: 3,
-      render: (role) => (
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              toggleRoleActive({
-                variables: {
-                  roleId: role.id,
-                  input: { isActive: !role.isActive },
-                },
-              })
-            }
-          >
-            {role.isActive ? 'Disable' : 'Enable'}
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => {
-              setRemoveRoleId(role.id)
-            }}
-          >
-            Remove
-          </Button>
-        </div>
-      ),
+      render: (role) =>
+        !canManageRoles ? null : (
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditRoleForm({ role: role.role, module: role.module })
+                setEditingRole(role)
+              }}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                updateRole({
+                  variables: {
+                    roleId: role.id,
+                    input: { isActive: !role.isActive },
+                  },
+                })
+              }
+            >
+              {role.isActive ? 'Disable' : 'Enable'}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                setRemoveRoleId(role.id)
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        ),
     },
   ]
 
@@ -630,24 +647,26 @@ export default function UserDetail() {
 
         {activeTab === 'roles' && (
           <Card padding="none">
-            <div
-              style={{
-                padding: '12px 16px',
-                borderBottom: `1px solid ${theme.border}`,
-                display: 'flex',
-                justifyContent: 'flex-end',
-              }}
-            >
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setShowAddRoleModal(true)
+            {canManageRoles && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderBottom: `1px solid ${theme.border}`,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
                 }}
               >
-                Add role
-              </Button>
-            </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setShowAddRoleModal(true)
+                  }}
+                >
+                  Add role
+                </Button>
+              </div>
+            )}
             {user.roles.length ? (
               <Table columns={roleColumns} data={user.roles} rowKey="id" />
             ) : (
@@ -1012,6 +1031,106 @@ export default function UserDetail() {
                 }
               >
                 Add role
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {editingRole && (
+        <Modal
+          open={!!editingRole}
+          title="Edit Role"
+          onClose={() => {
+            setEditingRole(null)
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', minWidth: '380px' }}>
+            <div>
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
+                }}
+              >
+                Company
+              </label>
+              <div style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}>
+                {editingRole.companyName}
+              </div>
+            </div>
+            <div>
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
+                }}
+              >
+                Role *
+              </label>
+              <SearchableSelect
+                value={editRoleForm.role}
+                onChange={(v) => {
+                  setEditRoleForm({
+                    ...editRoleForm,
+                    role: v,
+                    module: v === 'module_admin' ? editRoleForm.module : '',
+                  })
+                }}
+                options={ROLE_OPTIONS}
+                placeholder="Select role…"
+              />
+            </div>
+            <div>
+              <label
+                style={{
+                  fontSize: '12px',
+                  color: theme.textMuted,
+                  display: 'block',
+                  marginBottom: '4px',
+                }}
+              >
+                Module{editRoleForm.role === 'module_admin' ? ' *' : ' (optional)'}
+              </label>
+              <SearchableSelect
+                value={editRoleForm.module}
+                onChange={(v) => {
+                  setEditRoleForm({ ...editRoleForm, module: v })
+                }}
+                options={MODULE_OPTIONS}
+                placeholder="Select module…"
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditingRole(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                loading={updatingRole}
+                disabled={
+                  !editRoleForm.role ||
+                  (editRoleForm.role === 'module_admin' && !editRoleForm.module)
+                }
+                onClick={() =>
+                  void updateRole({
+                    variables: {
+                      roleId: editingRole.id,
+                      input: { role: editRoleForm.role, module: editRoleForm.module || '' },
+                    },
+                  })
+                }
+              >
+                Save
               </Button>
             </div>
           </div>

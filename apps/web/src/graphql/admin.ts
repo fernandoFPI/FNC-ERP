@@ -273,9 +273,12 @@ export const ADD_USER_ROLE = gql`
 `
 
 export const UPDATE_USER_ROLE = gql`
-  mutation UpdateUserRole($roleId: ID!, $input: RoleInput!) {
+  mutation UpdateUserRole($roleId: ID!, $input: UpdateRoleInput!) {
     updateUserRole(roleId: $roleId, input: $input) {
       id
+      companyName
+      module
+      role
       isActive
     }
   }

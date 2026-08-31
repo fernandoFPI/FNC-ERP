@@ -24587,6 +24587,35 @@ const phase5QueryResolvers = {
   },
 }
 
+// Granting/editing/removing a user's company role is a privilege-management
+// action — it previously had no check beyond "is logged in" (addUserRole,
+// updateUserRole, removeUserRole, assignRole, toggleRole all just checked
+// ctx.auth), meaning any authenticated user could grant themselves or anyone
+// else system_admin in any company via a direct GraphQL call. Requires
+// admin.users.edit like the equivalent REST routes in
+// services/auth/src/routes/user-management.ts and roles.ts; granting or
+// editing a role AT the company_admin/system_admin tier additionally
+// requires being a system_admin yourself, so admin.users.edit alone can
+// never be used to escalate to a tenant-wide admin role.
+async function requireUserRoleManagePermission(
+  ctx: GQLContext,
+  targetRole?: string,
+): Promise<void> {
+  if (!ctx.auth) throw new Error('Unauthorized')
+  if (
+    (targetRole === 'system_admin' || targetRole === 'company_admin') &&
+    ctx.auth.role !== 'system_admin'
+  ) {
+    throw new Error("Only a system admin can grant the 'system_admin' or 'company_admin' role")
+  }
+  if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
+    const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+    if (!meetsLevel(perms['admin.users.edit'], 'edit')) {
+      throw new Error("Requires 'edit' access to 'admin.users.edit'")
+    }
+  }
+}
+
 const phase5MutationResolvers = {
   // ── PO edit requests ──────────────────────────────────────────────────────
 
@@ -26710,7 +26739,7 @@ const phase5MutationResolvers = {
     },
     ctx: GQLContext,
   ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
+    await requireUserRoleManagePermission(ctx, args.input.role)
     const r = await query(
       `INSERT INTO user_company_roles (user_id, company_id, module, role, is_active) VALUES ($1,$2,$3,$4,$5) RETURNING id, company_id, module, role, is_active`,
       [
@@ -26727,19 +26756,39 @@ const phase5MutationResolvers = {
 
   updateUserRole: async (
     _: unknown,
-    args: { roleId: string; input: { isActive?: boolean } },
+    args: { roleId: string; input: { role?: string; module?: string; isActive?: boolean } },
     ctx: GQLContext,
   ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
+    await requireUserRoleManagePermission(ctx, args.input.role)
+    const roleProvided = 'role' in args.input
+    const moduleProvided = 'module' in args.input
+    const isActiveProvided = 'isActive' in args.input
     const r = await query(
-      `UPDATE user_company_roles SET is_active=$2 WHERE id=$1 RETURNING id, company_id, module, role, is_active`,
-      [args.roleId, args.input.isActive],
+      `UPDATE user_company_roles
+       SET role = CASE WHEN $2 THEN $3 ELSE role END,
+           module = CASE WHEN $4 THEN $5 ELSE module END,
+           is_active = CASE WHEN $6 THEN $7 ELSE is_active END,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, company_id, module, role, is_active`,
+      [
+        args.roleId,
+        roleProvided,
+        args.input.role ?? null,
+        moduleProvided,
+        args.input.module ?? null,
+        isActiveProvided,
+        args.input.isActive ?? null,
+      ],
     )
-    return { ...r.rows[0], companyName: '' }
+    if (!r.rows[0]) throw new Error('Role not found')
+    const row = r.rows[0] as Record<string, unknown>
+    const cn = await query(`SELECT name FROM companies WHERE id=$1`, [row.company_id])
+    return { ...row, companyName: cn.rows[0]?.name ?? '' }
   },
 
   removeUserRole: async (_: unknown, args: { roleId: string }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
+    await requireUserRoleManagePermission(ctx)
     await query(`DELETE FROM user_company_roles WHERE id=$1`, [args.roleId])
     return true
   },
@@ -27173,8 +27222,8 @@ const phase5MutationResolvers = {
   },
 
   assignRole: async (_: unknown, args: { input: Record<string, unknown> }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
     const i = args.input
+    await requireUserRoleManagePermission(ctx, i.role as string | undefined)
     const r = await query(
       `INSERT INTO user_company_roles (user_id, company_id, role, module, is_active)
        VALUES ($1,$2,$3,$4,true)
@@ -27195,7 +27244,7 @@ const phase5MutationResolvers = {
   },
 
   toggleRole: async (_: unknown, args: { roleId: string; isActive: boolean }, ctx: GQLContext) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
+    await requireUserRoleManagePermission(ctx)
     const r = await query(
       `UPDATE user_company_roles SET is_active=$2, updated_at=NOW() WHERE id=$1 RETURNING *`,
       [args.roleId, args.isActive],
