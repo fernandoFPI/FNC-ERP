@@ -1559,8 +1559,17 @@ export default function ProjectDetail() {
   // ── Unified capability (Phase 3) ──────────────────────────────────────────
   // admin > per-user override > max(company grant, project-role default), from the
   // confirmed capability matrix. Replaces the old ad-hoc resolve() logic.
+  //
+  // Deliberately NOT passing the page-wide `isAdmin` (= can('projects.edit'),
+  // used elsewhere in this file to show/hide edit buttons) as the bypass here —
+  // that only requires the global Projects permission at 'view' level, which
+  // made the per-member override modal above a no-op for anyone who had any
+  // level of that permission: this resolver would short-circuit to 'approve'
+  // before ever consulting their override. isSystemLevel (true system/company
+  // admin) still bypasses correctly on its own; everyone else's override now
+  // actually takes effect instead of requiring a global permission change.
   const cap = resolveProjectCapability({
-    isAdmin,
+    isAdmin: false,
     projectRole,
     overrides: moduleOverrides,
     globalCan: can,
