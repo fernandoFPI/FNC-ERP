@@ -22,13 +22,6 @@ export interface StoreOutPrintData {
   lines: StoreOutPrintLine[]
 }
 
-function fmt(n: number): string {
-  return new Intl.NumberFormat('en-IQ', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n)
-}
-
 function fmtDate(d: string): string {
   try {
     return new Date(d).toLocaleDateString('en-GB', {
@@ -42,8 +35,6 @@ function fmtDate(d: string): string {
 }
 
 export function buildStoreOutHTML(mi: StoreOutPrintData): string {
-  const totalCost = mi.lines.reduce((s, l) => s + l.totalCost, 0)
-
   const lineRows = mi.lines
     .map(
       (l, i) => `
@@ -58,8 +49,6 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right">${l.qtyIssued}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;color:#666">${l.uom ?? ''}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">${fmt(l.unitCost)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">${fmt(l.totalCost)}</td>
     </tr>
   `,
     )
@@ -137,22 +126,10 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
         <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:600">From → To</th>
         <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:600">Qty</th>
         <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:600">UOM</th>
-        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:600">Unit cost</th>
-        <th style="padding:10px 12px;text-align:right;font-size:11px;font-weight:600">Total</th>
       </tr>
     </thead>
     <tbody>${lineRows}</tbody>
   </table>
-
-  <!-- Total -->
-  <div style="display:flex;justify-content:flex-end;margin-bottom:48px">
-    <table style="border-collapse:collapse;min-width:280px">
-      <tr style="border-top:2px solid #1a3c5e;background:#f8f9fa">
-        <td style="padding:10px 16px;font-size:14px;font-weight:700;color:#1a3c5e">Total</td>
-        <td style="padding:10px 16px;font-size:14px;font-weight:700;text-align:right;font-family:monospace;color:#1a3c5e">${fmt(totalCost)} IQD</td>
-      </tr>
-    </table>
-  </div>
 
   <!-- Signatures -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-bottom:32px">

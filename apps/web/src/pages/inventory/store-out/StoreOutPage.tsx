@@ -304,9 +304,6 @@ export default function StoreOutPage() {
   // KPI values
   const draftCount = issues.filter((i) => i.status === 'draft').length
   const issuedCount = issues.filter((i) => i.status === 'issued').length
-  const totalValue = issues
-    .filter((i) => i.status === 'issued')
-    .reduce((sum, i) => sum + i.lines.reduce((s, l) => s + l.totalCost, 0), 0)
 
   // Pending lines total
   const pendingTotal = pendingLines.reduce(
@@ -335,24 +332,6 @@ export default function StoreOutPage() {
         width: '80px',
         render: (row) => (
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{row.qtyIssued}</span>
-        ),
-      },
-      {
-        key: 'unitCost',
-        header: 'Unit Cost (IQD)',
-        width: '130px',
-        render: (row) => (
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtAmt(row.unitCost)}</span>
-        ),
-      },
-      {
-        key: 'totalCost',
-        header: 'Total',
-        width: '130px',
-        render: (row) => (
-          <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-            {fmtAmt(row.totalCost)}
-          </span>
         ),
       },
       ...(editable
@@ -493,20 +472,6 @@ export default function StoreOutPage() {
       <polyline points="20 6 9 17 4 12" />
     </svg>
   )
-  const IconCurrency = (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <line x1="12" y1="1" x2="12" y2="23" />
-      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-    </svg>
-  )
-
   return (
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <PageHeader
@@ -528,7 +493,7 @@ export default function StoreOutPage() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(2, 1fr)',
           gap: '16px',
           marginBottom: '24px',
         }}
@@ -546,13 +511,6 @@ export default function StoreOutPage() {
           subtitle="cost committed"
           icon={IconCheck}
           iconColor="success"
-        />
-        <KPICard
-          label="Total Issued Value"
-          value={`${fmtAmt(totalValue)} IQD`}
-          subtitle="all time"
-          icon={IconCurrency}
-          iconColor="accent"
         />
       </div>
 
@@ -649,7 +607,6 @@ export default function StoreOutPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {issues.map((si) => {
-            const totalCost = si.lines.reduce((sum, l) => sum + l.totalCost, 0)
             const isExpanded = expandedId === si.id
             const isDraft = si.status === 'draft'
 
@@ -733,7 +690,7 @@ export default function StoreOutPage() {
                       color: theme.textPrimary,
                     }}
                   >
-                    {si.lines.length > 0 ? `${fmtAmt(totalCost)} IQD` : `${si.lines.length} items`}
+                    {si.lines.length} item{si.lines.length === 1 ? '' : 's'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Badge variant={STATUS_VARIANT[si.status] ?? 'neutral'}>{si.status}</Badge>
@@ -767,24 +724,6 @@ export default function StoreOutPage() {
                         si.poId ? 'No items on this store-out.' : 'No items yet — add one below.'
                       }
                     />
-
-                    {/* Total row */}
-                    {si.lines.length > 0 && (
-                      <div
-                        style={{
-                          textAlign: 'right',
-                          padding: '8px 14px',
-                          borderTop: `1px solid ${theme.border}`,
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          color: theme.textPrimary,
-                          fontVariantNumeric: 'tabular-nums',
-                          marginBottom: '16px',
-                        }}
-                      >
-                        Total: {fmtAmt(totalCost)} IQD
-                      </div>
-                    )}
 
                     {/* Add item row — manual/ad-hoc drafts only. PO-originated store-outs
                         already had their lines fixed during the PO's inventory-check step,

@@ -48,9 +48,6 @@ const STATUS_VARIANT: Record<string, 'neutral' | 'warning' | 'success' | 'danger
   cancelled: 'danger',
 }
 
-const fmtAmt = (n: number) =>
-  n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
 export default function StoreOutDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
@@ -69,8 +66,6 @@ export default function StoreOutDetail() {
   if (loading && !mi)
     return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
   if (!mi) return <div style={{ padding: '48px', color: theme.textMuted }}>Store Out not found.</div>
-
-  const totalCost = mi.lines.reduce((s, l) => s + l.totalCost, 0)
 
   const columns: Column<MILine>[] = [
     {
@@ -98,20 +93,6 @@ export default function StoreOutDetail() {
       render: (l) => (
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
           {l.qtyIssued} {l.uom ?? ''}
-        </span>
-      ),
-    },
-    {
-      key: 'unitCost',
-      header: 'Unit Cost',
-      render: (l) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtAmt(l.unitCost)}</span>,
-    },
-    {
-      key: 'totalCost',
-      header: 'Total',
-      render: (l) => (
-        <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-          {fmtAmt(l.totalCost)}
         </span>
       ),
     },
@@ -163,14 +144,6 @@ export default function StoreOutDetail() {
               <div style={{ fontSize: '13px', color: theme.textPrimary }}>{mi.poNumber}</div>
             </div>
           )}
-          <div>
-            <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
-              Total Cost
-            </div>
-            <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 600 }}>
-              {fmtAmt(totalCost)} IQD
-            </div>
-          </div>
         </div>
         {mi.notes && (
           <div
