@@ -2743,13 +2743,14 @@ export default function PurchaseOrderDetail() {
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
+                            gridTemplateColumns: '28px 1fr 90px 110px 110px 110px 80px',
                             padding: '7px 12px',
                             background: theme.bgCanvas,
                             borderBottom: `1px solid ${theme.border}`,
                           }}
                         >
                           {[
+                            '#',
                             'Item',
                             'Qty',
                             'Market Price',
@@ -2775,7 +2776,7 @@ export default function PurchaseOrderDetail() {
                         </div>
 
                         {/* Lines */}
-                        {po.lines.map((line) => {
+                        {po.lines.map((line, lineIdx) => {
                           const isFlagged = lineFlagNotes[line.id] !== undefined
                           const rowBg = isFlagged ? theme.warningBg : 'transparent'
                           const rowBorder = isFlagged ? theme.warningBorder : theme.border
@@ -2794,11 +2795,20 @@ export default function PurchaseOrderDetail() {
                               <div
                                 style={{
                                   display: 'grid',
-                                  gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
+                                  gridTemplateColumns: '28px 1fr 90px 110px 110px 110px 80px',
                                   padding: '10px 12px',
                                   alignItems: 'center',
                                 }}
                               >
+                                <div
+                                  style={{
+                                    fontSize: '12px',
+                                    color: theme.textMuted,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  {lineIdx + 1}
+                                </div>
                                 <div>
                                   <div
                                     style={{
