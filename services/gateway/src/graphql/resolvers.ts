@@ -221,6 +221,7 @@ async function applyPOEditChanges(
     }
   }
   const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+  const priceAffectedLineIds = new Set<string>()
   for (const e of changes.lines?.edited ?? []) {
     if (!lineAllowed.includes(e.field)) continue
     await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND po_id=$3`, [
@@ -228,6 +229,21 @@ async function applyPOEditChanges(
       e.id,
       poId,
     ])
+    if (e.field === 'qty_ordered' || e.field === 'unit_price') priceAffectedLineIds.add(e.id)
+  }
+  // qty_ordered/unit_price above only ever touch their own single column —
+  // total_price (and the PO-level totals derived from it further down) was
+  // never recalculated after an edit changed either one, so the printed PO
+  // and every other total_price consumer kept showing the pre-edit amount.
+  // Same zeroing rule as confirmPOInventoryCheck: a line fully covered from
+  // stock still contributes $0 regardless of what its price/qty now say.
+  if (priceAffectedLineIds.size > 0) {
+    await client.query(
+      `UPDATE po_lines
+       SET total_price = CASE WHEN qty_from_stock >= qty_ordered THEN 0 ELSE qty_ordered * unit_price END
+       WHERE id = ANY($1) AND po_id = $2`,
+      [Array.from(priceAffectedLineIds), poId],
+    )
   }
   if ((changes.lines?.added ?? []).length > 0) {
     const poRes = await client.query<{ company_id: string; base_currency_code: string }>(
