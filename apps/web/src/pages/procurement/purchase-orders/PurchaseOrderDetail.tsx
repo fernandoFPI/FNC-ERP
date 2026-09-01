@@ -874,17 +874,26 @@ export default function PurchaseOrderDetail() {
       setEditRequestNotes('')
       void refetch()
     },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [approveEditRequest, { loading: leA }] = useMutation(APPROVE_PO_EDIT_REQUEST, {
     onCompleted: () => {
       setReviewNotes({})
       void refetch()
     },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
   })
   const [rejectEditRequest, { loading: leJ }] = useMutation(REJECT_PO_EDIT_REQUEST, {
     onCompleted: () => {
       setReviewNotes({})
       void refetch()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
     },
   })
   const [adminSetPOStatus, { loading: adminSetting }] = useMutation(ADMIN_SET_PO_STATUS, {

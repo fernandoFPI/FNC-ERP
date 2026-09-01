@@ -237,7 +237,13 @@ async function applyPOEditChanges(
     const companyId = poRes.rows[0]!.company_id
     const baseCurrencyCode = poRes.rows[0]!.base_currency_code
     for (const line of changes.lines?.added ?? []) {
-      const qty = Number(line.qty_ordered ?? 0),
+      // The frontend's added-line draft shape uses `qty` (matching the form
+      // field name), not `qty_ordered` (the po_lines column name used for
+      // *edited* lines' `field` value) — reading the wrong key here always
+      // produced qty=0, which then failed po_lines' CHECK (qty_ordered > 0)
+      // on insert. The whole edit request submission was silently lost
+      // since the frontend's mutation call has no onError handler.
+      const qty = Number(line.qty ?? 0),
         price = Number(line.unit_price ?? 0)
       const currencyCode = (line.currency_code as string | undefined) ?? baseCurrencyCode
       const fxRateToBase = await resolveFxRateToBase(client, companyId, currencyCode, baseCurrencyCode)
