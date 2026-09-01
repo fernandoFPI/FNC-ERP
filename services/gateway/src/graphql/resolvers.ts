@@ -248,8 +248,8 @@ async function applyPOEditChanges(
       const currencyCode = (line.currency_code as string | undefined) ?? baseCurrencyCode
       const fxRateToBase = await resolveFxRateToBase(client, companyId, currencyCode, baseCurrencyCode)
       await client.query(
-        `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,currency_code,fx_rate_to_base,uom,total_price)
-         VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$6,$7,$8,$9)`,
+        `INSERT INTO po_lines (po_id,line_number,description,product_id,qty_ordered,unit_price,initial_unit_price,currency_code,fx_rate_to_base,uom,total_price)
+         VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE po_id=$1),$2,$3,$4,$5,$5,$6,$7,$8,$9)`,
         [
           poId,
           line.description,
@@ -6190,7 +6190,7 @@ export const resolvers = {
           ),
           query(
             `SELECT pol.id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
-                    pol.qty_received, pol.unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
+                    pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
                     pol.requested_currency_code, pol.fx_rate_to_base,
                     pol.actual_unit_price,
                     pol.store_price, pol.store_price_currency,
@@ -8203,7 +8203,7 @@ export const resolvers = {
           for (let idx = 0; idx < i.lines.length; idx++) {
             const l = i.lines[idx]
             await client.query(
-              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,total_price,uom,requested_currency_code) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              `INSERT INTO po_lines (po_id,product_id,description,line_number,qty_ordered,unit_price,initial_unit_price,total_price,uom,requested_currency_code) VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9)`,
               [
                 poRow.id,
                 l.product_id ?? null,

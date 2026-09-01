@@ -101,6 +101,7 @@ export interface POLine {
   source_company_name?: string | null
   source_average_cost?: number | null
   unit_price: number
+  initial_unit_price?: number | null
   total: number
   audit_status?: 'pending' | 'ok' | 'flagged' | null
   audit_note?: string | null
@@ -4734,6 +4735,22 @@ export default function PurchaseOrderDetail() {
 
           const lineColumns: Column<POLine>[] = [
             {
+              key: 'index',
+              header: '#',
+              width: '32px',
+              render: (line) => (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    color: theme.textMuted,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {po.lines.findIndex((l) => l.id === line.id) + 1}
+                </span>
+              ),
+            },
+            {
               key: 'item',
               header: 'Item',
               mobilePrimary: true,
@@ -4828,9 +4845,31 @@ export default function PurchaseOrderDetail() {
               },
             },
             {
+              key: 'initial_unit_price',
+              header: 'Initial Price',
+              mobilePriority: 5,
+              render: (line) =>
+                line.initial_unit_price != null ? (
+                  <span
+                    style={{
+                      color: theme.textMuted,
+                      fontFamily: 'monospace',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {fmtN(line.initial_unit_price)}{' '}
+                    {line.requested_currency_code ?? po.currency_code}
+                  </span>
+                ) : (
+                  <span style={{ color: theme.textMuted, fontSize: '12px' }} title="Not recorded before this was tracked">
+                    —
+                  </span>
+                ),
+            },
+            {
               key: 'market_price',
               header: 'Market Price',
-              mobilePriority: 5,
+              mobilePriority: 6,
               render: (line) => (
                 <span
                   style={{

@@ -1833,6 +1833,7 @@
     description: String
     qty: String!
     unit_price: String!
+    initial_unit_price: String
     total: String!
     uom: String
     qty_received: String

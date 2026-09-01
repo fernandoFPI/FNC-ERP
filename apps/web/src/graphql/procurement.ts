@@ -466,6 +466,7 @@ export const PO_LIFECYCLE_QUERY = gql`
         source_company_name
         source_average_cost
         unit_price
+        initial_unit_price
         total
         audit_status
         audit_note
