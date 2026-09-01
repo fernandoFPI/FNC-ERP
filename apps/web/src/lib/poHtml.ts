@@ -73,7 +73,12 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
   // being labeled with the wrong currency. Summing the same per-line
   // totals already rendered above guarantees this always matches what the
   // reader can see and add up themselves.
-  const computedTotal = po.lines.reduce((s, l) => s + l.total, 0)
+  // l.total is typed as number, but GraphQL money fields are String! —
+  // Apollo never casts them, so the runtime value is actually a string. A
+  // single value still formats fine (Intl.NumberFormat coerces it), but `+`
+  // across the array here was silently concatenating strings instead of
+  // adding numbers, turning the summed total into NaN once formatted.
+  const computedTotal = po.lines.reduce((s, l) => s + (parseFloat(String(l.total)) || 0), 0)
 
   const lineRows = po.lines
     .map(
