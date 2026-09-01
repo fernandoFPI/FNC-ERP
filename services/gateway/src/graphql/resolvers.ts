@@ -24667,6 +24667,7 @@ async function applyModuleAdminPermissions(
     [userId, companyId, module, grantedBy],
   )
   await invalidatePermissionCache(userId, companyId)
+  await publishPermissionsChanged(userId, companyId)
 }
 
 async function revokeModuleAdminPermissions(
@@ -24681,6 +24682,7 @@ async function revokeModuleAdminPermissions(
     [userId, companyId, module],
   )
   await invalidatePermissionCache(userId, companyId)
+  await publishPermissionsChanged(userId, companyId)
 }
 
 // Diffs an old vs new (role, module) pair and applies exactly the grant/
