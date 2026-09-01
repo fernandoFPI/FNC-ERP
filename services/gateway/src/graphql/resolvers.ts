@@ -471,28 +471,13 @@ async function postPOCompletionJournal(
 // company's own warehouse) and its cost, but the actual stock_moves (and, for
 // a cross-company source location, the interco transfer) only happen when a
 // human confirms the Store Out — see issueMaterialIssue.
-async function issueStockForPOLines(
+// The warehouse/"Project Consumption" location pair used for every stock
+// issuance line, whether issued at the time the PO's stock issuance is
+// approved or retroactively once a pending catalog item gets resolved.
+async function getStockIssuanceLocations(
   client: PoolClient,
-  po: Record<string, unknown>,
   companyId: string,
-  userId: string,
-): Promise<{ issueId: string; issueNumber: string } | undefined> {
-  // A project PO explicitly marked "delivered to inventory" isn't consuming
-  // anything yet — its from-stock quantity should just stay put (no auto
-  // Store Out), the same way its freshly-purchased lines skip Store In under
-  // recordDirectDelivery's counterpart. Only 'jobsite' (or a non-project PO,
-  // where this destination concept doesn't apply) still issues stock out to
-  // the project.
-  if (po.purpose === 'project' && po.delivery_destination === 'inventory') return undefined
-
-  const poId = String(po.id)
-  const linesRes = await client.query(
-    `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
-    [poId],
-  )
-  const lines = linesRes.rows as Record<string, unknown>[]
-  if (lines.length === 0) return undefined
-
+): Promise<{ defaultFromLocationId: string; ownDestLocationId: string }> {
   const warehouseRes = await client.query(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
     [companyId],
@@ -522,6 +507,113 @@ async function issueStockForPOLines(
       )
     ).rows[0].id) as string
 
+  return { defaultFromLocationId, ownDestLocationId }
+}
+
+// Inserts one project_material_issue_lines row for a po_line that's now
+// known to have a real product_id. Shared by the main per-PO loop below and
+// by the retroactive completion that runs when a stock_issuance-sourced
+// pending catalog item gets resolved after the fact.
+async function insertStockIssuanceLine(
+  client: PoolClient,
+  issueId: string,
+  line: Record<string, unknown>,
+  defaultFromLocationId: string,
+  ownDestLocationId: string,
+): Promise<void> {
+  const qty = parseFloat(String(line.qty_from_stock ?? 0))
+  const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
+
+  // Use store_price if set on the line; fall back to average_cost from stock
+  const costRes = await client.query(
+    `SELECT COALESCE(
+       NULLIF(pol.store_price, 0),
+       (SELECT sb.average_cost FROM stock_balances sb
+        WHERE sb.product_id=pol.product_id AND sb.location_id=$2 LIMIT 1),
+       0
+     ) AS unit_cost
+     FROM po_lines pol WHERE pol.id=$1`,
+    [line.id, fromLocationId],
+  )
+  const unitCost = parseFloat(String(costRes.rows[0]?.unit_cost ?? 0))
+  const lineCost = qty * unitCost
+
+  await client.query(
+    `INSERT INTO project_material_issue_lines
+       (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost,
+        from_location_id, to_location_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [issueId, line.product_id, line.id, qty, unitCost, lineCost, fromLocationId, ownDestLocationId],
+  )
+}
+
+// Once a stock_issuance-sourced pending catalog item is resolved (its
+// po_line now has a real product_id), completes the Store Out that was
+// auto-created back when the PO's stock issuance was approved — that draft
+// still exists with zero lines for this item, since resolving only fixed
+// the product identity going forward, not the historical transaction. A
+// no-op if there's no such draft (e.g. the PO never went through this path)
+// or a line for it already exists (resolve can't normally run twice, since
+// it requires status='pending', but this keeps it safe either way).
+async function completeStockIssuanceLineForResolvedProduct(
+  client: PoolClient,
+  poLineId: string,
+  companyId: string,
+): Promise<void> {
+  const lineRes = await client.query(`SELECT * FROM po_lines WHERE id=$1`, [poLineId])
+  const line = lineRes.rows[0] as Record<string, unknown> | undefined
+  if (!line || !line.product_id) return
+
+  const issueRes = await client.query(
+    `SELECT pmi.id FROM project_material_issues pmi
+     JOIN po_lines pl ON pl.po_id = pmi.po_id
+     WHERE pl.id = $1
+     LIMIT 1`,
+    [poLineId],
+  )
+  const issueId = issueRes.rows[0]?.id as string | undefined
+  if (!issueId) return
+
+  const existingLine = await client.query(
+    `SELECT 1 FROM project_material_issue_lines WHERE po_line_id=$1`,
+    [poLineId],
+  )
+  if (existingLine.rows[0]) return
+
+  const { defaultFromLocationId, ownDestLocationId } = await getStockIssuanceLocations(
+    client,
+    companyId,
+  )
+  await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
+}
+
+async function issueStockForPOLines(
+  client: PoolClient,
+  po: Record<string, unknown>,
+  companyId: string,
+  userId: string,
+): Promise<{ issueId: string; issueNumber: string } | undefined> {
+  // A project PO explicitly marked "delivered to inventory" isn't consuming
+  // anything yet — its from-stock quantity should just stay put (no auto
+  // Store Out), the same way its freshly-purchased lines skip Store In under
+  // recordDirectDelivery's counterpart. Only 'jobsite' (or a non-project PO,
+  // where this destination concept doesn't apply) still issues stock out to
+  // the project.
+  if (po.purpose === 'project' && po.delivery_destination === 'inventory') return undefined
+
+  const poId = String(po.id)
+  const linesRes = await client.query(
+    `SELECT * FROM po_lines WHERE po_id=$1 AND qty_from_stock > 0`,
+    [poId],
+  )
+  const lines = linesRes.rows as Record<string, unknown>[]
+  if (lines.length === 0) return undefined
+
+  const { defaultFromLocationId, ownDestLocationId } = await getStockIssuanceLocations(
+    client,
+    companyId,
+  )
+
   // Draft Store Out — the store keeper must explicitly confirm it
   // (issueMaterialIssue) before stock actually leaves inventory, exactly
   // like a manually-created one.
@@ -549,7 +641,8 @@ async function issueStockForPOLines(
       // here silently (the store keeper believed it was issued; nothing
       // was ever recorded). Queue it on the same worklist store_in/
       // direct_delivery already use for this exact situation, instead of
-      // dropping it.
+      // dropping it. See completeStockIssuanceLineForResolvedProduct for
+      // what happens once it's resolved.
       await client.query(
         `INSERT INTO pending_product_catalog_items
            (company_id, po_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
@@ -568,29 +661,7 @@ async function issueStockForPOLines(
       )
       continue
     }
-    const fromLocationId = (line.source_location_id as string | null) ?? defaultFromLocationId
-
-    // Use store_price if set on the line; fall back to average_cost from stock
-    const costRes = await client.query(
-      `SELECT COALESCE(
-         NULLIF(pol.store_price, 0),
-         (SELECT sb.average_cost FROM stock_balances sb
-          WHERE sb.product_id=pol.product_id AND sb.location_id=$2 LIMIT 1),
-         0
-       ) AS unit_cost
-       FROM po_lines pol WHERE pol.id=$1`,
-      [line.id, fromLocationId],
-    )
-    const unitCost = parseFloat(String(costRes.rows[0]?.unit_cost ?? 0))
-    const lineCost = qty * unitCost
-
-    await client.query(
-      `INSERT INTO project_material_issue_lines
-         (issue_id, product_id, po_line_id, qty_issued, unit_cost, total_cost,
-          from_location_id, to_location_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [issueId, line.product_id, line.id, qty, unitCost, lineCost, fromLocationId, ownDestLocationId],
-    )
+    await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
   }
   // Cost booking (project_cost_actuals) and issued_by/issued_at stamping are
   // deferred to issueMaterialIssue, which runs once the store keeper confirms
@@ -8806,6 +8877,13 @@ export const resolvers = {
             `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
             [product.id, ctx.auth!.userId, args.id],
           )
+          if (pending.source === 'stock_issuance') {
+            await completeStockIssuanceLineForResolvedProduct(
+              client,
+              pending.po_line_id as string,
+              ctx.auth!.companyId,
+            )
+          }
           await logAudit({
             userId: ctx.auth!.userId,
             companyId: ctx.auth!.companyId,
@@ -8864,6 +8942,13 @@ export const resolvers = {
             `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
             [args.productId, ctx.auth!.userId, args.id],
           )
+          if (pending.source === 'stock_issuance') {
+            await completeStockIssuanceLineForResolvedProduct(
+              client,
+              pending.po_line_id as string,
+              ctx.auth!.companyId,
+            )
+          }
           await logAudit({
             userId: ctx.auth!.userId,
             companyId: ctx.auth!.companyId,
