@@ -65,6 +65,15 @@ const PRIORITY_COLOR: Record<string, string> = {
 
 export function buildPurchaseOrderHTML(po: POPrintData): string {
   const cur = po.currency_code ?? 'IQD'
+  // po.subtotal/total_amount are stored in the PO's *base* currency
+  // (total_price summed x fx_rate_to_base — see applyPOEditChanges/recalcPO),
+  // not currency_code, which is what every line above is actually priced
+  // and labeled in. Using them here understated or (usually) wildly
+  // overstated the printed total depending on the fx rate, while still
+  // being labeled with the wrong currency. Summing the same per-line
+  // totals already rendered above guarantees this always matches what the
+  // reader can see and add up themselves.
+  const computedTotal = po.lines.reduce((s, l) => s + l.total, 0)
 
   const lineRows = po.lines
     .map(
@@ -193,11 +202,11 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
     <table style="border-collapse:collapse;min-width:280px">
       <tr>
         <td style="padding:8px 16px;font-size:13px;color:#555">Subtotal</td>
-        <td style="padding:8px 16px;font-size:13px;text-align:right;font-family:monospace">${fmt(po.subtotal ?? po.total_amount, cur)}</td>
+        <td style="padding:8px 16px;font-size:13px;text-align:right;font-family:monospace">${fmt(computedTotal, cur)}</td>
       </tr>
       <tr style="border-top:2px solid #1a3c5e;background:#f8f9fa">
         <td style="padding:10px 16px;font-size:14px;font-weight:700;color:#1a3c5e">Total</td>
-        <td style="padding:10px 16px;font-size:14px;font-weight:700;text-align:right;font-family:monospace;color:#1a3c5e">${fmt(po.total_amount, cur)}</td>
+        <td style="padding:10px 16px;font-size:14px;font-weight:700;text-align:right;font-family:monospace;color:#1a3c5e">${fmt(computedTotal, cur)}</td>
       </tr>
     </table>
   </div>
