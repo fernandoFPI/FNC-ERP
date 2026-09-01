@@ -14,6 +14,12 @@ export interface POPrintLine {
   notes?: POPrintLineNote[]
 }
 
+export interface POPrintApprovalStep {
+  label: string
+  name: string
+  date: string
+}
+
 export interface POPrintData {
   po_number: string
   /** Display-ready label (e.g. "Finance Audit"), not the raw status code — pass through getPOStatusLabel first. */
@@ -28,6 +34,11 @@ export interface POPrintData {
   created_by_email?: string | null
   companyName?: string | null
   lines: POPrintLine[]
+  /** Only pass this when "include internal notes" is checked — never on a vendor-facing copy. */
+  approvalTrail?: POPrintApprovalStep[]
+  /** Buyer position has no logged actor/timestamp (markPOLineBought never records one), so this
+   *  is a name-only line in approvalTrail's rendering, not a dated step. */
+  buyerNames?: string[]
 }
 
 function fmt(n: number, currency: string): string {
@@ -46,6 +57,20 @@ function fmtDate(d: string): string {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
+    })
+  } catch {
+    return d
+  }
+}
+
+function fmtDateTime(d: string): string {
+  try {
+    return new Date(d).toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     })
   } catch {
     return d
@@ -215,6 +240,39 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
       </tr>
     </table>
   </div>
+
+  ${
+    (po.approvalTrail && po.approvalTrail.length > 0) || (po.buyerNames && po.buyerNames.length > 0)
+      ? `
+  <!-- Internal approval trail — only present when "include internal notes" was checked -->
+  <div style="margin-bottom:24px;padding:14px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">
+    <div style="font-size:10px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">
+      Internal Approval Trail — not for vendor copies
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      ${(po.approvalTrail ?? [])
+        .map(
+          (s) => `
+      <tr>
+        <td style="padding:3px 0;font-size:12px;color:#78350f;width:140px">${s.label}</td>
+        <td style="padding:3px 0;font-size:12px;font-weight:600;color:#1a1a1a">${s.name}</td>
+        <td style="padding:3px 0;font-size:11px;text-align:right;color:#92400e">${fmtDateTime(s.date)}</td>
+      </tr>`,
+        )
+        .join('')}
+      ${
+        po.buyerNames && po.buyerNames.length > 0
+          ? `
+      <tr>
+        <td style="padding:3px 0;font-size:12px;color:#78350f;width:140px">Buyer</td>
+        <td style="padding:3px 0;font-size:12px;font-weight:600;color:#1a1a1a" colspan="2">${po.buyerNames.join(', ')}</td>
+      </tr>`
+          : ''
+      }
+    </table>
+  </div>`
+      : ''
+  }
 
   <!-- Footer -->
   <div style="border-top:1px solid #e5e7eb;padding-top:16px;display:flex;justify-content:space-between;font-size:11px;color:#888">

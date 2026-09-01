@@ -6767,6 +6767,31 @@ export default function PurchaseOrderDetail() {
                         }))
                       : undefined,
                   })),
+                  // Who did each stage and when — never on a vendor copy.
+                  // markPOLineBought has no logged actor/timestamp at all, so
+                  // "Buyer" is passed separately as a name-only line below.
+                  approvalTrail: printWithNotes
+                    ? ([
+                        { action: 'submit_to_market_pricing', label: 'Store Priced By' },
+                        { action: 'submit_to_price_verification', label: 'Market Priced By' },
+                        { action: 'submit_for_approval', label: 'Price Verified By' },
+                        { action: 'approve', label: 'Approved By' },
+                      ]
+                        .map(({ action, label }) => {
+                          const entry = [...po.approval_log]
+                            .reverse()
+                            .find((e) => e.action === action)
+                          return entry ? { label, name: entry.user_email, date: entry.created_at } : null
+                        })
+                        .filter((s): s is { label: string; name: string; date: string } => s !== null))
+                    : undefined,
+                  buyerNames: printWithNotes
+                    ? po.buyerNames && po.buyerNames.length > 0
+                      ? po.buyerNames
+                      : po.assigned_buyer_name
+                        ? [po.assigned_buyer_name]
+                        : []
+                    : undefined,
                 })}
                 style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                 title={`Purchase Order ${po.po_number}`}
