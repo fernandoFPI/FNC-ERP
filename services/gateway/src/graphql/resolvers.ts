@@ -9210,6 +9210,54 @@ export const resolvers = {
           if (!['approved', 'items_bought', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record receipt on a PO with status '${poStatus}'`)
           }
+
+          // Guard against the same submission being accidentally repeated —
+          // recording a draft receipt doesn't change the PO's status (only
+          // confirming one does), so nothing on the PO page signals a draft
+          // already exists, and a user unsure whether their first click
+          // worked just resubmits the same form. Only blocks an exact
+          // repeat — same lines, same quantities, same actor, within the
+          // last 15 minutes — so a genuinely distinct delivery (a different
+          // receiver splitting the same visit, or the rest of a line
+          // arriving weeks later) is never affected.
+          const recentDrafts = await client.query<{ id: string; receipt_number: string }>(
+            `SELECT id, receipt_number FROM po_receipts
+             WHERE po_id=$1 AND received_by=$2 AND status='draft' AND created_at > NOW() - INTERVAL '15 minutes'
+             ORDER BY created_at DESC`,
+            [args.poId, ctx.auth!.userId],
+          )
+          if (recentDrafts.rows.length > 0) {
+            const norm = (lines: { po_line_id: string; qty_received: number }[]) =>
+              lines
+                .map((l) => ({ po_line_id: l.po_line_id, qty: Math.round(l.qty_received * 10000) }))
+                .sort((a, b) => a.po_line_id.localeCompare(b.po_line_id))
+            const newLines = norm(i.lines)
+            for (const draft of recentDrafts.rows) {
+              const draftLinesRes = await client.query<{ po_line_id: string; qty_received: string }>(
+                `SELECT po_line_id, qty_received FROM po_receipt_lines WHERE receipt_id=$1`,
+                [draft.id],
+              )
+              const draftLines = norm(
+                draftLinesRes.rows.map((l) => ({
+                  po_line_id: l.po_line_id,
+                  qty_received: parseFloat(l.qty_received),
+                })),
+              )
+              const isSameSubmission =
+                draftLines.length === newLines.length &&
+                draftLines.every(
+                  (dl, idx) =>
+                    dl.po_line_id === newLines[idx]!.po_line_id && dl.qty === newLines[idx]!.qty,
+                )
+              if (isSameSubmission) {
+                throw new Error(
+                  `You already recorded this receipt a moment ago — ${draft.receipt_number} covers the same items. ` +
+                    `Open it from Store In to add photos and confirm, instead of recording it again.`,
+                )
+              }
+            }
+          }
+
           const receiptNumber = `RCPT-${Date.now()}`
           const receipt = await client.query(
             `INSERT INTO po_receipts (po_id,receipt_number,received_date,warehouse_location_id,notes,received_by,received_by_name,received_from_name,location_notes,status)

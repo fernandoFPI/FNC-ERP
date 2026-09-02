@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@apollo/client'
-import { PO_RECEIPTS_QUERY, RECEIVABLE_PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
+import { useQuery, useMutation } from '@apollo/client'
+import {
+  PO_RECEIPTS_QUERY,
+  RECEIVABLE_PURCHASE_ORDERS_QUERY,
+  CANCEL_RECEIPT,
+} from '../../../graphql/procurement'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -15,6 +19,8 @@ import type { Column } from '../../../components/ui/Table'
 import { KPICard } from '../../../components/ui/KPICard'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { useAuthStore } from '../../../store/authStore'
+import { useToastStore } from '../../../store/toastStore'
 
 interface ReceiptLine {
   qty_received: string
@@ -57,8 +63,16 @@ export default function StoreInPage() {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pickerProjectId, setPickerProjectId] = useState('')
   const [pickerPoId, setPickerPoId] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkCancelling, setBulkCancelling] = useState(false)
+  const addToast = useToastStore((s) => s.addToast)
+  const currentUserRole = useAuthStore((s) => s.user?.role)
+  const isAdmin = currentUserRole === 'system_admin' || currentUserRole === 'company_admin'
 
-  const { data, loading, error } = useQuery(PO_RECEIPTS_QUERY, { fetchPolicy: 'cache-and-network' })
+  const { data, loading, error, refetch } = useQuery(PO_RECEIPTS_QUERY, {
+    fetchPolicy: 'cache-and-network',
+  })
+  const [cancelReceiptMutation] = useMutation(CANCEL_RECEIPT)
   const receipts: Receipt[] = data?.poReceipts ?? []
   const draftCount = receipts.filter((r) => r.status === 'draft').length
   const confirmedCount = receipts.filter((r) => r.status === 'confirmed').length
@@ -90,7 +104,88 @@ export default function StoreInPage() {
       )
     })
 
+  // Only draft receipts are selectable/cancellable — cancelReceipt itself
+  // refuses anything else, so bulk-selecting a confirmed/cancelled row
+  // would just produce a confusing per-row failure.
+  const selectableIds = filtered.filter((r) => r.status === 'draft').map((r) => r.id)
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id))
+  const someSelected = selectableIds.some((id) => selectedIds.has(id))
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(selectableIds))
+  }
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  const handleBulkCancel = async () => {
+    if (selectedIds.size === 0) return
+    setBulkCancelling(true)
+    const ids = Array.from(selectedIds)
+    const results = await Promise.allSettled(
+      ids.map((id) => cancelReceiptMutation({ variables: { id } })),
+    )
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length
+    const failed = results.filter((r) => r.status === 'rejected').length
+    setBulkCancelling(false)
+    clearSelection()
+    void refetch()
+    if (failed === 0) {
+      addToast({
+        type: 'success',
+        message: `${succeeded} draft receipt${succeeded !== 1 ? 's' : ''} cancelled`,
+      })
+    } else {
+      addToast({ type: 'warning', message: `${succeeded} cancelled, ${failed} failed` })
+    }
+  }
+
+  const checkboxCol: Column<Receipt> = {
+    key: '__select',
+    header: '',
+    width: '36px',
+    mobileHide: true,
+    renderHeader: () => (
+      <input
+        type="checkbox"
+        checked={allSelected}
+        ref={(el) => {
+          if (el) el.indeterminate = someSelected && !allSelected
+        }}
+        onChange={toggleSelectAll}
+        style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: theme.accent }}
+      />
+    ),
+    render: (r) =>
+      r.status === 'draft' ? (
+        <div
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
+          style={{ display: 'flex', alignItems: 'center' }}
+        >
+          <input
+            type="checkbox"
+            checked={selectedIds.has(r.id)}
+            onChange={() => {
+              toggleSelect(r.id)
+            }}
+            style={{ cursor: 'pointer', width: '15px', height: '15px', accentColor: theme.accent }}
+          />
+        </div>
+      ) : null,
+  }
+
   const columns: Column<Receipt>[] = [
+    ...(isAdmin ? [checkboxCol] : []),
     {
       key: 'receipt_number',
       header: 'Receipt #',
@@ -238,6 +333,62 @@ export default function StoreInPage() {
             </Select>
           </div>
         </div>
+
+        {isAdmin && selectedIds.size > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              flexWrap: 'wrap',
+              padding: '10px 14px',
+              background: theme.accentBg,
+              borderBottom: `1px solid ${theme.accentBorder}`,
+            }}
+          >
+            <span style={{ fontSize: '13px', fontWeight: 600, color: theme.accent }}>
+              {selectedIds.size} selected
+            </span>
+            <div style={{ width: '1px', height: '18px', background: theme.accentBorder }} />
+            <button
+              onClick={() => void handleBulkCancel()}
+              disabled={bulkCancelling}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 12px',
+                borderRadius: '7px',
+                fontSize: '12px',
+                fontWeight: 600,
+                background: theme.danger,
+                color: '#fff',
+                border: 'none',
+                cursor: bulkCancelling ? 'not-allowed' : 'pointer',
+                opacity: bulkCancelling ? 0.6 : 1,
+              }}
+            >
+              {bulkCancelling
+                ? 'Cancelling…'
+                : `Cancel ${selectedIds.size} draft${selectedIds.size !== 1 ? 's' : ''}`}
+            </button>
+            <button
+              onClick={clearSelection}
+              style={{
+                marginLeft: 'auto',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '12px',
+                color: theme.textMuted,
+                textDecoration: 'underline',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         <Table<Receipt>
           columns={columns}
           data={filtered}

@@ -199,6 +199,7 @@ export interface PO {
   lines: POLine[]
   receipts: {
     id: string
+    receipt_number?: string | null
     status: string
     receipt_date: string
     location_id?: string | null
@@ -430,6 +431,67 @@ function IconBox({ size = 17 }: { size?: number }) {
       <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
       <line x1="12" y1="22.08" x2="12" y2="12" />
     </svg>
+  )
+}
+
+// Recording a draft receipt doesn't change the PO's status — only
+// confirming one does — so nothing else on this page signals a draft
+// already exists, and a user unsure whether their first "Record Receipt"
+// click worked just does it again. Surfaced right above the button so
+// they see the existing draft(s) before re-submitting.
+function DraftReceiptsNotice({
+  po,
+  navigate,
+  theme,
+}: {
+  po: PO
+  navigate: ReturnType<typeof useNavigate>
+  theme: ReturnType<typeof useTheme>['theme']
+}) {
+  const draftReceipts = po.receipts.filter((r) => r.status === 'draft')
+  if (draftReceipts.length === 0) return null
+  return (
+    <div
+      style={{
+        padding: '10px 14px',
+        borderRadius: '8px',
+        background: '#fffbeb',
+        border: '1px solid #fde68a',
+        fontSize: '13px',
+        color: '#92400e',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px',
+      }}
+    >
+      <div>
+        {draftReceipts.length === 1
+          ? 'A draft receipt already exists for this PO — recording another will create a separate one.'
+          : `${draftReceipts.length} draft receipts already exist for this PO — recording another will create yet another one.`}
+      </div>
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        {draftReceipts.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => {
+              navigate(`/inventory/store-in/${r.id}`)
+            }}
+            style={{
+              background: 'none',
+              border: `1px solid ${theme.warning}`,
+              borderRadius: '6px',
+              padding: '3px 8px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#92400e',
+              cursor: 'pointer',
+            }}
+          >
+            Open {r.receipt_number ?? r.id.slice(0, 8)} →
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -3407,6 +3469,7 @@ export default function PurchaseOrderDetail() {
                   >
                     PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.
                   </div>
+                  <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                   <Button
                     data-tour="po-record-receipt-btn"
                     variant="primary"
@@ -3644,6 +3707,7 @@ export default function PurchaseOrderDetail() {
                         {boughtCount} / {po.lines.length} items bought
                       </div>
                       )}
+                      <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <Button
                           data-tour="po-record-receipt-btn"

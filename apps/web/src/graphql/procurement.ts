@@ -493,6 +493,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       }
       receipts {
         id
+        receipt_number
         status
         receipt_date
         location_id
