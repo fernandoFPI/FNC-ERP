@@ -624,6 +624,11 @@ export default function PurchaseOrderDetail() {
   const [actualPriceStatus, setActualPriceStatus] = useState<
     Record<string, 'saving' | 'saved' | undefined>
   >({})
+  // Once every line is checked off in the "items_bought" checklist, it
+  // collapses to just the Record Receipt button — this lets it expand back
+  // for a correction (e.g. unchecking a line, fixing a price) without
+  // leaving the page.
+  const [boughtChecklistExpanded, setBoughtChecklistExpanded] = useState(false)
 
   // Funding decision picker — shown once a PO reaches 'invoiced' with
   // funding_decided still false (see setPOFunding). Mirrors what used to be
@@ -3430,8 +3435,11 @@ export default function PurchaseOrderDetail() {
                       maximumFractionDigits: 2,
                     })
                   const boughtCount = po.lines.filter((l) => l.is_bought).length
+                  const allBought = po.lines.length > 0 && boughtCount === po.lines.length
+                  const showChecklist = !allBought || boughtChecklistExpanded
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {showChecklist && (
                       <div
                         style={{
                           padding: '10px 14px',
@@ -3451,6 +3459,8 @@ export default function PurchaseOrderDetail() {
                           </div>
                         )}
                       </div>
+                      )}
+                      {showChecklist && (
                       <div
                         style={{
                           border: `1px solid ${theme.border}`,
@@ -3628,20 +3638,42 @@ export default function PurchaseOrderDetail() {
                           )
                         })}
                       </div>
+                      )}
+                      {showChecklist && (
                       <div style={{ fontSize: '11px', color: theme.textMuted }}>
                         {boughtCount} / {po.lines.length} items bought
                       </div>
-                      <Button
-                        data-tour="po-record-receipt-btn"
-                        variant="primary"
-                        style={PRIMARY_CTA_STYLE}
-                        size="sm"
-                        onClick={() => {
-                          navigate(`/procurement/purchase-orders/${po.id}/receive`)
-                        }}
-                      >
-                        Record Receipt
-                      </Button>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Button
+                          data-tour="po-record-receipt-btn"
+                          variant="primary"
+                          style={PRIMARY_CTA_STYLE}
+                          size="sm"
+                          onClick={() => {
+                            navigate(`/procurement/purchase-orders/${po.id}/receive`)
+                          }}
+                        >
+                          Record Receipt
+                        </Button>
+                        {allBought && (
+                          <button
+                            onClick={() => {
+                              setBoughtChecklistExpanded((v) => !v)
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              color: theme.textMuted,
+                              textDecoration: 'underline',
+                            }}
+                          >
+                            {boughtChecklistExpanded ? 'Hide items' : 'Review items'}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )
                 })()}
