@@ -40,10 +40,13 @@ import {
   ADD_PO_LINE_COMMENT,
   RESOLVE_PO_LINE_COMMENT,
   PO_FX_RATES_QUERY,
+  ADMIN_CORRECT_PO,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY } from '../../../graphql/hr'
-import { ACCOUNTS_QUERY, COST_CENTERS_QUERY } from '../../../graphql/finance'
+import { ACCOUNTS_QUERY, COST_CENTERS_QUERY, ANALYTIC_ACCOUNTS_QUERY } from '../../../graphql/finance'
+import { PRODUCTS_QUERY, STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
+import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
@@ -159,6 +162,8 @@ export interface PO {
   subtotal: number
   vendor_id?: string | null
   vendor_name?: string
+  analytic_account_id?: string | null
+  delivery_destination?: 'inventory' | 'jobsite' | null
   project_id?: string
   organizer_id?: string
   assigned_approver_id?: string
@@ -196,13 +201,21 @@ export interface PO {
     id: string
     status: string
     receipt_date: string
+    location_id?: string | null
     location_name?: string
     received_by_email?: string
     received_by_name?: string
+    received_from_name?: string | null
     location_notes?: string
     notes?: string
     created_at: string
-    lines: { po_line_id: string; description: string; qty_received: number }[]
+    lines: {
+      id?: string | null
+      po_line_id: string
+      description: string
+      qty_received: number
+      actual_unit_price?: number | null
+    }[]
     photos: {
       id: string
       fileId: string
@@ -246,6 +259,44 @@ interface POEditRequest {
   created_at: string
 }
 
+// Draft shape for the system_admin-only "Admin correction" tab — mirrors
+// the fields applyAdminPOCorrection (services/gateway/src/graphql/resolvers.ts)
+// actually allows. No add/remove lines/receipts — that stays on the
+// two-step po_edit_requests flow (EditDraft below).
+interface AdminCorrectionDraft {
+  vendor_id: string
+  currency_code: string
+  analytic_account_id: string
+  notes: string
+  expected_delivery_date: string
+  priority: string
+  assigned_receiver_id: string
+  branch_id: string
+  delivery_destination: string
+  lines: {
+    id: string
+    product_id: string
+    description: string
+    qty: number
+    unit_price: number
+    uom: string
+    source_location_id: string
+  }[]
+  receipts: {
+    id: string
+    warehouse_location_id: string
+    location_notes: string
+    received_by_name: string
+    received_from_name: string
+    notes: string
+  }[]
+  receiptLines: {
+    id: string
+    qty_received: number
+    actual_unit_price: number
+  }[]
+}
+
 interface EditDraft {
   notes: string
   expected_delivery_date: string
@@ -260,7 +311,17 @@ interface EditDraft {
   linesAdded: { description: string; qty: number; unit_price: number; uom: string }[]
 }
 
-type Tab = 'lines' | 'receipts' | 'returns' | 'approval_log' | 'changes'
+type Tab = 'lines' | 'receipts' | 'returns' | 'approval_log' | 'changes' | 'admin_correction'
+
+// Statuses where adminCorrectPO is available — mirrors
+// ADMIN_CORRECTION_PO_STATUSES in services/gateway/src/graphql/resolvers.ts.
+const ADMIN_CORRECTION_PO_STATUSES = [
+  'approved',
+  'ready_to_issue',
+  'items_bought',
+  'goods_received',
+  'finance_audit',
+]
 
 // Same fixed enterprise accent palette used on the redesigned Record Receipt
 // and New Purchase Order pages — kept as literal values (not theme tokens)
@@ -518,6 +579,11 @@ export default function PurchaseOrderDetail() {
     Record<string, { price: string; currency: string; quoteRef: string }>
   >({})
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
+  const [adminCorrectionDraft, setAdminCorrectionDraft] = useState<AdminCorrectionDraft | null>(
+    null,
+  )
+  const [adminCorrectionReason, setAdminCorrectionReason] = useState('')
+  const [adminCorrectionConfirming, setAdminCorrectionConfirming] = useState(false)
   const [editRequestNotes, setEditRequestNotes] = useState('')
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [adminPoStatus, setAdminPoStatus] = useState('')
@@ -616,6 +682,8 @@ export default function PurchaseOrderDetail() {
   const addToast = useToastStore((s) => s.addToast)
   const { isSystemLevel, can } = usePermission()
   const currentUserId = useAuthStore((s) => s.user?.id)
+  const currentUserRole = useAuthStore((s) => s.user?.role)
+  const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
   const [apInvoice, setApInvoice] = useState<
     { id: string; invoice_number: string; status: string } | null | undefined
   >(undefined)
@@ -694,6 +762,8 @@ export default function PurchaseOrderDetail() {
   })
   useEntityChanged('purchase_order', () => void refetch())
   const po: PO | undefined = isTourDemo ? buildTourDemoPO(tourStatus) : data?.purchaseOrder
+  const showAdminCorrectionTab =
+    currentUserRole === 'system_admin' && !!po && ADMIN_CORRECTION_PO_STATUSES.includes(po.status)
 
   // Derived rejection reason — built from per-line flag notes when approving
   const flagAutoReason = po
@@ -947,6 +1017,16 @@ export default function PurchaseOrderDetail() {
   })
   const [addLineComment] = useMutation(ADD_PO_LINE_COMMENT)
   const [resolveLineComment] = useMutation(RESOLVE_PO_LINE_COMMENT)
+  const [adminCorrectPO, { loading: adminCorrecting }] = useMutation(ADMIN_CORRECT_PO, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Correction applied.' })
+      setAdminCorrectionDraft(null)
+      void refetch()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
+  })
 
   const { data: employeesData } = useQuery(EMPLOYEES_QUERY, {
     variables: { is_active: true },
@@ -960,6 +1040,35 @@ export default function PurchaseOrderDetail() {
     fetchPolicy: 'cache-first',
   })
   const vendors: { id: string; name: string }[] = vendorsData?.vendors ?? []
+
+  // Admin-correction-only data sources — skipped unless the tab can
+  // actually be shown, since most viewers will never need them.
+  const { data: analyticAccountsData } = useQuery(ANALYTIC_ACCOUNTS_QUERY, {
+    fetchPolicy: 'cache-first',
+    skip: !showAdminCorrectionTab,
+  })
+  const analyticAccounts: { id: string; name: string; code: string }[] =
+    analyticAccountsData?.analyticAccounts ?? []
+  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+    variables: {},
+    fetchPolicy: 'cache-first',
+    skip: !showAdminCorrectionTab,
+  })
+  const adminCorrectionProducts: { id: string; sku: string; name: string }[] =
+    productsData?.products ?? []
+  const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
+    variables: { companyId: currentCompanyId },
+    fetchPolicy: 'cache-first',
+    skip: !showAdminCorrectionTab || !currentCompanyId,
+  })
+  const branches: { id: string; name: string }[] = branchesData?.companyBranches ?? []
+  const { data: stockLocationsData } = useQuery(STOCK_LOCATIONS_QUERY, {
+    variables: { isActive: true },
+    fetchPolicy: 'cache-first',
+    skip: !showAdminCorrectionTab,
+  })
+  const stockLocations: { id: string; name: string; type: string }[] =
+    stockLocationsData?.stockLocations ?? []
 
   const { data: fxRatesData } = useQuery(PO_FX_RATES_QUERY, { fetchPolicy: 'cache-first' })
   const marketPricingCurrencyOptions = (() => {
@@ -1036,6 +1145,9 @@ export default function PurchaseOrderDetail() {
     { key: 'returns', label: 'Returns', badge: poReturns.length || undefined },
     { key: 'approval_log', label: 'Log' },
     { key: 'changes', label: 'Edit requests', badge: pendingEdits },
+    ...(showAdminCorrectionTab
+      ? [{ key: 'admin_correction' as Tab, label: 'Admin correction' }]
+      : []),
   ]
 
   const phoneTabLabels: Partial<Record<Tab, string>> = {
@@ -1044,6 +1156,7 @@ export default function PurchaseOrderDetail() {
     returns: 'Rtn.',
     approval_log: 'Log',
     changes: 'Edits',
+    admin_correction: 'Admin',
   }
 
   return (
@@ -6186,6 +6299,792 @@ export default function PurchaseOrderDetail() {
                   })}
                 </Card>
               </fieldset>
+            </div>
+          )
+        })()}
+
+      {activeTab === 'admin_correction' &&
+        (() => {
+          const inputStyle: React.CSSProperties = {
+            width: '100%',
+            padding: '7px 10px',
+            borderRadius: '6px',
+            border: `1px solid ${theme.borderInput}`,
+            background: theme.bgCanvas,
+            color: theme.textPrimary,
+            fontSize: '13px',
+            boxSizing: 'border-box',
+          }
+          const labelStyle: React.CSSProperties = {
+            fontSize: '11px',
+            fontWeight: 600,
+            color: theme.textMuted,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            display: 'block',
+            marginBottom: '4px',
+          }
+
+          const initAdminDraft = (): AdminCorrectionDraft => ({
+            vendor_id: po.vendor_id ?? '',
+            currency_code: po.currency_code ?? '',
+            analytic_account_id: po.analytic_account_id ?? '',
+            notes: po.notes ?? '',
+            expected_delivery_date: po.expected_delivery_date ?? '',
+            priority: po.priority ?? 'low',
+            assigned_receiver_id: po.assigned_receiver_id ?? '',
+            branch_id: po.branch_id ?? '',
+            delivery_destination: po.delivery_destination ?? '',
+            lines: po.lines.map((l) => ({
+              id: l.id,
+              product_id: l.product_id ?? '',
+              description: l.description,
+              qty: parseFloat(String(l.qty)) || 0,
+              unit_price: parseFloat(String(l.unit_price)) || 0,
+              uom: l.uom,
+              source_location_id: l.source_location_id ?? '',
+            })),
+            receipts: po.receipts.map((r) => ({
+              id: r.id,
+              warehouse_location_id: r.location_id ?? '',
+              location_notes: r.location_notes ?? '',
+              received_by_name: r.received_by_name ?? '',
+              received_from_name: r.received_from_name ?? '',
+              notes: r.notes ?? '',
+            })),
+            receiptLines: po.receipts.flatMap((r) =>
+              r.lines
+                .filter((l): l is typeof l & { id: string } => !!l.id)
+                .map((l) => ({
+                  id: l.id,
+                  qty_received: parseFloat(String(l.qty_received)) || 0,
+                  actual_unit_price: parseFloat(String(l.actual_unit_price ?? 0)) || 0,
+                })),
+            ),
+          })
+
+          const buildAdminChanges = (draft: AdminCorrectionDraft) => {
+            const header: Record<string, { from: unknown; to: unknown }> = {}
+            const headerFields: [keyof AdminCorrectionDraft, string][] = [
+              ['vendor_id', po.vendor_id ?? ''],
+              ['currency_code', po.currency_code ?? ''],
+              ['analytic_account_id', po.analytic_account_id ?? ''],
+              ['notes', po.notes ?? ''],
+              ['expected_delivery_date', po.expected_delivery_date ?? ''],
+              ['priority', po.priority ?? ''],
+              ['assigned_receiver_id', po.assigned_receiver_id ?? ''],
+              ['branch_id', po.branch_id ?? ''],
+              ['delivery_destination', po.delivery_destination ?? ''],
+            ]
+            for (const [field, orig] of headerFields) {
+              const val = draft[field] as string
+              if (val !== orig) header[field] = { from: orig || null, to: val || null }
+            }
+
+            const linesEdited: { id: string; field: string; from: unknown; to: unknown }[] = []
+            for (const dl of draft.lines) {
+              const orig = po.lines.find((l) => l.id === dl.id)
+              if (!orig) continue
+              if (dl.product_id !== (orig.product_id ?? ''))
+                linesEdited.push({
+                  id: dl.id,
+                  field: 'product_id',
+                  from: orig.product_id ?? null,
+                  to: dl.product_id || null,
+                })
+              if (dl.description !== orig.description)
+                linesEdited.push({
+                  id: dl.id,
+                  field: 'description',
+                  from: orig.description,
+                  to: dl.description,
+                })
+              if (dl.qty !== orig.qty)
+                linesEdited.push({ id: dl.id, field: 'qty_ordered', from: orig.qty, to: dl.qty })
+              if (dl.unit_price !== orig.unit_price)
+                linesEdited.push({
+                  id: dl.id,
+                  field: 'unit_price',
+                  from: orig.unit_price,
+                  to: dl.unit_price,
+                })
+              if (dl.uom !== orig.uom)
+                linesEdited.push({ id: dl.id, field: 'uom', from: orig.uom, to: dl.uom })
+              if (dl.source_location_id !== (orig.source_location_id ?? ''))
+                linesEdited.push({
+                  id: dl.id,
+                  field: 'source_location_id',
+                  from: orig.source_location_id ?? null,
+                  to: dl.source_location_id || null,
+                })
+            }
+
+            const receiptsEdited: { id: string; field: string; from: unknown; to: unknown }[] = []
+            for (const dr of draft.receipts) {
+              const orig = po.receipts.find((r) => r.id === dr.id)
+              if (!orig) continue
+              const recFields: [keyof (typeof draft.receipts)[number], string][] = [
+                ['warehouse_location_id', orig.location_id ?? ''],
+                ['location_notes', orig.location_notes ?? ''],
+                ['received_by_name', orig.received_by_name ?? ''],
+                ['received_from_name', orig.received_from_name ?? ''],
+                ['notes', orig.notes ?? ''],
+              ]
+              for (const [field, origVal] of recFields) {
+                const val = dr[field]
+                if (val !== origVal)
+                  receiptsEdited.push({ id: dr.id, field, from: origVal || null, to: val || null })
+              }
+            }
+
+            const receiptLinesEdited: { id: string; field: string; from: unknown; to: unknown }[] =
+              []
+            for (const drl of draft.receiptLines) {
+              const origLine = po.receipts
+                .flatMap((r) => r.lines)
+                .find((l) => l.id === drl.id)
+              if (!origLine) continue
+              if (drl.qty_received !== origLine.qty_received)
+                receiptLinesEdited.push({
+                  id: drl.id,
+                  field: 'qty_received',
+                  from: origLine.qty_received,
+                  to: drl.qty_received,
+                })
+              const origActual = parseFloat(String(origLine.actual_unit_price ?? 0)) || 0
+              if (drl.actual_unit_price !== origActual)
+                receiptLinesEdited.push({
+                  id: drl.id,
+                  field: 'actual_unit_price',
+                  from: origActual,
+                  to: drl.actual_unit_price,
+                })
+            }
+
+            return {
+              header,
+              lines: { edited: linesEdited },
+              receipts: { edited: receiptsEdited },
+              receiptLines: { edited: receiptLinesEdited },
+            }
+          }
+
+          const changesPreview = adminCorrectionDraft ? buildAdminChanges(adminCorrectionDraft) : null
+          const totalChanges = changesPreview
+            ? Object.keys(changesPreview.header).length +
+              changesPreview.lines.edited.length +
+              changesPreview.receipts.edited.length +
+              changesPreview.receiptLines.edited.length
+            : 0
+
+          const lineFields: LineItemField<AdminCorrectionDraft['lines'][number]>[] = [
+            {
+              key: 'product_id',
+              label: 'Product',
+              render: (line, i) => (
+                <select
+                  value={line.product_id}
+                  style={inputStyle}
+                  onChange={(e) => {
+                    if (!adminCorrectionDraft) return
+                    const lines = [...adminCorrectionDraft.lines]
+                    lines[i] = { ...lines[i], product_id: e.target.value }
+                    setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
+                  }}
+                >
+                  <option value="">— No catalog product —</option>
+                  {adminCorrectionProducts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.sku} — {p.name}
+                    </option>
+                  ))}
+                </select>
+              ),
+            },
+            {
+              key: 'description',
+              label: 'Description',
+              render: (line, i) => (
+                <input
+                  value={line.description}
+                  style={inputStyle}
+                  onChange={(e) => {
+                    if (!adminCorrectionDraft) return
+                    const lines = [...adminCorrectionDraft.lines]
+                    lines[i] = { ...lines[i], description: e.target.value }
+                    setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'qty',
+              label: 'Qty',
+              width: '90px',
+              render: (line, i) => (
+                <input
+                  type="number"
+                  value={line.qty}
+                  style={inputStyle}
+                  onChange={(e) => {
+                    if (!adminCorrectionDraft) return
+                    const lines = [...adminCorrectionDraft.lines]
+                    lines[i] = { ...lines[i], qty: Number(e.target.value) }
+                    setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'unit_price',
+              label: 'Unit price',
+              width: '110px',
+              render: (line, i) => (
+                <input
+                  type="number"
+                  value={line.unit_price}
+                  style={inputStyle}
+                  onChange={(e) => {
+                    if (!adminCorrectionDraft) return
+                    const lines = [...adminCorrectionDraft.lines]
+                    lines[i] = { ...lines[i], unit_price: Number(e.target.value) }
+                    setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'uom',
+              label: 'UOM',
+              width: '80px',
+              render: (line, i) => (
+                <input
+                  value={line.uom}
+                  style={inputStyle}
+                  onChange={(e) => {
+                    if (!adminCorrectionDraft) return
+                    const lines = [...adminCorrectionDraft.lines]
+                    lines[i] = { ...lines[i], uom: e.target.value }
+                    setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'source_location_id',
+              label: 'Stock source',
+              render: (line, i) => (
+                <select
+                  value={line.source_location_id}
+                  style={inputStyle}
+                  onChange={(e) => {
+                    if (!adminCorrectionDraft) return
+                    const lines = [...adminCorrectionDraft.lines]
+                    lines[i] = { ...lines[i], source_location_id: e.target.value }
+                    setAdminCorrectionDraft({ ...adminCorrectionDraft, lines })
+                  }}
+                >
+                  <option value="">— Default warehouse —</option>
+                  {stockLocations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              ),
+            },
+          ]
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div
+                style={{
+                  padding: '12px 16px',
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  color: '#92400e',
+                }}
+              >
+                Admin correction applies immediately — there is no second-approver review step.
+                It reverses and reposts any stock movements already recorded so inventory stays
+                accurate, and refuses fields already referenced by an AP invoice. Use the reason
+                field below to explain why.
+              </div>
+
+              {!adminCorrectionDraft && (
+                <div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setAdminCorrectionDraft(initAdminDraft())
+                      setAdminCorrectionConfirming(false)
+                    }}
+                  >
+                    Start correction
+                  </Button>
+                </div>
+              )}
+
+              {adminCorrectionDraft && (
+                <>
+                  <Card style={{ padding: '20px' }}>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        color: theme.textPrimary,
+                        marginBottom: '12px',
+                      }}
+                    >
+                      Header
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                        gap: '12px',
+                      }}
+                    >
+                      <div>
+                        <label style={labelStyle}>Vendor</label>
+                        <select
+                          value={adminCorrectionDraft.vendor_id}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              vendor_id: e.target.value,
+                            })
+                          }}
+                        >
+                          <option value="">— None —</option>
+                          {vendors.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Currency</label>
+                        <select
+                          value={adminCorrectionDraft.currency_code}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              currency_code: e.target.value,
+                            })
+                          }}
+                        >
+                          {marketPricingCurrencyOptions.map((c) => (
+                            <option key={c.value} value={c.value}>
+                              {c.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Analytic account</label>
+                        <select
+                          value={adminCorrectionDraft.analytic_account_id}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              analytic_account_id: e.target.value,
+                            })
+                          }}
+                        >
+                          <option value="">— None —</option>
+                          {analyticAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.code} — {a.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Priority</label>
+                        <select
+                          value={adminCorrectionDraft.priority}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              priority: e.target.value,
+                            })
+                          }}
+                        >
+                          <option value="low">Low</option>
+                          <option value="high">High</option>
+                          <option value="emergency">Emergency</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Received by</label>
+                        <select
+                          value={adminCorrectionDraft.assigned_receiver_id}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              assigned_receiver_id: e.target.value,
+                            })
+                          }}
+                        >
+                          <option value="">— Unassigned —</option>
+                          {employees.map((e) => (
+                            <option key={e.id} value={e.id}>
+                              {e.first_name} {e.last_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Branch</label>
+                        <select
+                          value={adminCorrectionDraft.branch_id}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              branch_id: e.target.value,
+                            })
+                          }}
+                        >
+                          <option value="">— None —</option>
+                          {branches.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {po.purpose === 'project' && (
+                        <div>
+                          <label style={labelStyle}>Delivery destination</label>
+                          <select
+                            value={adminCorrectionDraft.delivery_destination}
+                            style={inputStyle}
+                            onChange={(e) => {
+                              setAdminCorrectionDraft({
+                                ...adminCorrectionDraft,
+                                delivery_destination: e.target.value,
+                              })
+                            }}
+                          >
+                            <option value="inventory">Warehouse (inventory)</option>
+                            <option value="jobsite">Direct to jobsite</option>
+                          </select>
+                        </div>
+                      )}
+                      <div>
+                        <label style={labelStyle}>Expected delivery</label>
+                        <input
+                          type="date"
+                          value={adminCorrectionDraft.expected_delivery_date}
+                          style={inputStyle}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              expected_delivery_date: e.target.value,
+                            })
+                          }}
+                        />
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={labelStyle}>Notes</label>
+                        <textarea
+                          value={adminCorrectionDraft.notes}
+                          rows={2}
+                          style={{ ...inputStyle, resize: 'vertical' }}
+                          onChange={(e) => {
+                            setAdminCorrectionDraft({
+                              ...adminCorrectionDraft,
+                              notes: e.target.value,
+                            })
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card style={{ padding: '20px' }}>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '14px',
+                        color: theme.textPrimary,
+                        marginBottom: '12px',
+                      }}
+                    >
+                      Lines
+                    </div>
+                    <LineItemEditor
+                      fields={lineFields}
+                      rows={adminCorrectionDraft.lines}
+                      rowKey={(line) => line.id}
+                    />
+                  </Card>
+
+                  {adminCorrectionDraft.receipts.map((dr, ri) => {
+                    const orig = po.receipts.find((r) => r.id === dr.id)
+                    const receiptLineRows = adminCorrectionDraft.receiptLines.filter((rl) =>
+                      orig?.lines.some((l) => l.id === rl.id),
+                    )
+                    return (
+                      <Card key={dr.id} style={{ padding: '20px' }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: '14px',
+                            color: theme.textPrimary,
+                            marginBottom: '12px',
+                          }}
+                        >
+                          Receipt {orig?.receipt_date?.slice(0, 10) ?? ''}{' '}
+                          <Badge variant={orig?.status === 'confirmed' ? 'success' : 'neutral'}>
+                            {orig?.status}
+                          </Badge>
+                        </div>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                            gap: '12px',
+                            marginBottom: '14px',
+                          }}
+                        >
+                          <div>
+                            <label style={labelStyle}>Warehouse location</label>
+                            <select
+                              value={dr.warehouse_location_id}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const receipts = [...adminCorrectionDraft.receipts]
+                                receipts[ri] = {
+                                  ...receipts[ri],
+                                  warehouse_location_id: e.target.value,
+                                }
+                                setAdminCorrectionDraft({ ...adminCorrectionDraft, receipts })
+                              }}
+                            >
+                              <option value="">— Default warehouse —</option>
+                              {stockLocations.map((l) => (
+                                <option key={l.id} value={l.id}>
+                                  {l.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Location notes</label>
+                            <input
+                              value={dr.location_notes}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const receipts = [...adminCorrectionDraft.receipts]
+                                receipts[ri] = { ...receipts[ri], location_notes: e.target.value }
+                                setAdminCorrectionDraft({ ...adminCorrectionDraft, receipts })
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Received by</label>
+                            <input
+                              value={dr.received_by_name}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const receipts = [...adminCorrectionDraft.receipts]
+                                receipts[ri] = {
+                                  ...receipts[ri],
+                                  received_by_name: e.target.value,
+                                }
+                                setAdminCorrectionDraft({ ...adminCorrectionDraft, receipts })
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <label style={labelStyle}>Received from</label>
+                            <input
+                              value={dr.received_from_name}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const receipts = [...adminCorrectionDraft.receipts]
+                                receipts[ri] = {
+                                  ...receipts[ri],
+                                  received_from_name: e.target.value,
+                                }
+                                setAdminCorrectionDraft({ ...adminCorrectionDraft, receipts })
+                              }}
+                            />
+                          </div>
+                          <div style={{ gridColumn: '1 / -1' }}>
+                            <label style={labelStyle}>Receipt notes</label>
+                            <input
+                              value={dr.notes}
+                              style={inputStyle}
+                              onChange={(e) => {
+                                const receipts = [...adminCorrectionDraft.receipts]
+                                receipts[ri] = { ...receipts[ri], notes: e.target.value }
+                                setAdminCorrectionDraft({ ...adminCorrectionDraft, receipts })
+                              }}
+                            />
+                          </div>
+                        </div>
+                        {receiptLineRows.length > 0 && (
+                          <LineItemEditor
+                            fields={[
+                              {
+                                key: 'description',
+                                label: 'Line',
+                                render: (rl) => {
+                                  const l = orig?.lines.find((x) => x.id === rl.id)
+                                  return (
+                                    <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                                      {l?.description}
+                                    </span>
+                                  )
+                                },
+                              },
+                              {
+                                key: 'qty_received',
+                                label: 'Qty received',
+                                width: '110px',
+                                render: (rl) => (
+                                  <input
+                                    type="number"
+                                    value={rl.qty_received}
+                                    style={inputStyle}
+                                    onChange={(e) => {
+                                      const receiptLines = adminCorrectionDraft.receiptLines.map(
+                                        (x) =>
+                                          x.id === rl.id
+                                            ? { ...x, qty_received: Number(e.target.value) }
+                                            : x,
+                                      )
+                                      setAdminCorrectionDraft({
+                                        ...adminCorrectionDraft,
+                                        receiptLines,
+                                      })
+                                    }}
+                                  />
+                                ),
+                              },
+                              {
+                                key: 'actual_unit_price',
+                                label: 'Actual unit price',
+                                width: '130px',
+                                render: (rl) => (
+                                  <input
+                                    type="number"
+                                    value={rl.actual_unit_price}
+                                    style={inputStyle}
+                                    onChange={(e) => {
+                                      const receiptLines = adminCorrectionDraft.receiptLines.map(
+                                        (x) =>
+                                          x.id === rl.id
+                                            ? { ...x, actual_unit_price: Number(e.target.value) }
+                                            : x,
+                                      )
+                                      setAdminCorrectionDraft({
+                                        ...adminCorrectionDraft,
+                                        receiptLines,
+                                      })
+                                    }}
+                                  />
+                                ),
+                              },
+                            ]}
+                            rows={receiptLineRows}
+                            rowKey={(rl) => rl.id}
+                          />
+                        )}
+                      </Card>
+                    )
+                  })}
+
+                  <Card style={{ padding: '20px' }}>
+                    <label style={labelStyle}>Reason for this correction (required)</label>
+                    <input
+                      value={adminCorrectionReason}
+                      style={inputStyle}
+                      placeholder="Explain why this correction is needed..."
+                      onChange={(e) => {
+                        setAdminCorrectionReason(e.target.value)
+                      }}
+                    />
+                    <div
+                      style={{
+                        marginTop: '14px',
+                        display: 'flex',
+                        gap: '10px',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setAdminCorrectionDraft(null)
+                          setAdminCorrectionConfirming(false)
+                          setAdminCorrectionReason('')
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      {!adminCorrectionConfirming && (
+                        <Button
+                          variant="primary"
+                          style={PRIMARY_CTA_STYLE}
+                          disabled={totalChanges === 0 || !adminCorrectionReason.trim()}
+                          onClick={() => {
+                            setAdminCorrectionConfirming(true)
+                          }}
+                        >
+                          {totalChanges === 0
+                            ? 'No changes yet'
+                            : `Review ${totalChanges} change${totalChanges !== 1 ? 's' : ''}`}
+                        </Button>
+                      )}
+                      {adminCorrectionConfirming && (
+                        <>
+                          <span style={{ fontSize: '13px', color: theme.danger }}>
+                            Apply {totalChanges} change{totalChanges !== 1 ? 's' : ''} now?
+                            This cannot be undone from here.
+                          </span>
+                          <Button
+                            variant="danger"
+                            loading={adminCorrecting}
+                            onClick={() => {
+                              if (!changesPreview) return
+                              void adminCorrectPO({
+                                variables: {
+                                  id: po.id,
+                                  changes: JSON.stringify(changesPreview),
+                                  reason: adminCorrectionReason,
+                                },
+                              })
+                            }}
+                          >
+                            Yes, apply correction
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              setAdminCorrectionConfirming(false)
+                            }}
+                          >
+                            Back
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </Card>
+                </>
+              )}
             </div>
           )
         })()}

@@ -161,6 +161,12 @@
     approvePOEditRequest(id: ID!, requestId: ID!, reviewNotes: String): POEditRequest!
     rejectPOEditRequest(id: ID!, requestId: ID!, reviewNotes: String!): POEditRequest!
 
+    # Admin correction of a passed PO — system_admin only, single-actor, no
+    # approval step. Reaches receiving/product/price/location fields the
+    # edit-request flow above never touches, and reconciles the stock/AP
+    # records they already produced.
+    adminCorrectPO(id: ID!, changes: String!, reason: String!): PurchaseOrder!
+
     # PO position management
     assignPOPosition(input: POPositionInput!): POPositionAssignment!
     removePOPosition(id: ID!): Boolean!
@@ -1906,12 +1912,14 @@
   }
 
   type POReceiptLine {
+    id: ID
     po_line_id: ID!
     description: String
     product_name: String
     sku: String
     uom: String
     unit_price: String
+    actual_unit_price: String
     currency_code: String
     fx_rate_to_base: String
     qty_received: String!

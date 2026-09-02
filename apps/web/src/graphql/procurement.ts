@@ -159,12 +159,15 @@ export const PURCHASE_ORDER_QUERY = gql`
         notes
         received_by_email
         received_by_name
+        received_from_name
         location_notes
         created_at
         lines {
+          id
           po_line_id
           description
           qty_received
+          actual_unit_price
         }
         photos {
           id
@@ -414,6 +417,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       subtotal
       vendor_id
       vendor_name
+      analytic_account_id
       project_id
       organizer_id
       assigned_approver_id
@@ -491,16 +495,20 @@ export const PO_LIFECYCLE_QUERY = gql`
         id
         status
         receipt_date
+        location_id
         location_name
         received_by_email
         received_by_name
+        received_from_name
         location_notes
         notes
         created_at
         lines {
+          id
           po_line_id
           description
           qty_received
+          actual_unit_price
         }
         photos {
           id
@@ -566,6 +574,14 @@ export const REJECT_PO_EDIT_REQUEST = gql`
       reviewed_at
       reviewed_by_email
       review_notes
+    }
+  }
+`
+
+export const ADMIN_CORRECT_PO = gql`
+  mutation AdminCorrectPO($id: ID!, $changes: String!, $reason: String!) {
+    adminCorrectPO(id: $id, changes: $changes, reason: $reason) {
+      id
     }
   }
 `

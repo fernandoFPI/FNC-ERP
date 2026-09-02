@@ -146,7 +146,15 @@ interface EditChanges {
   }
 }
 
-function buildEditChangeSummary(changes: EditChanges): string {
+// Superset of EditChanges used by the admin-correction mutation, which can
+// also reach into receiving records — nothing the ordinary edit-request flow
+// (applyPOEditChanges) ever touches.
+interface AdminPOCorrectionChanges extends EditChanges {
+  receipts?: { edited?: { id: string; field: string; from?: unknown; to: unknown }[] }
+  receiptLines?: { edited?: { id: string; field: string; from?: unknown; to: unknown }[] }
+}
+
+function buildEditChangeSummary(changes: AdminPOCorrectionChanges): string {
   const parts: string[] = []
   const headerFields = Object.keys(changes.header ?? {})
   if (headerFields.length > 0) {
@@ -165,6 +173,16 @@ function buildEditChangeSummary(changes: EditChanges): string {
   }
   if (added.length > 0) parts.push(`Lines added: ${added.length}`)
   if (removed.length > 0) parts.push(`Lines removed: ${removed.length}`)
+  const receiptsEdited = changes.receipts?.edited ?? []
+  if (receiptsEdited.length > 0) {
+    const details = receiptsEdited.map((e) => `${e.field}: "${e.from ?? '—'}" → "${e.to ?? '—'}"`)
+    parts.push(`Receipts edited (${receiptsEdited.length}): ${details.join(', ')}`)
+  }
+  const receiptLinesEdited = changes.receiptLines?.edited ?? []
+  if (receiptLinesEdited.length > 0) {
+    const details = receiptLinesEdited.map((e) => `${e.field}: "${e.from ?? '—'}" → "${e.to ?? '—'}"`)
+    parts.push(`Receipt lines edited (${receiptLinesEdited.length}): ${details.join(', ')}`)
+  }
   return parts.join(' | ')
 }
 
@@ -293,6 +311,672 @@ async function applyPOEditChanges(
        WHERE id=$1`,
       [poId],
     )
+  }
+}
+
+// ── Admin correction of a passed PO ─────────────────────────────────────
+// Statuses where a system_admin can retroactively correct fields the normal
+// PO edit-request flow (applyPOEditChanges) never reaches — receiving info,
+// product, price, location — once a PO has moved past approval. Excludes
+// invoiced/completed: no GL journal is ever posted before completion (see
+// postPOCompletionJournal, which only fires at the invoiced→completed
+// transition), so nothing needs reconciling there for any status below.
+// Excludes cancelled — nothing to correct on a dead PO.
+const ADMIN_CORRECTION_PO_STATUSES = [
+  'approved',
+  'ready_to_issue',
+  'items_bought',
+  'goods_received',
+  'finance_audit',
+]
+
+interface StockMoveRow {
+  id: string
+  company_id: string
+  product_id: string
+  from_location_id: string
+  to_location_id: string
+  qty: string
+  unit_cost: string
+  source_type: string
+  source_id: string
+  po_line_id: string | null
+  po_receipt_line_id: string | null
+}
+
+// Refuses a correction that would remove more stock from a location than is
+// actually still there — the sign that it already moved on further (issued
+// to a project, transferred, consumed) since the move being corrected. Only
+// call this for the quantity actually at risk (a delta on reduction, or the
+// full original quantity on a product/location swap) — never for a
+// same-quantity, same-location, cost-only correction, which can't drive
+// anything negative.
+async function assertStockCorrectable(
+  client: PoolClient,
+  productId: string,
+  locationId: string,
+  qtyBeingRemoved: number,
+  contextLabel: string,
+): Promise<void> {
+  if (qtyBeingRemoved <= 0) return
+  const bal = await client.query<{ qty_on_hand: string }>(
+    `SELECT qty_on_hand FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+    [productId, locationId],
+  )
+  const onHand = parseFloat(String(bal.rows[0]?.qty_on_hand ?? 0))
+  if (onHand < qtyBeingRemoved) {
+    const [prod, loc] = await Promise.all([
+      client.query<{ name: string }>(`SELECT name FROM products WHERE id=$1`, [productId]),
+      client.query<{ name: string }>(`SELECT name FROM stock_locations WHERE id=$1`, [locationId]),
+    ])
+    throw new Error(
+      `Cannot correct ${contextLabel} — only ${onHand} unit(s) of ` +
+        `${prod.rows[0]?.name ?? 'this product'} remain at ${loc.rows[0]?.name ?? 'this location'}; ` +
+        `the rest has already moved on (issued, transferred, or consumed elsewhere). Reconcile that first.`,
+    )
+  }
+}
+
+// Finds the stock_moves row(s) a receipt line or an issuance line already
+// produced. Prefers the po_line_id/po_receipt_line_id link columns added by
+// migration 230; rows written before that migration have neither populated,
+// so this falls back to source_type+source_id+product_id — every row from
+// before this feature shipped hits this fallback path, not just a rare edge
+// case. A cross-company issuance line legitimately produces two rows (one
+// per company); both are returned and corrected together.
+async function findStockMovesForCorrection(
+  client: PoolClient,
+  opts:
+    | { kind: 'receipt'; poReceiptLineId: string; receiptId: string; productId: string | null }
+    | { kind: 'issuance'; poLineId: string; issueId: string; productId: string | null },
+): Promise<StockMoveRow[]> {
+  if (opts.kind === 'receipt') {
+    const linked = await client.query<StockMoveRow>(
+      `SELECT * FROM stock_moves WHERE po_receipt_line_id=$1 ORDER BY moved_at`,
+      [opts.poReceiptLineId],
+    )
+    if (linked.rows.length > 0) return linked.rows
+    const legacy = await client.query<StockMoveRow>(
+      `SELECT * FROM stock_moves WHERE source_type='po_receipt' AND source_id=$1 AND product_id=$2 ORDER BY moved_at`,
+      [opts.receiptId, opts.productId],
+    )
+    return legacy.rows
+  }
+  const linked = await client.query<StockMoveRow>(
+    `SELECT * FROM stock_moves WHERE po_line_id=$1 AND source_type='material_issue' ORDER BY moved_at`,
+    [opts.poLineId],
+  )
+  if (linked.rows.length > 0) return linked.rows
+  const legacy = await client.query<StockMoveRow>(
+    `SELECT * FROM stock_moves WHERE source_type='material_issue' AND source_id=$1 AND product_id=$2 ORDER BY moved_at`,
+    [opts.issueId, opts.productId],
+  )
+  return legacy.rows
+}
+
+// Reverses one stock_moves row (mirror-image: from/to swapped, same
+// qty/cost) and, unless the correction zeroes the quantity out, posts a
+// fresh corrected row. stock_moves is an immutable append-only ledger
+// (packages/db/migrations/008_inventory_schema.sql: "Never update or
+// delete") — this never UPDATEs or DELETEs an existing row.
+async function reverseAndRepostStockMove(
+  client: PoolClient,
+  original: StockMoveRow,
+  correction: {
+    productId?: string | undefined
+    qty?: number
+    unitCost?: number
+    fromLocationId?: string
+    toLocationId?: string
+  },
+  actorId: string,
+  reasonNote: string,
+): Promise<void> {
+  const origQty = parseFloat(original.qty)
+  const origUnitCost = parseFloat(original.unit_cost)
+  await client.query(
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [
+      original.company_id,
+      original.product_id,
+      original.to_location_id,
+      original.from_location_id,
+      origQty,
+      origUnitCost,
+      origQty * origUnitCost,
+      original.source_type,
+      original.source_id,
+      `Admin correction — reversal of ${original.id} (${reasonNote})`,
+      actorId,
+      original.po_line_id,
+      original.po_receipt_line_id,
+    ],
+  )
+  const newQty = correction.qty ?? origQty
+  if (newQty <= 0) return
+  const newUnitCost = correction.unitCost ?? origUnitCost
+  await client.query(
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    [
+      original.company_id,
+      correction.productId ?? original.product_id,
+      correction.fromLocationId ?? original.from_location_id,
+      correction.toLocationId ?? original.to_location_id,
+      newQty,
+      newUnitCost,
+      newQty * newUnitCost,
+      original.source_type,
+      original.source_id,
+      `Admin correction — ${reasonNote}`,
+      actorId,
+      original.po_line_id,
+      original.po_receipt_line_id,
+    ],
+  )
+}
+
+// There is no reverse-and-repost mechanism for vendor_invoices anywhere in
+// this codebase (voidProjectInvoice refuses to touch a financially-live
+// invoice rather than correct it) — so where an AP invoice already
+// references a line/PO, block that edit rather than let the PO and the
+// invoice silently diverge.
+async function assertNoVendorInvoiceLineConflict(
+  client: PoolClient,
+  poLineIds: string[],
+): Promise<void> {
+  if (poLineIds.length === 0) return
+  const r = await client.query<{ invoice_number: string }>(
+    `SELECT vi.invoice_number FROM vendor_invoice_lines vil
+     JOIN vendor_invoices vi ON vi.id = vil.vendor_invoice_id
+     WHERE vil.po_line_id = ANY($1) LIMIT 1`,
+    [poLineIds],
+  )
+  if (r.rows[0])
+    throw new Error(
+      `Already invoiced on AP invoice ${r.rows[0].invoice_number} — correct it there first.`,
+    )
+}
+
+async function assertNoVendorInvoiceHeaderConflict(
+  client: PoolClient,
+  poId: string,
+): Promise<void> {
+  const r = await client.query<{ invoice_number: string }>(
+    `SELECT invoice_number FROM vendor_invoices WHERE po_id=$1 LIMIT 1`,
+    [poId],
+  )
+  if (r.rows[0])
+    throw new Error(
+      `PO already invoiced on AP invoice ${r.rows[0].invoice_number} — vendor/currency can't be changed here. Correct the invoice directly.`,
+    )
+}
+
+async function applyAdminPOCorrection(
+  client: PoolClient,
+  poId: string,
+  companyId: string,
+  changes: AdminPOCorrectionChanges,
+  auth: GWAuth,
+): Promise<void> {
+  const changedFields: {
+    table: string
+    recordId: string
+    field: string
+    from: unknown
+    to: unknown
+  }[] = []
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  const headerAllowed = [
+    'vendor_id',
+    'currency_code',
+    'analytic_account_id',
+    'notes',
+    'expected_delivery_date',
+    'priority',
+    'assigned_receiver_id',
+    'branch_id',
+    'delivery_destination',
+  ]
+  for (const [field, diff] of Object.entries(changes.header ?? {})) {
+    if (!headerAllowed.includes(field)) continue
+    if (field === 'vendor_id' || field === 'currency_code') {
+      await assertNoVendorInvoiceHeaderConflict(client, poId)
+    }
+    if (field === 'delivery_destination') {
+      // Flipping inventory<->jobsite after either downstream path has
+      // actually fired leaves records built for the old path with nothing
+      // to reconcile them into the new one — only allow it before anything
+      // has posted through either path.
+      const posted = await client.query<{ receipts: string; direct_deliveries: string }>(
+        `SELECT
+           (SELECT COUNT(*) FROM po_receipts WHERE po_id=$1) AS receipts,
+           (SELECT COUNT(*) FROM project_cost_actuals pca JOIN po_lines pl ON pl.id=pca.source_id
+              WHERE pca.source_type='po_direct_delivery' AND pl.po_id=$1) AS direct_deliveries`,
+        [poId],
+      )
+      const receipts = parseInt(posted.rows[0]?.receipts ?? '0')
+      const directDeliveries = parseInt(posted.rows[0]?.direct_deliveries ?? '0')
+      if (receipts > 0 || directDeliveries > 0)
+        throw new Error(
+          'Cannot change delivery destination — receiving has already started on this PO through the current path.',
+        )
+    }
+    await client.query(`UPDATE purchase_orders SET ${field}=$1, updated_at=NOW() WHERE id=$2`, [
+      diff.to,
+      poId,
+    ])
+    changedFields.push({ table: 'purchase_orders', recordId: poId, field, from: diff.from, to: diff.to })
+  }
+
+  // ── Lines ───────────────────────────────────────────────────────────────
+  const lineAllowed = [
+    'description',
+    'qty_ordered',
+    'unit_price',
+    'uom',
+    'product_id',
+    'source_location_id',
+  ]
+  const priceAffectedLineIds = new Set<string>()
+  await assertNoVendorInvoiceLineConflict(
+    client,
+    (changes.lines?.edited ?? [])
+      .filter((e) => ['unit_price', 'product_id', 'qty_ordered'].includes(e.field))
+      .map((e) => e.id),
+  )
+
+  for (const e of changes.lines?.edited ?? []) {
+    if (!lineAllowed.includes(e.field)) continue
+
+    const lineRes = await client.query<{
+      product_id: string | null
+      qty_ordered: string
+      qty_received: string
+      qty_from_stock: string
+      unit_price: string
+      fx_rate_to_base: string | null
+    }>(
+      `SELECT product_id, qty_ordered, qty_received, qty_from_stock, unit_price, fx_rate_to_base
+       FROM po_lines WHERE id=$1 AND po_id=$2`,
+      [e.id, poId],
+    )
+    const line = lineRes.rows[0]
+    if (!line) throw new Error(`PO line ${e.id} not found`)
+    const oldProductId = line.product_id
+    const oldQtyFromStock = parseFloat(String(line.qty_from_stock ?? 0))
+    const oldQtyReceived = parseFloat(String(line.qty_received ?? 0))
+    const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
+
+    if (e.field === 'qty_ordered') {
+      const newQty = Number(e.to)
+      const alreadyMoved = oldQtyFromStock + oldQtyReceived
+      if (newQty < alreadyMoved)
+        throw new Error(
+          `Cannot reduce qty_ordered below ${alreadyMoved} — ${oldQtyFromStock} unit(s) are already ` +
+            `from stock and ${oldQtyReceived} already received.`,
+        )
+      await client.query(`UPDATE po_lines SET qty_ordered=$1 WHERE id=$2`, [newQty, e.id])
+      priceAffectedLineIds.add(e.id)
+    } else if (e.field === 'unit_price') {
+      const newUnitPrice = Number(e.to)
+      await client.query(`UPDATE po_lines SET unit_price=$1 WHERE id=$2`, [newUnitPrice, e.id])
+      priceAffectedLineIds.add(e.id)
+      // Receipt-side valuation was locked in at unit_price * fx_rate_to_base
+      // when each receipt was confirmed (see confirmReceipt) — correct every
+      // already-confirmed receipt line's stock_moves cost to match. Draft
+      // (unconfirmed) receipts have posted nothing yet, so there's nothing
+      // to correct for those.
+      if (oldQtyReceived > 0) {
+        const receiptLines = await client.query<{ id: string; receipt_id: string; status: string }>(
+          `SELECT prl.id, prl.receipt_id, pr.status FROM po_receipt_lines prl
+           JOIN po_receipts pr ON pr.id = prl.receipt_id
+           WHERE prl.po_line_id=$1 AND pr.status='confirmed'`,
+          [e.id],
+        )
+        for (const rl of receiptLines.rows) {
+          const moves = await findStockMovesForCorrection(client, {
+            kind: 'receipt',
+            poReceiptLineId: rl.id,
+            receiptId: rl.receipt_id,
+            productId: oldProductId,
+          })
+          for (const move of moves) {
+            await reverseAndRepostStockMove(
+              client,
+              move,
+              { unitCost: newUnitPrice * fxRate },
+              auth.userId,
+              `unit_price corrected to ${newUnitPrice}`,
+            )
+          }
+        }
+      }
+    } else if (e.field === 'product_id') {
+      const newProductId = (e.to as string | null) ?? null
+      // Full identity swap — reverse-and-repost every already-posted move on
+      // both the receipt side and the from-stock side, guarding on the full
+      // original quantity since the old product's identity is being retired
+      // from this line entirely, not partially adjusted.
+      if (oldQtyReceived > 0) {
+        const receiptLines = await client.query<{ id: string; receipt_id: string; status: string }>(
+          `SELECT prl.id, prl.receipt_id, pr.status FROM po_receipt_lines prl
+           JOIN po_receipts pr ON pr.id = prl.receipt_id
+           WHERE prl.po_line_id=$1 AND pr.status='confirmed'`,
+          [e.id],
+        )
+        for (const rl of receiptLines.rows) {
+          const moves = await findStockMovesForCorrection(client, {
+            kind: 'receipt',
+            poReceiptLineId: rl.id,
+            receiptId: rl.receipt_id,
+            productId: oldProductId,
+          })
+          for (const move of moves) {
+            await assertStockCorrectable(
+              client,
+              move.product_id,
+              move.to_location_id,
+              parseFloat(move.qty),
+              `product change on receipt line ${rl.id}`,
+            )
+            await reverseAndRepostStockMove(
+              client,
+              move,
+              { productId: newProductId ?? undefined },
+              auth.userId,
+              `product changed`,
+            )
+          }
+        }
+      }
+      if (oldQtyFromStock > 0) {
+        const issueLines = await client.query<{ id: string; issue_id: string; status: string }>(
+          `SELECT pmil.id, pmi.id AS issue_id, pmi.status FROM project_material_issue_lines pmil
+           JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+           WHERE pmil.po_line_id=$1`,
+          [e.id],
+        )
+        for (const il of issueLines.rows) {
+          // The project_material_issue_lines row is a tracking/display record
+          // independent of the ledger — keep it in sync regardless of
+          // whether it's still a draft. Only 'issued' Store Outs actually
+          // have stock_moves to correct, and even then only if any exist
+          // (some issued lines legitimately have none — e.g. imported/seed
+          // data that never ran through the real issuance mutation).
+          await client.query(`UPDATE project_material_issue_lines SET product_id=$1 WHERE id=$2`, [
+            newProductId,
+            il.id,
+          ])
+          if (il.status !== 'draft') {
+            const moves = await findStockMovesForCorrection(client, {
+              kind: 'issuance',
+              poLineId: e.id,
+              issueId: il.issue_id,
+              productId: oldProductId,
+            })
+            for (const move of moves) {
+              await assertStockCorrectable(
+                client,
+                move.product_id,
+                move.to_location_id,
+                parseFloat(move.qty),
+                `product change on issuance line ${il.id}`,
+              )
+              await reverseAndRepostStockMove(
+                client,
+                move,
+                { productId: newProductId ?? undefined },
+                auth.userId,
+                `product changed`,
+              )
+            }
+          }
+        }
+      }
+      await client.query(`UPDATE po_lines SET product_id=$1 WHERE id=$2`, [newProductId, e.id])
+      priceAffectedLineIds.add(e.id)
+    } else if (e.field === 'source_location_id') {
+      const newLocationId = e.to as string
+      if (oldQtyFromStock > 0) {
+        const issueLines = await client.query<{ id: string; issue_id: string; status: string }>(
+          `SELECT pmil.id, pmi.id AS issue_id, pmi.status FROM project_material_issue_lines pmil
+           JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+           WHERE pmil.po_line_id=$1`,
+          [e.id],
+        )
+        for (const il of issueLines.rows) {
+          // Same rationale as the product_id branch above — keep the
+          // tracking row in sync unconditionally, and additionally correct
+          // the ledger only where a move actually exists to correct.
+          await client.query(
+            `UPDATE project_material_issue_lines SET from_location_id=$1 WHERE id=$2`,
+            [newLocationId, il.id],
+          )
+          if (il.status !== 'draft') {
+            const moves = await findStockMovesForCorrection(client, {
+              kind: 'issuance',
+              poLineId: e.id,
+              issueId: il.issue_id,
+              productId: oldProductId,
+            })
+            for (const move of moves) {
+              await assertStockCorrectable(
+                client,
+                move.product_id,
+                move.to_location_id,
+                parseFloat(move.qty),
+                `source location change on issuance line ${il.id}`,
+              )
+              await reverseAndRepostStockMove(
+                client,
+                move,
+                { fromLocationId: newLocationId },
+                auth.userId,
+                `source location changed`,
+              )
+            }
+          }
+        }
+      }
+      await client.query(`UPDATE po_lines SET source_location_id=$1 WHERE id=$2`, [
+        newLocationId,
+        e.id,
+      ])
+    } else {
+      // description, uom — no downstream coupling
+      await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND po_id=$3`, [
+        e.to,
+        e.id,
+        poId,
+      ])
+    }
+    changedFields.push({ table: 'po_lines', recordId: e.id, field: e.field, from: e.from, to: e.to })
+  }
+
+  if (priceAffectedLineIds.size > 0) {
+    // Same zeroing rule as applyPOEditChanges — a line fully covered from
+    // stock still contributes $0 regardless of what its price/qty now say.
+    await client.query(
+      `UPDATE po_lines
+       SET total_price = CASE WHEN qty_from_stock >= qty_ordered THEN 0 ELSE qty_ordered * unit_price END
+       WHERE id = ANY($1) AND po_id = $2`,
+      [Array.from(priceAffectedLineIds), poId],
+    )
+  }
+
+  // ── Receipts (header) ──────────────────────────────────────────────────
+  const receiptAllowed = [
+    'warehouse_location_id',
+    'location_notes',
+    'received_by_name',
+    'received_from_name',
+    'notes',
+  ]
+  for (const re of changes.receipts?.edited ?? []) {
+    if (!receiptAllowed.includes(re.field)) continue
+    if (re.field === 'warehouse_location_id') {
+      const receiptRes = await client.query<{ status: string }>(
+        `SELECT status FROM po_receipts WHERE id=$1 AND po_id=$2`,
+        [re.id, poId],
+      )
+      if (!receiptRes.rows[0]) throw new Error(`Receipt ${re.id} not found`)
+      if (receiptRes.rows[0].status === 'confirmed') {
+        const lines = await client.query<{ id: string; product_id: string | null }>(
+          `SELECT prl.id, pl.product_id FROM po_receipt_lines prl
+           JOIN po_lines pl ON pl.id = prl.po_line_id WHERE prl.receipt_id=$1`,
+          [re.id],
+        )
+        for (const rl of lines.rows) {
+          const moves = await findStockMovesForCorrection(client, {
+            kind: 'receipt',
+            poReceiptLineId: rl.id,
+            receiptId: re.id,
+            productId: rl.product_id,
+          })
+          for (const move of moves) {
+            await assertStockCorrectable(
+              client,
+              move.product_id,
+              move.to_location_id,
+              parseFloat(move.qty),
+              `receiving location change`,
+            )
+            await reverseAndRepostStockMove(
+              client,
+              move,
+              { toLocationId: re.to as string },
+              auth.userId,
+              `receiving location changed`,
+            )
+          }
+        }
+      }
+    }
+    await client.query(`UPDATE po_receipts SET ${re.field}=$1 WHERE id=$2 AND po_id=$3`, [
+      re.to,
+      re.id,
+      poId,
+    ])
+    changedFields.push({ table: 'po_receipts', recordId: re.id, field: re.field, from: re.from, to: re.to })
+  }
+
+  // ── Receipt lines ────────────────────────────────────────────────────────
+  const touchedPoLineIds = new Set<string>()
+  for (const rle of changes.receiptLines?.edited ?? []) {
+    if (!['qty_received', 'actual_unit_price'].includes(rle.field)) continue
+    const rlRes = await client.query<{
+      po_line_id: string
+      qty_received: string
+      status: string
+      receipt_id: string
+      product_id: string | null
+      fx_rate_to_base: string | null
+    }>(
+      `SELECT prl.po_line_id, prl.qty_received, pr.status, pr.id AS receipt_id,
+              pl.product_id, pl.fx_rate_to_base
+       FROM po_receipt_lines prl
+       JOIN po_receipts pr ON pr.id = prl.receipt_id
+       JOIN po_lines pl ON pl.id = prl.po_line_id
+       WHERE prl.id=$1`,
+      [rle.id],
+    )
+    const rl = rlRes.rows[0]
+    if (!rl) throw new Error(`Receipt line ${rle.id} not found`)
+    await assertNoVendorInvoiceLineConflict(client, [rl.po_line_id])
+
+    if (rl.status === 'confirmed') {
+      const moves = await findStockMovesForCorrection(client, {
+        kind: 'receipt',
+        poReceiptLineId: rle.id,
+        receiptId: rl.receipt_id,
+        productId: rl.product_id,
+      })
+      const fxRate = parseFloat(String(rl.fx_rate_to_base ?? 1)) || 1
+      for (const move of moves) {
+        if (rle.field === 'qty_received') {
+          const oldQty = parseFloat(rl.qty_received)
+          const newQty = Number(rle.to)
+          const delta = oldQty - newQty
+          if (delta > 0)
+            await assertStockCorrectable(
+              client,
+              move.product_id,
+              move.to_location_id,
+              delta,
+              'received qty reduction',
+            )
+          await reverseAndRepostStockMove(
+            client,
+            move,
+            { qty: newQty },
+            auth.userId,
+            `qty_received corrected to ${newQty}`,
+          )
+        } else {
+          const newActualPrice = Number(rle.to)
+          await reverseAndRepostStockMove(
+            client,
+            move,
+            { unitCost: newActualPrice * fxRate },
+            auth.userId,
+            `actual_unit_price corrected to ${newActualPrice}`,
+          )
+        }
+      }
+    }
+
+    await client.query(`UPDATE po_receipt_lines SET ${rle.field}=$1 WHERE id=$2`, [rle.to, rle.id])
+    if (rle.field === 'actual_unit_price') {
+      await client.query(`UPDATE po_lines SET actual_unit_price=$1 WHERE id=$2`, [
+        rle.to,
+        rl.po_line_id,
+      ])
+    }
+    touchedPoLineIds.add(rl.po_line_id)
+    changedFields.push({
+      table: 'po_receipt_lines',
+      recordId: rle.id,
+      field: rle.field,
+      from: rle.from,
+      to: rle.to,
+    })
+  }
+
+  for (const poLineId of touchedPoLineIds) {
+    // Recomputed as a full sum across every receipt line for this po_line,
+    // not a delta adjustment — matches how confirmReceipt itself only ever
+    // adds to qty_received; safer than compounding a correction on top of
+    // whatever the running total already drifted to.
+    await client.query(
+      `UPDATE po_lines SET qty_received = (SELECT COALESCE(SUM(qty_received),0) FROM po_receipt_lines WHERE po_line_id=$1) WHERE id=$1`,
+      [poLineId],
+    )
+  }
+  if (touchedPoLineIds.size > 0) {
+    await client.query(
+      `UPDATE po_lines
+       SET total_price = CASE WHEN qty_from_stock >= qty_ordered THEN 0 ELSE qty_ordered * unit_price END
+       WHERE id = ANY($1) AND po_id = $2`,
+      [Array.from(touchedPoLineIds), poId],
+    )
+  }
+
+  await recalcPO(client, poId)
+
+  for (const cf of changedFields) {
+    await logAudit({
+      userId: auth.userId,
+      companyId,
+      action: 'admin_correction',
+      tableName: cf.table,
+      recordId: cf.recordId,
+      oldValues: { [cf.field]: cf.from },
+      newValues: { [cf.field]: cf.to },
+      client,
+    })
   }
 }
 
@@ -938,8 +1622,9 @@ async function fetchFullPurchaseOrderGW(
     query(
       `SELECT por.id, por.po_id, por.receipt_number, por.received_date AS receipt_date,
               por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+              por.warehouse_location_id AS location_id,
               sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
-              COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+              COALESCE(json_agg(DISTINCT jsonb_build_object('id',porl.id,'po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'actual_unit_price',porl.actual_unit_price,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
               COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
        FROM po_receipts por
        LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
@@ -8663,8 +9348,8 @@ export const resolvers = {
                   ).rows[0].id as string)
               }
               await client.query(
-                `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11)`,
+                `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13)`,
                 [
                   ctx.auth!.companyId,
                   polProductId,
@@ -8677,6 +9362,8 @@ export const resolvers = {
                   args.id,
                   receipt.notes ?? null,
                   ctx.auth!.userId,
+                  l.po_line_id,
+                  l.id,
                 ],
               )
             }
@@ -17990,8 +18677,8 @@ export const resolvers = {
 
           if (fromCompanyId === companyId) {
             await client.query(
-              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10)`,
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10,$11)`,
               [
                 companyId,
                 productId,
@@ -18003,6 +18690,7 @@ export const resolvers = {
                 args.id,
                 `Store Out ${String(issue.issue_number)}`,
                 ctx.auth.userId,
+                line.po_line_id,
               ],
             )
           } else {
@@ -18038,8 +18726,8 @@ export const resolvers = {
               ).rows[0].id) as string
 
             const fromMove = await client.query(
-              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10) RETURNING id`,
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10,$11) RETURNING id`,
               [
                 fromCompanyId,
                 productId,
@@ -18051,11 +18739,12 @@ export const resolvers = {
                 args.id,
                 `Store Out ${String(issue.issue_number)} to company ${companyId}`,
                 ctx.auth.userId,
+                line.po_line_id,
               ],
             )
             const toMove = await client.query(
-              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
-               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10) RETURNING id`,
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_issue',$8,$9,$10,$11) RETURNING id`,
               [
                 companyId,
                 productId,
@@ -18067,6 +18756,7 @@ export const resolvers = {
                 args.id,
                 `Store Out ${String(issue.issue_number)} from company ${fromCompanyId}`,
                 ctx.auth.userId,
+                line.po_line_id,
               ],
             )
 
@@ -25160,6 +25850,56 @@ const phase5MutationResolvers = {
     )
     const row = updated.rows[0] as Record<string, unknown>
     return { ...row, changes: JSON.stringify(row.changes) }
+  },
+
+  // system_admin-only, single-actor correction of a PO that's already past
+  // approval — no second-approver review step, unlike po_edit_requests
+  // above. Reaches fields that flow never touches (receiving info, product,
+  // location) and reconciles the stock/AP records they already produced —
+  // see applyAdminPOCorrection.
+  adminCorrectPO: async (
+    _: unknown,
+    args: { id: string; changes: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    if (ctx.auth.role !== 'system_admin') throw new Error('Forbidden: system_admin only')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const auth = ctx.auth as GWAuth
+
+    const poRow = await query<{ status: string }>(
+      `SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+      [args.id, auth.companyId],
+    )
+    if (!poRow.rows[0]) throw new Error('PO not found')
+    const poStatus = poRow.rows[0].status
+    if (!ADMIN_CORRECTION_PO_STATUSES.includes(poStatus))
+      throw new Error(
+        `Admin correction is only available for POs in ${ADMIN_CORRECTION_PO_STATUSES.join(', ')} — this PO is '${poStatus}'`,
+      )
+
+    let changesObj: AdminPOCorrectionChanges
+    try {
+      changesObj = JSON.parse(args.changes) as AdminPOCorrectionChanges
+    } catch {
+      throw new Error('changes must be valid JSON')
+    }
+
+    await withTransaction(
+      { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+      async (client) => {
+        await applyAdminPOCorrection(client, args.id, auth.companyId, changesObj, auth)
+        const changeSummary = buildEditChangeSummary(changesObj)
+        const notes = [args.reason, changeSummary].filter(Boolean).join(' — ')
+        await client.query(
+          `INSERT INTO po_approval_log (po_id,from_status,to_status,actor_id,action,notes) VALUES ($1,$2,$2,$3,'admin_correction',$4)`,
+          [args.id, poStatus, auth.userId, notes],
+        )
+      },
+    )
+
+    void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
+    return getPOForReturn(args.id)
   },
 
   // ── PO lifecycle mutations ────────────────────────────────────────────────
