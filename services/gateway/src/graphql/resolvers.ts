@@ -3719,10 +3719,10 @@ function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     isOverdue,
-    // Populated by callers that fetch attachments (projectTQs); mutations
-    // that don't touch files (create/update/review/respond/close) return
-    // an empty list rather than a fresh query — uploadTQFile/deleteTQFile
-    // build their own response with the real list, same as RFI's pattern.
+    // Empty by default — every caller except createTQ (a brand-new TQ
+    // genuinely has none yet) overrides this with a real fetchTQFilesGW
+    // call, so an existing TQ's attachment list is never dropped from the
+    // response of an unrelated mutation (update/review/respond/close).
     files: [],
   }
 }
@@ -29421,7 +29421,10 @@ Object.assign(resolvers.Mutation, {
         ctx.auth.companyId,
       ],
     )
-    return tqToGQL(res.rows[0] as Record<string, unknown>)
+    return {
+      ...tqToGQL(res.rows[0] as Record<string, unknown>),
+      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
+    }
   },
 
   reviewTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -29434,7 +29437,10 @@ Object.assign(resolvers.Mutation, {
       [args.id, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('TQ not found or not in open status')
-    return tqToGQL(res.rows[0] as Record<string, unknown>)
+    return {
+      ...tqToGQL(res.rows[0] as Record<string, unknown>),
+      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
+    }
   },
 
   respondToTQ: async (
@@ -29452,7 +29458,10 @@ Object.assign(resolvers.Mutation, {
       [args.id, args.response, args.responseBy ?? null, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('TQ not found or already responded/closed')
-    return tqToGQL(res.rows[0] as Record<string, unknown>)
+    return {
+      ...tqToGQL(res.rows[0] as Record<string, unknown>),
+      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
+    }
   },
 
   closeTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -29465,7 +29474,10 @@ Object.assign(resolvers.Mutation, {
       [args.id, ctx.auth.companyId],
     )
     if (!res.rows[0]) throw new Error('TQ not found or already closed')
-    return tqToGQL(res.rows[0] as Record<string, unknown>)
+    return {
+      ...tqToGQL(res.rows[0] as Record<string, unknown>),
+      files: await fetchTQFilesGW(args.id, ctx.auth.companyId),
+    }
   },
 
   deleteTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
