@@ -359,8 +359,11 @@ async function assertStockCorrectable(
   contextLabel: string,
 ): Promise<void> {
   if (qtyBeingRemoved <= 0) return
+  // FOR UPDATE: two concurrent corrections both reading the same balance
+  // before either writes would otherwise both pass this check and, together,
+  // still drive it negative.
   const bal = await client.query<{ qty_on_hand: string }>(
-    `SELECT qty_on_hand FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+    `SELECT qty_on_hand FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
     [productId, locationId],
   )
   const onHand = parseFloat(String(bal.rows[0]?.qty_on_hand ?? 0))
@@ -384,6 +387,13 @@ async function assertStockCorrectable(
 // before this feature shipped hits this fallback path, not just a rare edge
 // case. A cross-company issuance line legitimately produces two rows (one
 // per company); both are returned and corrected together.
+//
+// superseded_at IS NULL (migration 231) restricts every branch to the
+// currently-effective row(s) only — without it, a second correction (even
+// within the same adminCorrectPO call, e.g. editing both unit_price and
+// product_id on one line) would find the original row *and* the reversal
+// and repost rows a prior correction just created, and reverse/repost all
+// three, multiplying the effect instead of cleanly applying one more fix.
 async function findStockMovesForCorrection(
   client: PoolClient,
   opts:
@@ -392,23 +402,23 @@ async function findStockMovesForCorrection(
 ): Promise<StockMoveRow[]> {
   if (opts.kind === 'receipt') {
     const linked = await client.query<StockMoveRow>(
-      `SELECT * FROM stock_moves WHERE po_receipt_line_id=$1 ORDER BY moved_at`,
+      `SELECT * FROM stock_moves WHERE po_receipt_line_id=$1 AND superseded_at IS NULL ORDER BY moved_at`,
       [opts.poReceiptLineId],
     )
     if (linked.rows.length > 0) return linked.rows
     const legacy = await client.query<StockMoveRow>(
-      `SELECT * FROM stock_moves WHERE source_type='po_receipt' AND source_id=$1 AND product_id=$2 ORDER BY moved_at`,
+      `SELECT * FROM stock_moves WHERE source_type='po_receipt' AND source_id=$1 AND product_id=$2 AND superseded_at IS NULL ORDER BY moved_at`,
       [opts.receiptId, opts.productId],
     )
     return legacy.rows
   }
   const linked = await client.query<StockMoveRow>(
-    `SELECT * FROM stock_moves WHERE po_line_id=$1 AND source_type='material_issue' ORDER BY moved_at`,
+    `SELECT * FROM stock_moves WHERE po_line_id=$1 AND source_type='material_issue' AND superseded_at IS NULL ORDER BY moved_at`,
     [opts.poLineId],
   )
   if (linked.rows.length > 0) return linked.rows
   const legacy = await client.query<StockMoveRow>(
-    `SELECT * FROM stock_moves WHERE source_type='material_issue' AND source_id=$1 AND product_id=$2 ORDER BY moved_at`,
+    `SELECT * FROM stock_moves WHERE source_type='material_issue' AND source_id=$1 AND product_id=$2 AND superseded_at IS NULL ORDER BY moved_at`,
     [opts.issueId, opts.productId],
   )
   return legacy.rows
@@ -418,7 +428,15 @@ async function findStockMovesForCorrection(
 // qty/cost) and, unless the correction zeroes the quantity out, posts a
 // fresh corrected row. stock_moves is an immutable append-only ledger
 // (packages/db/migrations/008_inventory_schema.sql: "Never update or
-// delete") — this never UPDATEs or DELETEs an existing row.
+// delete") — the row's own qty/cost/location columns are never touched;
+// the only write to the original row is stamping superseded_at (migration
+// 231), a pure bookkeeping annotation that lets findStockMovesForCorrection
+// find only the currently-effective row on any later correction.
+//
+// linkIds is passed explicitly (rather than reusing original.po_line_id/
+// po_receipt_line_id) so a legacy row — written before migration 230, with
+// both columns NULL — gets them populated on its reversal/repost going
+// forward, instead of staying on the slower fallback-matching path forever.
 async function reverseAndRepostStockMove(
   client: PoolClient,
   original: StockMoveRow,
@@ -429,14 +447,25 @@ async function reverseAndRepostStockMove(
     fromLocationId?: string
     toLocationId?: string
   },
+  linkIds: { poLineId: string | null; poReceiptLineId: string | null },
   actorId: string,
   reasonNote: string,
 ): Promise<void> {
+  if (correction.qty !== undefined && correction.qty < 0)
+    throw new Error(`Corrected quantity cannot be negative (${reasonNote})`)
+
+  await client.query(`UPDATE stock_moves SET superseded_at = NOW() WHERE id = $1`, [original.id])
+
   const origQty = parseFloat(original.qty)
   const origUnitCost = parseFloat(original.unit_cost)
+  // The reversal row itself is never "current" — it's a wash entry paired
+  // with the original, not a live state. It's inserted already-superseded
+  // (superseded_at=NOW(), not left NULL) so findStockMovesForCorrection
+  // never picks it up as something to correct again; only the repost row
+  // below stays live.
   await client.query(
-    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
-     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+    `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id,superseded_at)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,
     [
       original.company_id,
       original.product_id,
@@ -449,8 +478,8 @@ async function reverseAndRepostStockMove(
       original.source_id,
       `Admin correction — reversal of ${original.id} (${reasonNote})`,
       actorId,
-      original.po_line_id,
-      original.po_receipt_line_id,
+      linkIds.poLineId,
+      linkIds.poReceiptLineId,
     ],
   )
   const newQty = correction.qty ?? origQty
@@ -471,8 +500,8 @@ async function reverseAndRepostStockMove(
       original.source_id,
       `Admin correction — ${reasonNote}`,
       actorId,
-      original.po_line_id,
-      original.po_receipt_line_id,
+      linkIds.poLineId,
+      linkIds.poReceiptLineId,
     ],
   )
 }
@@ -648,6 +677,7 @@ async function applyAdminPOCorrection(
               client,
               move,
               { unitCost: newUnitPrice * fxRate },
+              { poLineId: e.id, poReceiptLineId: rl.id },
               auth.userId,
               `unit_price corrected to ${newUnitPrice}`,
             )
@@ -686,6 +716,7 @@ async function applyAdminPOCorrection(
               client,
               move,
               { productId: newProductId ?? undefined },
+              { poLineId: e.id, poReceiptLineId: rl.id },
               auth.userId,
               `product changed`,
             )
@@ -729,6 +760,7 @@ async function applyAdminPOCorrection(
                 client,
                 move,
                 { productId: newProductId ?? undefined },
+                { poLineId: e.id, poReceiptLineId: null },
                 auth.userId,
                 `product changed`,
               )
@@ -774,6 +806,7 @@ async function applyAdminPOCorrection(
                 client,
                 move,
                 { fromLocationId: newLocationId },
+                { poLineId: e.id, poReceiptLineId: null },
                 auth.userId,
                 `source location changed`,
               )
@@ -824,8 +857,8 @@ async function applyAdminPOCorrection(
       )
       if (!receiptRes.rows[0]) throw new Error(`Receipt ${re.id} not found`)
       if (receiptRes.rows[0].status === 'confirmed') {
-        const lines = await client.query<{ id: string; product_id: string | null }>(
-          `SELECT prl.id, pl.product_id FROM po_receipt_lines prl
+        const lines = await client.query<{ id: string; po_line_id: string; product_id: string | null }>(
+          `SELECT prl.id, prl.po_line_id, pl.product_id FROM po_receipt_lines prl
            JOIN po_lines pl ON pl.id = prl.po_line_id WHERE prl.receipt_id=$1`,
           [re.id],
         )
@@ -848,6 +881,7 @@ async function applyAdminPOCorrection(
               client,
               move,
               { toLocationId: re.to as string },
+              { poLineId: rl.po_line_id, poReceiptLineId: rl.id },
               auth.userId,
               `receiving location changed`,
             )
@@ -887,6 +921,9 @@ async function applyAdminPOCorrection(
     if (!rl) throw new Error(`Receipt line ${rle.id} not found`)
     await assertNoVendorInvoiceLineConflict(client, [rl.po_line_id])
 
+    if (rle.field === 'qty_received' && Number(rle.to) < 0)
+      throw new Error('qty_received cannot be negative')
+
     if (rl.status === 'confirmed') {
       const moves = await findStockMovesForCorrection(client, {
         kind: 'receipt',
@@ -912,6 +949,7 @@ async function applyAdminPOCorrection(
             client,
             move,
             { qty: newQty },
+            { poLineId: rl.po_line_id, poReceiptLineId: rle.id },
             auth.userId,
             `qty_received corrected to ${newQty}`,
           )
@@ -921,6 +959,7 @@ async function applyAdminPOCorrection(
             client,
             move,
             { unitCost: newActualPrice * fxRate },
+            { poLineId: rl.po_line_id, poReceiptLineId: rle.id },
             auth.userId,
             `actual_unit_price corrected to ${newActualPrice}`,
           )

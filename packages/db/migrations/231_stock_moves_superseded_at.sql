@@ -1,0 +1,13 @@
+-- Marks a stock_moves row as no longer the currently-effective one for its
+-- po_line_id/po_receipt_line_id lineage. Stamped exactly once, by
+-- reverseAndRepostStockMove (services/gateway/src/graphql/resolvers.ts), on
+-- the row a correction just reversed -- so a later correction touching the
+-- same line/receipt-line finds only the current row instead of every row
+-- ever produced for it (original + every past reversal + every past
+-- repost), which would otherwise get re-reversed/re-reposted and silently
+-- multiply the quantity/cost effect.
+--
+-- This is a pure bookkeeping annotation, not a change to any amount/qty/
+-- location -- stock_moves' financial fields stay append-only exactly as
+-- documented ("Never update or delete", 008_inventory_schema.sql:50).
+ALTER TABLE stock_moves ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
