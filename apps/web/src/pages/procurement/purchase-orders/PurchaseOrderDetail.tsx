@@ -5341,17 +5341,20 @@ export default function PurchaseOrderDetail() {
       {activeTab === 'receipts' && (
         <div>
           {(po.status === 'approved' || po.status === 'goods_received') && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-              <Button
-                variant="primary"
-                style={PRIMARY_CTA_STYLE}
-                size="sm"
-                onClick={() => {
-                  navigate(`/procurement/purchase-orders/${po.id}/receive`)
-                }}
-              >
-                Record Receipt
-              </Button>
+            <div style={{ marginBottom: '12px' }}>
+              <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <Button
+                  variant="primary"
+                  style={PRIMARY_CTA_STYLE}
+                  size="sm"
+                  onClick={() => {
+                    navigate(`/procurement/purchase-orders/${po.id}/receive`)
+                  }}
+                >
+                  Record Receipt
+                </Button>
+              </div>
             </div>
           )}
           {po.receipts.length === 0 && (

@@ -9196,8 +9196,13 @@ export const resolvers = {
       return withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
+          // FOR UPDATE: serializes concurrent recordReceipt calls for the
+          // same PO — without it, two truly-simultaneous submissions (the
+          // literal double-click case, not the "came back later" case the
+          // guard below otherwise handles) could both read past the
+          // duplicate check before either had committed its INSERT.
           const po = await client.query(
-            'SELECT * FROM purchase_orders WHERE id=$1 AND company_id=$2',
+            'SELECT * FROM purchase_orders WHERE id=$1 AND company_id=$2 FOR UPDATE',
             [args.poId, ctx.auth!.companyId],
           )
           if (!po.rows[0]) throw new Error('PO not found')
