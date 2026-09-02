@@ -3688,22 +3688,42 @@ export const resolvers = {
       if (!ctx.auth) return []
       try {
         const empResult = await query(
-          `SELECT id, department_id FROM employees WHERE user_id = $1 AND company_id = $2 LIMIT 1`,
+          `SELECT id FROM employees WHERE user_id = $1 AND company_id = $2 LIMIT 1`,
           [ctx.auth.userId, ctx.auth.companyId],
         )
         const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
-        const departmentId: string | null =
-          (empResult.rows[0]?.department_id as string | null) ?? null
         const hasFinance = await hasFinanceApprovalGW(
           ctx.auth.userId,
           ctx.auth.companyId,
           ctx.auth.role,
         )
 
+        // Scope matching below mirrors userHasPositionGW exactly (the same
+        // function that gates the actual action buttons on the PO detail
+        // page): project_id, OR the PO ORGANIZER's department_id (not the
+        // caller's own department — a position holder approves POs coming
+        // out of the organizer's department, not their own), OR branch_id,
+        // OR a fully company-wide grant (all three null on the assignment).
+        // Keeping this identical to userHasPositionGW is what guarantees the
+        // queue shows exactly the POs a person can actually act on — no more,
+        // no less.
+        const positionScope = (position: string) => `EXISTS (
+                 SELECT 1 FROM po_position_assignments ppa
+                 WHERE ppa.employee_id = $3 AND ppa.position = '${position}' AND ppa.is_active = true
+                   AND (
+                     (po.project_id IS NOT NULL AND ppa.project_id = po.project_id)
+                     OR (org_emp.department_id IS NOT NULL AND ppa.department_id = org_emp.department_id)
+                     OR (po.branch_id IS NOT NULL AND ppa.branch_id = po.branch_id)
+                     OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL)
+                   )
+               )`
+
         const result = await query(
           `SELECT DISTINCT po.*, v.name AS vendor_name
            FROM purchase_orders po
            LEFT JOIN vendors v ON v.id = po.vendor_id
+           LEFT JOIN users ou ON ou.id = po.organizer_id
+           LEFT JOIN employees org_emp ON org_emp.user_id = ou.id AND org_emp.company_id = po.company_id
            WHERE po.company_id = $1
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
@@ -3713,48 +3733,25 @@ export const resolvers = {
                (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
                OR (po.status = 'items_bought' AND (
                  po.assigned_buyer_user_id = $2
-                 OR EXISTS (
-                   SELECT 1 FROM po_position_assignments ppa
-                   WHERE ppa.employee_id = $3 AND ppa.position = 'buyer' AND ppa.is_active = true
-                     AND (ppa.branch_id = po.branch_id
-                       OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))
-                 )
+                 OR ${positionScope('buyer')}
                ))
-               OR (po.status = 'store_pricing' AND EXISTS (
-                 SELECT 1 FROM po_position_assignments ppa
-                 WHERE ppa.employee_id = $3 AND ppa.position = 'store_pricing' AND ppa.is_active = true
-                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
-               ))
-               OR (po.status = 'market_pricing' AND EXISTS (
-                 SELECT 1 FROM po_position_assignments ppa
-                 WHERE ppa.employee_id = $3 AND ppa.position = 'procurement_officer' AND ppa.is_active = true
-                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
-               ))
-               OR (po.status = 'price_verification' AND EXISTS (
-                 SELECT 1 FROM po_position_assignments ppa
-                 WHERE ppa.employee_id = $3 AND ppa.position = 'procurement_2nd' AND ppa.is_active = true
-                   AND (ppa.project_id = po.project_id OR ppa.department_id = $4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))
-               ))
+               OR (po.status = 'store_pricing' AND ${positionScope('store_pricing')})
+               OR (po.status = 'market_pricing' AND ${positionScope('procurement_officer')})
+               OR (po.status = 'price_verification' AND ${positionScope('procurement_2nd')})
+               OR (po.status = 'ready_to_issue' AND ${positionScope('store_keeper')})
                OR (po.status = 'pending_approval' AND (
-                 EXISTS (SELECT 1 FROM departments d WHERE d.manager_id = $3 AND d.id = $4)
+                 EXISTS (SELECT 1 FROM departments d WHERE d.manager_id = $3 AND d.id = org_emp.department_id)
                  OR po.assigned_approver_id = $3
                ))
-               OR ($6 = true AND po.status IN ('finance_audit','invoiced'))
-               OR ($5 = 'system_admin' AND po.status IN (
+               OR ($5 = true AND po.status IN ('finance_audit','invoiced'))
+               OR ($4 = 'system_admin' AND po.status IN (
                  'inventory_check','store_pricing','market_pricing',
                  'price_verification','pending_approval','items_bought','goods_received',
-                 'finance_audit','invoiced'
+                 'ready_to_issue','finance_audit','invoiced'
                ))
              )
            ORDER BY po.created_at DESC`,
-          [
-            ctx.auth.companyId,
-            ctx.auth.userId,
-            employeeId,
-            departmentId,
-            ctx.auth.role,
-            hasFinance,
-          ],
+          [ctx.auth.companyId, ctx.auth.userId, employeeId, ctx.auth.role, hasFinance],
         )
         return result.rows
       } catch {

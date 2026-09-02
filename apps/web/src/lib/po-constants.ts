@@ -111,6 +111,12 @@ export const PO_STATUS_ACTIONS: Record<
       "The assigned buyer ticks each line as bought (tracking only). A receipt still needs to be recorded to move on to goods_received.",
     requiredPosition: 'buyer',
   },
+  ready_to_issue: {
+    label: 'Issue stock',
+    description:
+      'Every line is fully covered from stock — the store keeper approves the issuance to complete the PO.',
+    requiredPosition: 'store_keeper',
+  },
   goods_received: {
     label: 'Send to finance audit',
     description: 'Organizer sends PO to finance team for three-way match audit',

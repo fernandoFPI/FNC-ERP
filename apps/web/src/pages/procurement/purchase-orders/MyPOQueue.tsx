@@ -101,13 +101,18 @@ export default function MyPOQueue() {
       mobilePriority: 4,
       render: (item) => {
         const action = PO_STATUS_ACTIONS[item.status]
-        return (
-          <span style={{ color: theme.textMuted }}>
-            {(action?.requiredPosition?.replace(/_/g, ' ') ?? action?.isOrganizer)
-              ? 'Organizer'
-              : '—'}
-          </span>
-        )
+        let label = '—'
+        if (action?.requiredPosition) {
+          label = action.requiredPosition.replace(/_/g, ' ')
+          label = label.charAt(0).toUpperCase() + label.slice(1)
+        } else if (action?.isOrganizer) {
+          label = 'Organizer'
+        } else if (action?.requiredRole === 'finance') {
+          label = 'Finance'
+        } else if (action?.requiredRole === 'dept_head_or_admin') {
+          label = 'Dept head / Admin'
+        }
+        return <span style={{ color: theme.textMuted }}>{label}</span>
       },
     },
   ]
