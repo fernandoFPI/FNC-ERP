@@ -3742,6 +3742,15 @@ export const resolvers = {
                OR (po.status = 'pending_approval' AND (
                  EXISTS (SELECT 1 FROM departments d WHERE d.manager_id = $3 AND d.id = org_emp.department_id)
                  OR po.assigned_approver_id = $3
+                 -- po_admin is intentionally unscoped here, matching
+                 -- callerHasPOAdmin (used to gate approvePO/rejectPO/
+                 -- rejectPOToMarketPricing): any active po_admin grant
+                 -- in the company authorizes every pending_approval PO,
+                 -- regardless of that grant's project/department/branch.
+                 OR EXISTS (
+                   SELECT 1 FROM po_position_assignments ppa
+                   WHERE ppa.employee_id = $3 AND ppa.position = 'po_admin' AND ppa.is_active = true
+                 )
                ))
                OR ($5 = true AND po.status IN ('finance_audit','invoiced'))
                OR ($4 = 'system_admin' AND po.status IN (
