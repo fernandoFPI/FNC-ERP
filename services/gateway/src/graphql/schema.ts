@@ -15,7 +15,7 @@
 
     # Procurement
     vendors: [Vendor]
-    purchaseOrders(status: String, vendor_id: ID, project_id: ID): [PurchaseOrder]
+    purchaseOrders(status: String, vendor_id: ID, project_id: ID, myPOsOnly: Boolean): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
     # Same shape as purchaseOrder(id), but not subject to its viewerRestricted
     # gate — backs Record Receipt / Create Return, which have their own,

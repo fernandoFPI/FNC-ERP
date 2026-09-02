@@ -3488,7 +3488,7 @@ export const resolvers = {
 
     purchaseOrders: async (
       _: unknown,
-      args: { status?: string; vendor_id?: string; project_id?: string },
+      args: { status?: string; vendor_id?: string; project_id?: string; myPOsOnly?: boolean },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
@@ -3513,6 +3513,15 @@ export const resolvers = {
       if (args.project_id !== undefined) {
         sql += ` AND po.project_id = $${idx++}`
         params.push(args.project_id)
+      }
+      // "My PO" toggle — mirrors the "My Projects" toggle: organizer_id is
+      // the PO equivalent of project membership (see userIsOrganizerGW /
+      // the viewer-visibility gate on purchaseOrder(id)), so this is
+      // strictly "did I create/own this PO," not anyone currently holding
+      // a position on it.
+      if (args.myPOsOnly) {
+        sql += ` AND po.organizer_id = $${idx++}`
+        params.push(ctx.auth.userId)
       }
       const branchScope = await branchScopedPOFilterGW(ctx.auth)
       if (branchScope) {

@@ -70,8 +70,8 @@ export const UPDATE_VENDOR = gql`
 `
 
 export const PURCHASE_ORDERS_QUERY = gql`
-  query PurchaseOrders($status: String, $vendorId: ID, $projectId: ID) {
-    purchaseOrders(status: $status, vendor_id: $vendorId, project_id: $projectId) {
+  query PurchaseOrders($status: String, $vendorId: ID, $projectId: ID, $myPOsOnly: Boolean) {
+    purchaseOrders(status: $status, vendor_id: $vendorId, project_id: $projectId, myPOsOnly: $myPOsOnly) {
       id
       po_number
       vendor_name

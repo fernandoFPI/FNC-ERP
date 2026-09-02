@@ -74,12 +74,17 @@ export default function PurchaseOrdersPage() {
   const [toDate, setToDate] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkApproving, setBulkApproving] = useState(false)
+  const [myPOsOnly, setMyPOsOnly] = useState(false)
 
   const projectIdFilter = urlParams.get('project_id') ?? ''
   const projectNameFilter = urlParams.get('project_name') ?? ''
 
   const { data, loading, refetch } = useQuery(PURCHASE_ORDERS_QUERY, {
-    variables: { status: statusFilter || undefined, projectId: projectIdFilter || undefined },
+    variables: {
+      status: statusFilter || undefined,
+      projectId: projectIdFilter || undefined,
+      myPOsOnly: myPOsOnly || undefined,
+    },
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('purchase_order', () => void refetch())
@@ -459,7 +464,29 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
 
-      <div style={{ marginTop: '16px' }}>
+      <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        <button
+          onClick={() => {
+            setMyPOsOnly((v) => !v)
+          }}
+          style={{
+            flexShrink: 0,
+            padding: '6px 12px',
+            borderRadius: '7px',
+            fontSize: '12px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            border: `1px solid ${myPOsOnly ? theme.success : theme.border}`,
+            background: myPOsOnly ? theme.success : theme.bgSurface,
+            color: myPOsOnly ? '#fff' : theme.textMuted,
+          }}
+        >
+          👤 My POs
+        </button>
+        <div style={{ width: '1px', background: theme.border, margin: '4px 2px', flexShrink: 0 }} />
+      </div>
+
+      <div style={{ marginTop: '10px' }}>
         <FilterChipStrip
           allCount={orders.length}
           activeKey={statusFilter}
