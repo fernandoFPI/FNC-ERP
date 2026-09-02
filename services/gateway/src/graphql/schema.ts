@@ -17,6 +17,10 @@
     vendors: [Vendor]
     purchaseOrders(status: String, vendor_id: ID, project_id: ID): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
+    # Same shape as purchaseOrder(id), but not subject to its viewerRestricted
+    # gate — backs Record Receipt / Create Return, which have their own,
+    # separate authorization (see the resolver's comment).
+    purchaseOrderForAction(id: ID!): PurchaseOrder
     myPOQueue: [PurchaseOrder!]
     poPositions(projectId: ID, departmentId: ID, branchId: ID): [POPositionAssignment!]!
     poFxRates: POFxRatesResult!
@@ -1968,6 +1972,12 @@
   }
 
   extend type PurchaseOrder {
+    # Populated by purchaseOrders (the list query) — true when this caller is
+    # an admin or on the finance team; false means total_amount on every row
+    # in that list is a withheld placeholder ('0'), not a real figure. Not
+    # meaningful on purchaseOrder(id)/purchaseOrderForAction(id), which have
+    # their own, different total-visibility rules.
+    viewerCanSeeTotals: Boolean
     vendor_id: ID
     base_currency_code: String
     analytic_account_id: ID
@@ -2002,6 +2012,11 @@
     callerIsBuyer: Boolean
     callerHasStorePricingPosition: Boolean
     callerHasMarketPricingPosition: Boolean
+    # True when the caller isn't the organizer, an admin, the finance team (once
+    # at finance_audit+), or a position holder matching the PO's current stage —
+    # every field below this point is withheld server-side, not just hidden by
+    # the frontend, when this is true.
+    viewerRestricted: Boolean
     lines: [POLine!]
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]

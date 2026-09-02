@@ -79,6 +79,7 @@ export const PURCHASE_ORDERS_QUERY = gql`
       status
       priority
       total_amount
+      viewerCanSeeTotals
       currency_code
       created_at
       analytic_account_id
@@ -94,9 +95,14 @@ export const PURCHASE_ORDERS_QUERY = gql`
   }
 `
 
+// Used by Record Receipt and Create Return, not the PO detail page (that's
+// PO_LIFECYCLE_QUERY) — deliberately points at purchaseOrderForAction, not
+// purchaseOrder, since those two forms have their own authorization and
+// shouldn't be subject to the PO detail page's viewerRestricted gate. See
+// that resolver's comment in services/gateway for why.
 export const PURCHASE_ORDER_QUERY = gql`
   query PurchaseOrder($id: ID!) {
-    purchaseOrder(id: $id) {
+    purchaseOrder: purchaseOrderForAction(id: $id) {
       id
       po_number
       status
@@ -401,6 +407,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       po_number
       status
       priority
+      viewerRestricted
       currency_code
       base_currency_code
       total_amount

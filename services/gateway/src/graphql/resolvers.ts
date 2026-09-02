@@ -826,6 +826,224 @@ async function userIsOrganizerGW(
   return r.rows.length > 0
 }
 
+// Same definition already used by notifyFinanceTeamGW's recipient list — kept
+// as a single-user check here for the view-gate rather than duplicating the
+// SQL a third time.
+async function isUserFinanceTeamGW(userId: string, companyId: string): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM user_company_roles
+     WHERE user_id=$1 AND company_id=$2 AND is_active=true
+       AND (role IN ('company_admin', 'system_admin')
+            OR (module = 'finance' AND role IN ('module_admin', 'module_user')))
+     LIMIT 1`,
+    [userId, companyId],
+  )
+  return r.rows.length > 0
+}
+
+// Whether the caller holds whatever authority actually gates *acting* on the
+// PO's current stage — mirrors each stage's own mutation-level check exactly
+// (submitPOStorePricing, submitPOMarketPricing, submitPOPriceVerification,
+// approvePO, approveStockIssuance, markPOLineBought) so PO-detail visibility
+// and the ability to act on it never disagree. Stages with no dedicated
+// position (draft, inventory_check, approved, goods_received, and terminal
+// states) fall through to false — those are organizer/admin-only, handled by
+// the caller alongside this check.
+async function callerHasCurrentStagePositionGW(
+  auth: GWAuth,
+  poId: string,
+  status: string,
+): Promise<boolean> {
+  switch (status) {
+    case 'store_pricing':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_pricing')
+    case 'market_pricing':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'procurement_officer')
+    case 'price_verification':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'procurement_2nd')
+    case 'pending_approval':
+      return (
+        (await userIsDeptHeadGW(auth.userId, poId)) ||
+        (await userIsAssignedApproverGW(auth.userId, poId)) ||
+        (await callerHasPOAdmin(auth.userId, auth.companyId))
+      )
+    case 'ready_to_issue':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_keeper')
+    case 'items_bought':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'buyer')
+    default:
+      return false
+  }
+}
+
+// The full purchase-order shape (header + lines + receipts + approval log +
+// edit requests + caller-position flags) — extracted so purchaseOrder(id)
+// and purchaseOrderForAction(id) share one implementation instead of two
+// copies of this SQL drifting apart. Returns null if the PO doesn't exist,
+// isn't in this company, or is outside the caller's branch scope. Neither
+// caller adds viewerRestricted; each sets it appropriately for its own case.
+async function fetchFullPurchaseOrderGW(
+  id: string,
+  auth: GWAuth,
+): Promise<Record<string, unknown> | null> {
+  const [po, lines, receipts, approvals] = await Promise.all([
+    query(
+      `SELECT po.*, v.name AS vendor_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_email,
+              aa.name AS analytic_account_name, COALESCE(au.first_name || ' ' || au.last_name, au.email) AS assigned_to_email,
+              po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
+              proj.code AS "projectCode", proj.name AS "projectName",
+              cb.name AS branch_name,
+              COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name,
+              fadv.advance_number AS funding_advance_number, fadv.employee_name AS funding_employee_name,
+              COALESCE(NULLIF(TRIM(bu.first_name || ' ' || bu.last_name), ''), bu.email) AS assigned_buyer_name
+       FROM purchase_orders po
+       LEFT JOIN vendors v ON v.id=po.vendor_id
+       LEFT JOIN users u ON u.id=po.created_by
+       LEFT JOIN analytic_accounts aa ON aa.id=po.analytic_account_id
+       LEFT JOIN users au ON au.id=po.assigned_to
+       LEFT JOIN employees re ON re.id=po.assigned_receiver_id
+       LEFT JOIN projects proj ON proj.id=po.project_id
+       LEFT JOIN company_branches cb ON cb.id=po.branch_id
+       LEFT JOIN employee_advances fadv ON fadv.id=po.funding_advance_id
+       LEFT JOIN users bu ON bu.id=po.assigned_buyer_user_id
+       WHERE po.id=$1 AND po.company_id=$2`,
+      [id, auth.companyId],
+    ),
+    query(
+      `SELECT pol.id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
+              pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
+              pol.requested_currency_code, pol.fx_rate_to_base,
+              pol.actual_unit_price,
+              pol.store_price, pol.store_price_currency,
+              pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
+              pol.in_stock, pol.qty_from_stock,
+              pol.source_location_id, sl.name AS source_location_name,
+              sl.company_id AS source_company_id, sc.name AS source_company_name,
+              sb.average_cost AS source_average_cost,
+              pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
+              pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
+              pol.account_id, coa.code AS account_code, coa.name AS account_name,
+              pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
+              pol.is_bought
+       FROM po_lines pol
+       LEFT JOIN products p ON p.id=pol.product_id
+       LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
+       LEFT JOIN companies sc ON sc.id=sl.company_id
+       LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
+       LEFT JOIN chart_of_accounts coa ON coa.id=pol.account_id
+       LEFT JOIN cost_centers cc ON cc.id=pol.cost_center_id
+       WHERE pol.po_id=$1 ORDER BY pol.line_number`,
+      [id],
+    ),
+    query(
+      `SELECT por.id, por.po_id, por.receipt_number, por.received_date AS receipt_date,
+              por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
+              sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
+              COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+              COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
+       FROM po_receipts por
+       LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
+       LEFT JOIN users u ON u.id=por.received_by
+       LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
+       LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
+       LEFT JOIN products p ON p.id=pol.product_id
+       LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
+       LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
+       WHERE por.po_id=$1
+       GROUP BY por.id, sl.name, u.email, u.first_name, u.last_name ORDER BY por.received_date`,
+      [id],
+    ),
+    query(
+      `SELECT poa.id, poa.po_id, poa.from_status, poa.to_status, poa.action, poa.notes, poa.created_at,
+              COALESCE(u.first_name || ' ' || u.last_name, u.email) AS user_email
+       FROM po_approval_log poa LEFT JOIN users u ON u.id=poa.actor_id
+       WHERE poa.po_id=$1 ORDER BY poa.created_at`,
+      [id],
+    ),
+  ])
+  if (!po.rows[0]) return null
+  const branchScope = await branchScopedPOFilterGW(auth)
+  if (branchScope && !branchScope.includes((po.rows[0] as Record<string, unknown>).branch_id as string)) {
+    return null
+  }
+  const poRowForBuyer = po.rows[0] as Record<string, unknown>
+  // Buyer authority is now resolved dynamically from the 'buyer'
+  // position rather than a single frozen assignee — compute the
+  // current holder(s) for display, falling back to the legacy
+  // assigned_buyer_name for pre-cutover POs with no matching position.
+  const buyerHolders = await query<{ name: string }>(
+    `SELECT DISTINCT COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS name
+     FROM po_position_assignments ppa
+     JOIN employees e ON e.id = ppa.employee_id
+     JOIN users u ON u.id = e.user_id
+     WHERE ppa.position = 'buyer' AND ppa.is_active = true AND ppa.company_id = $1
+       AND (($2::uuid IS NOT NULL AND ppa.branch_id = $2)
+         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))`,
+    [auth.companyId, poRowForBuyer.branch_id ?? null],
+  )
+  const buyerNames = buyerHolders.rows.map((r) => r.name)
+  const isAdminForBuyer = isAdminGW(auth.role)
+  const isFrozenBuyerForCaller = poRowForBuyer.assigned_buyer_user_id === auth.userId
+  const callerIsBuyer =
+    isAdminForBuyer ||
+    isFrozenBuyerForCaller ||
+    (await userHasPositionGW(auth.userId, auth.companyId, id, 'buyer'))
+  // Mirrors submitPOStorePricing/submitPOMarketPricing's own authorization
+  // exactly (no organizer fallback — see those resolvers' comments), so the
+  // store/market pricing forms can be hidden client-side for someone who'd
+  // just get rejected on submit anyway, instead of letting them type values
+  // into a form they can't actually save.
+  const callerHasStorePricingPosition =
+    isAdminForBuyer || (await userHasPositionGW(auth.userId, auth.companyId, id, 'store_pricing'))
+  const callerHasMarketPricingPosition =
+    isAdminForBuyer ||
+    (await userHasPositionGW(auth.userId, auth.companyId, id, 'procurement_officer'))
+  let editRequests: unknown[] = []
+  try {
+    const er = await query(
+      `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email
+       FROM po_edit_requests er
+       JOIN users req ON req.id = er.requested_by
+       LEFT JOIN users rev ON rev.id = er.reviewed_by
+       WHERE er.po_id = $1 ORDER BY er.created_at DESC`,
+      [id],
+    )
+    editRequests = er.rows.map((r) => ({ ...r, changes: JSON.stringify(r.changes) }))
+  } catch {
+    /* ignore if table absent */
+  }
+  const receiptsWithUrls = await Promise.all(
+    receipts.rows.map(async (r) => {
+      const row = r as Record<string, unknown>
+      const photos = (row.photos as Record<string, unknown>[]) ?? []
+      const photosWithUrls = await Promise.all(
+        photos.map(async (ph) => {
+          const fileKey = ph.fileKey as string | undefined
+          if (!fileKey) return { ...ph, downloadUrl: null }
+          try {
+            const { downloadUrl } = await generateDownloadUrl(fileKey, ph.originalFilename as string)
+            return { ...ph, downloadUrl }
+          } catch {
+            return { ...ph, downloadUrl: null }
+          }
+        }),
+      )
+      return { ...row, photos: photosWithUrls }
+    }),
+  )
+  return {
+    ...po.rows[0],
+    lines: lines.rows,
+    receipts: receiptsWithUrls,
+    approval_log: approvals.rows,
+    edit_requests: editRequests,
+    buyerNames,
+    callerIsBuyer,
+    callerHasStorePricingPosition,
+    callerHasMarketPricingPosition,
+  }
+}
+
 // document_attachments is polymorphic (entity_type + entity_id, no FK) —
 // the generic attachFile/detachFile/entityAttachments resolvers never
 // verified the target entity actually belongs to the caller's company,
@@ -3134,6 +3352,24 @@ export const resolvers = {
 
     poStockAvailability: async (_: unknown, args: { poId: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
+      const auth = ctx.auth as GWAuth
+      // Same visibility gate as purchaseOrder(id) itself — this query is only
+      // ever fetched while a PO is in inventory_check (see the frontend's
+      // skip condition), so it's organizer/admin-only, matching
+      // confirmPOInventoryCheck's own "only the PO owner" authorization.
+      // Without this, a restricted viewer could still pull line names,
+      // quantities, and stock levels through this side channel even though
+      // purchaseOrder(id) itself now withholds them.
+      const gatePoRow = await query<{ status: string }>(
+        `SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+        [args.poId, auth.companyId],
+      )
+      if (!gatePoRow.rows[0]) return []
+      const canViewStock =
+        isAdminGW(auth.role) ||
+        (await userIsOrganizerGW(auth.userId, args.poId, auth.companyId)) ||
+        (await callerHasCurrentStagePositionGW(auth, args.poId, gatePoRow.rows[0].status))
+      if (!canViewStock) return []
       const result = await query(
         `SELECT
            pol.id                                              AS "lineId",
@@ -3285,7 +3521,19 @@ export const resolvers = {
       }
       sql += ' ORDER BY po.created_at DESC LIMIT 200'
       const result = await query(sql, params)
-      return result.rows
+      // Pricing is withheld from the list view for anyone who isn't an admin
+      // or on the finance team — a store_keeper or any other non-finance
+      // position holder shouldn't see PO totals here, and (per the PO detail
+      // page's own gate) this is withheld server-side rather than just
+      // hidden by the frontend column. viewerCanSeeTotals lets the frontend
+      // hide the column outright instead of rendering a misleading '0'.
+      const auth = ctx.auth as GWAuth
+      const canSeeTotals = isAdminGW(auth.role) || (await isUserFinanceTeamGW(auth.userId, auth.companyId))
+      return result.rows.map((r) => ({
+        ...(r as Record<string, unknown>),
+        total_amount: canSeeTotals ? (r as Record<string, unknown>).total_amount : '0',
+        viewerCanSeeTotals: canSeeTotals,
+      }))
     },
 
     // Any authenticated company user can read these (just currency rates) —
@@ -6181,171 +6429,72 @@ export const resolvers = {
     purchaseOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
       try {
-        const [po, lines, receipts, approvals] = await Promise.all([
-          query(
-            `SELECT po.*, v.name AS vendor_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_email,
-                    aa.name AS analytic_account_name, COALESCE(au.first_name || ' ' || au.last_name, au.email) AS assigned_to_email,
-                    po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
-                    proj.code AS "projectCode", proj.name AS "projectName",
-                    cb.name AS branch_name,
-                    COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name,
-                    fadv.advance_number AS funding_advance_number, fadv.employee_name AS funding_employee_name,
-                    COALESCE(NULLIF(TRIM(bu.first_name || ' ' || bu.last_name), ''), bu.email) AS assigned_buyer_name
-             FROM purchase_orders po
-             LEFT JOIN vendors v ON v.id=po.vendor_id
-             LEFT JOIN users u ON u.id=po.created_by
-             LEFT JOIN analytic_accounts aa ON aa.id=po.analytic_account_id
-             LEFT JOIN users au ON au.id=po.assigned_to
-             LEFT JOIN employees re ON re.id=po.assigned_receiver_id
-             LEFT JOIN projects proj ON proj.id=po.project_id
-             LEFT JOIN company_branches cb ON cb.id=po.branch_id
-             LEFT JOIN employee_advances fadv ON fadv.id=po.funding_advance_id
-             LEFT JOIN users bu ON bu.id=po.assigned_buyer_user_id
-             WHERE po.id=$1 AND po.company_id=$2`,
-            [args.id, ctx.auth.companyId],
-          ),
-          query(
-            `SELECT pol.id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
-                    pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
-                    pol.requested_currency_code, pol.fx_rate_to_base,
-                    pol.actual_unit_price,
-                    pol.store_price, pol.store_price_currency,
-                    pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
-                    pol.in_stock, pol.qty_from_stock,
-                    pol.source_location_id, sl.name AS source_location_name,
-                    sl.company_id AS source_company_id, sc.name AS source_company_name,
-                    sb.average_cost AS source_average_cost,
-                    pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
-                    pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
-                    pol.account_id, coa.code AS account_code, coa.name AS account_name,
-                    pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
-                    pol.is_bought
-             FROM po_lines pol
-             LEFT JOIN products p ON p.id=pol.product_id
-             LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
-             LEFT JOIN companies sc ON sc.id=sl.company_id
-             LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
-             LEFT JOIN chart_of_accounts coa ON coa.id=pol.account_id
-             LEFT JOIN cost_centers cc ON cc.id=pol.cost_center_id
-             WHERE pol.po_id=$1 ORDER BY pol.line_number`,
-            [args.id],
-          ),
-          query(
-            `SELECT por.id, por.po_id, por.receipt_number, por.received_date AS receipt_date,
-                    por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
-                    sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
-                    COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
-                    COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
-             FROM po_receipts por
-             LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
-             LEFT JOIN users u ON u.id=por.received_by
-             LEFT JOIN po_receipt_lines porl ON porl.receipt_id=por.id
-             LEFT JOIN po_lines pol ON pol.id=porl.po_line_id
-             LEFT JOIN products p ON p.id=pol.product_id
-             LEFT JOIN document_attachments da ON da.entity_type='po_receipt' AND da.entity_id=por.id
-             LEFT JOIN files f ON f.id=da.file_id AND f.status != 'deleted'
-             WHERE por.po_id=$1
-             GROUP BY por.id, sl.name, u.email, u.first_name, u.last_name ORDER BY por.received_date`,
-            [args.id],
-          ),
-          query(
-            `SELECT poa.id, poa.po_id, poa.from_status, poa.to_status, poa.action, poa.notes, poa.created_at,
-                    COALESCE(u.first_name || ' ' || u.last_name, u.email) AS user_email
-             FROM po_approval_log poa LEFT JOIN users u ON u.id=poa.actor_id
-             WHERE poa.po_id=$1 ORDER BY poa.created_at`,
-            [args.id],
-          ),
+        const auth = ctx.auth as GWAuth
+        // Visibility gate, decided before any of the substantive (pricing,
+        // vendor, line) data is even queried — a client-side "hide this" was
+        // never a real restriction since the full row was already on the
+        // wire. Mirrors the org's stated rule: organizer sees everything
+        // until finance_audit; a position holder only sees their own
+        // current-stage section; finance team only from finance_audit on;
+        // everyone else gets nothing. This gate is specific to the PO detail
+        // page — purchaseOrderForAction (Record Receipt, Create Return) has
+        // its own, unrelated authorization and deliberately doesn't go
+        // through this.
+        const gateRow = await query<{
+          id: string
+          po_number: string
+          status: string
+          priority: string
+        }>(`SELECT id, po_number, status, priority FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
+          args.id,
+          auth.companyId,
         ])
-        if (!po.rows[0]) return null
-        const branchScope = await branchScopedPOFilterGW(ctx.auth)
-        if (branchScope && !branchScope.includes((po.rows[0] as Record<string, unknown>).branch_id as string)) {
-          return null
+        if (!gateRow.rows[0]) return null
+        const poStub = gateRow.rows[0]
+        const isAdmin = isAdminGW(auth.role)
+        const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+        const isFinanceTeam = await isUserFinanceTeamGW(auth.userId, auth.companyId)
+        const isLateStage = ['finance_audit', 'invoiced', 'completed'].includes(poStub.status)
+        const canView = isLateStage
+          ? isAdmin || isFinanceTeam
+          : isAdmin ||
+            isOrganizer ||
+            (await callerHasCurrentStagePositionGW(auth, args.id, poStub.status))
+        if (!canView) {
+          return {
+            id: poStub.id,
+            po_number: poStub.po_number,
+            status: poStub.status,
+            priority: poStub.priority,
+            total_amount: '0',
+            currency_code: '',
+            created_at: new Date(0).toISOString(),
+            updated_at: new Date(0).toISOString(),
+            invoice_count: 0,
+            viewerRestricted: true,
+          }
         }
-        const poRowForBuyer = po.rows[0] as Record<string, unknown>
-        // Buyer authority is now resolved dynamically from the 'buyer'
-        // position rather than a single frozen assignee — compute the
-        // current holder(s) for display, falling back to the legacy
-        // assigned_buyer_name for pre-cutover POs with no matching position.
-        const buyerHolders = await query<{ name: string }>(
-          `SELECT DISTINCT COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.email) AS name
-           FROM po_position_assignments ppa
-           JOIN employees e ON e.id = ppa.employee_id
-           JOIN users u ON u.id = e.user_id
-           WHERE ppa.position = 'buyer' AND ppa.is_active = true AND ppa.company_id = $1
-             AND (($2::uuid IS NOT NULL AND ppa.branch_id = $2)
-               OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))`,
-          [ctx.auth.companyId, poRowForBuyer.branch_id ?? null],
-        )
-        const buyerNames = buyerHolders.rows.map((r) => r.name)
-        const isAdminForBuyer = isAdminGW(ctx.auth.role)
-        const isFrozenBuyerForCaller = poRowForBuyer.assigned_buyer_user_id === ctx.auth.userId
-        const callerIsBuyer =
-          isAdminForBuyer ||
-          isFrozenBuyerForCaller ||
-          (await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'))
-        // Mirrors submitPOStorePricing/submitPOMarketPricing's own authorization
-        // exactly (no organizer fallback — see those resolvers' comments), so the
-        // store/market pricing forms can be hidden client-side for someone who'd
-        // just get rejected on submit anyway, instead of letting them type values
-        // into a form they can't actually save.
-        const callerHasStorePricingPosition =
-          isAdminForBuyer ||
-          (await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'))
-        const callerHasMarketPricingPosition =
-          isAdminForBuyer ||
-          (await userHasPositionGW(
-            ctx.auth.userId,
-            ctx.auth.companyId,
-            args.id,
-            'procurement_officer',
-          ))
-        let editRequests: unknown[] = []
-        try {
-          const er = await query(
-            `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email
-             FROM po_edit_requests er
-             JOIN users req ON req.id = er.requested_by
-             LEFT JOIN users rev ON rev.id = er.reviewed_by
-             WHERE er.po_id = $1 ORDER BY er.created_at DESC`,
-            [args.id],
-          )
-          editRequests = er.rows.map((r) => ({ ...r, changes: JSON.stringify(r.changes) }))
-        } catch {
-          /* ignore if table absent */
-        }
-        const receiptsWithUrls = await Promise.all(
-          receipts.rows.map(async (r) => {
-            const row = r as Record<string, unknown>
-            const photos = (row.photos as Record<string, unknown>[]) ?? []
-            const photosWithUrls = await Promise.all(
-              photos.map(async (ph) => {
-                const fileKey = ph.fileKey as string | undefined
-                if (!fileKey) return { ...ph, downloadUrl: null }
-                try {
-                  const { downloadUrl } = await generateDownloadUrl(
-                    fileKey,
-                    ph.originalFilename as string,
-                  )
-                  return { ...ph, downloadUrl }
-                } catch {
-                  return { ...ph, downloadUrl: null }
-                }
-              }),
-            )
-            return { ...row, photos: photosWithUrls }
-          }),
-        )
-        return {
-          ...po.rows[0],
-          lines: lines.rows,
-          receipts: receiptsWithUrls,
-          approval_log: approvals.rows,
-          edit_requests: editRequests,
-          buyerNames,
-          callerIsBuyer,
-          callerHasStorePricingPosition,
-          callerHasMarketPricingPosition,
-        }
+        const full = await fetchFullPurchaseOrderGW(args.id, auth)
+        if (!full) return null
+        return { ...full, viewerRestricted: false }
+      } catch {
+        return null
+      }
+    },
+
+    // Backs Record Receipt and Create Return — both need the same full PO
+    // shape purchaseOrder(id) returns, but neither is "browsing the PO
+    // workflow" in the sense the viewerRestricted gate above is about, and
+    // both already have their own authorization (procurement.po.edit at the
+    // route level, plus each mutation's own check). Deliberately not gated
+    // by viewerRestricted — see that resolver's comment.
+    purchaseOrderForAction: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return null
+      try {
+        const auth = ctx.auth as GWAuth
+        const full = await fetchFullPurchaseOrderGW(args.id, auth)
+        if (!full) return null
+        return { ...full, viewerRestricted: false }
       } catch {
         return null
       }

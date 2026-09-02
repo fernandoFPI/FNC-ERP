@@ -147,6 +147,12 @@ export interface PO {
   po_number: string
   status: string
   priority: string
+  // Server-computed: true when the caller isn't the organizer, an admin, the
+  // finance team (once at finance_audit+), or the position holder for this
+  // PO's current stage. When true, every other field is withheld by the
+  // resolver — not just hidden here — so don't rely on any field below
+  // rendering meaningfully in that case.
+  viewerRestricted?: boolean
   currency_code: string
   base_currency_code: string
   total_amount: number
@@ -703,7 +709,7 @@ export default function PurchaseOrderDetail() {
   const effectiveRejectReason = rejectReason || flagAutoReason
 
   useEffect(() => {
-    if (!id || isTourDemo) return
+    if (!id || isTourDemo || po?.viewerRestricted) return
     interface APInv {
       id: string
       invoice_number: string
@@ -735,7 +741,7 @@ export default function PurchaseOrderDetail() {
 
   const { data: stockData } = useQuery(PO_STOCK_AVAILABILITY_QUERY, {
     variables: { poId: id },
-    skip: po?.status !== 'inventory_check' || isTourDemo,
+    skip: po?.status !== 'inventory_check' || isTourDemo || po?.viewerRestricted,
     fetchPolicy: 'cache-and-network',
   })
   const stockAvailability: {
@@ -996,6 +1002,31 @@ export default function PurchaseOrderDetail() {
 
   if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
   if (!po) return <div style={{ padding: '48px', color: theme.textMuted }}>PO not found.</div>
+
+  // Server-side gate — the resolver already withheld every other field, so
+  // nothing past this point (lines, pricing, tabs) is safe to render.
+  if (po.viewerRestricted) {
+    return (
+      <div style={{ ...pagePadding, maxWidth: '600px', margin: '0 auto' }}>
+        <PageHeader
+          title={po.po_number}
+          subtitle="Access restricted"
+          backPath="/procurement/purchase-orders"
+        />
+        <Card style={{ padding: '32px', textAlign: 'center' }}>
+          <div
+            style={{ fontSize: '15px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}
+          >
+            You don't have access to view this purchase order
+          </div>
+          <div style={{ fontSize: '13px', color: theme.textMuted }}>
+            Only the organizer, an admin, the finance team, or whoever holds the position for its
+            current stage ({po.status.replace(/_/g, ' ')}) can view it.
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   const pendingEdits = (po.edit_requests ?? []).filter((r) => r.status === 'pending').length
 

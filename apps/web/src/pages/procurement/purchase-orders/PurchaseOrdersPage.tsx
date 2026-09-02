@@ -35,6 +35,7 @@ interface PurchaseOrder {
   status: string
   priority: string
   total_amount: string
+  viewerCanSeeTotals?: boolean
   currency_code: string
   created_at: string
   expected_delivery_date?: string
@@ -92,6 +93,9 @@ export default function PurchaseOrdersPage() {
   )
 
   const orders: PurchaseOrder[] = data?.purchaseOrders ?? []
+  // Server-computed (see purchaseOrders resolver) — admin/finance only.
+  // Every row carries the same value for a given viewer, so any row will do.
+  const canSeeTotals = orders[0]?.viewerCanSeeTotals ?? false
   const filtered = orders.filter((o) => {
     if (search) {
       const q = search.toLowerCase()
@@ -166,8 +170,7 @@ export default function PurchaseOrdersPage() {
       'Project',
       'Status',
       'Priority',
-      'Total Amount',
-      'Currency',
+      ...(canSeeTotals ? ['Total Amount', 'Currency'] : []),
       'Created',
       'Expected Delivery',
     ]
@@ -177,8 +180,7 @@ export default function PurchaseOrdersPage() {
       o.project_id ? [o.projectCode, o.projectName].filter(Boolean).join(' — ') : '',
       getPOStatusLabel(o.status),
       PRIORITY_LABELS[o.priority] ?? o.priority,
-      o.total_amount,
-      o.currency_code,
+      ...(canSeeTotals ? [o.total_amount, o.currency_code] : []),
       o.created_at.slice(0, 10),
       o.expected_delivery_date ?? '',
     ])
@@ -335,13 +337,17 @@ export default function PurchaseOrdersPage() {
         return <span style={{ fontSize: '12px', color: theme.textMuted }}>—</span>
       },
     },
-    {
-      key: 'total_amount',
-      header: 'Total',
-      render: (o) => (
-        <AmountDisplay amount={parseFloat(o.total_amount)} currency={o.currency_code} />
-      ),
-    },
+    ...(canSeeTotals
+      ? [
+          {
+            key: 'total_amount',
+            header: 'Total',
+            render: (o: PurchaseOrder) => (
+              <AmountDisplay amount={parseFloat(o.total_amount)} currency={o.currency_code} />
+            ),
+          },
+        ]
+      : []),
     {
       key: 'expected_delivery_date',
       header: 'Expected Delivery',
@@ -381,8 +387,7 @@ export default function PurchaseOrdersPage() {
                   'Project',
                   'Status',
                   'Priority',
-                  'Total Amount',
-                  'Currency',
+                  ...(canSeeTotals ? ['Total Amount', 'Currency'] : []),
                   'Created',
                   'Expected Delivery',
                 ]
@@ -392,8 +397,7 @@ export default function PurchaseOrdersPage() {
                   o.project_id ? [o.projectCode, o.projectName].filter(Boolean).join(' — ') : '',
                   getPOStatusLabel(o.status),
                   PRIORITY_LABELS[o.priority] ?? o.priority,
-                  o.total_amount,
-                  o.currency_code,
+                  ...(canSeeTotals ? [o.total_amount, o.currency_code] : []),
                   o.created_at.slice(0, 10),
                   o.expected_delivery_date ?? '',
                 ])
