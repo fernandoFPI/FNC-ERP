@@ -3719,7 +3719,50 @@ function tqToGQL(row: Record<string, unknown>): Record<string, unknown> {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     isOverdue,
+    // Populated by callers that fetch attachments (projectTQs); mutations
+    // that don't touch files (create/update/review/respond/close) return
+    // an empty list rather than a fresh query — uploadTQFile/deleteTQFile
+    // build their own response with the real list, same as RFI's pattern.
+    files: [],
   }
+}
+
+// Shared by projectTQs/projectTQ/uploadTQFile — same document_attachments +
+// download-url pattern as RFI/NCR/etc. (see e.g. projectRFIs), factored out
+// here since TQ needs it from more than one call site.
+async function fetchTQFilesGW(
+  tqId: string,
+  companyId: string,
+): Promise<Record<string, unknown>[]> {
+  const files = await query(
+    `SELECT da.id, da.file_id, f.original_filename, f.mime_type, f.size_bytes, da.label, da.created_at, f.file_key
+     FROM document_attachments da JOIN files f ON f.id=da.file_id
+     WHERE da.entity_type='tq' AND da.entity_id=$1 AND f.company_id=$2 AND f.status!='deleted'
+     ORDER BY da.created_at`,
+    [tqId, companyId],
+  )
+  return Promise.all(
+    files.rows.map(async (f: Record<string, unknown>) => {
+      let dl: string | null = null
+      try {
+        const r2 = await generateDownloadUrl(f.file_key as string, f.original_filename as string)
+        dl = r2.downloadUrl
+      } catch {
+        /**/
+      }
+      return {
+        id: f.id,
+        fileId: f.file_id,
+        filename: f.original_filename,
+        mimeType: f.mime_type,
+        sizeBytes: f.size_bytes,
+        title: f.label ?? f.original_filename,
+        description: null,
+        createdAt: f.created_at,
+        downloadUrl: dl,
+      }
+    }),
+  )
 }
 
 function rfqLineToGQL(row: Record<string, unknown>): Record<string, unknown> {
@@ -7748,7 +7791,12 @@ export const resolvers = {
          WHERE ${conditions.join(' AND ')} ORDER BY pt.created_at DESC`,
         params,
       )
-      return res.rows.map(tqToGQL)
+      return Promise.all(
+        res.rows.map(async (row) => ({
+          ...tqToGQL(row as Record<string, unknown>),
+          files: await fetchTQFilesGW((row as { id: string }).id, ctx.auth!.companyId),
+        })),
+      )
     },
 
     projectTQ: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -7761,7 +7809,7 @@ export const resolvers = {
       )
       const r = res.rows[0] as Record<string, unknown> | undefined
       if (!r) throw new Error('TQ not found')
-      return tqToGQL(r)
+      return { ...tqToGQL(r), files: await fetchTQFilesGW(args.id, ctx.auth.companyId) }
     },
 
     // ── Phase 5: Punch List ─────────────────────────────────────────────────────
@@ -29434,6 +29482,62 @@ Object.assign(resolvers.Mutation, {
     await query(
       `DELETE FROM project_tqs pt USING projects p WHERE p.id=pt.project_id AND p.company_id=$2 AND pt.id=$1`,
       [args.id, ctx.auth.companyId],
+    )
+    return true
+  },
+
+  uploadTQFile: async (
+    _: unknown,
+    args: { tqId: string; fileId: string; title?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
+    const tqR = await query(
+      `SELECT pt.*, p.company_id FROM project_tqs pt JOIN projects p ON p.id=pt.project_id WHERE pt.id=$1 AND p.company_id=$2`,
+      [args.tqId, ctx.auth.companyId],
+    )
+    if (!tqR.rows[0]) throw new Error('TQ not found')
+    const d = tqR.rows[0] as Record<string, unknown>
+    const fileR = await query(
+      `SELECT * FROM files WHERE id=$1 AND company_id=$2 AND status!='deleted'`,
+      [args.fileId, ctx.auth.companyId],
+    )
+    if (!fileR.rows[0]) throw new Error('File not found')
+    const f = fileR.rows[0] as Record<string, unknown>
+    await query(
+      `INSERT INTO document_attachments (file_id,entity_type,entity_id,label,uploaded_by) VALUES ($1,'tq',$2,$3,$4)`,
+      [args.fileId, args.tqId, args.title ?? f.original_filename, ctx.auth.userId],
+    )
+    await logActivity(
+      String(d.project_id),
+      ctx.auth.userId,
+      'tq_file',
+      `File attached to TQ ${String(d.tq_number)}`,
+    )
+    void notifyProjectFileUploadGW(
+      String(d.project_id),
+      ctx.auth.companyId,
+      ctx.auth.userId,
+      'TQ File',
+      `${String(args.title ?? f.original_filename)} (TQ ${String(d.tq_number)})`,
+    )
+    return {
+      ...tqToGQL(d),
+      files: await fetchTQFilesGW(args.tqId, ctx.auth.companyId),
+    }
+  },
+
+  deleteTQFile: async (
+    _: unknown,
+    args: { attachmentId: string; tqId: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'projects.qaqc.edit', 'edit')
+    await query(
+      `DELETE FROM document_attachments da USING project_tqs pt JOIN projects p ON p.id=pt.project_id WHERE pt.id=da.entity_id AND da.entity_type='tq' AND p.company_id=$1 AND da.id=$2`,
+      [ctx.auth.companyId, args.attachmentId],
     )
     return true
   },

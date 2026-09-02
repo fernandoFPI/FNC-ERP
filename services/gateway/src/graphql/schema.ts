@@ -4948,6 +4948,7 @@
     createdAt: String!
     updatedAt: String!
     isOverdue: Boolean!
+    files: [RFQPhaseFile!]!
   }
 
   extend type Query {
@@ -4988,6 +4989,8 @@
     respondToTQ(id: ID!, response: String!, responseBy: String): ProjectTQ!
     closeTQ(id: ID!): ProjectTQ!
     deleteTQ(id: ID!): Boolean!
+    uploadTQFile(tqId: ID!, fileId: ID!, title: String): ProjectTQ!
+    deleteTQFile(attachmentId: ID!, tqId: ID!): Boolean!
   }
   # ── Phase 5: Punch List & Completions ────────────────────────────────────────
 

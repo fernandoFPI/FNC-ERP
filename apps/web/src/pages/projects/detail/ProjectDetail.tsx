@@ -35,6 +35,8 @@ import {
   RESPOND_TO_TQ,
   CLOSE_TQ,
   DELETE_TQ,
+  UPLOAD_TQ_FILE,
+  DELETE_TQ_FILE,
   PROJECT_PUNCH_ITEMS_QUERY,
   CREATE_PUNCH_ITEM,
   UPDATE_PUNCH_ITEM,
@@ -17888,6 +17890,7 @@ interface ProjectTQ {
   createdAt: string
   updatedAt: string
   isOverdue: boolean
+  files: ExecFile[]
 }
 
 const TQ_STATUS: Record<string, { label: string; dot: string; text: string; bg: string }> = {
@@ -17961,6 +17964,22 @@ function TQTab({
   const [respondTQM] = useMutation(RESPOND_TO_TQ)
   const [closeTQM] = useMutation(CLOSE_TQ)
   const [deleteTQM] = useMutation(DELETE_TQ)
+  const [uploadTQFile] = useMutation(UPLOAD_TQ_FILE, {
+    onCompleted: () => {
+      void refetch()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
+  })
+  const [deleteTQFile] = useMutation(DELETE_TQ_FILE, {
+    onCompleted: () => {
+      void refetch()
+    },
+    onError: (e) => {
+      addToast({ type: 'error', message: e.message })
+    },
+  })
 
   const kpi = {
     open: tqs.filter((t) => t.status === 'open').length,
@@ -18592,6 +18611,55 @@ function TQTab({
                           >
                             Submit Response
                           </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Attachments */}
+                    {(tq.files?.length > 0 || tq.status !== 'closed') && (
+                      <div style={{ marginBottom: 14 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: 6,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: theme.textMuted,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.06em',
+                            }}
+                          >
+                            Attachments {tq.files?.length > 0 && `(${tq.files.length})`}
+                          </span>
+                          {tq.status !== 'closed' && (
+                            <ExecUploadButton
+                              entityId={tq.id}
+                              entityType="tq"
+                              onUpload={(v) => void uploadTQFile({ variables: v })}
+                              th={theme as unknown as Record<string, string>}
+                            />
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {execFileList(
+                            tq.files,
+                            tq.status !== 'closed'
+                              ? (aId) => void deleteTQFile({ variables: { attachmentId: aId, tqId: tq.id } })
+                              : null,
+                            tq.status !== 'closed',
+                            theme as unknown as Record<string, string>,
+                          )}
+                          {(!tq.files || tq.files.length === 0) && (
+                            <div style={{ fontSize: 12, color: theme.textMuted }}>
+                              No attachments.
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -25875,6 +25943,7 @@ async function execUpload(
     inspection_request: 'irId',
     ncr: 'ncrId',
     hse_record: 'hseId',
+    tq: 'tqId',
   }
   setState({ uploading: true, progress: 0 })
   try {

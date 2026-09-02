@@ -4648,9 +4648,11 @@ const TQ_FIELDS = `
   raisedBy raisedDate documentId documentRef documentRevision
   status response responseBy responseDate dueDate closedAt
   createdAt updatedAt isOverdue
+  files { ...ExecFileFields }
 `
 
 export const PROJECT_TQS_QUERY = gql`
+  ${EXEC_FILE_FIELDS}
   query ProjectTQs($projectId: ID!, $status: String, $discipline: String, $priority: String) {
     projectTQs(projectId: $projectId, status: $status, discipline: $discipline, priority: $priority) {
       ${TQ_FIELDS}
@@ -4659,6 +4661,7 @@ export const PROJECT_TQS_QUERY = gql`
 `
 
 export const CREATE_TQ = gql`
+  ${EXEC_FILE_FIELDS}
   mutation CreateTQ(
     $projectId: ID! $discipline: String $priority: String $subject: String!
     $description: String $raisedBy: String $raisedDate: String
@@ -4674,6 +4677,7 @@ export const CREATE_TQ = gql`
 `
 
 export const UPDATE_TQ = gql`
+  ${EXEC_FILE_FIELDS}
   mutation UpdateTQ(
     $id: ID! $discipline: String $priority: String $subject: String
     $description: String $raisedBy: String $raisedDate: String
@@ -4689,22 +4693,37 @@ export const UPDATE_TQ = gql`
 `
 
 export const REVIEW_TQ = gql`
+  ${EXEC_FILE_FIELDS}
   mutation ReviewTQ($id: ID!) { reviewTQ(id: $id) { ${TQ_FIELDS} } }
 `
 
 export const RESPOND_TO_TQ = gql`
+  ${EXEC_FILE_FIELDS}
   mutation RespondToTQ($id: ID!, $response: String!, $responseBy: String) {
     respondToTQ(id: $id, response: $response, responseBy: $responseBy) { ${TQ_FIELDS} }
   }
 `
 
 export const CLOSE_TQ = gql`
+  ${EXEC_FILE_FIELDS}
   mutation CloseTQ($id: ID!) { closeTQ(id: $id) { ${TQ_FIELDS} } }
 `
 
 export const DELETE_TQ = gql`
   mutation DeleteTQ($id: ID!) {
     deleteTQ(id: $id)
+  }
+`
+
+export const UPLOAD_TQ_FILE = gql`
+  ${EXEC_FILE_FIELDS}
+  mutation UploadTQFile($tqId: ID!, $fileId: ID!, $title: String) {
+    uploadTQFile(tqId: $tqId, fileId: $fileId, title: $title) { ${TQ_FIELDS} }
+  }
+`
+export const DELETE_TQ_FILE = gql`
+  mutation DeleteTQFile($attachmentId: ID!, $tqId: ID!) {
+    deleteTQFile(attachmentId: $attachmentId, tqId: $tqId)
   }
 `
 
