@@ -5728,9 +5728,14 @@ export default function PurchaseOrderDetail() {
                   from: orig.description,
                   to: dl.description,
                 })
-              if (dl.qty !== orig.qty)
+              // orig.qty/orig.unit_price are numeric strings off the wire
+              // (POLine.qty/unit_price are String! in the schema); dl.qty/
+              // dl.unit_price are genuine numbers — compare numerically or
+              // every untouched decimal-formatted line falsely shows as
+              // "changed" (1 !== "1.0000").
+              if (dl.qty !== (parseFloat(String(orig.qty)) || 0))
                 edited.push({ id: dl.id, field: 'qty_ordered', from: orig.qty, to: dl.qty })
-              if (dl.unit_price !== orig.unit_price)
+              if (dl.unit_price !== (parseFloat(String(orig.unit_price)) || 0))
                 edited.push({
                   id: dl.id,
                   field: 'unit_price',
@@ -6431,9 +6436,16 @@ export default function PurchaseOrderDetail() {
                   from: orig.description,
                   to: dl.description,
                 })
-              if (dl.qty !== orig.qty)
+              // orig.qty/orig.unit_price come off the wire as numeric strings
+              // (POLine.qty/unit_price are String! in the schema — e.g.
+              // "1.0000") despite the frontend POLine type claiming number;
+              // dl.qty/dl.unit_price are genuine numbers (parseFloat'd at
+              // draft-init time). Comparing them directly with !== always
+              // mismatched (1 !== "1.0000"), so every untouched line with a
+              // decimal-formatted qty/price falsely counted as "changed".
+              if (dl.qty !== (parseFloat(String(orig.qty)) || 0))
                 linesEdited.push({ id: dl.id, field: 'qty_ordered', from: orig.qty, to: dl.qty })
-              if (dl.unit_price !== orig.unit_price)
+              if (dl.unit_price !== (parseFloat(String(orig.unit_price)) || 0))
                 linesEdited.push({
                   id: dl.id,
                   field: 'unit_price',
@@ -6476,7 +6488,9 @@ export default function PurchaseOrderDetail() {
                 .flatMap((r) => r.lines)
                 .find((l) => l.id === drl.id)
               if (!origLine) continue
-              if (drl.qty_received !== origLine.qty_received)
+              // Same numeric-string-vs-number mismatch as the po_lines diff
+              // above — POReceiptLine.qty_received is String! on the wire.
+              if (drl.qty_received !== (parseFloat(String(origLine.qty_received)) || 0))
                 receiptLinesEdited.push({
                   id: drl.id,
                   field: 'qty_received',
