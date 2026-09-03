@@ -1868,6 +1868,24 @@ function isPermissionBypassGW(role: string): boolean {
   return role === 'system_admin' || role === 'company_admin'
 }
 
+// True if the caller is specifically a projects-module admin — checked via
+// the 'admin' access level on projects.view rather than role === 'module_admin',
+// since that role string alone can't tell a projects module_admin apart from
+// one for an unrelated module (e.g. finance) in the same company;
+// applyModuleAdminPermissions grants every projects.* key at exactly this
+// 'admin' level, so this is the precise, unambiguous signal for it. Lets a
+// projects module_admin open/see any project company-wide (same as
+// system_admin/company_admin), by deliberate choice — confirmed with the
+// user, who understood this applies to every current/future projects
+// module_admin, not a single person.
+async function isProjectsModuleAdminGW(auth: {
+  userId: string
+  companyId: string
+}): Promise<boolean> {
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  return meetsLevel(perms['projects.view'], 'admin')
+}
+
 // Gates the finance_audit/invoiced stages. System-wide finance capability,
 // not PO-specific — 'finance' was never part of the real role vocabulary
 // (user/module_admin/company_admin/system_admin), so this was previously
@@ -1941,6 +1959,7 @@ async function requireProjectViewGW(
   projectId: string,
 ): Promise<void> {
   if (isPermissionBypassGW(auth.role)) return
+  if (await isProjectsModuleAdminGW(auth)) return
   // Creator always gets in — regardless of status or the projects.view registry
   // grant. Same "you can always find what you made" principle already applied
   // to the project list, and it's what actually needed fixing here.
@@ -5387,12 +5406,17 @@ export const resolvers = {
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
 
-      // isPermissionBypassGW (system_admin/company_admin only), not isAdminGW
-      // (which also includes module_admin) — a module_admin for Projects can
-      // create/edit projects but, like everyone else, should still only see
-      // projects they created or are actually on, not the whole company's
-      // list. See isAdminGW's own comment for why it must not be used here.
-      const isAdmin = isPermissionBypassGW(ctx.auth.role)
+      // isPermissionBypassGW (system_admin/company_admin) plus, by deliberate
+      // choice, isProjectsModuleAdminGW — a projects module_admin sees every
+      // project company-wide, same as system_admin/company_admin, not just
+      // ones they created or are on. Confirmed with the user: this applies to
+      // every current/future projects module_admin, not a single person —
+      // e.g. finance needing to open Contract Management on any project
+      // without being added as a team member everywhere. module_admin for an
+      // unrelated module (isAdminGW's broader set) must NOT get this — see
+      // isProjectsModuleAdminGW's own comment for how that's told apart.
+      const isAdmin =
+        isPermissionBypassGW(ctx.auth.role) || (await isProjectsModuleAdminGW(ctx.auth))
       // includeAll (used by PO/rental-contract picker dropdowns to populate
       // the full company project list) requires projects.view — otherwise it
       // silently falls back to the normal assigned-projects-only restriction
