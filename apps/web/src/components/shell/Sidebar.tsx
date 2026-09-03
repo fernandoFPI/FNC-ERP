@@ -916,6 +916,12 @@ export const NAV_SECTIONS: NavSection[] = [
         // server-side and surfaced in-page, not gated by a permission.
       },
       {
+        label: 'My Expense Claims',
+        icon: <Icon name="file-text" />,
+        path: '/my-expense-claims',
+        // No permKeys — same reasoning as My Advances above.
+      },
+      {
         label: 'Payroll',
         icon: <Icon name="credit-card" />,
         path: '/payroll',

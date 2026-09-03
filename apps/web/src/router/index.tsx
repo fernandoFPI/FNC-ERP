@@ -62,6 +62,10 @@ const BudgetDetail = lazy(() => import('../pages/finance/budget/BudgetDetail'))
 const RevaluationPage = lazy(() => import('../pages/finance/revaluation/RevaluationPage'))
 const ExpenseClaimsPage = lazy(() => import('../pages/finance/expenses/ExpenseClaimsPage'))
 const ExpenseClaimDetail = lazy(() => import('../pages/finance/expenses/ExpenseClaimDetail'))
+const ExpenseClaimDashboard = lazy(
+  () => import('../pages/finance/expenses/ExpenseClaimDashboard'),
+)
+const MyExpenseClaimsPage = lazy(() => import('../pages/finance/expenses/MyExpenseClaimsPage'))
 const EmployeeAdvancesPage = lazy(() => import('../pages/finance/advances/EmployeeAdvancesPage'))
 const EmployeeAdvanceDetail = lazy(() => import('../pages/finance/advances/EmployeeAdvanceDetail'))
 const EmployeeAdvanceDashboard = lazy(
@@ -357,12 +361,13 @@ export const router = createBrowserRouter([
       { path: '/', element: <Navigate to="/dashboard" replace /> },
       { path: '/dashboard', element: withSuspense(<DashboardPage />) },
       { path: '/notifications', element: withSuspense(<NotificationsPage />) },
-      // My Advances — deliberately NOT nested under /finance, since that
-      // parent route is gated by finance.accounts.view and would block any
-      // regular employee submitting their own advance request (this is
-      // meant to be reachable by any employee with a linked employee
-      // record, same reasoning as /recharge below).
+      // My Advances / My Expense Claims — deliberately NOT nested under
+      // /finance, since that parent route is gated by finance.accounts.view
+      // and would block any regular employee submitting their own request
+      // (this is meant to be reachable by any employee with a linked
+      // employee record, same reasoning as /recharge below).
       { path: '/my-advances', element: withSuspense(<MyAdvancesPage />) },
+      { path: '/my-expense-claims', element: withSuspense(<MyExpenseClaimsPage />) },
 
       // Finance
       {
@@ -478,6 +483,10 @@ export const router = createBrowserRouter([
           {
             path: 'expense-claims',
             element: withPerm('finance.expenses.view', <ExpenseClaimsPage />),
+          },
+          {
+            path: 'expense-claims/dashboard',
+            element: withPerm('finance.expenses.view', <ExpenseClaimDashboard />),
           },
           {
             path: 'expense-claims/:id',

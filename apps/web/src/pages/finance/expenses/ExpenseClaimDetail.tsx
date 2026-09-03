@@ -38,47 +38,35 @@ interface Claim {
   lines: ClaimLine[]
 }
 
-interface GLAccount {
-  id: string
-  code: string
-  name: string
-}
-
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger' | 'warning'> = {
   draft: 'neutral',
   submitted: 'info',
-  approved: 'success',
   rejected: 'danger',
   posted: 'warning',
   paid: 'success',
 }
 
-const FLOW = ['draft', 'submitted', 'approved', 'posted', 'paid']
+// Approving now posts the reimbursement journal in the same step (see
+// expense-claims.ts's merged /:id/approve) — there's no separate resting
+// 'approved' state to show as its own stepper node any more.
+const FLOW = ['draft', 'submitted', 'posted', 'paid']
 
 export default function ExpenseClaimDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
   const [claim, setClaim] = useState<Claim | null>(null)
-  const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [showReject, setShowReject] = useState(false)
-  const [showPost, setShowPost] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-  const [postAccount, setPostAccount] = useState('')
 
   const load = useCallback(async () => {
     if (!id) return
     setLoading(true)
     try {
-      const [clRes, glRes] = await Promise.all([
-        api.get<Claim>(`/finance/expense-claims/${id}`),
-        api.get<GLAccount[]>('/finance/accounts?limit=500'),
-      ])
+      const clRes = await api.get<Claim>(`/finance/expense-claims/${id}`)
       setClaim(clRes.data)
-      setGlAccounts(glRes.data)
-      if (clRes.data.reimbursement_account_id) setPostAccount(clRes.data.reimbursement_account_id)
     } catch {
       /* handled */
     } finally {
@@ -167,17 +155,6 @@ export default function ExpenseClaimDetail() {
                   Approve
                 </Button>
               </>
-            )}
-            {claim.status === 'approved' && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  setShowPost(true)
-                }}
-              >
-                Post to GL
-              </Button>
             )}
             {claim.status === 'posted' && (
               <Button
@@ -524,80 +501,6 @@ export default function ExpenseClaimDetail() {
                 disabled={acting || !rejectReason}
               >
                 Reject Claim
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Post modal */}
-      {showPost && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-          }}
-        >
-          <Card padding="lg" style={{ width: '440px' }}>
-            <h3 style={{ margin: '0 0 12px', color: theme.textPrimary, fontSize: '15px' }}>
-              Post to General Ledger
-            </h3>
-            <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px' }}>
-              This will create a journal entry:
-              <br />
-              <strong>DR</strong> each expense account → <strong>CR</strong> Accrued Reimbursements
-            </p>
-            <label
-              style={{
-                fontSize: '11px',
-                color: theme.textMuted,
-                marginBottom: '3px',
-                display: 'block',
-              }}
-            >
-              Reimbursement Liability Account *
-            </label>
-            <select
-              style={inputStyle}
-              value={postAccount}
-              onChange={(e) => {
-                setPostAccount(e.target.value)
-              }}
-            >
-              <option value="">— Select account —</option>
-              {glAccounts.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.code} · {g.name}
-                </option>
-              ))}
-            </select>
-            <div
-              style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px' }}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowPost(false)
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={async () => {
-                  await act('post', { reimbursement_account_id: postAccount || undefined })
-                  setShowPost(false)
-                }}
-                disabled={acting}
-              >
-                Post JE
               </Button>
             </div>
           </Card>

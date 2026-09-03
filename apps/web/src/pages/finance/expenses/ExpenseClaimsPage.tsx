@@ -25,9 +25,8 @@ interface Claim {
 interface Summary {
   draft_count: number
   pending_count: number
-  approved_count: number
+  posted_count: number
   pending_amount: number
-  approved_amount: number
   posted_amount: number
   paid_amount: number
 }
@@ -98,7 +97,6 @@ export default function ExpenseClaimsPage() {
     description: '',
     currency_code: 'IQD',
     notes: '',
-    reimbursement_account_id: '',
   })
   const [lines, setLines] = useState<LineForm[]>([emptyLine()])
 
@@ -173,7 +171,6 @@ export default function ExpenseClaimsPage() {
         description: '',
         currency_code: 'IQD',
         notes: '',
-        reimbursement_account_id: '',
       })
       setLines([emptyLine()])
       navigate(`/finance/expense-claims/${r.data.id}`)
@@ -303,15 +300,26 @@ export default function ExpenseClaimsPage() {
         title="Expense Claims"
         subtitle="Employee expense reimbursements — submit, approve, and post to the GL"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setShowForm(true)
-            }}
-          >
-            + New Claim
-          </Button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                navigate('/finance/expense-claims/dashboard')
+              }}
+            >
+              Dashboard
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setShowForm(true)
+              }}
+            >
+              + New Claim
+            </Button>
+          </div>
         }
       />
 
@@ -342,16 +350,10 @@ export default function ExpenseClaimsPage() {
           </Card>
           <Card padding="sm">
             <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Approved
+              Posted (to pay)
             </p>
             <p style={{ fontSize: '22px', fontWeight: 700, color: '#22c55e' }}>
-              {summary.approved_count}
-            </p>
-            <AmountDisplay amount={Number(summary.approved_amount)} currency="IQD" size="sm" />
-          </Card>
-          <Card padding="sm">
-            <p style={{ fontSize: '10px', color: theme.textMuted, marginBottom: '4px' }}>
-              Posted (to pay)
+              {summary.posted_count}
             </p>
             <AmountDisplay
               amount={Number(summary.posted_amount)}
@@ -379,7 +381,7 @@ export default function ExpenseClaimsPage() {
           style={{ ...inputStyle, width: 'auto' }}
         >
           <option value="">All Statuses</option>
-          {['draft', 'submitted', 'approved', 'rejected', 'posted', 'paid'].map((s) => (
+          {['draft', 'submitted', 'rejected', 'posted', 'paid'].map((s) => (
             <option key={s} value={s}>
               {s.charAt(0).toUpperCase() + s.slice(1)}
             </option>
@@ -590,24 +592,7 @@ export default function ExpenseClaimsPage() {
                   placeholder="Brief purpose of claim"
                 />
               </div>
-              <div>
-                <label style={labelStyle}>Reimbursement Account</label>
-                <select
-                  style={inputStyle}
-                  value={form.reimbursement_account_id}
-                  onChange={(e) => {
-                    setForm((f) => ({ ...f, reimbursement_account_id: e.target.value }))
-                  }}
-                >
-                  <option value="">— Set when posting —</option>
-                  {glAccounts.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.code} · {g.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
+              <div style={{ gridColumn: '1/-1' }}>
                 <label style={labelStyle}>Notes</label>
                 <input
                   style={inputStyle}

@@ -122,7 +122,7 @@ export default function AdvanceConfigPage() {
     <div style={pagePadding}>
       <PageHeader
         title="Advance Automation"
-        subtitle="Accounts used to auto-resolve employee cash advance postings"
+        subtitle="Accounts used to auto-resolve employee cash advance and expense reimbursement postings"
       />
 
       <Card padding="md" style={{ marginTop: '20px', maxWidth: '640px' }}>
@@ -139,8 +139,8 @@ export default function AdvanceConfigPage() {
           Default Cash Accounts
         </p>
         <p style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '14px' }}>
-          The account credited when an advance is issued, chosen automatically by the advance's
-          currency.
+          The account credited when an advance is issued or an expense claim is reimbursed, chosen
+          automatically by currency.
         </p>
 
         {defaults.length > 0 && (
