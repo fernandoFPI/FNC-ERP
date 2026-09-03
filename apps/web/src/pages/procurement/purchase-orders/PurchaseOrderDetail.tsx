@@ -180,6 +180,7 @@ export interface PO {
   projectName?: string | null
   branch_id?: string | null
   branch_name?: string | null
+  company_name?: string | null
   funding_source?: string | null
   funding_decided?: boolean | null
   funding_advance_id?: string | null
@@ -7794,7 +7795,7 @@ export default function PurchaseOrderDetail() {
                   subtotal: po.subtotal ?? po.total_amount,
                   vendor_name: po.vendor_name,
                   created_by_email: po.created_by_email,
-                  companyName: 'FNC Group',
+                  companyName: po.company_name,
                   lines: po.lines.map((l) => ({
                     description: l.description,
                     product_name: l.product_name,

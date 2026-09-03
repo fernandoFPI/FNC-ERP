@@ -435,6 +435,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       projectName
       branch_id
       branch_name
+      company_name
       funding_source
       funding_decided
       funding_advance_id

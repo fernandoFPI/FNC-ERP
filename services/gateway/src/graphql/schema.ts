@@ -2038,6 +2038,7 @@
     projectName: String
     branch_id: ID
     branch_name: String
+    company_name: String
     funding_source: String
     funding_decided: Boolean
     funding_advance_id: ID

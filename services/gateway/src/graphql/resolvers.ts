@@ -1615,7 +1615,7 @@ async function fetchFullPurchaseOrderGW(
               aa.name AS analytic_account_name, COALESCE(au.first_name || ' ' || au.last_name, au.email) AS assigned_to_email,
               po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
               proj.code AS "projectCode", proj.name AS "projectName",
-              cb.name AS branch_name,
+              cb.name AS branch_name, co.name AS company_name,
               COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name,
               fadv.advance_number AS funding_advance_number, fadv.employee_name AS funding_employee_name,
               COALESCE(NULLIF(TRIM(bu.first_name || ' ' || bu.last_name), ''), bu.email) AS assigned_buyer_name
@@ -1627,6 +1627,7 @@ async function fetchFullPurchaseOrderGW(
        LEFT JOIN employees re ON re.id=po.assigned_receiver_id
        LEFT JOIN projects proj ON proj.id=po.project_id
        LEFT JOIN company_branches cb ON cb.id=po.branch_id
+       LEFT JOIN companies co ON co.id=po.company_id
        LEFT JOIN employee_advances fadv ON fadv.id=po.funding_advance_id
        LEFT JOIN users bu ON bu.id=po.assigned_buyer_user_id
        WHERE po.id=$1 AND po.company_id=$2`,
