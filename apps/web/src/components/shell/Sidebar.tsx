@@ -742,6 +742,12 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['procurement.po.view'],
       },
       {
+        label: 'Project Contracts',
+        icon: <Icon name="clipboard" />,
+        path: '/projects/contracts',
+        permKeys: ['projects.contracts.view'],
+      },
+      {
         label: 'Project Invoices',
         icon: <Icon name="file-text" />,
         path: '/projects/invoices',
