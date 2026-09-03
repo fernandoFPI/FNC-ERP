@@ -4013,6 +4013,14 @@ export const resolvers = {
       return result.rows
     },
 
+    groupChartOfAccounts: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) return []
+      const result = await query(
+        `SELECT * FROM group_chart_of_accounts WHERE is_active = true ORDER BY code`,
+      )
+      return result.rows
+    },
+
     journalEntries: async (
       _: unknown,
       args: { status?: string; from_date?: string; to_date?: string },
@@ -6834,11 +6842,13 @@ export const resolvers = {
       if (!ctx.auth) return null
       const r = await query(
         `SELECT coa.*, p.code AS parent_code, p.name AS parent_name,
+                g.code AS group_code, g.name AS group_name,
                 (SELECT COUNT(*)>0 FROM journal_lines jl
                  JOIN journal_entries je ON je.id=jl.journal_entry_id
                  WHERE jl.account_id=coa.id AND je.status='posted') AS has_posted_lines
          FROM chart_of_accounts coa
          LEFT JOIN chart_of_accounts p ON p.id=coa.parent_id
+         LEFT JOIN group_chart_of_accounts g ON g.id=coa.group_account_id
          WHERE coa.id=$1 AND coa.company_id=$2`,
         [args.id, ctx.auth.companyId],
       )
@@ -6962,11 +6972,14 @@ export const resolvers = {
                COALESCE(u.first_name  || ' ' || u.last_name,  u.email)  AS created_by_email,
                COALESCE(cb.first_name || ' ' || cb.last_name, cb.email) AS cashier_email,
                COALESCE(ab.first_name || ' ' || ab.last_name, ab.email) AS auditor_email,
-               (SELECT COUNT(*) FROM payment_voucher_journals pvj WHERE pvj.payment_voucher_id=pv.id) AS journal_count
+               (SELECT COUNT(*) FROM payment_voucher_journals pvj WHERE pvj.payment_voucher_id=pv.id) AS journal_count,
+               COALESCE(pcf.name || ' — ' || pcf.currency_code, rba.name || ' — ' || rba.currency_code) AS funding_source_label
         FROM payment_vouchers pv
         LEFT JOIN users u  ON u.id=pv.created_by
         LEFT JOIN users cb ON cb.id=pv.cashier_id
         LEFT JOIN users ab ON ab.id=pv.audited_by
+        LEFT JOIN petty_cash_floats pcf ON pcf.id=pv.petty_cash_float_id
+        LEFT JOIN recon_bank_accounts rba ON rba.id=pv.recon_bank_account_id
         WHERE pv.company_id=$1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
@@ -6993,12 +7006,15 @@ export const resolvers = {
           `SELECT pv.*, co.pv_template_image,
                   COALESCE(u.first_name  || ' ' || u.last_name,  u.email)  AS created_by_email,
                   COALESCE(cb.first_name || ' ' || cb.last_name, cb.email) AS cashier_email,
-                  COALESCE(ab.first_name || ' ' || ab.last_name, ab.email) AS auditor_email
+                  COALESCE(ab.first_name || ' ' || ab.last_name, ab.email) AS auditor_email,
+                  COALESCE(pcf.name || ' — ' || pcf.currency_code, rba.name || ' — ' || rba.currency_code) AS funding_source_label
            FROM payment_vouchers pv
            LEFT JOIN companies co ON co.id=pv.company_id
            LEFT JOIN users u  ON u.id=pv.created_by
            LEFT JOIN users cb ON cb.id=pv.cashier_id
            LEFT JOIN users ab ON ab.id=pv.audited_by
+           LEFT JOIN petty_cash_floats pcf ON pcf.id=pv.petty_cash_float_id
+           LEFT JOIN recon_bank_accounts rba ON rba.id=pv.recon_bank_account_id
            WHERE pv.id=$1 AND pv.company_id=$2`,
           [args.id, ctx.auth.companyId],
         ),
@@ -8401,16 +8417,38 @@ export const resolvers = {
           currency_code?: string
           is_reconcilable?: boolean
           is_active?: boolean
+          group_account_id?: string
+          is_header?: boolean
+          is_postable?: boolean
+          is_control_account?: boolean
+          account_category?: string
         }
       },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const { code, name, account_type, parent_id, currency_code, is_reconcilable, is_active } =
-        args.input
+      const {
+        code,
+        name,
+        account_type,
+        parent_id,
+        currency_code,
+        is_reconcilable,
+        is_active,
+        group_account_id,
+        is_header,
+        is_postable,
+        is_control_account,
+        account_category,
+      } = args.input
+      if ((is_active ?? true) && !/^\d{4}$/.test(code)) {
+        throw new Error('Account code must be exactly 4 digits')
+      }
       const r = await query(
-        `INSERT INTO chart_of_accounts (company_id,code,name,account_type,parent_id,currency_code,is_reconcilable,is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        `INSERT INTO chart_of_accounts
+           (company_id,code,name,account_type,parent_id,currency_code,is_reconcilable,is_active,
+            group_account_id,is_header,is_postable,is_control_account,account_category)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [
           ctx.auth.companyId,
           code,
@@ -8420,6 +8458,11 @@ export const resolvers = {
           currency_code ?? 'IQD',
           is_reconcilable ?? false,
           is_active ?? true,
+          group_account_id ?? null,
+          is_header ?? false,
+          is_postable ?? true,
+          is_control_account ?? false,
+          account_category ?? null,
         ],
       )
       return r.rows[0]
@@ -8433,35 +8476,58 @@ export const resolvers = {
           code?: string
           name?: string
           account_type?: string
-          parent_id?: string
+          parent_id?: string | null
           currency_code?: string
           is_reconcilable?: boolean
           is_active?: boolean
+          group_account_id?: string | null
+          is_header?: boolean
+          is_postable?: boolean
+          is_control_account?: boolean
+          account_category?: string | null
         }
       },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      const { code, name, account_type, parent_id, currency_code, is_reconcilable, is_active } =
-        args.input
+      const i = args.input
+      if (i.code !== undefined && i.is_active !== false && !/^\d{4}$/.test(i.code)) {
+        throw new Error('Account code must be exactly 4 digits')
+      }
+      // Build the SET clause from only the fields actually present in the
+      // input, so an explicit null (e.g. "clear the category") is applied
+      // while an omitted field is left untouched — a fixed COALESCE-per-field
+      // update can't tell those two cases apart, since GraphQL/JSON drops
+      // undefined keys before this resolver ever sees them.
+      const fields = [
+        'code',
+        'name',
+        'account_type',
+        'parent_id',
+        'currency_code',
+        'is_reconcilable',
+        'is_active',
+        'group_account_id',
+        'is_header',
+        'is_postable',
+        'is_control_account',
+        'account_category',
+      ] as const
+      const sets: string[] = []
+      const vals: unknown[] = []
+      let idx = 1
+      for (const key of fields) {
+        if (i[key] !== undefined) {
+          sets.push(`${key}=$${idx++}`)
+          vals.push(i[key])
+        }
+      }
+      if (!sets.length) throw new Error('No fields to update')
+      sets.push('updated_at=NOW()')
+      vals.push(args.id, ctx.auth.companyId)
       const r = await query(
-        `UPDATE chart_of_accounts SET
-           code=COALESCE($3,code), name=COALESCE($4,name), account_type=COALESCE($5,account_type),
-           parent_id=COALESCE($6,parent_id), currency_code=COALESCE($7,currency_code),
-           is_reconcilable=COALESCE($8,is_reconcilable), is_active=COALESCE($9,is_active),
-           updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 RETURNING *`,
-        [
-          args.id,
-          ctx.auth.companyId,
-          code ?? null,
-          name ?? null,
-          account_type ?? null,
-          parent_id ?? null,
-          currency_code ?? null,
-          is_reconcilable ?? null,
-          is_active ?? null,
-        ],
+        `UPDATE chart_of_accounts SET ${sets.join(', ')} WHERE id=$${idx++} AND company_id=$${idx++} RETURNING *`,
+        vals,
       )
       if (!r.rows[0]) throw new Error('Account not found')
       return r.rows[0]
@@ -8823,8 +8889,9 @@ export const resolvers = {
       const pvR = await query(
         `INSERT INTO payment_vouchers
            (company_id, voucher_number, voucher_date, received_from, reference_to, bank_account_fund,
+            funding_source_type, petty_cash_float_id, recon_bank_account_id,
             receiver_name, notes, total_amount_iqd, total_amount_usd, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [
           ctx.auth.companyId,
           voucherNumber,
@@ -8832,6 +8899,9 @@ export const resolvers = {
           i.received_from,
           i.reference_to ?? null,
           i.bank_account_fund ?? null,
+          i.funding_source_type ?? null,
+          i.petty_cash_float_id ?? null,
+          i.recon_bank_account_id ?? null,
           i.receiver_name ?? null,
           i.notes ?? null,
           total_iqd,
@@ -8896,13 +8966,18 @@ export const resolvers = {
       const total_iqd = lines.reduce((s, l) => s + ((l.amount_iqd as number) ?? 0), 0)
       const total_usd = lines.reduce((s, l) => s + ((l.amount_usd as number) ?? 0), 0)
       await query(
-        `UPDATE payment_vouchers SET voucher_number=$1, voucher_date=$2, received_from=$3, reference_to=$4, bank_account_fund=$5, receiver_name=$6, notes=$7, total_amount_iqd=$8, total_amount_usd=$9, updated_at=NOW() WHERE id=$10`,
+        `UPDATE payment_vouchers SET voucher_number=$1, voucher_date=$2, received_from=$3, reference_to=$4, bank_account_fund=$5,
+           funding_source_type=$6, petty_cash_float_id=$7, recon_bank_account_id=$8,
+           receiver_name=$9, notes=$10, total_amount_iqd=$11, total_amount_usd=$12, updated_at=NOW() WHERE id=$13`,
         [
           voucherNumber,
           i.voucher_date,
           i.received_from,
           i.reference_to ?? null,
           i.bank_account_fund ?? null,
+          i.funding_source_type ?? null,
+          i.petty_cash_float_id ?? null,
+          i.recon_bank_account_id ?? null,
           i.receiver_name ?? null,
           i.notes ?? null,
           total_iqd,

@@ -19,6 +19,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { api } from '../../../lib/axios'
 import type { VoucherPrintLine, VoucherPrintJournal } from '../../../lib/voucherHtml'
 import { buildPaymentVoucherHTML } from '../../../lib/voucherHtml'
@@ -69,6 +70,10 @@ interface VoucherDetail {
   received_from: string
   reference_to?: string
   bank_account_fund?: string
+  funding_source_type?: string
+  petty_cash_float_id?: string
+  recon_bank_account_id?: string
+  funding_source_label?: string
   receiver_name?: string
   notes?: string
   status: string
@@ -88,8 +93,33 @@ interface FormState {
   received_from: string
   reference_to: string
   bank_account_fund: string
+  funding_source_type: string
+  petty_cash_float_id: string
+  recon_bank_account_id: string
   receiver_name: string
   notes: string
+}
+
+interface PettyCashFloatOption {
+  id: string
+  name: string
+  currency_code: string
+  is_active: boolean
+}
+
+interface BankAccountOption {
+  id: string
+  name: string
+  currency_code: string
+  is_active: boolean
+}
+
+// Encodes the polymorphic "paid from" choice (a cash box OR a bank account)
+// into a single SearchableSelect value, since it can only hold one string.
+function fundingSourceValue(type: string, pettyCashId: string, bankAccountId: string): string {
+  if (type === 'cash_box' && pettyCashId) return `cash_box:${pettyCashId}`
+  if (type === 'bank_account' && bankAccountId) return `bank_account:${bankAccountId}`
+  return ''
 }
 
 const EMPTY_LINE = (): VoucherLine => ({
@@ -125,9 +155,14 @@ export default function PaymentVoucherDetail() {
     received_from: '',
     reference_to: '',
     bank_account_fund: '',
+    funding_source_type: '',
+    petty_cash_float_id: '',
+    recon_bank_account_id: '',
     receiver_name: '',
     notes: '',
   })
+  const [pettyCashFloats, setPettyCashFloats] = useState<PettyCashFloatOption[]>([])
+  const [bankAccounts, setBankAccounts] = useState<BankAccountOption[]>([])
   const [lines, setLines] = useState<VoucherLine[]>([EMPTY_LINE()])
   const [linkedJournalIds, setLinkedJournalIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
@@ -155,6 +190,28 @@ export default function PaymentVoucherDetail() {
     },
   )
 
+  // "Paid From" options — cash boxes and bank accounts, fetched directly via
+  // REST (matching the advance-settlement lookup below) since neither is
+  // exposed through GraphQL yet.
+  useEffect(() => {
+    api
+      .get<PettyCashFloatOption[]>('/finance/petty-cash/floats')
+      .then((res) => {
+        setPettyCashFloats(res.data.filter((f) => f.is_active))
+      })
+      .catch(() => {
+        /* leave empty — field still usable as free text via bank_account_fund */
+      })
+    api
+      .get<BankAccountOption[]>('/finance/bank/accounts')
+      .then((res) => {
+        setBankAccounts(res.data.filter((a) => a.is_active))
+      })
+      .catch(() => {
+        /* leave empty — field still usable as free text via bank_account_fund */
+      })
+  }, [])
+
   // Mutations
   const [createVoucher, { loading: creating }] = useMutation(CREATE_PAYMENT_VOUCHER)
   const [updateVoucher, { loading: updating }] = useMutation(UPDATE_PAYMENT_VOUCHER)
@@ -171,6 +228,9 @@ export default function PaymentVoucherDetail() {
       received_from: voucher.received_from,
       reference_to: voucher.reference_to ?? '',
       bank_account_fund: voucher.bank_account_fund ?? '',
+      funding_source_type: voucher.funding_source_type ?? '',
+      petty_cash_float_id: voucher.petty_cash_float_id ?? '',
+      recon_bank_account_id: voucher.recon_bank_account_id ?? '',
       receiver_name: voucher.receiver_name ?? '',
       notes: voucher.notes ?? '',
     })
@@ -209,6 +269,9 @@ export default function PaymentVoucherDetail() {
       received_from: form.received_from,
       reference_to: form.reference_to || null,
       bank_account_fund: form.bank_account_fund || null,
+      funding_source_type: form.funding_source_type || null,
+      petty_cash_float_id: form.petty_cash_float_id || null,
+      recon_bank_account_id: form.recon_bank_account_id || null,
       receiver_name: form.receiver_name || null,
       notes: form.notes || null,
       lines: lines
@@ -424,7 +487,11 @@ export default function PaymentVoucherDetail() {
       voucher_date: form.voucher_date,
       received_from: form.received_from,
       reference_to: form.reference_to || undefined,
-      bank_account_fund: form.bank_account_fund || undefined,
+      // The free-text field takes priority when the user (or the
+      // advance-settlement auto-fill) typed something specific; otherwise
+      // fall back to the structured "Paid From" selection's label so the
+      // printed voucher isn't blank just because bank_account_fund is.
+      bank_account_fund: form.bank_account_fund || voucher?.funding_source_label || undefined,
       receiver_name: form.receiver_name || undefined,
       total_amount_iqd: totalIqd,
       total_amount_usd: totalUsd,
@@ -769,6 +836,38 @@ export default function PaymentVoucherDetail() {
                     onChange={(e) => {
                       setForm((f) => ({ ...f, bank_account_fund: e.target.value }))
                     }}
+                  />
+                </div>
+
+                <div>
+                  <label style={labelStyle}>Paid From</label>
+                  <SearchableSelect
+                    value={fundingSourceValue(
+                      form.funding_source_type,
+                      form.petty_cash_float_id,
+                      form.recon_bank_account_id,
+                    )}
+                    onChange={(v) => {
+                      const [type, sourceId] = v.split(':')
+                      setForm((f) => ({
+                        ...f,
+                        funding_source_type: type === 'cash_box' || type === 'bank_account' ? type : '',
+                        petty_cash_float_id: type === 'cash_box' ? (sourceId ?? '') : '',
+                        recon_bank_account_id: type === 'bank_account' ? (sourceId ?? '') : '',
+                      }))
+                    }}
+                    disabled={isReadOnly}
+                    placeholder="Select a cash box or bank account…"
+                    options={[
+                      ...pettyCashFloats.map((f) => ({
+                        value: `cash_box:${f.id}`,
+                        label: `${f.name} — ${f.currency_code}`,
+                      })),
+                      ...bankAccounts.map((a) => ({
+                        value: `bank_account:${a.id}`,
+                        label: `${a.name} — ${a.currency_code}`,
+                      })),
+                    ]}
                   />
                 </div>
 

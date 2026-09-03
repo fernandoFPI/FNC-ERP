@@ -12,6 +12,9 @@ export const ACCOUNTS_QUERY = gql`
       parent_id
       parent_name
       is_reconcilable
+      is_header
+      is_postable
+      account_category
     }
   }
 `
@@ -29,6 +32,26 @@ export const ACCOUNT_QUERY = gql`
       parent_name
       is_reconcilable
       has_posted_lines
+      group_account_id
+      group_code
+      group_name
+      is_header
+      is_postable
+      is_control_account
+      account_category
+    }
+  }
+`
+
+export const GROUP_CHART_OF_ACCOUNTS_QUERY = gql`
+  query GroupChartOfAccounts {
+    groupChartOfAccounts {
+      id
+      code
+      name
+      account_type
+      parent_id
+      is_header
     }
   }
 `
@@ -205,6 +228,7 @@ export const PAYMENT_VOUCHERS_QUERY = gql`
       audited_at
       journal_count
       created_at
+      funding_source_label
     }
   }
 `
@@ -218,6 +242,10 @@ export const PAYMENT_VOUCHER_QUERY = gql`
       received_from
       reference_to
       bank_account_fund
+      funding_source_type
+      petty_cash_float_id
+      recon_bank_account_id
+      funding_source_label
       total_amount_iqd
       total_amount_usd
       status

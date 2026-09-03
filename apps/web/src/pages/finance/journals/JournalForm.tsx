@@ -46,10 +46,16 @@ export default function JournalForm() {
   const [createEntry, { loading }] = useMutation(CREATE_JOURNAL_ENTRY)
 
   const accounts = accountsData?.accounts ?? []
-  const accountOptions = accounts.map((a: { id: string; code: string; name: string }) => ({
-    value: a.id,
-    label: `${a.code} — ${a.name}`,
-  }))
+  // Header accounts exist for grouping/reporting only — they can't receive
+  // journal lines (enforced by the trg_journal_lines_postable DB trigger), so
+  // exclude them here rather than let the picker offer something the submit
+  // would reject.
+  const accountOptions = accounts
+    .filter((a: { is_postable?: boolean }) => a.is_postable !== false)
+    .map((a: { id: string; code: string; name: string }) => ({
+      value: a.id,
+      label: `${a.code} — ${a.name}`,
+    }))
 
   const totalDebit = lines.reduce((s, l) => s + parseFloat(l.debit || '0'), 0)
   const totalCredit = lines.reduce((s, l) => s + parseFloat(l.credit || '0'), 0)

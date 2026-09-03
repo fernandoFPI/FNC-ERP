@@ -4,6 +4,7 @@
 
     # Finance
     accounts(type: String, is_active: Boolean): [Account]
+    groupChartOfAccounts: [GroupAccount!]!
     journalEntries(status: String, from_date: String, to_date: String): [JournalEntry]
     trialBalance(as_of_date: String): [TrialBalanceLine]
 
@@ -1546,6 +1547,22 @@
     parent_name: String
     is_reconcilable: Boolean
     has_posted_lines: Boolean
+    group_account_id: ID
+    group_code: String
+    group_name: String
+    is_header: Boolean
+    is_postable: Boolean
+    is_control_account: Boolean
+    account_category: String
+  }
+
+  type GroupAccount {
+    id: ID!
+    code: String!
+    name: String!
+    account_type: String!
+    parent_id: ID
+    is_header: Boolean!
   }
 
   extend type JournalEntry {
@@ -1582,6 +1599,10 @@
     received_from: String!
     reference_to: String
     bank_account_fund: String
+    funding_source_type: String
+    petty_cash_float_id: ID
+    recon_bank_account_id: ID
+    funding_source_label: String
     total_amount_iqd: String!
     total_amount_usd: String!
     status: String!
@@ -1634,15 +1655,18 @@
   }
 
   input CreatePaymentVoucherInput {
-    voucher_number:    String
-    voucher_date:      String!
-    received_from:     String!
-    reference_to:      String
-    bank_account_fund: String
-    receiver_name:     String
-    notes:             String
-    lines:             [PaymentVoucherLineInput!]!
-    journal_ids:       [ID!]
+    voucher_number:        String
+    voucher_date:          String!
+    received_from:         String!
+    reference_to:          String
+    bank_account_fund:     String
+    funding_source_type:   String
+    petty_cash_float_id:   ID
+    recon_bank_account_id: ID
+    receiver_name:         String
+    notes:                 String
+    lines:                 [PaymentVoucherLineInput!]!
+    journal_ids:           [ID!]
   }
 
   type JournalLine {
@@ -1771,6 +1795,11 @@
     currency_code: String
     is_reconcilable: Boolean
     is_active: Boolean
+    group_account_id: ID
+    is_header: Boolean
+    is_postable: Boolean
+    is_control_account: Boolean
+    account_category: String
   }
 
   input FXRateInput {

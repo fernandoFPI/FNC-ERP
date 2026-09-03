@@ -9,7 +9,7 @@ import { requirePermission } from '@fnc-erp/permissions'
 export const accountsRouter: IRouter = Router()
 
 const CreateAccountSchema = z.object({
-  code: z.string().min(1).max(20),
+  code: z.string().regex(/^\d{4}$/, 'Account code must be exactly 4 digits'),
   name: z.string().min(1).max(255),
   account_type: z.enum(['asset', 'liability', 'equity', 'revenue', 'expense']),
   parent_id: z.string().uuid().optional(),

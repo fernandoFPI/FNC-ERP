@@ -26,6 +26,9 @@ const CreateVoucherSchema = z.object({
   received_from: z.string().min(1),
   reference_to: z.string().optional(),
   bank_account_fund: z.string().optional(),
+  funding_source_type: z.enum(['cash_box', 'bank_account']).optional(),
+  petty_cash_float_id: z.string().uuid().optional(),
+  recon_bank_account_id: z.string().uuid().optional(),
   receiver_name: z.string().optional(),
   notes: z.string().optional(),
   lines: z.array(VoucherLineSchema).min(1),
@@ -142,6 +145,9 @@ paymentVouchersRouter.post(
       received_from,
       reference_to,
       bank_account_fund,
+      funding_source_type,
+      petty_cash_float_id,
+      recon_bank_account_id,
       receiver_name,
       notes,
       lines,
@@ -158,8 +164,9 @@ paymentVouchersRouter.post(
       const pvResult = await client.query(
         `INSERT INTO payment_vouchers
          (company_id, voucher_number, voucher_date, received_from, reference_to, bank_account_fund,
+          funding_source_type, petty_cash_float_id, recon_bank_account_id,
           receiver_name, notes, total_amount_iqd, total_amount_usd, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [
           companyId,
           voucher_number,
@@ -167,6 +174,9 @@ paymentVouchersRouter.post(
           received_from,
           reference_to ?? null,
           bank_account_fund ?? null,
+          funding_source_type ?? null,
+          petty_cash_float_id ?? null,
+          recon_bank_account_id ?? null,
           receiver_name ?? null,
           notes ?? null,
           total_iqd,
@@ -269,25 +279,47 @@ paymentVouchersRouter.patch(
       const total_iqd = d.lines ? d.lines.reduce((s, l) => s + (l.amount_iqd ?? 0), 0) : undefined
       const total_usd = d.lines ? d.lines.reduce((s, l) => s + (l.amount_usd ?? 0), 0) : undefined
 
+      // funding_source_type/petty_cash_float_id/recon_bank_account_id must
+      // change together — independently COALESCEing each one (as every other
+      // field here does) would let a partial patch that only sends the new
+      // type leave the OLD float/bank-account id in place, violating
+      // chk_funding_source_exactly_one. When the type is provided, recompute
+      // all three from scratch instead of merging with the existing row.
+      const fundingProvided = d.funding_source_type !== undefined
+      const fundingSourceType = fundingProvided ? (d.funding_source_type ?? null) : null
+      const pettyCashFloatId =
+        fundingProvided && d.funding_source_type === 'cash_box' ? (d.petty_cash_float_id ?? null) : null
+      const reconBankAccountId =
+        fundingProvided && d.funding_source_type === 'bank_account'
+          ? (d.recon_bank_account_id ?? null)
+          : null
+
       await client.query(
         `UPDATE payment_vouchers SET
-         voucher_number    = COALESCE($1, voucher_number),
-         voucher_date      = COALESCE($2, voucher_date),
-         received_from     = COALESCE($3, received_from),
-         reference_to      = COALESCE($4, reference_to),
-         bank_account_fund = COALESCE($5, bank_account_fund),
-         receiver_name     = COALESCE($6, receiver_name),
-         notes             = COALESCE($7, notes),
-         total_amount_iqd  = COALESCE($8, total_amount_iqd),
-         total_amount_usd  = COALESCE($9, total_amount_usd),
-         updated_at        = NOW()
-       WHERE id=$10`,
+         voucher_number         = COALESCE($1, voucher_number),
+         voucher_date           = COALESCE($2, voucher_date),
+         received_from          = COALESCE($3, received_from),
+         reference_to           = COALESCE($4, reference_to),
+         bank_account_fund      = COALESCE($5, bank_account_fund),
+         funding_source_type    = CASE WHEN $6 THEN $7 ELSE funding_source_type END,
+         petty_cash_float_id    = CASE WHEN $6 THEN $8 ELSE petty_cash_float_id END,
+         recon_bank_account_id  = CASE WHEN $6 THEN $9 ELSE recon_bank_account_id END,
+         receiver_name          = COALESCE($10, receiver_name),
+         notes                  = COALESCE($11, notes),
+         total_amount_iqd       = COALESCE($12, total_amount_iqd),
+         total_amount_usd       = COALESCE($13, total_amount_usd),
+         updated_at             = NOW()
+       WHERE id=$14`,
         [
           d.voucher_number ?? null,
           d.voucher_date ?? null,
           d.received_from ?? null,
           d.reference_to ?? null,
           d.bank_account_fund ?? null,
+          fundingProvided,
+          fundingSourceType,
+          pettyCashFloatId,
+          reconBankAccountId,
           d.receiver_name ?? null,
           d.notes ?? null,
           total_iqd ?? null,

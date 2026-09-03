@@ -20,6 +20,8 @@ interface Account {
   currency_code: string
   parent_name?: string
   is_reconcilable?: boolean
+  is_header?: boolean
+  account_category?: string
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -71,7 +73,15 @@ export default function AccountsPage() {
       header: 'Name',
       render: (a) => (
         <div>
-          <div style={{ color: theme.textPrimary, fontSize: '13px' }}>{a.name}</div>
+          <div
+            style={{
+              color: theme.textPrimary,
+              fontSize: '13px',
+              fontWeight: a.is_header ? 600 : 400,
+            }}
+          >
+            {a.name}
+          </div>
           {a.parent_name && (
             <div style={{ color: theme.textMuted, fontSize: '11px' }}>{a.parent_name}</div>
           )}
@@ -94,6 +104,16 @@ export default function AccountsPage() {
           {TYPE_LABELS[a.account_type] ?? a.account_type}
         </Badge>
       ),
+    },
+    {
+      key: 'account_category',
+      header: 'Category',
+      render: (a) =>
+        a.account_category ? (
+          <Badge variant="neutral">{a.account_category}</Badge>
+        ) : (
+          <span style={{ color: theme.textMuted, fontSize: '12px' }}>—</span>
+        ),
     },
     {
       key: 'currency_code',
