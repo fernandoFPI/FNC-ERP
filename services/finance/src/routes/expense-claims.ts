@@ -326,10 +326,20 @@ expenseClaimsRouter.get(
   requirePermission('finance.expenses.view', 'view'),
   async (req, res) => {
     try {
-      const ec = await query(`SELECT * FROM expense_claims WHERE id=$1 AND company_id=$2`, [
-        req.params['id'],
-        req.auth!.companyId,
-      ])
+      const ec = await query(
+        `SELECT ec.*,
+                COALESCE(cu.first_name || ' ' || cu.last_name, cu.email) AS created_by_name,
+                COALESCE(au.first_name || ' ' || au.last_name, au.email) AS approved_by_name,
+                COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS rejected_by_name,
+                COALESCE(pu.first_name || ' ' || pu.last_name, pu.email) AS paid_by_name
+         FROM expense_claims ec
+         LEFT JOIN users cu ON cu.id = ec.created_by
+         LEFT JOIN users au ON au.id = ec.approved_by
+         LEFT JOIN users ru ON ru.id = ec.rejected_by
+         LEFT JOIN users pu ON pu.id = ec.paid_by
+         WHERE ec.id=$1 AND ec.company_id=$2`,
+        [req.params['id'], req.auth!.companyId],
+      )
       if (!ec.rows[0]) {
         sendError(res, 404, 'NOT_FOUND', 'Claim not found')
         return
@@ -833,8 +843,9 @@ expenseClaimsRouter.post(
   async (req, res) => {
     try {
       const r = await query(
-        `UPDATE expense_claims SET status='paid', updated_at=NOW() WHERE id=$1 AND company_id=$2 AND status='posted' RETURNING *`,
-        [req.params['id'], req.auth!.companyId],
+        `UPDATE expense_claims SET status='paid', paid_by=$1, paid_at=NOW(), updated_at=NOW()
+       WHERE id=$2 AND company_id=$3 AND status='posted' RETURNING *`,
+        [req.auth!.userId, req.params['id'], req.auth!.companyId],
       )
       if (!r.rows[0]) {
         sendError(res, 409, 'INVALID_STATUS', 'Claim must be posted first')

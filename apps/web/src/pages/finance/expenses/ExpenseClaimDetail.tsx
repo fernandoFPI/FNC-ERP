@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -7,6 +7,8 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { useCompany } from '../../../hooks/useCompany'
+import { buildExpenseClaimHTML } from '../../../lib/expenseClaimHtml'
 
 interface ClaimLine {
   id: string
@@ -30,8 +32,13 @@ interface Claim {
   notes: string | null
   submitted_at: string | null
   approved_at: string | null
+  approved_by_name: string | null
   rejected_at: string | null
+  rejected_by_name: string | null
   rejection_reason: string | null
+  paid_at: string | null
+  paid_by_name: string | null
+  created_by_name: string | null
   journal_entry_id: string | null
   created_at: string
   reimbursement_account_id: string | null
@@ -55,11 +62,14 @@ export default function ExpenseClaimDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { activeCompany } = useCompany()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const [showReject, setShowReject] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+  const [showPrintModal, setShowPrintModal] = useState(false)
+  const printIframeRef = useRef<HTMLIFrameElement>(null)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -116,6 +126,15 @@ export default function ExpenseClaimDetail() {
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Badge variant={STATUS_BADGE[claim.status] ?? 'neutral'}>{claim.status}</Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowPrintModal(true)
+              }}
+            >
+              Print
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -262,6 +281,12 @@ export default function ExpenseClaimDetail() {
                 {[
                   ['Claim #', claim.claim_number],
                   ['Employee', claim.employee_name],
+                  [
+                    'Requested By',
+                    claim.created_by_name && claim.created_by_name !== claim.employee_name
+                      ? claim.created_by_name
+                      : claim.employee_name,
+                  ],
                   ['Currency', claim.currency_code],
                   ['Total Amount', null],
                   ['Created', new Date(claim.created_at).toLocaleDateString()],
@@ -271,7 +296,21 @@ export default function ExpenseClaimDetail() {
                   ],
                   [
                     'Approved',
-                    claim.approved_at ? new Date(claim.approved_at).toLocaleDateString() : '—',
+                    claim.approved_at
+                      ? `${new Date(claim.approved_at).toLocaleDateString()}${claim.approved_by_name ? ` — ${claim.approved_by_name}` : ''}`
+                      : '—',
+                  ],
+                  [
+                    'Rejected',
+                    claim.rejected_at
+                      ? `${new Date(claim.rejected_at).toLocaleDateString()}${claim.rejected_by_name ? ` — ${claim.rejected_by_name}` : ''}`
+                      : '—',
+                  ],
+                  [
+                    'Paid',
+                    claim.paid_at
+                      ? `${new Date(claim.paid_at).toLocaleDateString()}${claim.paid_by_name ? ` — ${claim.paid_by_name}` : ''}`
+                      : '—',
                   ],
                 ].map(([k, v]) => (
                   <tr key={k} style={{ borderBottom: `1px solid ${theme.border}` }}>
@@ -504,6 +543,134 @@ export default function ExpenseClaimDetail() {
               </Button>
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* Print dialog */}
+      {showPrintModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+          }}
+          onClick={() => {
+            setShowPrintModal(false)
+          }}
+        >
+          <div
+            style={{
+              background: theme.bgSurface,
+              borderRadius: '12px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+              width: '94vw',
+              maxWidth: '1100px',
+              height: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => {
+              e.stopPropagation()
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: `1px solid ${theme.border}`,
+                flexShrink: 0,
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
+                Print Expense Claim — {claim.claim_number}
+              </span>
+              <button
+                onClick={() => {
+                  setShowPrintModal(false)
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: theme.textMuted,
+                  fontSize: '18px',
+                  lineHeight: 1,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflow: 'hidden', background: '#f3f4f6', minHeight: 0 }}>
+              <iframe
+                ref={printIframeRef}
+                srcDoc={buildExpenseClaimHTML({
+                  claimNumber: claim.claim_number,
+                  employeeName: claim.employee_name,
+                  currencyCode: claim.currency_code,
+                  totalAmount: Number(claim.total_amount),
+                  description: claim.description,
+                  createdAt: claim.created_at,
+                  submittedAt: claim.submitted_at,
+                  approvedAt: claim.approved_at,
+                  approvedByName: claim.approved_by_name,
+                  paidAt: claim.paid_at,
+                  paidByName: claim.paid_by_name,
+                  requestedByName: claim.created_by_name,
+                  companyName: activeCompany?.name,
+                  lines: claim.lines.map((l) => ({
+                    expenseDate: l.expense_date,
+                    categoryName: l.category_name,
+                    accountCode: l.account_code,
+                    accountName: l.account_name,
+                    description: l.description,
+                    amount: Number(l.amount),
+                    currencyCode: l.currency_code,
+                  })),
+                })}
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                title={`Expense Claim ${claim.claim_number}`}
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                padding: '14px 20px',
+                borderTop: `1px solid ${theme.border}`,
+                flexShrink: 0,
+              }}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowPrintModal(false)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => printIframeRef.current?.contentWindow?.print()}
+              >
+                Print / Save as PDF
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
