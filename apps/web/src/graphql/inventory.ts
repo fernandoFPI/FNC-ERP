@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client'
 
 export const PRODUCTS_QUERY = gql`
-  query Products($category: String) {
-    products(category: $category) {
+  query Products($category: String, $companyId: ID) {
+    products(category: $category, companyId: $companyId) {
       id
       sku
       name
@@ -90,8 +90,8 @@ export const PENDING_PRODUCT_CATALOG_ITEMS_QUERY = gql`
 `
 
 export const CREATE_PRODUCT_FROM_PENDING_CATALOG_ITEM = gql`
-  mutation CreateProductFromPendingCatalogItem($id: ID!, $input: ProductInput!) {
-    createProductFromPendingCatalogItem(id: $id, input: $input) {
+  mutation CreateProductFromPendingCatalogItem($id: ID!, $input: ProductInput!, $companyId: ID) {
+    createProductFromPendingCatalogItem(id: $id, input: $input, companyId: $companyId) {
       id
       sku
       name
@@ -100,8 +100,21 @@ export const CREATE_PRODUCT_FROM_PENDING_CATALOG_ITEM = gql`
 `
 
 export const LINK_PENDING_CATALOG_ITEM_TO_PRODUCT = gql`
-  mutation LinkPendingCatalogItemToProduct($id: ID!, $productId: ID!) {
-    linkPendingCatalogItemToProduct(id: $id, productId: $productId)
+  mutation LinkPendingCatalogItemToProduct($id: ID!, $productId: ID!, $companyId: ID) {
+    linkPendingCatalogItemToProduct(id: $id, productId: $productId, companyId: $companyId)
+  }
+`
+
+// Every company the CALLING user has an active role in — powers the
+// cross-company target picker on New Items to Catalog (a company with no
+// physical inventory of its own can resolve a pending item straight into
+// another company's catalog, e.g. its factory's).
+export const MY_COMPANIES_QUERY = gql`
+  query MyCompanies {
+    myCompanies {
+      id
+      name
+    }
   }
 `
 

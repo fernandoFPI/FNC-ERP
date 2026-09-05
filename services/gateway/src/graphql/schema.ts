@@ -9,7 +9,7 @@
     trialBalance(as_of_date: String): [TrialBalanceLine]
 
     # Inventory
-    products(category: String): [Product]
+    products(category: String, companyId: ID): [Product]
     stockBalances(product_id: ID, location_id: ID): [StockBalance]
     poStockAvailability(poId: ID!): [POLineAvailability!]!
     moMissingComponents(moId: ID!): [MOComponentStatus!]!
@@ -2050,6 +2050,7 @@
     callerIsBuyer: Boolean
     callerHasStorePricingPosition: Boolean
     callerHasMarketPricingPosition: Boolean
+    callerHasStoreKeeperPosition: Boolean
     callerIsFinanceTeam: Boolean
     # True when the caller isn't the organizer, an admin, the finance team (once
     # at finance_audit+), or a position holder matching the PO's current stage —
@@ -2361,8 +2362,8 @@
     createStockLocation(input: LocationInput!): StockLocation!
     createManualTransfer(input: TransferInput!): StockMove!
     createStockAdjustment(input: StockAdjustmentInput!): StockMove!
-    createProductFromPendingCatalogItem(id: ID!, input: ProductInput!): Product!
-    linkPendingCatalogItemToProduct(id: ID!, productId: ID!): Boolean!
+    createProductFromPendingCatalogItem(id: ID!, input: ProductInput!, companyId: ID): Product!
+    linkPendingCatalogItemToProduct(id: ID!, productId: ID!, companyId: ID): Boolean!
   }
 
   # ── Phase 4: Projects ────────────────────────────────────────
@@ -3995,6 +3996,11 @@
   extend type Query {
     userPermissions(userId: ID!, companyId: ID!): UserPermissionsResult!
     userCompanies(userId: ID!): [CompanyRef!]!
+    # Every company the CALLING user (not an arbitrary userId, unlike
+    # userCompanies above) has an active role in — used to populate
+    # cross-company target pickers (e.g. resolving a pending catalog item
+    # into a different company's product catalog).
+    myCompanies: [CompanyRef!]!
     roleTemplates: [RoleTemplate!]!
     roleTemplate(id: ID!): RoleTemplate
     userPOPositions(userId: ID!): [POPositionAssignment!]!

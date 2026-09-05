@@ -6,6 +6,7 @@ import {
   CREATE_PRODUCT_FROM_PENDING_CATALOG_ITEM,
   LINK_PENDING_CATALOG_ITEM_TO_PRODUCT,
   PRODUCTS_QUERY,
+  MY_COMPANIES_QUERY,
 } from '../../../graphql/inventory'
 import { GET_USER_PO_POSITIONS } from '../../../graphql/permissions'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -20,6 +21,7 @@ import { EmptyState } from '../../../components/ui/EmptyState'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuth } from '../../../hooks/useAuth'
 import { usePermission } from '../../../hooks/usePermission'
+import { useCompanyStore } from '../../../store/companyStore'
 import { formatDate } from '../../../lib/format'
 
 // Matches the real store list in use across the product catalog — see
@@ -77,12 +79,18 @@ interface ProductOption {
   sku: string
 }
 
+interface CompanyOption {
+  id: string
+  name: string
+}
+
 export default function PendingCatalogItemsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
   const { user } = useAuth()
   const { isSystemLevel } = usePermission()
+  const activeCompanyId = useCompanyStore((s) => s.activeCompany?.id)
 
   const { data: posData, loading: posLoading } = useQuery<{
     userPOPositions: UserPOPosition[]
@@ -102,7 +110,7 @@ export default function PendingCatalogItemsPage() {
     PENDING_PRODUCT_CATALOG_ITEMS_QUERY,
     { fetchPolicy: 'cache-and-network', skip: !canResolve },
   )
-  const { data: productsData } = useQuery<{ products: ProductOption[] }>(PRODUCTS_QUERY, {
+  const { data: companiesData } = useQuery<{ myCompanies: CompanyOption[] }>(MY_COMPANIES_QUERY, {
     skip: !canResolve,
   })
   const [createProduct, { loading: creating }] = useMutation(
@@ -121,13 +129,25 @@ export default function PendingCatalogItemsPage() {
     sku: '',
   })
   const [linkProductId, setLinkProductId] = useState('')
+  // Which company's catalog this resolution should land in — defaults to the
+  // pending item's own (current) company; the store keeper can point it at a
+  // different company they hold a role in (e.g. the factory that actually
+  // carries inventory for a company that doesn't run its own).
+  const [targetCompanyId, setTargetCompanyId] = useState('')
+
+  const { data: productsData } = useQuery<{ products: ProductOption[] }>(PRODUCTS_QUERY, {
+    variables: { companyId: targetCompanyId || undefined },
+    skip: !canResolve || mode !== 'link',
+  })
 
   const items = data?.pendingProductCatalogItems ?? []
   const products = productsData?.products ?? []
+  const companies = companiesData?.myCompanies ?? []
 
   function openNew(item: PendingItem) {
     setExpandedId(item.id)
     setMode('new')
+    setTargetCompanyId(activeCompanyId ?? '')
     setNewForm({
       name: item.description,
       name_ar: ARABIC_RE.test(item.description) ? item.description : '',
@@ -141,6 +161,7 @@ export default function PendingCatalogItemsPage() {
   function openLink(item: PendingItem) {
     setExpandedId(item.id)
     setMode('link')
+    setTargetCompanyId(activeCompanyId ?? '')
     setLinkProductId('')
   }
 
@@ -163,6 +184,7 @@ export default function PendingCatalogItemsPage() {
             uom: newForm.uom.trim() || 'unit',
             sku: newForm.sku.trim() || undefined,
           },
+          companyId: targetCompanyId && targetCompanyId !== activeCompanyId ? targetCompanyId : undefined,
         },
       })
       addToast({ type: 'success', message: 'Product added to catalog' })
@@ -176,7 +198,13 @@ export default function PendingCatalogItemsPage() {
   async function handleLink(item: PendingItem) {
     if (!linkProductId) return
     try {
-      await linkProduct({ variables: { id: item.id, productId: linkProductId } })
+      await linkProduct({
+        variables: {
+          id: item.id,
+          productId: linkProductId,
+          companyId: targetCompanyId && targetCompanyId !== activeCompanyId ? targetCompanyId : undefined,
+        },
+      })
       addToast({ type: 'success', message: 'Linked to existing product' })
       closeExpanded()
       void refetch()
@@ -354,6 +382,19 @@ export default function PendingCatalogItemsPage() {
                       gap: '12px',
                     }}
                   >
+                    {companies.length > 1 && (
+                      <Select
+                        label="Catalog company"
+                        value={targetCompanyId}
+                        onChange={(e) => setTargetCompanyId(e.target.value)}
+                      >
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
                     <div
                       style={{
                         display: 'grid',
@@ -453,6 +494,22 @@ export default function PendingCatalogItemsPage() {
                       gap: '12px',
                     }}
                   >
+                    {companies.length > 1 && (
+                      <Select
+                        label="Catalog company"
+                        value={targetCompanyId}
+                        onChange={(e) => {
+                          setTargetCompanyId(e.target.value)
+                          setLinkProductId('')
+                        }}
+                      >
+                        {companies.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
                     <SearchableSelect
                       value={linkProductId}
                       onChange={setLinkProductId}

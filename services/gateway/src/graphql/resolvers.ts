@@ -1567,17 +1567,19 @@ async function isUserFinanceTeamGW(userId: string, companyId: string): Promise<b
 // Whether the caller holds whatever authority actually gates *acting* on the
 // PO's current stage — mirrors each stage's own mutation-level check exactly
 // (submitPOStorePricing, submitPOMarketPricing, submitPOPriceVerification,
-// approvePO, approveStockIssuance, markPOLineBought) so PO-detail visibility
-// and the ability to act on it never disagree. Stages with no dedicated
-// position (draft, inventory_check, approved, goods_received, and terminal
-// states) fall through to false — those are organizer/admin-only, handled by
-// the caller alongside this check.
+// approvePO, approveStockIssuance, markPOLineBought, confirmPOInventoryCheck)
+// so PO-detail visibility and the ability to act on it never disagree.
+// Stages with no dedicated position (draft, approved, goods_received, and
+// terminal states) fall through to false — those are organizer/admin-only,
+// handled by the caller alongside this check.
 async function callerHasCurrentStagePositionGW(
   auth: GWAuth,
   poId: string,
   status: string,
 ): Promise<boolean> {
   switch (status) {
+    case 'inventory_check':
+      return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_keeper')
     case 'store_pricing':
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_pricing')
     case 'market_pricing':
@@ -1723,6 +1725,13 @@ async function fetchFullPurchaseOrderGW(
   const callerHasMarketPricingPosition =
     isAdminForBuyer ||
     (await userHasPositionGW(auth.userId, auth.companyId, id, 'procurement_officer'))
+  // Mirrors confirmPOInventoryCheck's own authorization exactly (organizer OR
+  // store_keeper position, no separate fallback), so the Inventory Check
+  // "Next Step" panel can hide its actionable form client-side for a viewer
+  // who can now read the PO at this stage (see callerHasCurrentStagePositionGW)
+  // but isn't actually allowed to confirm it.
+  const callerHasStoreKeeperPosition =
+    isAdminForBuyer || (await userHasPositionGW(auth.userId, auth.companyId, id, 'store_keeper'))
   // Lets the frontend hide the Finance Audit / Invoiced "Next Step" action
   // panels from an organizer who can now read a late-stage PO but isn't
   // finance team — read access to their own PO, not audit/invoicing
@@ -1773,6 +1782,7 @@ async function fetchFullPurchaseOrderGW(
     callerIsBuyer,
     callerHasStorePricingPosition,
     callerHasMarketPricingPosition,
+    callerHasStoreKeeperPosition,
     callerIsFinanceTeam,
   }
 }
@@ -2014,6 +2024,49 @@ function resolveReportCompanyIdGW(
     throw new Error("Forbidden: cannot view another company's data")
   }
   return cid
+}
+
+// Every company the caller has an active user_company_roles row in, plus
+// their own current company unconditionally (mirrors confirmPOInventoryCheck's
+// "PO's own company OR a company the caller has a role in" rule) — or every
+// company, for system_admin. Backs cross-company target pickers such as
+// resolving a pending catalog item into a different company's catalog.
+async function getCallerCompaniesGW(auth: {
+  userId: string
+  companyId: string
+  role: string
+}): Promise<{ id: string; name: string }[]> {
+  if (auth.role === 'system_admin') {
+    const r = await query<{ id: string; name: string }>(`SELECT id, name FROM companies ORDER BY name`)
+    return r.rows
+  }
+  const r = await query<{ id: string; name: string }>(
+    `SELECT DISTINCT c.id, c.name FROM companies c
+     WHERE c.id = $2
+        OR EXISTS (
+          SELECT 1 FROM user_company_roles ucr
+          WHERE ucr.user_id=$1 AND ucr.company_id=c.id AND ucr.is_active=true
+        )
+     ORDER BY c.name`,
+    [auth.userId, auth.companyId],
+  )
+  return r.rows
+}
+
+// Verifies companyId is one of the companies getCallerCompaniesGW would
+// return, without fetching the whole list — the access check the
+// cross-company catalog-resolution mutations gate on.
+async function callerHasCompanyAccessGW(
+  auth: { userId: string; companyId: string; role: string },
+  companyId: string,
+): Promise<boolean> {
+  if (auth.role === 'system_admin') return true
+  if (companyId === auth.companyId) return true
+  const r = await query(
+    `SELECT 1 FROM user_company_roles WHERE user_id=$1 AND company_id=$2 AND is_active=true LIMIT 1`,
+    [auth.userId, companyId],
+  )
+  return !!r.rows[0]
 }
 
 // ── PO notification helpers ──────────────────────────────────────────────────
@@ -4106,8 +4159,26 @@ export const resolvers = {
     },
 
     // Inventory
-    products: async (_: unknown, args: { category?: string }, ctx: GQLContext) => {
+    products: async (_: unknown, args: { category?: string; companyId?: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
+      // An explicit companyId targets a DIFFERENT company's own catalog outright
+      // (e.g. browsing Nishtimani Factory's products while resolving an Al
+      // Watanyia PO's pending catalog item into it) — gated the same way as
+      // confirmPOInventoryCheck's cross-company location pick. This skips the
+      // own-company stock-rollup logic below, which answers a different
+      // question ("what do I have on hand, including interco'd-in stock").
+      if (args.companyId && args.companyId !== ctx.auth.companyId) {
+        if (!(await callerHasCompanyAccessGW(ctx.auth, args.companyId)))
+          throw new Error('Company not found or not accessible to you')
+        let sql = `SELECT p.*, 0 AS qty_on_hand FROM products p WHERE p.company_id = $1`
+        const params: unknown[] = [args.companyId]
+        if (args.category !== undefined) {
+          sql += ` AND p.category = $2`
+          params.push(args.category)
+        }
+        sql += ' ORDER BY p.sku'
+        return (await query(sql, params)).rows
+      }
       // Include both this company's own products AND foreign products that have
       // physical stock in this company's locations (e.g. from interco transfers)
       let sql = `SELECT p.*,
@@ -4158,11 +4229,11 @@ export const resolvers = {
       const auth = ctx.auth as GWAuth
       // Same visibility gate as purchaseOrder(id) itself — this query is only
       // ever fetched while a PO is in inventory_check (see the frontend's
-      // skip condition), so it's organizer/admin-only, matching
-      // confirmPOInventoryCheck's own "only the PO owner" authorization.
-      // Without this, a restricted viewer could still pull line names,
-      // quantities, and stock levels through this side channel even though
-      // purchaseOrder(id) itself now withholds them.
+      // skip condition), so it's organizer/admin/store-keeper-position only,
+      // matching confirmPOInventoryCheck's own authorization. Without this, a
+      // restricted viewer could still pull line names, quantities, and stock
+      // levels through this side channel even though purchaseOrder(id)
+      // itself now withholds them.
       const gatePoRow = await query<{ status: string }>(
         `SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`,
         [args.poId, auth.companyId],
@@ -4530,10 +4601,12 @@ export const resolvers = {
            WHERE po.company_id = $1
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
-               -- Inventory check is confirmed by the PO's organizer, not a
-               -- store_keeper position, so it belongs alongside their other
-               -- owner-actioned statuses here rather than a position lookup.
+               -- Inventory check is confirmed by the PO's organizer OR a
+               -- store_keeper position (see confirmPOInventoryCheck) — kept
+               -- alongside the other owner-actioned statuses for the
+               -- organizer clause, plus its own position lookup below.
                (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
+               OR (po.status = 'inventory_check' AND ${positionScope('store_keeper')})
                OR (po.status = 'items_bought' AND (
                  po.assigned_buyer_user_id = $2
                  OR ${positionScope('buyer')}
@@ -7683,6 +7756,11 @@ export const resolvers = {
       return res.rows.map((r: Record<string, string>) => ({ id: r.id, name: r.name }))
     },
 
+    myCompanies: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      return getCallerCompaniesGW(ctx.auth as GWAuth)
+    },
+
     roleTemplates: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const res = await query(`SELECT * FROM role_templates ORDER BY is_system DESC, name ASC`)
@@ -9947,7 +10025,7 @@ export const resolvers = {
     // when it arrived (confirmReceipt/recordDirectDelivery).
     createProductFromPendingCatalogItem: async (
       _: unknown,
-      args: { id: string; input: Record<string, unknown> },
+      args: { id: string; input: Record<string, unknown>; companyId?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -9956,6 +10034,14 @@ export const resolvers = {
         !(await callerHasCompanyWideStoreKeeper(ctx.auth.userId, ctx.auth.companyId))
       )
         throw new Error('Company-wide Store Keeper position required')
+      // The pending item itself is always looked up under the caller's own
+      // company (it belongs to a PO raised there) — only the PRODUCT this
+      // resolves into can target a different company, e.g. when the caller's
+      // company (Al Watanyia) doesn't run its own inventory and the item
+      // really belongs in another company's catalog (Nishtimani Factory).
+      const targetCompanyId = args.companyId || ctx.auth.companyId
+      if (targetCompanyId !== ctx.auth.companyId && !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId)))
+        throw new Error('Target company not found or not accessible to you')
       const pendingRes = await query(
         `SELECT * FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
         [args.id, ctx.auth.companyId],
@@ -9973,8 +10059,8 @@ export const resolvers = {
       const sku =
         manualSku ||
         (generated
-          ? await nextDocumentNumber(ctx.auth.companyId, `product_${generated.slug}`, generated.prefix)
-          : await nextDocumentNumber(ctx.auth.companyId, 'product', 'PRD'))
+          ? await nextDocumentNumber(targetCompanyId, `product_${generated.slug}`, generated.prefix)
+          : await nextDocumentNumber(targetCompanyId, 'product', 'PRD'))
 
       return withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
@@ -9985,7 +10071,7 @@ export const resolvers = {
                last_market_price,last_market_price_currency,last_market_price_at)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'last_cost',true,$9,$10,${hasPrice ? 'NOW()' : 'NULL'}) RETURNING *`,
             [
-              ctx.auth!.companyId,
+              targetCompanyId,
               sku,
               i.name,
               i.name_ar ?? null,
@@ -10015,14 +10101,14 @@ export const resolvers = {
           }
           await logAudit({
             userId: ctx.auth!.userId,
-            companyId: ctx.auth!.companyId,
+            companyId: targetCompanyId,
             action: 'CATALOG_NEW_PRODUCT_FROM_PO',
             tableName: 'products',
             recordId: product.id as string,
             newValues: { fromDescription: pending.description, poLineId: pending.po_line_id },
             client,
           })
-          void publishEntityChanged(ctx.auth!.companyId, 'product', product.id as string, 'created')
+          void publishEntityChanged(targetCompanyId, 'product', product.id as string, 'created')
           return product
         },
       )
@@ -10033,7 +10119,7 @@ export const resolvers = {
     // description — links the PO line to it instead of creating a duplicate.
     linkPendingCatalogItemToProduct: async (
       _: unknown,
-      args: { id: string; productId: string },
+      args: { id: string; productId: string; companyId?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -10042,6 +10128,12 @@ export const resolvers = {
         !(await callerHasCompanyWideStoreKeeper(ctx.auth.userId, ctx.auth.companyId))
       )
         throw new Error('Company-wide Store Keeper position required')
+      // Same rule as createProductFromPendingCatalogItem: the pending item is
+      // always the caller's own company's, but the existing product it links
+      // to may live in a different company the caller has a role in.
+      const targetCompanyId = args.companyId || ctx.auth.companyId
+      if (targetCompanyId !== ctx.auth.companyId && !(await callerHasCompanyAccessGW(ctx.auth, targetCompanyId)))
+        throw new Error('Target company not found or not accessible to you')
       const pendingRes = await query(
         `SELECT * FROM pending_product_catalog_items WHERE id=$1 AND company_id=$2 AND status='pending'`,
         [args.id, ctx.auth.companyId],
@@ -10050,7 +10142,7 @@ export const resolvers = {
       if (!pending) throw new Error('Pending catalog item not found (or already resolved)')
       const productCheck = await query(`SELECT id FROM products WHERE id=$1 AND company_id=$2`, [
         args.productId,
-        ctx.auth.companyId,
+        targetCompanyId,
       ])
       if (!productCheck.rows[0]) throw new Error('Product not found')
 
@@ -10080,14 +10172,14 @@ export const resolvers = {
           }
           await logAudit({
             userId: ctx.auth!.userId,
-            companyId: ctx.auth!.companyId,
+            companyId: targetCompanyId,
             action: 'CATALOG_LINK_EXISTING_PRODUCT_FROM_PO',
             tableName: 'products',
             recordId: args.productId,
             newValues: { fromDescription: pending.description, poLineId: pending.po_line_id },
             client,
           })
-          void publishEntityChanged(ctx.auth!.companyId, 'product', args.productId, 'updated')
+          void publishEntityChanged(targetCompanyId, 'product', args.productId, 'updated')
           return true
         },
       )
@@ -26204,10 +26296,9 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    // No notification needed here: the organizer both submits this step and
-    // is now the only one who confirms it (see confirmPOInventoryCheck), so
-    // there's no other party to alert — they'll find it in My Queue when
-    // they're ready to act.
+    // No push notification here: whoever ends up confirming it — the
+    // organizer, or a store_keeper holding the position (see
+    // confirmPOInventoryCheck) — will find it in My PO Queue.
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -26225,7 +26316,9 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
-    if (!isAdmin && !isOrganizer) throw new Error('Only the PO owner can confirm the inventory check')
+    const isStoreKeeper = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
+    if (!isAdmin && !isOrganizer && !isStoreKeeper)
+      throw new Error('Only the PO owner or a Store Keeper can confirm the inventory check')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const isSysAdmin = auth.role === 'system_admin'
 

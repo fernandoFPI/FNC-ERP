@@ -24,8 +24,15 @@ export const ALLOWED_TYPES: Record<string, string[]> = {
     'application/x-7z-compressed',
   ],
   report: ['application/pdf'],
-  po_receipt_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
-  po_receipt_document: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
+  po_receipt_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'],
+  po_receipt_document: [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+    'application/pdf',
+  ],
   po_return_damage_photo: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
   recharge_proof: ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'],
 }

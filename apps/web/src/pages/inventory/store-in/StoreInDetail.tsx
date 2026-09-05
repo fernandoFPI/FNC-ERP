@@ -95,6 +95,7 @@ export default function StoreInDetail() {
   const cameraInputRef = useRef<HTMLInputElement>(null)
   const captureKindRef = useRef<PhotoKind>('materials')
   const [uploadingKind, setUploadingKind] = useState<PhotoKind | null>(null)
+  const [dragOverKind, setDragOverKind] = useState<PhotoKind | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
 
@@ -156,37 +157,57 @@ export default function StoreInDetail() {
     fileInputRef.current?.click()
   }
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    const kind = captureKindRef.current
-    if (fileInputRef.current) fileInputRef.current.value = ''
-    if (cameraInputRef.current) cameraInputRef.current.value = ''
-    if (!file) return
+  async function uploadOneFile(file: File, kind: PhotoKind): Promise<void> {
+    const regResp = await api.post<{ fileId: string }>('/files/upload-url', {
+      filename: file.name,
+      mimeType: file.type || 'image/jpeg',
+      sizeBytes: file.size,
+      category: PHOTO_CATEGORY[kind],
+    })
+    const { fileId } = regResp.data
+    await api.post(`/files/${fileId}/content`, file, {
+      headers: { 'Content-Type': file.type || 'image/jpeg' },
+    })
+    await attachReceiptPhoto({
+      variables: {
+        receiptId: receipt!.id,
+        fileId,
+        label: kind === 'vendor_receipt' ? 'Vendor Receipt' : 'Materials Received',
+      },
+    })
+  }
+
+  async function uploadFiles(files: File[], kind: PhotoKind): Promise<void> {
+    if (files.length === 0) return
     setUploadingKind(kind)
     try {
-      const regResp = await api.post<{ fileId: string }>('/files/upload-url', {
-        filename: file.name,
-        mimeType: file.type || 'image/jpeg',
-        sizeBytes: file.size,
-        category: PHOTO_CATEGORY[kind],
-      })
-      const { fileId } = regResp.data
-      await api.post(`/files/${fileId}/content`, file, {
-        headers: { 'Content-Type': file.type || 'image/jpeg' },
-      })
-      await attachReceiptPhoto({
-        variables: {
-          receiptId: receipt!.id,
-          fileId,
-          label: kind === 'vendor_receipt' ? 'Vendor Receipt' : 'Materials Received',
-        },
-      })
-      await refetch()
+      for (const file of files) {
+        await uploadOneFile(file, kind)
+      }
     } catch (err) {
       addToast({ type: 'error', message: apiErrMsg(err, 'Photo upload failed') })
     } finally {
+      // Always refetch, even after a mid-batch failure — files uploaded
+      // before the one that failed are already attached server-side and
+      // should show up immediately rather than staying invisible until some
+      // unrelated refetch happens to fire later.
+      await refetch()
       setUploadingKind(null)
     }
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    const kind = captureKindRef.current
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    if (cameraInputRef.current) cameraInputRef.current.value = ''
+    await uploadFiles(files, kind)
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>, kind: PhotoKind) {
+    e.preventDefault()
+    setDragOverKind(null)
+    void uploadFiles(Array.from(e.dataTransfer.files ?? []), kind)
   }
 
   async function handleDownload(photo: ReceiptPhoto) {
@@ -220,8 +241,32 @@ export default function StoreInDetail() {
   function renderPhotoSection(kind: PhotoKind, label: string, hint: string) {
     const category = PHOTO_CATEGORY[kind]
     const photos = receipt!.photos.filter((p) => p.category === category)
+    const isDragOver = dragOverKind === kind
     return (
-      <div style={{ marginBottom: '16px' }}>
+      <div
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragOverKind(kind)
+        }}
+        onDragLeave={(e) => {
+          // dragleave fires when the pointer moves onto a CHILD element too
+          // (button, existing-photo row) — only actually clear the highlight
+          // once the pointer has left the whole zone, or it flickers on/off
+          // while dragging over its contents.
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+          setDragOverKind((prev) => (prev === kind ? null : prev))
+        }}
+        onDrop={(e) => handleDrop(e, kind)}
+        style={{
+          marginBottom: '16px',
+          padding: isDragOver ? '10px' : 0,
+          borderRadius: '8px',
+          background: isDragOver ? 'rgba(37,99,235,0.06)' : 'transparent',
+          outline: isDragOver ? `2px dashed ${theme.accent}` : 'none',
+          outlineOffset: '2px',
+          transition: 'background 0.15s, outline 0.15s',
+        }}
+      >
         <div
           style={{
             fontWeight: 600,
@@ -293,10 +338,12 @@ export default function StoreInDetail() {
             loading={uploadingKind === kind}
             onClick={() => openGallery(kind)}
           >
-            + Add Photo
+            + Add Photo / PDF
           </Button>
         </div>
-        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>{hint}</div>
+        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+          {hint} Or drag &amp; drop files onto this section.
+        </div>
       </div>
     )
   }
@@ -448,7 +495,7 @@ export default function StoreInDetail() {
           {renderPhotoSection(
             'vendor_receipt',
             'Vendor Receipt',
-            "Photo or scan of the vendor's actual receipt or invoice document.",
+            "Photo, scan, or PDF of the vendor's actual receipt or invoice document.",
           )}
           {renderPhotoSection(
             'materials',
@@ -502,7 +549,8 @@ export default function StoreInDetail() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,application/pdf"
+        multiple
         style={{ display: 'none' }}
         onChange={(e) => void handleFileSelect(e)}
       />

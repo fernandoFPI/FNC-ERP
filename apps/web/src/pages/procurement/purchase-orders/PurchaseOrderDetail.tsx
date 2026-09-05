@@ -192,6 +192,7 @@ export interface PO {
   callerIsBuyer?: boolean | null
   callerHasStorePricingPosition?: boolean | null
   callerHasMarketPricingPosition?: boolean | null
+  callerHasStoreKeeperPosition?: boolean | null
   callerIsFinanceTeam?: boolean | null
   expected_delivery_date?: string
   notes?: string
@@ -2043,15 +2044,37 @@ export default function PurchaseOrderDetail() {
                   </Button>
                 ))}
 
-              {po.status === 'inventory_check' && (
-                <div
-                  data-tour="po-inventory-check"
-                  style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                      Stock Availability
-                    </div>
+              {po.status === 'inventory_check' &&
+                (() => {
+                  const canConfirmInventory =
+                    isSystemLevel ||
+                    po.organizer_id === currentUserId ||
+                    !!po.callerHasStoreKeeperPosition
+                  if (!canConfirmInventory)
+                    return (
+                      <div
+                        style={{
+                          padding: '12px 14px',
+                          borderRadius: '8px',
+                          background: theme.bgSurface,
+                          border: `1px solid ${theme.border}`,
+                          fontSize: '13px',
+                          color: theme.textMuted,
+                        }}
+                      >
+                        This PO is waiting on Inventory Check. Only the organizer or someone
+                        holding the Store Keeper position (or an admin) can confirm it here.
+                      </div>
+                    )
+                  return (
+                    <div
+                      data-tour="po-inventory-check"
+                      style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                          Stock Availability
+                        </div>
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                       Enter the quantity to take from stock for each line — the rest will be
                       purchased.
@@ -2305,8 +2328,9 @@ export default function PurchaseOrderDetail() {
                   >
                     Confirm inventory check
                   </Button>
-                </div>
-              )}
+                    </div>
+                  )
+                })()}
 
               {po.status === 'ready_to_issue' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

@@ -1,6 +1,7 @@
 ﻿import { useQuery } from '@apollo/client'
 import { useNavigate } from 'react-router-dom'
 import { MY_PO_QUEUE_QUERY } from '../../../graphql/procurement'
+import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -36,6 +37,7 @@ export default function MyPOQueue() {
   const { isPhone } = useBreakpoint()
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
+  const currentUserId = useAuthStore((s) => s.user?.id)
 
   const { data, loading, refetch } = useQuery(MY_PO_QUEUE_QUERY, {
     fetchPolicy: 'cache-and-network',
@@ -102,7 +104,13 @@ export default function MyPOQueue() {
       render: (item) => {
         const action = PO_STATUS_ACTIONS[item.status]
         let label = '—'
-        if (action?.requiredPosition) {
+        // inventory_check is the one status where both isOrganizer and
+        // requiredPosition are set (organizer OR store_keeper can confirm)
+        // — attribute the row to whichever one actually got it here for
+        // this viewer, instead of always naming the position.
+        if (action?.isOrganizer && item.organizer_id === currentUserId) {
+          label = 'Organizer'
+        } else if (action?.requiredPosition) {
           label = action.requiredPosition.replace(/_/g, ' ')
           label = label.charAt(0).toUpperCase() + label.slice(1)
         } else if (action?.isOrganizer) {

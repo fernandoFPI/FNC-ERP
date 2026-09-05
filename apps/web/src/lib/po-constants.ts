@@ -32,7 +32,7 @@ export const PO_POSITIONS = [
     key: 'store_keeper',
     label: 'Store Keeper',
     description:
-      'Approves stock issuance (Store Out). Does not gate any purchase order stage — inventory check is confirmed by the PO organizer instead.',
+      'Approves stock issuance (Store Out) and confirms Inventory Check (alongside the PO organizer).',
   },
   {
     key: 'store_pricing',
@@ -77,8 +77,10 @@ export const PO_STATUS_ACTIONS: Record<
   },
   inventory_check: {
     label: 'Confirm inventory check',
-    description: 'The organizer confirms which items are available in stock',
+    description:
+      'The organizer or a Store Keeper confirms which items are available in stock',
     isOrganizer: true,
+    requiredPosition: 'store_keeper',
   },
   store_pricing: {
     label: 'Submit store pricing',

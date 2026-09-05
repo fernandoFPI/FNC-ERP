@@ -213,6 +213,7 @@ export default function ReceiptForm() {
   const [initialized, setInitialized] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([])
+  const [dragOverKind, setDragOverKind] = useState<PhotoKind | null>(null)
   // If recordDirectDelivery succeeds but a photo upload fails, retrying
   // submit should only retry the failed photos — not record the delivery
   // (and double-count qty_received/cost) a second time.
@@ -334,9 +335,7 @@ export default function ReceiptForm() {
     fileInputRef.current?.click()
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    const kind = captureKindRef.current
+  function addFiles(files: File[], kind: PhotoKind) {
     const newPhotos: PendingPhoto[] = files.map((f) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file: f,
@@ -346,8 +345,18 @@ export default function ReceiptForm() {
       uploading: false,
     }))
     setPendingPhotos((prev) => [...prev, ...newPhotos])
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    addFiles(Array.from(e.target.files ?? []), captureKindRef.current)
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>, kind: PhotoKind) {
+    e.preventDefault()
+    setDragOverKind(null)
+    addFiles(Array.from(e.dataTransfer.files ?? []), kind)
   }
 
   function removePhoto(photoId: string) {
@@ -381,21 +390,80 @@ export default function ReceiptForm() {
 
   function renderPhotoGrid(kind: PhotoKind) {
     const photos = pendingPhotos.filter((p) => p.kind === kind)
+    const isDragOver = dragOverKind === kind
     return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+      <div
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragOverKind(kind)
+        }}
+        onDragLeave={(e) => {
+          // dragleave fires when the pointer moves onto a CHILD element too
+          // (button, thumbnail) — only actually clear the highlight once the
+          // pointer has left the whole zone, or it flickers on/off while
+          // dragging over its contents.
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+          setDragOverKind((prev) => (prev === kind ? null : prev))
+        }}
+        onDrop={(e) => handleDrop(e, kind)}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '12px',
+          marginBottom: '12px',
+          padding: isDragOver ? '10px' : 0,
+          borderRadius: '8px',
+          background: isDragOver ? 'rgba(37,99,235,0.06)' : 'transparent',
+          outline: isDragOver ? `2px dashed ${BRAND_BLUE}` : 'none',
+          outlineOffset: '2px',
+          transition: 'background 0.15s, outline 0.15s',
+        }}
+      >
         {photos.map((photo) => (
           <div key={photo.id} style={{ position: 'relative', width: '140px' }}>
-            <img
-              src={photo.previewUrl}
-              alt={photo.file.name}
-              style={{
-                width: '140px',
-                height: '100px',
-                objectFit: 'cover',
-                borderRadius: '6px',
-                border: `1px solid ${theme.border}`,
-              }}
-            />
+            {photo.file.type === 'application/pdf' ? (
+              <div
+                style={{
+                  width: '140px',
+                  height: '100px',
+                  borderRadius: '6px',
+                  border: `1px solid ${theme.border}`,
+                  background: theme.bgSurface,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px',
+                  padding: '6px',
+                }}
+              >
+                <span style={{ fontSize: '28px' }}>📄</span>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    color: theme.textMuted,
+                    maxWidth: '120px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {photo.file.name}
+                </span>
+              </div>
+            ) : (
+              <img
+                src={photo.previewUrl}
+                alt={photo.file.name}
+                style={{
+                  width: '140px',
+                  height: '100px',
+                  objectFit: 'cover',
+                  borderRadius: '6px',
+                  border: `1px solid ${theme.border}`,
+                }}
+              />
+            )}
             {photo.uploading && (
               <div
                 style={{
@@ -500,7 +568,8 @@ export default function ReceiptForm() {
           }}
         >
           <span style={{ fontSize: '24px' }}>+</span>
-          <span>Add Photo</span>
+          <span>Add Photo / PDF</span>
+          <span style={{ fontSize: '10px' }}>or drag &amp; drop</span>
         </button>
       </div>
     )
@@ -1107,7 +1176,7 @@ export default function ReceiptForm() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   multiple
                   style={{ display: 'none' }}
                   onChange={handleFileSelect}
@@ -1122,7 +1191,7 @@ export default function ReceiptForm() {
                   </div>
                   {renderPhotoGrid('vendor_receipt')}
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>
-                    Photo or scan of the vendor's actual receipt or invoice document.
+                    Photo, scan, or PDF of the vendor's actual receipt or invoice document.
                   </div>
                 </Card>
 
