@@ -6120,10 +6120,10 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) return []
       await requirePermGW(ctx.auth, 'projects.contracts.view', 'view')
-      let sql = `SELECT pc.*,
+      let sql = `SELECT pc.*, p.code AS project_code, p.name AS project_name,
                         COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi WHERE pi.contract_id=pc.id AND pi.status!='cancelled'),0) AS total_invoiced,
                         COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip JOIN project_invoices pi2 ON pi2.id=pip.invoice_id WHERE pi2.contract_id=pc.id),0) AS total_paid
-                 FROM project_contracts pc WHERE pc.company_id=$1`
+                 FROM project_contracts pc JOIN projects p ON p.id = pc.project_id WHERE pc.company_id=$1`
       const params: unknown[] = [ctx.auth.companyId]
       let idx = 2
       if (args.projectId) {
@@ -6169,6 +6169,9 @@ export const resolvers = {
       })
       return rows.map((r) => ({
         id: r.id,
+        projectId: r.project_id,
+        projectCode: r.project_code,
+        projectName: r.project_name,
         contractNumber: r.contract_number,
         contractName: r.contract_name,
         clientName: r.client_name,
@@ -6192,10 +6195,10 @@ export const resolvers = {
       if (!ctx.auth) return null
       await requirePermGW(ctx.auth, 'projects.contracts.view', 'view')
       const c = await query(
-        `SELECT pc.*,
+        `SELECT pc.*, p.code AS project_code, p.name AS project_name,
                 COALESCE((SELECT SUM(pi.gross_total) FROM project_invoices pi WHERE pi.contract_id=pc.id AND pi.status!='cancelled'),0) AS total_invoiced,
                 COALESCE((SELECT SUM(pip.amount) FROM project_invoice_payments pip JOIN project_invoices pi2 ON pi2.id=pip.invoice_id WHERE pi2.contract_id=pc.id),0) AS total_paid
-         FROM project_contracts pc WHERE pc.id=$1 AND pc.company_id=$2`,
+         FROM project_contracts pc JOIN projects p ON p.id = pc.project_id WHERE pc.id=$1 AND pc.company_id=$2`,
         [args.id, ctx.auth.companyId],
       )
       if (!c.rows[0]) return null
@@ -6210,6 +6213,9 @@ export const resolvers = {
       ])
       return {
         id: r.id,
+        projectId: r.project_id,
+        projectCode: r.project_code,
+        projectName: r.project_name,
         contractNumber: r.contract_number,
         contractName: r.contract_name,
         clientName: r.client_name,

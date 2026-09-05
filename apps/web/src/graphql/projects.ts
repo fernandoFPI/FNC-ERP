@@ -590,6 +590,9 @@ export const PROJECT_CONTRACTS_QUERY = gql`
   query ProjectContracts($projectId: ID, $status: String) {
     projectContracts(projectId: $projectId, status: $status) {
       id
+      projectId
+      projectCode
+      projectName
       contractNumber
       contractName
       clientName

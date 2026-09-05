@@ -12,6 +12,9 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 
 interface Contract {
   id: string
+  projectId: string
+  projectCode: string
+  projectName: string
   contractNumber: string
   contractName: string
   clientName: string
@@ -49,6 +52,15 @@ export default function ContractsPage() {
         >
           {c.contractNumber}
         </button>
+      ),
+    },
+    {
+      key: 'projectCode',
+      header: 'Project',
+      render: (c) => (
+        <span style={{ color: theme.textSecondary, fontSize: '13px' }}>
+          {[c.projectCode, c.projectName].filter(Boolean).join(' — ')}
+        </span>
       ),
     },
     {

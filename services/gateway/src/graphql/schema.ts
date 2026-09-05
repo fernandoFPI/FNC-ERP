@@ -1121,6 +1121,9 @@
 
   type ProjectContract {
     id: ID!
+    projectId: ID!
+    projectCode: String!
+    projectName: String!
     contractNumber: String!
     contractName: String!
     clientName: String!
