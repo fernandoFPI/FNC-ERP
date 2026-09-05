@@ -1723,6 +1723,13 @@ async function fetchFullPurchaseOrderGW(
   const callerHasMarketPricingPosition =
     isAdminForBuyer ||
     (await userHasPositionGW(auth.userId, auth.companyId, id, 'procurement_officer'))
+  // Lets the frontend hide the Finance Audit / Invoiced "Next Step" action
+  // panels from an organizer who can now read a late-stage PO but isn't
+  // finance team — read access to their own PO, not audit/invoicing
+  // authority. Mirrors hasFinanceApprovalGW/the viewerRestricted gate on
+  // purchaseOrder(id), which already use the same isUserFinanceTeamGW check.
+  const callerIsFinanceTeam =
+    isAdminForBuyer || (await isUserFinanceTeamGW(auth.userId, auth.companyId))
   let editRequests: unknown[] = []
   try {
     const er = await query(
@@ -1766,6 +1773,7 @@ async function fetchFullPurchaseOrderGW(
     callerIsBuyer,
     callerHasStorePricingPosition,
     callerHasMarketPricingPosition,
+    callerIsFinanceTeam,
   }
 }
 
@@ -7256,13 +7264,16 @@ export const resolvers = {
         // Visibility gate, decided before any of the substantive (pricing,
         // vendor, line) data is even queried — a client-side "hide this" was
         // never a real restriction since the full row was already on the
-        // wire. Mirrors the org's stated rule: organizer sees everything
-        // until finance_audit; a position holder only sees their own
-        // current-stage section; finance team only from finance_audit on;
-        // everyone else gets nothing. This gate is specific to the PO detail
-        // page — purchaseOrderForAction (Record Receipt, Create Return) has
-        // its own, unrelated authorization and deliberately doesn't go
-        // through this.
+        // wire. Mirrors the org's stated rule: organizer always sees the PO,
+        // including finance_audit onward now (they created it — read access
+        // to their own PO shouldn't lapse); a position holder only sees their
+        // own current-stage section; finance team from finance_audit on;
+        // everyone else gets nothing. The Finance Audit / Invoiced action
+        // panels themselves stay finance-team/admin only — see
+        // callerIsFinanceTeam, checked client-side on the PO detail page.
+        // This gate is specific to that page — purchaseOrderForAction
+        // (Record Receipt, Create Return) has its own, unrelated
+        // authorization and deliberately doesn't go through this.
         const gateRow = await query<{
           id: string
           po_number: string
@@ -7278,8 +7289,13 @@ export const resolvers = {
         const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
         const isFinanceTeam = await isUserFinanceTeamGW(auth.userId, auth.companyId)
         const isLateStage = ['finance_audit', 'invoiced', 'completed'].includes(poStub.status)
+        // Organizer is allowed to read a late-stage PO now (they created it —
+        // shouldn't lose visibility once it reaches finance), but the Finance
+        // Audit / Invoiced "Next Step" action panels stay finance-team/admin
+        // only client-side (see callerIsFinanceTeam) — this gate gives them
+        // read access, not audit/invoicing authority.
         const canView = isLateStage
-          ? isAdmin || isFinanceTeam
+          ? isAdmin || isFinanceTeam || isOrganizer
           : isAdmin ||
             isOrganizer ||
             (await callerHasCurrentStagePositionGW(auth, args.id, poStub.status))

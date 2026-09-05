@@ -2050,6 +2050,7 @@
     callerIsBuyer: Boolean
     callerHasStorePricingPosition: Boolean
     callerHasMarketPricingPosition: Boolean
+    callerIsFinanceTeam: Boolean
     # True when the caller isn't the organizer, an admin, the finance team (once
     # at finance_audit+), or a position holder matching the PO's current stage —
     # every field below this point is withheld server-side, not just hidden by

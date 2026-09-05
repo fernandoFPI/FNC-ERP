@@ -447,6 +447,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       callerIsBuyer
       callerHasStorePricingPosition
       callerHasMarketPricingPosition
+      callerIsFinanceTeam
       expected_delivery_date
       notes
       created_by_email

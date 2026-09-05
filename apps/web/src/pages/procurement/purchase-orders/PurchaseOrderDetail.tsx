@@ -192,6 +192,7 @@ export interface PO {
   callerIsBuyer?: boolean | null
   callerHasStorePricingPosition?: boolean | null
   callerHasMarketPricingPosition?: boolean | null
+  callerIsFinanceTeam?: boolean | null
   expected_delivery_date?: string
   notes?: string
   created_by_email?: string
@@ -3889,6 +3890,7 @@ export default function PurchaseOrderDetail() {
               )}
 
               {po.status === 'finance_audit' &&
+                (isSystemLevel || po.callerIsFinanceTeam) &&
                 (() => {
                   const flaggedCount = po.lines.filter((l) => l.audit_status === 'flagged').length
                   const pendingCount = po.lines.filter(
@@ -4482,6 +4484,7 @@ export default function PurchaseOrderDetail() {
                 })()}
 
               {po.status === 'invoiced' &&
+                (isSystemLevel || po.callerIsFinanceTeam) &&
                 (!po.funding_decided ? (
                   can('finance.ap.approve', 'approve') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
