@@ -11,6 +11,7 @@ import {
   FULFILL_RECHARGE_REQUEST,
   CONFIRM_RECHARGE_RECEIPT,
 } from '../../../graphql/recharge'
+import { EMPLOYEES_QUERY } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePagePadding } from '../../../hooks/usePagePadding'
@@ -49,7 +50,11 @@ interface RechargeBundle {
 
 interface RechargeRequest extends RechargeRequestSummary {
   companyId: string
-  requestedBy: string
+  // Null when filed for someone not yet in the system — see requestedForName.
+  requestedBy: string | null
+  requestedForName?: string | null
+  createdBy: string
+  createdByEmail?: string | null
   costCenterId: string
   bundleId: string
   notes?: string | null
@@ -70,9 +75,19 @@ interface MonthlySummaryEntry {
   requests: RechargeRequest[]
 }
 
-type TabKey = 'mine' | 'toFulfill' | 'summary'
+type TabKey = 'mine' | 'toFulfill' | 'filedByMe' | 'summary'
 
-const EMPTY_FORM = { bundleId: '', phoneNumber: '', notes: '' }
+// Sentinel value for the "Request for" picker's "someone not listed" option
+// — never a real user_id, so it can't collide with one.
+const EXTERNAL_RECIPIENT = '__external__'
+
+const EMPTY_FORM = {
+  bundleId: '',
+  phoneNumber: '',
+  notes: '',
+  requestedForUserId: '',
+  requestedForName: '',
+}
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -98,6 +113,10 @@ export default function RechargeRequestsPage() {
 
   const { data: costCenterData } = useQuery(RECHARGE_COST_CENTER_QUERY)
   const { data: bundlesData } = useQuery(RECHARGE_BUNDLES_QUERY, { variables: { activeOnly: true } })
+  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, {
+    variables: { is_active: true },
+    skip: !canAdmin,
+  })
   const {
     data: mineData,
     loading: mineLoading,
@@ -109,6 +128,15 @@ export default function RechargeRequestsPage() {
     refetch: refetchToFulfill,
   } = useQuery(RECHARGE_REQUESTS_QUERY, {
     variables: { scope: 'toFulfill' },
+    fetchPolicy: 'cache-and-network',
+  })
+  const {
+    data: filedByMeData,
+    loading: filedByMeLoading,
+    refetch: refetchFiledByMe,
+  } = useQuery(RECHARGE_REQUESTS_QUERY, {
+    variables: { scope: 'filedByMe' },
+    skip: !canAdmin,
     fetchPolicy: 'cache-and-network',
   })
 
@@ -134,27 +162,51 @@ export default function RechargeRequestsPage() {
   const [confirmReceipt, { loading: confirming }] = useMutation(CONFIRM_RECHARGE_RECEIPT)
 
   const bundles: RechargeBundle[] = bundlesData?.rechargeBundles ?? []
+  // Only employees with a linked login can be picked — they're the one who
+  // needs to confirm receipt in the app once the recharge arrives.
+  const employees: { id: string; first_name: string; last_name: string; user_id?: string | null }[] =
+    (employeesData?.employees ?? []).filter(
+      (e: { user_id?: string | null }) => !!e.user_id,
+    )
   const mine: RechargeRequest[] = mineData?.rechargeRequests ?? []
   const toFulfill: RechargeRequest[] = toFulfillData?.rechargeRequests ?? []
+  const filedByMe: RechargeRequest[] = filedByMeData?.rechargeRequests ?? []
   const summary: MonthlySummaryEntry[] = summaryData?.rechargeMonthlySummary ?? []
 
   const refetchAll = () => {
     void refetchMine()
     void refetchToFulfill()
+    if (canAdmin) void refetchFiledByMe()
   }
 
   const tabs = [
     { key: 'mine', label: 'My Requests', badge: mine.filter((r) => r.status === 'fulfilled').length || undefined },
     { key: 'toFulfill', label: 'To Fulfill', badge: toFulfill.length || undefined },
+    ...(canAdmin ? [{ key: 'filedByMe', label: 'Filed for Others', badge: filedByMe.length || undefined }] : []),
     ...(canSeeSummary ? [{ key: 'summary', label: 'Monthly Summary' }] : []),
   ]
 
-  const activeList = activeTab === 'mine' ? mine : activeTab === 'toFulfill' ? toFulfill : []
-  const activeLoading = activeTab === 'mine' ? mineLoading : activeTab === 'toFulfill' ? toFulfillLoading : false
+  const activeList =
+    activeTab === 'mine'
+      ? mine
+      : activeTab === 'toFulfill'
+        ? toFulfill
+        : activeTab === 'filedByMe'
+          ? filedByMe
+          : []
+  const activeLoading =
+    activeTab === 'mine'
+      ? mineLoading
+      : activeTab === 'toFulfill'
+        ? toFulfillLoading
+        : activeTab === 'filedByMe'
+          ? filedByMeLoading
+          : false
 
   const selectedRequest =
     mine.find((r) => r.id === selectedId) ??
     toFulfill.find((r) => r.id === selectedId) ??
+    filedByMe.find((r) => r.id === selectedId) ??
     summary.flatMap((s) => s.requests).find((r) => r.id === selectedId) ??
     null
 
@@ -165,6 +217,11 @@ export default function RechargeRequestsPage() {
       addToast({ type: 'error', message: 'Bundle and phone number are required' })
       return
     }
+    const isExternal = form.requestedForUserId === EXTERNAL_RECIPIENT
+    if (isExternal && !form.requestedForName.trim()) {
+      addToast({ type: 'error', message: "Enter the recipient's name" })
+      return
+    }
     try {
       await createRequest({
         variables: {
@@ -172,6 +229,8 @@ export default function RechargeRequestsPage() {
             bundleId: form.bundleId,
             phoneNumber: form.phoneNumber.trim(),
             notes: form.notes.trim() || undefined,
+            requestedForUserId: isExternal ? undefined : form.requestedForUserId || undefined,
+            requestedForName: isExternal ? form.requestedForName.trim() : undefined,
           },
         },
       })
@@ -311,11 +370,19 @@ export default function RechargeRequestsPage() {
             </Grid>
           ) : activeList.length === 0 ? (
             <EmptyState
-              title={activeTab === 'mine' ? 'No recharge requests yet' : 'Nothing to fulfill right now'}
+              title={
+                activeTab === 'mine'
+                  ? 'No recharge requests yet'
+                  : activeTab === 'filedByMe'
+                    ? 'Nothing filed for others yet'
+                    : 'Nothing to fulfill right now'
+              }
               message={
                 activeTab === 'mine'
                   ? 'Submit a request to get a phone recharge bundle sent to you.'
-                  : "You're not the assigned fulfiller, or there's nothing pending."
+                  : activeTab === 'filedByMe'
+                    ? "Requests you file on someone else's behalf will show up here."
+                    : "You're not the assigned fulfiller, or there's nothing pending."
               }
               action={
                 activeTab === 'mine' ? (
@@ -404,6 +471,41 @@ export default function RechargeRequestsPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {canAdmin && (
+            <>
+              <Select
+                label="Request for"
+                value={form.requestedForUserId}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, requestedForUserId: e.target.value }))
+                }}
+              >
+                <option value="">— Myself —</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.user_id ?? ''}>
+                    {e.first_name} {e.last_name}
+                  </option>
+                ))}
+                <option value={EXTERNAL_RECIPIENT}>— Someone not listed —</option>
+              </Select>
+              {form.requestedForUserId === EXTERNAL_RECIPIENT && (
+                <div>
+                  <Input
+                    label="Recipient's name"
+                    value={form.requestedForName}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, requestedForName: e.target.value }))
+                    }}
+                    placeholder="e.g. Ahmed the driver"
+                  />
+                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                    They have no account here, so you'll confirm receipt on their behalf once
+                    you've verified it with them directly.
+                  </div>
+                </div>
+              )}
+            </>
+          )}
           <div>
             <Select
               label="Bundle"
@@ -464,6 +566,10 @@ export default function RechargeRequestsPage() {
             request={selectedRequest}
             theme={theme}
             isRequester={selectedRequest.requestedBy === currentUserId}
+            canAdminCancel={canAdmin && selectedRequest.createdBy === currentUserId}
+            canAdminConfirm={
+              canAdmin && !selectedRequest.requestedBy && selectedRequest.createdBy === currentUserId
+            }
             isFulfillTab={activeTab === 'toFulfill'}
             fulfillFile={fulfillFile}
             fulfillPreview={fulfillPreview}
@@ -670,6 +776,13 @@ interface RequestDetailBodyProps {
   request: RechargeRequest
   theme: ReturnType<typeof useTheme>['theme']
   isRequester: boolean
+  // A recharge admin can also cancel a request they themselves filed on
+  // someone else's behalf (matches cancelRechargeRequest's authorization —
+  // NOT "any admin can cancel any pending request").
+  canAdminCancel: boolean
+  // The creator confirms in place of a requestedBy-less request's real
+  // (nonexistent-in-system) recipient — matches confirmRechargeReceipt.
+  canAdminConfirm: boolean
   isFulfillTab: boolean
   fulfillFile: File | null
   fulfillPreview: string | null
@@ -685,6 +798,8 @@ function RequestDetailBody({
   request: r,
   theme,
   isRequester,
+  canAdminCancel,
+  canAdminConfirm,
   isFulfillTab,
   fulfillFile,
   fulfillPreview,
@@ -709,7 +824,9 @@ function RequestDetailBody({
       id: 'created',
       title: 'Request submitted',
       description: `${r.bundleName ?? 'Bundle'} for ${r.phoneNumber}`,
-      user: r.requestedByEmail ?? undefined,
+      // Who actually filed it — only differs from the requester when a
+      // recharge admin submitted this on someone else's behalf.
+      user: r.createdByEmail ?? r.requestedByEmail ?? undefined,
       timestamp: r.createdAt,
     },
   ]
@@ -756,7 +873,14 @@ function RequestDetailBody({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-        <InfoField label="Requester" value={r.requestedByEmail ?? '—'} theme={theme} />
+        <InfoField
+          label="Requester"
+          value={r.requestedBy ? (r.requestedByEmail ?? '—') : `${r.requestedByEmail ?? '—'} (not in system)`}
+          theme={theme}
+        />
+        {r.createdBy !== r.requestedBy && (
+          <InfoField label="Submitted By" value={r.createdByEmail ?? '—'} theme={theme} />
+        )}
         <InfoField label="Cost Center" value={r.costCenterName ?? '—'} theme={theme} />
         <InfoField label="Bundle" value={r.bundleName ?? '—'} theme={theme} />
         <InfoField
@@ -837,9 +961,11 @@ function RequestDetailBody({
                 Proof is ready
               </div>
               <div style={{ fontSize: '12px', color: theme.textMuted, maxWidth: '260px' }}>
-                Confirm you received your recharge to unlock the photo.
+                {canAdminConfirm
+                  ? "Confirm once you've verified with the recipient that it arrived, to unlock the photo."
+                  : 'Confirm you received your recharge to unlock the photo.'}
               </div>
-              {isRequester && (
+              {(isRequester || canAdminConfirm) && (
                 <Button variant="primary" size="sm" loading={confirming} onClick={onConfirm}>
                   Confirm Receipt
                 </Button>
@@ -906,7 +1032,7 @@ function RequestDetailBody({
         </div>
       )}
 
-      {isRequester && r.status === 'pending' && (
+      {(isRequester || canAdminCancel) && r.status === 'pending' && (
         <Button variant="ghost" onClick={onCancel}>
           Cancel Request
         </Button>

@@ -3961,13 +3961,14 @@ function rechargeBundleRow(r: Record<string, unknown>) {
 const RECHARGE_REQUEST_SELECT = `
   SELECT rr.*, ru.email AS requested_by_email, cc.name AS cost_center_name,
     rb.name AS bundle_name, rb.amount AS bundle_amount, rb.currency_code AS bundle_currency_code,
-    au.email AS approved_by_email, fu.email AS fulfilled_by_email
+    au.email AS approved_by_email, fu.email AS fulfilled_by_email, cbu.email AS created_by_email
   FROM recharge_requests rr
-  JOIN users ru ON ru.id = rr.requested_by
+  LEFT JOIN users ru ON ru.id = rr.requested_by
   JOIN cost_centers cc ON cc.id = rr.cost_center_id
   JOIN recharge_bundles rb ON rb.id = rr.bundle_id
   LEFT JOIN users au ON au.id = rr.approved_by
   LEFT JOIN users fu ON fu.id = rr.fulfilled_by
+  LEFT JOIN users cbu ON cbu.id = rr.created_by
 `
 
 // The blind-confirm-then-reveal gate applies specifically to the requester —
@@ -3976,14 +3977,20 @@ const RECHARGE_REQUEST_SELECT = `
 // own phone balance). Everyone else with legitimate access to this request
 // (approver, the fulfiller who uploaded it, admins) can see it immediately —
 // it's their audit trail, not something that needs gating from them.
+// For a requestedBy-less request (filed for someone not yet in the system —
+// see requestedForName), there's no real requester to hold that gate — the
+// creator confirms in their place instead (confirmRechargeReceipt), so the
+// same blind-reveal discipline applies to them: they shouldn't get to peek
+// at the photo before confirming they actually verified delivery.
 async function rechargeRequestRow(
   r: Record<string, unknown>,
   ctx: GQLContext,
 ): Promise<Record<string, unknown>> {
   const confirmedAt = r.confirmed_at as string | null
-  const requestedBy = r.requested_by as string
-  const isRequester = ctx.auth?.userId === requestedBy
-  const isBlocked = isRequester && !confirmedAt
+  const requestedBy = (r.requested_by as string | null) ?? null
+  const isRequester = requestedBy !== null && ctx.auth?.userId === requestedBy
+  const isExternalConfirmer = requestedBy === null && ctx.auth?.userId === r.created_by
+  const isBlocked = (isRequester || isExternalConfirmer) && !confirmedAt
   let photoDownloadUrl: string | null = null
   if (r.photo_file_id && !isBlocked) {
     const f = await query<{ file_key: string; original_filename: string }>(
@@ -4010,7 +4017,13 @@ async function rechargeRequestRow(
     id: r.id,
     companyId: r.company_id,
     requestedBy,
-    requestedByEmail: r.requested_by_email ?? null,
+    // Falls back to the typed name for a requestedBy-less request, so every
+    // existing display spot (card, drawer, timeline) that already treats
+    // this as "the label for who it's for" keeps working unchanged.
+    requestedByEmail: r.requested_by_email ?? (r.requested_for_name as string | null) ?? null,
+    requestedForName: r.requested_for_name ?? null,
+    createdBy: r.created_by,
+    createdByEmail: r.created_by_email ?? null,
     costCenterId: r.cost_center_id,
     costCenterName: r.cost_center_name ?? null,
     bundleId: r.bundle_id,
@@ -4915,6 +4928,21 @@ export const resolvers = {
         idx++
         params.push(ctx.auth.userId)
         if (!args.status) conditions.push(`rr.status = 'pending'`)
+      } else if (scope === 'filedByMe') {
+        // Requests this caller filed on someone else's behalf (see
+        // createRechargeRequest) — self-filed ones already show under
+        // 'mine', so excluding them here keeps the two tabs from
+        // duplicating the same rows. Naturally empty for anyone who's
+        // never filed on behalf of someone else (created_by only ever
+        // differs from requested_by via the admin-gated path). requested_by
+        // IS NULL is its own arm — a plain "!=" against NULL never matches
+        // in SQL, which would otherwise silently drop every request filed
+        // for someone not in the system at all.
+        conditions.push(
+          `rr.created_by = $${idx} AND (rr.requested_by IS NULL OR rr.requested_by != $${idx})`,
+        )
+        idx++
+        params.push(ctx.auth.userId)
       } else {
         conditions.push(`rr.requested_by = $${idx++}`)
         params.push(ctx.auth.userId)
@@ -5077,7 +5105,12 @@ export const resolvers = {
 
       const groups = new Map<string, (typeof mapped)[number][]>()
       for (const req of mapped) {
-        const key = `${req.requestedBy as string}::${req.bundleCurrencyCode as string}`
+        // requestedBy is null for a request filed on behalf of someone not
+        // in the system at all — group those by the typed name instead, or
+        // every such request (regardless of who it's actually for) would
+        // collapse into a single misleading "unknown requester" bucket.
+        const requesterKey = (req.requestedBy as string | null) ?? `name:${req.requestedForName as string}`
+        const key = `${requesterKey}::${req.bundleCurrencyCode as string}`
         const list = groups.get(key)
         if (list) list.push(req)
         else groups.set(key, [req])
@@ -21824,6 +21857,35 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
+      const requestedForUserIdRaw = i.requestedForUserId as string | undefined
+      const requestedForNameRaw = (i.requestedForName as string | undefined)?.trim()
+      if (requestedForUserIdRaw && requestedForNameRaw) {
+        throw new Error('Pick an existing employee or type a name, not both')
+      }
+      // Self-service by default — a recharge admin can name a different
+      // employee as the requester, or (when the actual recipient has no
+      // employee record / login at all — a driver, a shared company phone)
+      // type a plain name instead. Either "on behalf of" path is admin-gated;
+      // creating for yourself stays open to any authenticated user, same as
+      // before this existed.
+      let requestedForUserId: string | null = null
+      let requestedForName: string | null = null
+      if (requestedForNameRaw) {
+        if (requestedForNameRaw.length > 255) throw new Error('Name is too long')
+        await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+        requestedForName = requestedForNameRaw
+      } else {
+        requestedForUserId = requestedForUserIdRaw || ctx.auth.userId
+        if (requestedForUserId !== ctx.auth.userId) {
+          await requirePermGW(ctx.auth, 'hr.recharge.admin', 'admin')
+          const targetCheck = await query(
+            `SELECT 1 FROM employees WHERE user_id=$1 AND company_id=$2 AND status='active'`,
+            [requestedForUserId, ctx.auth.companyId],
+          )
+          if (!targetCheck.rows[0])
+            throw new Error('Selected employee not found, inactive, or has no linked login')
+        }
+      }
       // There's exactly one recharge cost center for the whole company (an
       // admin sets it once via setRechargeCostCenter) — the requester no
       // longer picks one per request.
@@ -21843,14 +21905,24 @@ export const resolvers = {
       )
       if (!bundleCheck.rows[0]) throw new Error('Bundle not found')
       const r = await query(
-        `INSERT INTO recharge_requests (company_id, requested_by, cost_center_id, bundle_id, phone_number, notes)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [ctx.auth.companyId, ctx.auth.userId, costCenterId, i.bundleId, i.phoneNumber, i.notes ?? null],
+        `INSERT INTO recharge_requests (company_id, requested_by, requested_for_name, created_by, cost_center_id, bundle_id, phone_number, notes)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [
+          ctx.auth.companyId,
+          requestedForUserId,
+          requestedForName,
+          ctx.auth.userId,
+          costCenterId,
+          i.bundleId,
+          i.phoneNumber,
+          i.notes ?? null,
+        ],
       )
       const requestId = r.rows[0].id as string
       // No approval step — the fulfiller(s) assigned to the recharge cost
       // center are notified directly, the moment the request comes in. If
-      // the requester is themselves one of the two fulfillers, they're
+      // the requester (the person it's actually for, not necessarily the
+      // one who filed it) is themselves one of the two fulfillers, they're
       // excluded — they can't fulfill their own request, so notifying them
       // about it would just be noise (see fulfillRechargeRequest's
       // separation-of-duties check).
@@ -21864,7 +21936,7 @@ export const resolvers = {
       const fulfillerIds = [
         cc.rows[0]?.default_recharge_fulfiller_id,
         cc.rows[0]?.default_recharge_fulfiller_id_2,
-      ].filter((id): id is string => !!id && id !== ctx.auth!.userId)
+      ].filter((id): id is string => !!id && id !== requestedForUserId)
       for (const fulfillerId of new Set(fulfillerIds)) {
         void notifyRechargeUserGW(fulfillerId, ctx.auth.companyId, {
           type: 'RECHARGE_REQUEST_SUBMITTED',
@@ -21878,10 +21950,20 @@ export const resolvers = {
 
     cancelRechargeRequest: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      // Normally only the requester cancels their own request — but a
+      // recharge admin can file one on someone else's behalf (see
+      // createRechargeRequest), so they also need to be able to undo a
+      // mistake on a request they themselves filed. Deliberately NOT "any
+      // admin can cancel any pending request" — holding hr.recharge.admin
+      // shouldn't let someone cancel an unrelated employee's own self-filed
+      // request; it only extends to requests this caller actually created.
+      const isAdmin =
+        isPermissionBypassGW(ctx.auth.role) ||
+        meetsLevel((await loadPermissions(ctx.auth.userId, ctx.auth.companyId))['hr.recharge.admin'], 'admin')
       const r = await query(
         `UPDATE recharge_requests SET status='cancelled', updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 AND requested_by=$3 AND status='pending' RETURNING id`,
-        [args.id, ctx.auth.companyId, ctx.auth.userId],
+         WHERE id=$1 AND company_id=$2 AND (requested_by=$3 OR ($4 AND created_by=$3)) AND status='pending' RETURNING id`,
+        [args.id, ctx.auth.companyId, ctx.auth.userId, isAdmin],
       )
       if (!r.rows[0]) throw new Error('Request not found, not yours, or no longer pending')
       return getRechargeRequestForReturn(args.id, ctx)
@@ -21895,11 +21977,12 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       const reqRow = await query<{
         cost_center_id: string
-        requested_by: string
+        requested_by: string | null
+        created_by: string
         status: string
         bundle_id: string
       }>(
-        `SELECT cost_center_id, requested_by, status, bundle_id FROM recharge_requests WHERE id=$1 AND company_id=$2`,
+        `SELECT cost_center_id, requested_by, created_by, status, bundle_id FROM recharge_requests WHERE id=$1 AND company_id=$2`,
         [args.id, ctx.auth.companyId],
       )
       if (!reqRow.rows[0]) throw new Error('Request not found')
@@ -21911,6 +21994,15 @@ export const resolvers = {
       // fulfill, and confirm a recharge entirely on their own.
       if (reqRow.rows[0].requested_by === ctx.auth.userId) {
         throw new Error('You cannot fulfill your own recharge request')
+      }
+      // Same principle for a requestedBy-less request (filed for someone not
+      // in the system — see createRechargeRequest): the creator is the one
+      // who'll confirm receipt in the real recipient's place, so they can't
+      // also be the one who bought/sent it — that's the same single-person
+      // loop this check exists to prevent, just with the creator standing
+      // in for "requester."
+      if (reqRow.rows[0].requested_by === null && reqRow.rows[0].created_by === ctx.auth.userId) {
+        throw new Error('You filed this request — someone else must fulfill it')
       }
       if (!isPermissionBypassGW(ctx.auth.role)) {
         const cc = await query<{
@@ -22006,10 +22098,18 @@ export const resolvers = {
           )
         }
       }
-      void notifyRechargeUserGW(reqRow.rows[0].requested_by, ctx.auth.companyId, {
+      // requestedBy is null for a request filed on behalf of someone not in
+      // the system at all — there's no real account to notify, so tell the
+      // creator instead (they're the one who'll confirm receipt in the
+      // recipient's place, see confirmRechargeReceipt).
+      const notifyTarget = reqRow.rows[0].requested_by ?? reqRow.rows[0].created_by
+      void notifyRechargeUserGW(notifyTarget, ctx.auth.companyId, {
         type: 'RECHARGE_REQUEST_FULFILLED',
         title: 'Your recharge is on its way',
-        body: 'Your phone recharge has been sent — please confirm receipt to view the proof.',
+        body:
+          reqRow.rows[0].requested_by === null
+            ? 'The recharge you requested on someone else\'s behalf has been sent — confirm receipt once you\'ve verified it with them.'
+            : 'Your phone recharge has been sent — please confirm receipt to view the proof.',
         requestId: args.id,
       })
       return getRechargeRequestForReturn(args.id, ctx)
@@ -22017,9 +22117,16 @@ export const resolvers = {
 
     confirmRechargeReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      // Normally only the real requester confirms — but a requestedBy-less
+      // request (filed for someone not in the system, see
+      // createRechargeRequest) has no such account, so the person who filed
+      // it confirms in their place instead (after independently verifying
+      // with the actual recipient, e.g. by phone).
       const r = await query(
         `UPDATE recharge_requests SET status='confirmed', confirmed_at=NOW(), updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 AND requested_by=$3 AND status='fulfilled' RETURNING id`,
+         WHERE id=$1 AND company_id=$2
+           AND (requested_by=$3 OR (requested_by IS NULL AND created_by=$3))
+           AND status='fulfilled' RETURNING id`,
         [args.id, ctx.auth.companyId, ctx.auth.userId],
       )
       if (!r.rows[0]) throw new Error('Request not found, not yours, or not yet fulfilled')

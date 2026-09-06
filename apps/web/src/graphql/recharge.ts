@@ -6,6 +6,9 @@ const RECHARGE_REQUEST_FIELDS = gql`
     companyId
     requestedBy
     requestedByEmail
+    requestedForName
+    createdBy
+    createdByEmail
     costCenterId
     costCenterName
     bundleId

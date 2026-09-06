@@ -696,8 +696,18 @@
   type RechargeRequest {
     id: ID!
     companyId: ID!
-    requestedBy: ID!
+    # Null when this request was filed for someone not yet in the system —
+    # see requestedForName instead, and requestedByEmail still carries a
+    # display label either way.
+    requestedBy: ID
     requestedByEmail: String
+    # Set only for a requestedBy-less request (a recharge admin typed a
+    # plain name instead of picking an employee with a login).
+    requestedForName: String
+    # Who actually submitted the request — differs from requestedBy only
+    # when a recharge admin files it on someone else's behalf.
+    createdBy: ID!
+    createdByEmail: String
     costCenterId: ID!
     costCenterName: String
     bundleId: ID!
@@ -730,6 +740,14 @@
     bundleId: ID!
     phoneNumber: String!
     notes: String
+    # Recharge-admin only: file this request on behalf of a different
+    # employee — see createRechargeRequest's authorization. Exactly one of
+    # requestedForUserId / requestedForName may be given (never both).
+    requestedForUserId: ID
+    # Recharge-admin only: file this request for someone not yet in the
+    # system at all (no employee record / no login) — a plain typed name
+    # instead of picking an employee.
+    requestedForName: String
   }
 
   # Distinct from the generic CostCenter type — carries the fulfiller info
