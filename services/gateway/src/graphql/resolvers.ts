@@ -20096,13 +20096,14 @@ export const resolvers = {
       const createdInvoice = await withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
-          // Resolve project_id from contract (required NOT NULL column)
+          // Resolve project_id and currency from contract (required NOT NULL columns)
           const contractRow = await client.query(
-            `SELECT project_id FROM project_contracts WHERE id=$1 AND company_id=$2`,
+            `SELECT project_id, currency_code FROM project_contracts WHERE id=$1 AND company_id=$2`,
             [args.contractId, ctx.auth!.companyId],
           )
           if (!contractRow.rows[0]) throw new Error('Contract not found')
           const projectId = contractRow.rows[0].project_id
+          const currencyCode = contractRow.rows[0].currency_code ?? 'IQD'
 
           const num = await nextDocumentNumber(ctx.auth!.companyId, 'project_invoice', 'INV')
           const lines = (i.lines as Record<string, unknown>[]) ?? []
@@ -20128,10 +20129,10 @@ export const resolvers = {
           const inv = await client.query(
             `INSERT INTO project_invoices
              (company_id,project_id,contract_id,invoice_number,billing_method,display_mode,
-              gross_total,discount_pct,discount_amount,retention_amount,net_payable,
+              gross_total,discount_pct,discount_amount,retention_amount,net_payable,currency_code,
               wht_applies,wht_scenario,wht_rate,wht_amount,
               status,invoice_date,due_date,created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$14,'draft',NOW(),$15,$16) RETURNING *`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,0,$10,$11,$12,$13,$14,$15,'draft',NOW(),$16,$17) RETURNING *`,
             [
               ctx.auth!.companyId,
               projectId,
@@ -20143,6 +20144,7 @@ export const resolvers = {
               discountPct,
               discountAmount,
               netPayable,
+              currencyCode,
               whtApplies,
               whtScenario,
               whtRate,
@@ -20190,6 +20192,7 @@ export const resolvers = {
             discountAmount: parseFloat(String(r.discount_amount ?? 0)),
             retentionAmount: parseFloat(String(r.retention_amount ?? 0)),
             netPayable: parseFloat(String(r.net_payable)),
+            currencyCode: r.currency_code ?? 'IQD',
             whtApplies: Boolean(r.wht_applies ?? false),
             whtScenario: r.wht_scenario ?? null,
             whtRate: parseFloat(String(r.wht_rate ?? 0)),
@@ -20216,6 +20219,8 @@ export const resolvers = {
       args: {
         id: string
         invoiceDate?: string
+        dueDate?: string
+        currencyCode?: string
         lines?: { id?: string; description?: string; qty?: number; unitCost?: number }[]
       },
       ctx: GQLContext,
@@ -20229,6 +20234,9 @@ export const resolvers = {
       ])
       if (!invRow.rows[0]) throw new Error('Invoice not found')
       const inv = invRow.rows[0] as Record<string, unknown>
+      if (args.currencyCode && inv.status !== 'draft') {
+        throw new Error('Currency can only be changed while the invoice is in draft status')
+      }
 
       const client = await pool.connect()
       try {
@@ -20320,6 +20328,14 @@ export const resolvers = {
         if (args.invoiceDate) {
           headerSets.push(`invoice_date=$${headerParams.length + 1}`)
           headerParams.push(args.invoiceDate)
+        }
+        if (args.dueDate) {
+          headerSets.push(`due_date=$${headerParams.length + 1}`)
+          headerParams.push(args.dueDate)
+        }
+        if (args.currencyCode) {
+          headerSets.push(`currency_code=$${headerParams.length + 1}`)
+          headerParams.push(args.currencyCode)
         }
 
         // Recalculate status if there are payments so editing lines doesn't leave

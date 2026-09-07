@@ -78,6 +78,8 @@ export default function InvoiceDetail() {
     { _key: string; id: string; description: string; qty: string; unitCost: string }[]
   >([])
   const [editDate, setEditDate] = useState('')
+  const [editDueDate, setEditDueDate] = useState('')
+  const [editCurrency, setEditCurrency] = useState('')
 
   const { data, loading, refetch } = useQuery(PROJECT_INVOICE_QUERY, {
     variables: { id },
@@ -167,6 +169,8 @@ export default function InvoiceDetail() {
       })),
     )
     setEditDate(inv?.invoiceDate ?? '')
+    setEditDueDate(inv?.dueDate ?? '')
+    setEditCurrency(inv?.currencyCode ?? 'IQD')
     setEditMode(true)
     setTab('lines')
   }
@@ -199,6 +203,8 @@ export default function InvoiceDetail() {
         variables: {
           id,
           invoiceDate: editDate || undefined,
+          dueDate: editDueDate || undefined,
+          currencyCode: inv?.status === 'draft' ? editCurrency || undefined : undefined,
           lines: editLines.map((l) => ({
             id: l.id || undefined,
             description: l.description,
@@ -592,23 +598,68 @@ export default function InvoiceDetail() {
                 Invoice Lines
               </div>
               {editMode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '12px', color: theme.textMuted }}>Invoice date:</span>
-                  <input
-                    type="date"
-                    value={editDate}
-                    onChange={(e) => {
-                      setEditDate(e.target.value)
-                    }}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: '6px',
-                      border: `1px solid ${theme.border}`,
-                      background: theme.bgCanvas,
-                      color: theme.textPrimary,
-                      fontSize: '12px',
-                    }}
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>Invoice date:</span>
+                    <input
+                      type="date"
+                      value={editDate}
+                      onChange={(e) => {
+                        setEditDate(e.target.value)
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        border: `1px solid ${theme.border}`,
+                        background: theme.bgCanvas,
+                        color: theme.textPrimary,
+                        fontSize: '12px',
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>Due date:</span>
+                    <input
+                      type="date"
+                      value={editDueDate}
+                      onChange={(e) => {
+                        setEditDueDate(e.target.value)
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        border: `1px solid ${theme.border}`,
+                        background: theme.bgCanvas,
+                        color: theme.textPrimary,
+                        fontSize: '12px',
+                      }}
+                    />
+                  </div>
+                  {inv.status === 'draft' && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>Currency:</span>
+                      <select
+                        value={editCurrency}
+                        onChange={(e) => {
+                          setEditCurrency(e.target.value)
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: `1px solid ${theme.border}`,
+                          background: theme.bgCanvas,
+                          color: theme.textPrimary,
+                          fontSize: '12px',
+                        }}
+                      >
+                        {['IQD', 'USD', 'EUR', 'GBP'].map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

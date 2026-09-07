@@ -858,8 +858,20 @@ export const CREATE_PROJECT_INVOICE = gql`
 `
 
 export const UPDATE_PROJECT_INVOICE = gql`
-  mutation UpdateProjectInvoice($id: ID!, $invoiceDate: String, $lines: [InvoiceLineEditInput!]) {
-    updateProjectInvoice(id: $id, invoiceDate: $invoiceDate, lines: $lines) {
+  mutation UpdateProjectInvoice(
+    $id: ID!
+    $invoiceDate: String
+    $dueDate: String
+    $currencyCode: String
+    $lines: [InvoiceLineEditInput!]
+  ) {
+    updateProjectInvoice(
+      id: $id
+      invoiceDate: $invoiceDate
+      dueDate: $dueDate
+      currencyCode: $currencyCode
+      lines: $lines
+    ) {
       id
       invoiceNumber
       billingMethod

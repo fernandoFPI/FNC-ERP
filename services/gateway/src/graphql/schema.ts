@@ -2910,7 +2910,7 @@
     updateProjectContract(id: ID!, input: ProjectContractInput!): ProjectContract!
     reviseContract(id: ID!, contractValue: Float!, retentionPct: Float!, endDate: String, changeSummary: String!, effectiveDate: String): ProjectContract!
     createProjectInvoice(contractId: ID!, input: ProjectInvoiceInput!): ProjectInvoice!
-    updateProjectInvoice(id: ID!, invoiceDate: String, lines: [InvoiceLineEditInput!]): ProjectInvoice!
+    updateProjectInvoice(id: ID!, invoiceDate: String, dueDate: String, currencyCode: String, lines: [InvoiceLineEditInput!]): ProjectInvoice!
     voidProjectInvoice(id: ID!, reason: String): ProjectInvoice!
   }
 
