@@ -80,8 +80,11 @@ export default function AccountForm() {
       addToast({ type: 'error', message: 'Select an account type' })
       return
     }
-    if (form.is_active && !/^\d{4}$/.test(form.code)) {
-      addToast({ type: 'error', message: 'Account code must be exactly 4 digits' })
+    if (form.is_active && !/^\d{4}(-\d{2})?$/.test(form.code)) {
+      addToast({
+        type: 'error',
+        message: 'Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)',
+      })
       return
     }
     try {
@@ -164,7 +167,7 @@ export default function AccountForm() {
                 setForm((f) => ({ ...f, code: e.target.value }))
               }}
               required
-              placeholder="e.g. 1001"
+              placeholder="e.g. 1200 or 3111-01"
             />
             <Select
               label="Type"

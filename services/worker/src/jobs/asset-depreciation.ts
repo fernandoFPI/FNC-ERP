@@ -7,7 +7,7 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-/** Runs on the 1st of each month — posts prior month's depreciation for all companies */
+/** Runs on the 1st of each month — drafts prior month's depreciation entries for all companies (a human must post each one) */
 export async function runMonthlyDepreciation(): Promise<void> {
   const now = new Date()
   now.setMonth(now.getMonth() - 1)
@@ -32,7 +32,7 @@ export async function runMonthlyDepreciation(): Promise<void> {
   const systemUser = await query<{ id: string }>(`SELECT id FROM users LIMIT 1`)
   const createdBy = systemUser.rows[0]?.['id'] ?? null
 
-  let totalPosted = 0
+  let totalDrafted = 0
 
   for (const row of companies.rows) {
     const companyId = row['company_id'] as string
@@ -60,7 +60,7 @@ export async function runMonthlyDepreciation(): Promise<void> {
         if (depExpAcct && accumDepAcct) {
           const jeRes = await client.query(
             `INSERT INTO journal_entries (company_id, reference, description, entry_date, source_type, status, created_by)
-             VALUES ($1,$2,$3,$4,'depreciation','posted',$5) RETURNING id`,
+             VALUES ($1,$2,$3,$4,'depreciation','draft',$5) RETURNING id`,
             [
               companyId,
               `DEP-${line['asset_number'] as string}-${period}`,
@@ -81,8 +81,12 @@ export async function runMonthlyDepreciation(): Promise<void> {
           )
         }
 
+        // The journal entry is created as a draft now — status mirrors that,
+        // not 'posted', until someone explicitly posts it (postJournalEntry
+        // then flips this row to 'posted' via its source_type='depreciation'
+        // branch). posted_at stays unset until that actually happens.
         await client.query(
-          `UPDATE asset_depreciation_schedule SET status='posted', journal_entry_id=$1, posted_at=NOW() WHERE id=$2`,
+          `UPDATE asset_depreciation_schedule SET status='draft', journal_entry_id=$1 WHERE id=$2`,
           [journalEntryId, line['id']],
         )
 
@@ -95,14 +99,14 @@ export async function runMonthlyDepreciation(): Promise<void> {
           [newAccum, Math.max(newBook, 0), newStatus, line['asset_id']],
         )
 
-        totalPosted++
+        totalDrafted++
       }
-        log.info({ companyId, period, count: lines.rows.length }, 'Depreciation posted for company')
+        log.info({ companyId, period, count: lines.rows.length }, 'Depreciation drafted for company')
       })
     } catch (err) {
-      log.error({ err, companyId, period }, 'Failed to post depreciation for company')
+      log.error({ err, companyId, period }, 'Failed to draft depreciation for company')
     }
   }
 
-  log.info({ period, totalPosted }, 'Monthly depreciation run complete')
+  log.info({ period, totalDrafted }, 'Monthly depreciation run complete')
 }
