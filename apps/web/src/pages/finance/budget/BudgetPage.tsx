@@ -11,6 +11,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { api } from '../../../lib/axios'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Budget {
   id: string
@@ -36,6 +37,8 @@ export default function BudgetPage() {
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.budget.edit', 'edit')
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -163,15 +166,17 @@ export default function BudgetPage() {
         title="GL Budget Management"
         subtitle="Define annual budgets per account and track budget vs actual performance"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setShowForm(true)
-            }}
-          >
-            + New Budget
-          </Button>
+          canEdit ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setShowForm(true)
+              }}
+            >
+              + New Budget
+            </Button>
+          ) : undefined
         }
       />
 

@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface BudgetLine {
   id: string
@@ -80,6 +81,8 @@ export default function BudgetDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.budget.edit', 'edit')
   const [budget, setBudget] = useState<Budget | null>(null)
   const [vsActual, setVsActual] = useState<VsActualResult | null>(null)
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
@@ -250,22 +253,22 @@ export default function BudgetDetail() {
             >
               ← Back
             </Button>
-            {budget.status === 'draft' && (
+            {canEdit && budget.status === 'draft' && (
               <Button variant="ghost" size="sm" onClick={() => void handleStatusChange('active')}>
                 Activate
               </Button>
             )}
-            {budget.status === 'active' && (
+            {canEdit && budget.status === 'active' && (
               <Button variant="ghost" size="sm" onClick={() => void handleStatusChange('locked')}>
                 Lock
               </Button>
             )}
-            {budget.status === 'locked' && (
+            {canEdit && budget.status === 'locked' && (
               <Button variant="ghost" size="sm" onClick={() => void handleStatusChange('draft')}>
                 Unlock
               </Button>
             )}
-            {hasEdits && !isLocked && (
+            {canEdit && hasEdits && !isLocked && (
               <Button
                 variant="primary"
                 size="sm"
@@ -494,7 +497,7 @@ export default function BudgetDetail() {
             </tfoot>
           </table>
 
-          {!isLocked && (
+          {canEdit && !isLocked && (
             <div style={{ padding: '12px 16px', borderTop: `1px solid ${theme.border}` }}>
               {showAccountPicker ? (
                 <div

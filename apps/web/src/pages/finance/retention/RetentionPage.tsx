@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Summary {
   ar_held: number
@@ -74,6 +75,8 @@ const emptyForm = {
 export default function RetentionPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.retention.edit', 'edit')
   const [tab, setTab] = useState<'ar' | 'ap'>('ar')
   const [summary, setSummary] = useState<Summary | null>(null)
   const [aging, setAging] = useState<AgingRow[]>([])
@@ -172,15 +175,17 @@ export default function RetentionPage() {
         title="Retention Management"
         subtitle="Track held-back retention on client invoices (AR) and vendor payments (AP)"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setShowForm(true)
-            }}
-          >
-            + New Retention
-          </Button>
+          canEdit ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setShowForm(true)
+              }}
+            >
+              + New Retention
+            </Button>
+          ) : undefined
         }
       />
 

@@ -4,6 +4,7 @@ import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
 import { useAuthStore } from '../../../store/authStore'
+import { usePermission } from '../../../hooks/usePermission'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { COMPANY_USERS_QUERY } from '../../../graphql/admin'
@@ -72,6 +73,8 @@ export default function CostCentersPage() {
   const navigate = useNavigate()
   const addToast = useToastStore((s) => s.addToast)
   const companyId = useAuthStore((s) => s.user?.companyId ?? '')
+  const { can } = usePermission()
+  const canEdit = can('finance.cost_centers.edit', 'edit')
   const { data: usersData } = useQuery(COMPANY_USERS_QUERY, {
     variables: { companyId },
     skip: !companyId,
@@ -249,30 +252,33 @@ export default function CostCentersPage() {
             e.stopPropagation()
           }}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              openEdit(cc)
-            }}
-          >
-            Edit
-          </Button>
-          {cc.is_active ? (
+          {canEdit && (
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
-                setDeletingId(cc.id)
+                openEdit(cc)
               }}
             >
-              Deactivate
-            </Button>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={() => void handleReactivate(cc)}>
-              Reactivate
+              Edit
             </Button>
           )}
+          {canEdit &&
+            (cc.is_active ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDeletingId(cc.id)
+                }}
+              >
+                Deactivate
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => void handleReactivate(cc)}>
+                Reactivate
+              </Button>
+            ))}
         </div>
       ),
     },
@@ -284,9 +290,11 @@ export default function CostCentersPage() {
         title="Cost Centers"
         subtitle="Track costs by department, project, entity, or overhead"
         actions={
-          <Button variant="primary" size="sm" onClick={openCreate}>
-            New cost center
-          </Button>
+          canEdit ? (
+            <Button variant="primary" size="sm" onClick={openCreate}>
+              New cost center
+            </Button>
+          ) : undefined
         }
       />
 

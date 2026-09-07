@@ -6,6 +6,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface TermLine {
   id?: string
@@ -52,6 +53,8 @@ const emptyLine = (): TermLine => ({
 
 export default function PaymentTermsPage() {
   const { theme } = useTheme()
+  const { can } = usePermission()
+  const canEdit = can('finance.terms.edit', 'edit')
   const [terms, setTerms] = useState<PaymentTerm[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -296,9 +299,11 @@ export default function PaymentTermsPage() {
         title="Payment Terms"
         subtitle="Define installment schedules and retention holdback rules"
         actions={
-          <Button variant="primary" size="sm" onClick={openNew}>
-            + New Term
-          </Button>
+          canEdit ? (
+            <Button variant="primary" size="sm" onClick={openNew}>
+              + New Term
+            </Button>
+          ) : undefined
         }
       />
 
@@ -309,9 +314,11 @@ export default function PaymentTermsPage() {
           <Card padding="lg">
             <p style={{ color: theme.textMuted, textAlign: 'center', fontSize: '13px' }}>
               No payment terms yet.{' '}
-              <span style={{ color: theme.accent, cursor: 'pointer' }} onClick={openNew}>
-                Create the first one →
-              </span>
+              {canEdit && (
+                <span style={{ color: theme.accent, cursor: 'pointer' }} onClick={openNew}>
+                  Create the first one →
+                </span>
+              )}
             </p>
           </Card>
         )}
@@ -345,12 +352,16 @@ export default function PaymentTermsPage() {
                 <Button variant="ghost" size="sm" onClick={() => void handlePreview(t.id)}>
                   Preview
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => void openEdit(t.id)}>
-                  Edit
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => void handleDelete(t.id, t.name)}>
-                  Delete
-                </Button>
+                {canEdit && (
+                  <Button variant="secondary" size="sm" onClick={() => void openEdit(t.id)}>
+                    Edit
+                  </Button>
+                )}
+                {canEdit && (
+                  <Button variant="ghost" size="sm" onClick={() => void handleDelete(t.id, t.name)}>
+                    Delete
+                  </Button>
+                )}
               </div>
             </div>
 

@@ -4,7 +4,7 @@ import { logAudit } from '@fnc-erp/audit'
 import { requirePermission } from '@fnc-erp/permissions'
 
 export const journalAttachmentsRouter: IRouter = Router()
-journalAttachmentsRouter.use(requirePermission('finance.gl.view', 'view'))
+journalAttachmentsRouter.use(requirePermission('finance.journals.view', 'view'))
 registerAttachmentRoutes(
   journalAttachmentsRouter,
   {

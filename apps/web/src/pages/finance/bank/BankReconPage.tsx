@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface BankAccount {
   id: string
@@ -57,6 +58,8 @@ const emptyForm = {
 export default function BankReconPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.bank.edit', 'edit')
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -187,9 +190,11 @@ export default function BankReconPage() {
         title="Bank Reconciliation"
         subtitle="Match bank statement lines to journal entries"
         actions={
-          <Button variant="primary" size="sm" onClick={openNew}>
-            + New Account
-          </Button>
+          canEdit ? (
+            <Button variant="primary" size="sm" onClick={openNew}>
+              + New Account
+            </Button>
+          ) : undefined
         }
       />
 
@@ -282,9 +287,11 @@ export default function BankReconPage() {
                   style={{ padding: '24px', textAlign: 'center', color: theme.textMuted }}
                 >
                   No bank accounts configured.{' '}
-                  <span style={{ color: theme.accent, cursor: 'pointer' }} onClick={openNew}>
-                    Add your first account →
-                  </span>
+                  {canEdit && (
+                    <span style={{ color: theme.accent, cursor: 'pointer' }} onClick={openNew}>
+                      Add your first account →
+                    </span>
+                  )}
                 </td>
               </tr>
             )}
@@ -357,15 +364,17 @@ export default function BankReconPage() {
                     >
                       Reconcile
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        openEdit(a)
-                      }}
-                    >
-                      Edit
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          openEdit(a)
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    )}
                   </div>
                 </td>
               </tr>

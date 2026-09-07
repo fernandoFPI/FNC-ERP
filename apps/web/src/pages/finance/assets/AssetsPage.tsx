@@ -11,6 +11,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { api } from '../../../lib/axios'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface AssetSummary {
   active_count: number
@@ -48,6 +49,8 @@ export default function AssetsPage() {
   const { theme } = useTheme()
   const pagePadding = usePagePadding()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.assets.edit', 'edit')
   const [summary, setSummary] = useState<AssetSummary | null>(null)
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
@@ -209,7 +212,7 @@ export default function AssetsPage() {
         subtitle="Asset register and depreciation management"
         actions={
           <div style={{ display: 'flex', gap: '8px' }}>
-            {(summary?.pending_this_month ?? 0) > 0 && (
+            {canEdit && (summary?.pending_this_month ?? 0) > 0 && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -221,15 +224,17 @@ export default function AssetsPage() {
                   : `Run Depreciation (${summary?.pending_this_month} pending)`}
               </Button>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                navigate('/finance/assets/new')
-              }}
-            >
-              + New Asset
-            </Button>
+            {canEdit && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  navigate('/finance/assets/new')
+                }}
+              >
+                + New Asset
+              </Button>
+            )}
           </div>
         }
       />

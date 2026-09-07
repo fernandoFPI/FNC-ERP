@@ -6,6 +6,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Run {
   id: string
@@ -56,6 +57,8 @@ const currentPeriod = new Date().toISOString().slice(0, 7)
 
 export default function RevaluationPage() {
   const { theme } = useTheme()
+  const { can } = usePermission()
+  const canEdit = can('finance.revaluation.edit', 'edit')
   const [runs, setRuns] = useState<Run[]>([])
   const [loading, setLoading] = useState(true)
   const [showCompute, setShowCompute] = useState(false)
@@ -188,15 +191,17 @@ export default function RevaluationPage() {
         title="Currency Revaluation"
         subtitle="Revalue foreign-currency monetary balances at period-end rates and post unrealized gain/loss entries"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setShowCompute(true)
-            }}
-          >
-            + New Revaluation Run
-          </Button>
+          canEdit ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setShowCompute(true)
+              }}
+            >
+              + New Revaluation Run
+            </Button>
+          ) : undefined
         }
       />
 
@@ -356,7 +361,7 @@ export default function RevaluationPage() {
                   <Badge variant={STATUS_BADGE[r.status] ?? 'neutral'}>{r.status}</Badge>
                 </td>
                 <td style={{ padding: '9px 12px' }}>
-                  {r.status === 'posted' && (
+                  {canEdit && r.status === 'posted' && (
                     <Button
                       variant="ghost"
                       size="sm"

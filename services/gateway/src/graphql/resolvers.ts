@@ -4121,6 +4121,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       const { status, from_date, to_date } = args
       let sql = `SELECT je.*,
                    COALESCE(SUM(CASE WHEN jl.debit > 0 THEN jl.debit ELSE 0 END), 0) AS total_debit,
@@ -4154,7 +4155,10 @@ export const resolvers = {
 
     trialBalance: async (_: unknown, args: { as_of_date?: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
-      const dateFilter = args.as_of_date ? `AND je.entry_date <= '${args.as_of_date}'` : ''
+      await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
+      const params: unknown[] = [ctx.auth.companyId]
+      const dateFilter = args.as_of_date ? `AND je.entry_date <= $2` : ''
+      if (args.as_of_date) params.push(args.as_of_date)
       const result = await query(
         `SELECT coa.id, coa.code, coa.name, coa.account_type,
                 COALESCE(SUM(jl.debit),0) AS total_debit,
@@ -4166,7 +4170,7 @@ export const resolvers = {
            AND je.company_id = $1 AND je.status = 'posted' ${dateFilter}
          WHERE coa.company_id = $1 AND coa.is_active = true
          GROUP BY coa.id, coa.code, coa.name, coa.account_type ORDER BY coa.code`,
-        [ctx.auth.companyId],
+        params,
       )
       return result.rows
     },
@@ -6861,6 +6865,7 @@ export const resolvers = {
     // FX monitoring
     fxRateStaleness: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.fx_rates.view', 'view')
       const PAIRS = [
         { from: 'USD', to: 'IQD' },
         { from: 'EUR', to: 'IQD' },
@@ -6886,6 +6891,7 @@ export const resolvers = {
 
     fxSyncHistory: async (_: unknown, args: { page?: number; limit?: number }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.fx_rates.view', 'view')
       const page = Math.max(1, args.page ?? 1)
       const lim = Math.min(100, args.limit ?? 20)
       const offset = (page - 1) * lim
@@ -6913,6 +6919,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.fx_rates.view', 'view')
       const days = Math.min(365, Math.max(1, args.days ?? 30))
       const conditions: string[] = [`frc.created_at >= NOW() - INTERVAL '${days} days'`]
       const values: unknown[] = []
@@ -6962,7 +6969,10 @@ export const resolvers = {
 
     consolidatedTrialBalance: async (_: unknown, args: { asOfDate?: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
-      const dateClause = args.asOfDate ? `AND je.entry_date <= '${args.asOfDate}'` : ''
+      await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
+      const params: unknown[] = []
+      const dateClause = args.asOfDate ? `AND je.entry_date <= $1` : ''
+      if (args.asOfDate) params.push(args.asOfDate)
       return (
         await query(
           `SELECT coa.account_type, coa.code AS account_code, coa.name AS account_name,
@@ -6977,6 +6987,7 @@ export const resolvers = {
          WHERE je.status='posted' ${dateClause}
          GROUP BY coa.account_type, coa.code, coa.name, c.id, c.name
          ORDER BY coa.code`,
+          params,
         )
       ).rows
     },
@@ -7012,6 +7023,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.accounts.view', 'view')
       const page = Math.max(1, args.page ?? 1)
       const lim = Math.min(200, args.limit ?? 50)
       const offset = (page - 1) * lim
@@ -7061,6 +7073,7 @@ export const resolvers = {
 
     journalEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
+      await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       const [je, lines, linkedPos] = await Promise.all([
         query(
           `SELECT je.*, co.journal_template_image,
@@ -7112,6 +7125,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       let sql = `
         SELECT pv.*,
                COALESCE(u.first_name  || ' ' || u.last_name,  u.email)  AS created_by_email,
@@ -7146,6 +7160,7 @@ export const resolvers = {
 
     paymentVoucher: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
+      await requirePermGW(ctx.auth, 'finance.journals.view', 'view')
       const [pv, lines, journals] = await Promise.all([
         query(
           `SELECT pv.*, co.pv_template_image,
@@ -7190,6 +7205,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'finance.fx_rates.view', 'view')
       let sql = `SELECT fr.* FROM fx_rates fr WHERE 1=1`
       const params: unknown[] = []
       let idx = 1
@@ -7215,6 +7231,7 @@ export const resolvers = {
 
     accountingPeriods: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'finance.periods.view', 'view')
       return (
         await query(
           `SELECT ap.*, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS closed_by_email FROM accounting_periods ap LEFT JOIN users u ON u.id=ap.closed_by WHERE ap.company_id=$1 ORDER BY ap.start_date DESC`,
@@ -7229,6 +7246,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
       const params: unknown[] = [ctx.auth.companyId, args.fromDate, args.toDate]
       let costFilter = ''
       if (args.costCenterId) {
@@ -7269,6 +7287,7 @@ export const resolvers = {
 
     balanceSheet: async (_: unknown, args: { asOfDate: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
       const params = [ctx.auth.companyId, args.asOfDate]
 
       // Use amount_company_currency (IQD base) for FX-consistent totals.
@@ -8421,6 +8440,7 @@ export const resolvers = {
 
     triggerFXSync: async (_: unknown, __: unknown, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.fx_rates.edit', 'edit')
       await query(
         `INSERT INTO service_outbox (service, event_type, payload) VALUES ('worker','FX_SYNC_REQUESTED',$1::jsonb)`,
         [JSON.stringify({ triggeredBy: ctx.auth.userId, syncType: 'manual' })],
@@ -8599,8 +8619,8 @@ export const resolvers = {
         is_control_account,
         account_category,
       } = args.input
-      if ((is_active ?? true) && !/^\d{4}$/.test(code)) {
-        throw new Error('Account code must be exactly 4 digits')
+      if ((is_active ?? true) && !/^\d{4}(-\d{2})?$/.test(code)) {
+        throw new Error('Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)')
       }
       const r = await query(
         `INSERT INTO chart_of_accounts
@@ -8649,8 +8669,8 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
-      if (i.code !== undefined && i.is_active !== false && !/^\d{4}$/.test(i.code)) {
-        throw new Error('Account code must be exactly 4 digits')
+      if (i.code !== undefined && i.is_active !== false && !/^\d{4}(-\d{2})?$/.test(i.code)) {
+        throw new Error('Account code must be 4 digits, optionally with a -NN suffix (e.g. 1200 or 3111-01)')
       }
       // Build the SET clause from only the fields actually present in the
       // input, so an explicit null (e.g. "clear the category") is applied
@@ -8782,6 +8802,11 @@ export const resolvers = {
         await query(`UPDATE vendor_payments SET posted = true WHERE id = $1`, [je.source_id])
       } else if (je.source_type === 'combined') {
         await query(`UPDATE vendor_payments SET posted = true WHERE journal_entry_id = $1`, [je.id])
+      } else if (je.source_type === 'depreciation') {
+        await query(
+          `UPDATE asset_depreciation_schedule SET status='posted', posted_at=NOW() WHERE journal_entry_id = $1`,
+          [je.id],
+        )
       }
       void publishEntityChanged(ctx.auth.companyId, 'journal_entry', args.id, 'updated')
       return r.rows[0]
@@ -8835,6 +8860,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.periods.admin', 'admin')
       const { name, start_date, end_date } = args.input
       const r = await query(
         `INSERT INTO accounting_periods (company_id,name,start_date,end_date,status) VALUES ($1,$2,$3,$4,'open') RETURNING *`,
@@ -8845,6 +8871,25 @@ export const resolvers = {
 
     closeAccountingPeriod: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.periods.admin', 'admin')
+      const period = await query(
+        `SELECT id, status, start_date, end_date FROM accounting_periods WHERE id=$1 AND company_id=$2`,
+        [args.id, ctx.auth.companyId],
+      )
+      if (!period.rows[0]) throw new Error('Period not found')
+      const p = period.rows[0] as { status: string; start_date: string; end_date: string }
+      if (p.status === 'closed') throw new Error('Period already closed')
+      // Mirrors the REST equivalent's guard (services/finance/src/routes/periods.ts) —
+      // the GraphQL path skipped this check entirely before this fix.
+      const drafts = await query(
+        `SELECT COUNT(*) FROM journal_entries WHERE company_id=$1 AND status='draft' AND entry_date>=$2 AND entry_date<=$3`,
+        [ctx.auth.companyId, p.start_date, p.end_date],
+      )
+      const draftCount = parseInt((drafts.rows[0] as { count: string }).count)
+      if (draftCount > 0)
+        throw new Error(
+          `Cannot close period: ${draftCount} draft journal entries must be posted or cancelled first`,
+        )
       const r = await query(
         `UPDATE accounting_periods SET status='closed', closed_by=$3, closed_at=NOW() WHERE id=$1 AND company_id=$2 AND status='open' RETURNING *`,
         [args.id, ctx.auth.companyId, ctx.auth.userId],
@@ -8855,6 +8900,7 @@ export const resolvers = {
 
     auditJournalEntry: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.approve', 'approve')
       const je = await query(
         `SELECT id, status FROM journal_entries WHERE id=$1 AND company_id=$2`,
         [args.id, ctx.auth.companyId],
@@ -8871,6 +8917,7 @@ export const resolvers = {
 
     linkJournalPOs: async (_: unknown, args: { id: string; poIds: string[] }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.edit', 'edit')
       const jeCheck = await query(`SELECT id FROM journal_entries WHERE id=$1 AND company_id=$2`, [
         args.id,
         ctx.auth.companyId,
@@ -8900,6 +8947,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.approve', 'approve')
       if (!args.journalIds || args.journalIds.length < 2)
         throw new Error('At least 2 journal entries are required to combine')
       const companyId = ctx.auth.companyId
@@ -9183,6 +9231,7 @@ export const resolvers = {
 
     approvePaymentVoucher: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.approve', 'approve')
       const upd = await query(
         `UPDATE payment_vouchers SET status='approved', audited_by=$1, audited_at=NOW(), updated_at=NOW() WHERE id=$2 AND company_id=$3 AND status='draft' RETURNING id`,
         [ctx.auth.userId, args.id, ctx.auth.companyId],
@@ -9200,6 +9249,7 @@ export const resolvers = {
 
     markPaymentVoucherPaid: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'finance.journals.approve', 'approve')
       const r = await query(
         `UPDATE payment_vouchers SET status='paid', cashier_id=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 AND status='approved' RETURNING *`,
         [ctx.auth.userId, args.id, ctx.auth.companyId],
@@ -23644,6 +23694,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     const r = await query(
       `SELECT v.name AS vendor_name, v.tax_id,
@@ -23686,6 +23737,7 @@ const phase5QueryResolvers = {
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'finance.reports.view', 'view')
     const cid = resolveReportCompanyIdGW(ctx.auth, args.companyId)
     // Open AR (project_invoices) and AP (vendor_invoices) in non-IQD currencies
     const [arRes, apRes, fxRes] = await Promise.all([
@@ -29315,6 +29367,7 @@ Object.assign(resolvers.Query, {
   },
   bankAccounts: async (_: unknown, __: unknown, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'finance.ar.view', 'view')
     const r = await query(`SELECT * FROM bank_accounts ORDER BY account_name`)
     return r.rows.map((row: Record<string, unknown>) => bankRow(row))
   },

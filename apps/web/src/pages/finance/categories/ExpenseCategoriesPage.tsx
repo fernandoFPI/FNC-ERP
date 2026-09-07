@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
+import { usePermission } from '../../../hooks/usePermission'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -52,6 +53,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export default function ExpenseCategoriesPage() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
+  const { can } = usePermission()
+  const canEdit = can('finance.expenses.edit', 'edit')
 
   const [items, setItems] = useState<Category[]>([])
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
@@ -206,16 +209,18 @@ export default function ExpenseCategoriesPage() {
       header: 'Actions',
       render: (c) => (
         <div style={{ display: 'flex', gap: '6px' }}>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              openEdit(c)
-            }}
-          >
-            Edit
-          </Button>
-          {c.is_active && (
+          {canEdit && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                openEdit(c)
+              }}
+            >
+              Edit
+            </Button>
+          )}
+          {canEdit && c.is_active && (
             <Button
               variant="ghost"
               size="sm"
@@ -237,9 +242,11 @@ export default function ExpenseCategoriesPage() {
         title="Expense Categories"
         subtitle="Used when settling expense claims, petty cash, and employee advances"
         actions={
-          <Button variant="primary" size="sm" onClick={openCreate}>
-            New category
-          </Button>
+          canEdit ? (
+            <Button variant="primary" size="sm" onClick={openCreate}>
+              New category
+            </Button>
+          ) : undefined
         }
       />
 

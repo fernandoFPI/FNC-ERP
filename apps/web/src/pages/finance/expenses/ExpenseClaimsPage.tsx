@@ -8,6 +8,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Claim {
   id: string
@@ -81,6 +82,8 @@ const emptyLine = (): LineForm => ({
 export default function ExpenseClaimsPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.expenses.edit', 'edit')
   const [claims, setClaims] = useState<Claim[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -310,15 +313,17 @@ export default function ExpenseClaimsPage() {
             >
               Dashboard
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setShowForm(true)
-              }}
-            >
-              + New Claim
-            </Button>
+            {canEdit && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowForm(true)
+                }}
+              >
+                + New Claim
+              </Button>
+            )}
           </div>
         }
       />

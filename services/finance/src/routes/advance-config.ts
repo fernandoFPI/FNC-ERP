@@ -173,7 +173,7 @@ advanceConfigRouter.put(
 
 advanceConfigRouter.get(
   '/settlement-account-codes',
-  requirePermission('finance.ap.edit', 'edit'),
+  requirePermission('finance.ap.view', 'view'),
   async (req, res) => {
     try {
       const journalId = req.query['journal_id'] as string | undefined

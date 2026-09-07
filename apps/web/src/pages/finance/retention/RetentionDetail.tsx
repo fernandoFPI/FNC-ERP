@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface RetentionRecord {
   id: string
@@ -55,6 +56,8 @@ export default function RetentionDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.retention.edit', 'edit')
   const [record, setRecord] = useState<RetentionRecord | null>(null)
   const [releases, setReleases] = useState<Release[]>([])
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
@@ -207,16 +210,18 @@ export default function RetentionDetail() {
             >
               ← Back
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setShowEdit(true)
-              }}
-            >
-              Edit
-            </Button>
-            {canRelease && (
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowEdit(true)
+                }}
+              >
+                Edit
+              </Button>
+            )}
+            {canEdit && canRelease && (
               <Button
                 variant="primary"
                 size="sm"

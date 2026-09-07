@@ -5,6 +5,7 @@ import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Category {
   id: string
@@ -45,6 +46,8 @@ export default function AssetForm() {
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
   const isEdit = Boolean(id)
+  const { can } = usePermission()
+  const canEdit = can('finance.assets.edit', 'edit')
 
   const [categories, setCategories] = useState<Category[]>([])
   const [accounts, setAccounts] = useState<CoAAccount[]>([])
@@ -482,9 +485,11 @@ export default function AssetForm() {
         </Card>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Asset'}
-          </Button>
+          {canEdit && (
+            <Button type="submit" variant="primary" disabled={saving}>
+              {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Asset'}
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"

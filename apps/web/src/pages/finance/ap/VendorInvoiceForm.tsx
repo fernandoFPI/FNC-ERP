@@ -2,6 +2,7 @@
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
+import { usePermission } from '../../../hooks/usePermission'
 import { api } from '../../../lib/axios'
 import { apiErrMsg, apiErrCode } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -152,6 +153,8 @@ export default function VendorInvoiceForm() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const addToast = useToastStore((s) => s.addToast)
+  const { can } = usePermission()
+  const canEdit = can('finance.ap.edit', 'edit')
   const prefilledPoId = searchParams.get('po_id') ?? ''
 
   const [vendors, setVendors] = useState<Vendor[]>([])
@@ -574,9 +577,11 @@ export default function VendorInvoiceForm() {
             >
               Cancel
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save invoice'}
-            </Button>
+            {canEdit && (
+              <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Save invoice'}
+              </Button>
+            )}
           </div>
         }
       />

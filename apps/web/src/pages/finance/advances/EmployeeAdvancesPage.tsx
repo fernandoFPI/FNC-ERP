@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Advance {
   id: string
@@ -63,6 +64,8 @@ const emptyForm = () => ({
 export default function EmployeeAdvancesPage() {
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.advances.edit', 'edit')
   const [advances, setAdvances] = useState<Advance[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -152,15 +155,17 @@ export default function EmployeeAdvancesPage() {
             >
               Dashboard
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setShowForm(true)
-              }}
-            >
-              + New Advance
-            </Button>
+            {canEdit && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowForm(true)
+                }}
+              >
+                + New Advance
+              </Button>
+            )}
           </div>
         }
       />

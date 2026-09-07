@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../../theme/ThemeContext'
 import { useToastStore } from '../../../store/toastStore'
+import { usePermission } from '../../../hooks/usePermission'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -57,6 +58,8 @@ export default function AnalyticAccountsPage() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.analytic_accounts.edit', 'edit')
 
   const [items, setItems] = useState<AnalyticAccount[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -249,16 +252,18 @@ export default function AnalyticAccountsPage() {
             ev.stopPropagation()
           }}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              openEdit(aa)
-            }}
-          >
-            Edit
-          </Button>
-          {aa.is_active && (
+          {canEdit && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                openEdit(aa)
+              }}
+            >
+              Edit
+            </Button>
+          )}
+          {canEdit && aa.is_active && (
             <Button
               variant="ghost"
               size="sm"
@@ -280,9 +285,11 @@ export default function AnalyticAccountsPage() {
         title="Analytic Accounts"
         subtitle="Project and cost tracking by analytic dimension"
         actions={
-          <Button variant="primary" size="sm" onClick={openCreate}>
-            New analytic account
-          </Button>
+          canEdit ? (
+            <Button variant="primary" size="sm" onClick={openCreate}>
+              New analytic account
+            </Button>
+          ) : undefined
         }
       />
 

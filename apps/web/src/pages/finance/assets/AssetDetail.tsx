@@ -7,6 +7,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface ScheduleLine {
   id: string
@@ -15,7 +16,7 @@ interface ScheduleLine {
   depreciation_amount: number
   accumulated_depreciation: number
   book_value_after: number
-  status: 'pending' | 'posted' | 'skipped'
+  status: 'pending' | 'posted' | 'skipped' | 'draft'
 }
 
 interface Asset {
@@ -64,6 +65,8 @@ export default function AssetDetail() {
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { id } = useParams<{ id: string }>()
+  const { can } = usePermission()
+  const canEdit = can('finance.assets.edit', 'edit')
   const [asset, setAsset] = useState<Asset | null>(null)
   const [tab, setTab] = useState<'overview' | 'schedule'>('overview')
   const [activating, setActivating] = useState(false)
@@ -162,7 +165,7 @@ export default function AssetDetail() {
             <Badge variant={STATUS_BADGE[asset.status] ?? 'neutral'}>
               {asset.status.replace('_', ' ')}
             </Badge>
-            {asset.status === 'draft' && (
+            {canEdit && asset.status === 'draft' && (
               <>
                 <Button
                   variant="secondary"
@@ -183,7 +186,7 @@ export default function AssetDetail() {
                 </Button>
               </>
             )}
-            {['active', 'fully_depreciated'].includes(asset.status) && (
+            {canEdit && ['active', 'fully_depreciated'].includes(asset.status) && (
               <Button
                 variant="danger"
                 size="sm"

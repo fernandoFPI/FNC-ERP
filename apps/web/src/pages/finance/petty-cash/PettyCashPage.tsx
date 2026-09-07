@@ -6,6 +6,7 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Float_ {
   id: string
@@ -67,6 +68,9 @@ const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger'> = 
 
 export default function PettyCashPage() {
   const { theme } = useTheme()
+  const { can } = usePermission()
+  const canEdit = can('finance.petty_cash.edit', 'edit')
+  const canApprove = can('finance.petty_cash.approve', 'approve')
   const [floats, setFloats] = useState<Float_[]>([])
   const [selected, setSelected] = useState<FloatDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -252,15 +256,17 @@ export default function PettyCashPage() {
         title="Petty Cash"
         subtitle="Manage petty cash floats per location — record spend, request replenishment, post journal entries"
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setShowNewFloat(true)
-            }}
-          >
-            + New Float
-          </Button>
+          canEdit ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setShowNewFloat(true)
+              }}
+            >
+              + New Float
+            </Button>
+          ) : undefined
         }
       />
 
@@ -461,24 +467,28 @@ export default function PettyCashPage() {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setShowSpend(true)
-                      }}
-                    >
-                      Record Spend
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        setShowReplen(true)
-                      }}
-                    >
-                      Request Replenishment
-                    </Button>
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setShowSpend(true)
+                        }}
+                      >
+                        Record Spend
+                      </Button>
+                    )}
+                    {canEdit && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          setShowReplen(true)
+                        }}
+                      >
+                        Request Replenishment
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <div
@@ -724,7 +734,7 @@ export default function PettyCashPage() {
                             {new Date(r.created_at).toLocaleDateString()}
                           </td>
                           <td style={{ padding: '7px 12px' }}>
-                            {r.status === 'pending' && (
+                            {canApprove && r.status === 'pending' && (
                               <Button
                                 variant="ghost"
                                 size="sm"

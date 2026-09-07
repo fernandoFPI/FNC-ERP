@@ -8,6 +8,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { api } from '../../../lib/axios'
 import { useCompany } from '../../../hooks/useCompany'
+import { usePermission } from '../../../hooks/usePermission'
 import { buildExpenseClaimHTML } from '../../../lib/expenseClaimHtml'
 
 interface ClaimLine {
@@ -63,6 +64,9 @@ export default function ExpenseClaimDetail() {
   const { theme } = useTheme()
   const navigate = useNavigate()
   const { activeCompany } = useCompany()
+  const { can } = usePermission()
+  const canEdit = can('finance.expenses.edit', 'edit')
+  const canApprove = can('finance.expenses.approve', 'approve')
   const [claim, setClaim] = useState<Claim | null>(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
@@ -144,7 +148,7 @@ export default function ExpenseClaimDetail() {
             >
               ← Back
             </Button>
-            {claim.status === 'draft' && (
+            {canEdit && claim.status === 'draft' && (
               <Button
                 variant="primary"
                 size="sm"
@@ -156,26 +160,30 @@ export default function ExpenseClaimDetail() {
             )}
             {claim.status === 'submitted' && (
               <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setShowReject(true)
-                  }}
-                >
-                  Reject
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void act('approve')}
-                  disabled={acting}
-                >
-                  Approve
-                </Button>
+                {canApprove && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowReject(true)
+                    }}
+                  >
+                    Reject
+                  </Button>
+                )}
+                {canApprove && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void act('approve')}
+                    disabled={acting}
+                  >
+                    Approve
+                  </Button>
+                )}
               </>
             )}
-            {claim.status === 'posted' && (
+            {canApprove && claim.status === 'posted' && (
               <Button
                 variant="primary"
                 size="sm"

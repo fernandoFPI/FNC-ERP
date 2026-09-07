@@ -8,6 +8,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface Settlement {
   id: string
@@ -155,6 +156,9 @@ export default function EmployeeAdvanceDetail() {
   const { id } = useParams<{ id: string }>()
   const { theme } = useTheme()
   const navigate = useNavigate()
+  const { can } = usePermission()
+  const canEdit = can('finance.advances.edit', 'edit')
+  const canApprove = can('finance.advances.approve', 'approve')
   const [advance, setAdvance] = useState<Advance | null>(null)
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -572,36 +576,40 @@ export default function EmployeeAdvanceDetail() {
             >
               ← Back
             </Button>
-            {advance.status === 'draft' && (
+            {canEdit && advance.status === 'draft' && (
               <Button variant="primary" size="sm" onClick={() => void act('submit')} disabled={acting}>
                 Submit for Approval
               </Button>
             )}
             {advance.status === 'pending_approval' && (
               <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setShowReject(true)
-                  }}
-                >
-                  Reject
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    setApproveCostCenterId(advance.cost_center_id ?? '')
-                    setShowApprove(true)
-                  }}
-                  disabled={acting}
-                >
-                  Approve &amp; Issue
-                </Button>
+                {canApprove && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowReject(true)
+                    }}
+                  >
+                    Reject
+                  </Button>
+                )}
+                {canApprove && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setApproveCostCenterId(advance.cost_center_id ?? '')
+                      setShowApprove(true)
+                    }}
+                    disabled={acting}
+                  >
+                    Approve &amp; Issue
+                  </Button>
+                )}
               </>
             )}
-            {canSettle && (
+            {canEdit && canSettle && (
               <Button
                 variant="primary"
                 size="sm"
@@ -612,12 +620,12 @@ export default function EmployeeAdvanceDetail() {
                 + New Settlement
               </Button>
             )}
-            {canSettle && (
+            {canEdit && canSettle && (
               <Button variant="secondary" size="sm" onClick={openReturnForm}>
                 + New Return
               </Button>
             )}
-            {canVoid && (
+            {canEdit && canVoid && (
               <Button
                 variant="danger"
                 size="sm"
@@ -908,14 +916,16 @@ export default function EmployeeAdvanceDetail() {
                     {selectedPOTotal.toLocaleString()} {advance.currency_code}
                   </span>
                 </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => void handleBundleSettlement()}
-                  disabled={bundling || selectedPOLineIds.size === 0}
-                >
-                  {bundling ? 'Creating...' : 'Create Settlement from Selected'}
-                </Button>
+                {canEdit && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void handleBundleSettlement()}
+                    disabled={bundling || selectedPOLineIds.size === 0}
+                  >
+                    {bundling ? 'Creating...' : 'Create Settlement from Selected'}
+                  </Button>
+                )}
               </div>
             </Card>
           )}
@@ -973,7 +983,7 @@ export default function EmployeeAdvanceDetail() {
                       </td>
                       <td style={{ padding: '8px 12px' }}>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          {s.status === 'draft' && (
+                          {canEdit && s.status === 'draft' && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -985,23 +995,27 @@ export default function EmployeeAdvanceDetail() {
                           )}
                           {s.status === 'submitted' && (
                             <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setRejectingSettlementId(s.id)
-                                }}
-                              >
-                                Reject
-                              </Button>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => void actOnSettlement(s.id, 'approve')}
-                                disabled={acting}
-                              >
-                                Approve
-                              </Button>
+                              {canApprove && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setRejectingSettlementId(s.id)
+                                  }}
+                                >
+                                  Reject
+                                </Button>
+                              )}
+                              {canApprove && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => void actOnSettlement(s.id, 'approve')}
+                                  disabled={acting}
+                                >
+                                  Approve
+                                </Button>
+                              )}
                             </>
                           )}
                         </div>
@@ -1066,22 +1080,26 @@ export default function EmployeeAdvanceDetail() {
                         <td style={{ padding: '8px 12px' }}>
                           {ret.status === 'draft' && (
                             <div style={{ display: 'flex', gap: '6px' }}>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => void actOnReturn(ret.id, 'cancel')}
-                                disabled={acting}
-                              >
-                                Cancel
-                              </Button>
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => void actOnReturn(ret.id, 'approve')}
-                                disabled={acting}
-                              >
-                                Approve
-                              </Button>
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => void actOnReturn(ret.id, 'cancel')}
+                                  disabled={acting}
+                                >
+                                  Cancel
+                                </Button>
+                              )}
+                              {canApprove && (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => void actOnReturn(ret.id, 'approve')}
+                                  disabled={acting}
+                                >
+                                  Approve
+                                </Button>
+                              )}
                             </div>
                           )}
                         </td>

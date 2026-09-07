@@ -10,6 +10,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { api } from '../../../lib/axios'
+import { usePermission } from '../../../hooks/usePermission'
 
 interface BankAccount {
   id: string
@@ -112,6 +113,8 @@ export default function ReconcileWorkspace() {
   const { accountId, statementId } = useParams<{ accountId: string; statementId?: string }>()
   const navigate = useNavigate()
   const { theme } = useTheme()
+  const { can } = usePermission()
+  const canEdit = can('finance.bank.edit', 'edit')
 
   // Account + statements list
   const [account, setAccount] = useState<BankAccount | null>(null)
@@ -490,15 +493,17 @@ export default function ReconcileWorkspace() {
               >
                 ← All Accounts
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  setShowNewStmt(true)
-                }}
-              >
-                + New Statement
-              </Button>
+              {canEdit && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    setShowNewStmt(true)
+                  }}
+                >
+                  + New Statement
+                </Button>
+              )}
             </div>
           }
         />
@@ -723,7 +728,7 @@ export default function ReconcileWorkspace() {
             <Badge variant={STMT_BADGE[stmt.status] ?? 'neutral'}>
               {stmt.status.replace('_', ' ')}
             </Badge>
-            {!isReconciled && (
+            {canEdit && !isReconciled && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -733,7 +738,7 @@ export default function ReconcileWorkspace() {
                 {autoMatching ? 'Matching...' : 'Auto-Match'}
               </Button>
             )}
-            {!isReconciled && (
+            {canEdit && !isReconciled && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -744,14 +749,16 @@ export default function ReconcileWorkspace() {
                 + Add Lines
               </Button>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void handleFinalize()}
-              disabled={!canFinalize || finalizing}
-            >
-              {finalizing ? 'Finalizing...' : 'Finalize'}
-            </Button>
+            {canEdit && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void handleFinalize()}
+                disabled={!canFinalize || finalizing}
+              >
+                {finalizing ? 'Finalizing...' : 'Finalize'}
+              </Button>
+            )}
           </div>
         }
       />
@@ -952,7 +959,7 @@ export default function ReconcileWorkspace() {
                         {net >= 0 ? '+' : ''}
                         {net.toLocaleString()}
                       </p>
-                      {isMatched && (
+                      {isMatched && canEdit && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -1186,19 +1193,21 @@ export default function ReconcileWorkspace() {
           >
             Clear
           </Button>
-          {canCreate && (
+          {canEdit && canCreate && (
             <Button variant="secondary" size="sm" onClick={openCreateEntry}>
               Create Journal Entry
             </Button>
           )}
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => void handleMatch()}
-            disabled={!canMatch}
-          >
-            Confirm Match
-          </Button>
+          {canEdit && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleMatch()}
+              disabled={!canMatch}
+            >
+              Confirm Match
+            </Button>
+          )}
         </div>
       )}
 

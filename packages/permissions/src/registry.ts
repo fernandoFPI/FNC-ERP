@@ -164,6 +164,46 @@ export const PERMISSION_REGISTRY: ModuleDef[] = [
           },
         ],
       },
+      {
+        key: 'assets',
+        label: 'Fixed Assets',
+        permissions: [
+          { key: 'finance.assets.view', label: 'View Fixed Assets', sortOrder: 103 },
+          { key: 'finance.assets.edit', label: 'Manage Fixed Assets', sortOrder: 104 },
+        ],
+      },
+      {
+        key: 'budget',
+        label: 'Budgets',
+        permissions: [
+          { key: 'finance.budget.view', label: 'View Budgets', sortOrder: 105 },
+          { key: 'finance.budget.edit', label: 'Manage Budgets', sortOrder: 106 },
+        ],
+      },
+      {
+        key: 'retention',
+        label: 'Retention',
+        permissions: [
+          { key: 'finance.retention.view', label: 'View Retention', sortOrder: 107 },
+          { key: 'finance.retention.edit', label: 'Manage Retention', sortOrder: 108 },
+        ],
+      },
+      {
+        key: 'revaluation',
+        label: 'FX Revaluation',
+        permissions: [
+          { key: 'finance.revaluation.view', label: 'View FX Revaluation', sortOrder: 109 },
+          { key: 'finance.revaluation.edit', label: 'Run FX Revaluation', sortOrder: 110 },
+        ],
+      },
+      {
+        key: 'terms',
+        label: 'Payment Terms',
+        permissions: [
+          { key: 'finance.terms.view', label: 'View Payment Terms', sortOrder: 111 },
+          { key: 'finance.terms.edit', label: 'Manage Payment Terms', sortOrder: 112 },
+        ],
+      },
     ],
   },
   {
