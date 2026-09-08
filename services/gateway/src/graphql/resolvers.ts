@@ -238,38 +238,107 @@ async function applyPOEditChanges(
       )
     }
   }
-  const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+  const lineAllowed = [
+    'description',
+    'qty_ordered',
+    'unit_price',
+    'uom',
+    'product_id',
+    'currency_code',
+    'store_price',
+    'store_price_currency',
+    'actual_unit_price',
+  ]
   const priceAffectedLineIds = new Set<string>()
+  let poCurrencyInfo: { company_id: string; base_currency_code: string } | null = null
   for (const e of changes.lines?.edited ?? []) {
     if (!lineAllowed.includes(e.field)) continue
+    if (e.field === 'currency_code') {
+      // Market pricing sets currency_code + fx_rate_to_base together (see
+      // submitPOMarketPricing) — editing just the currency here without also
+      // recomputing the rate would leave the line converting at the WRONG
+      // rate. This is exactly the bug a one-off SQL script had to fix on
+      // PO-2026-0021 (a line priced in IQD by mistake, meant to be USD) —
+      // this field exists so that's fixable from the UI instead.
+      if (!poCurrencyInfo) {
+        const poRes = await client.query<{ company_id: string; base_currency_code: string }>(
+          `SELECT company_id, base_currency_code FROM purchase_orders WHERE id=$1`,
+          [poId],
+        )
+        poCurrencyInfo = poRes.rows[0]!
+      }
+      const newCurrency = e.to as string
+      const fxRateToBase = await resolveFxRateToBase(
+        client,
+        poCurrencyInfo.company_id,
+        newCurrency,
+        poCurrencyInfo.base_currency_code,
+      )
+      await client.query(
+        `UPDATE po_lines SET currency_code=$1, market_price_currency=$1, fx_rate_to_base=$2 WHERE id=$3 AND po_id=$4`,
+        [newCurrency, fxRateToBase, e.id, poId],
+      )
+      priceAffectedLineIds.add(e.id)
+      continue
+    }
+    if (e.field === 'actual_unit_price' && e.to != null && Number(e.to) <= 0) {
+      // 0 is ambiguous with "not recorded" (null, meaning fall back to
+      // unit_price) — reject it rather than silently accepting a price
+      // that's almost certainly not real.
+      throw new Error('Actual price must be greater than 0')
+    }
     await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND po_id=$3`, [
       e.to,
       e.id,
       poId,
     ])
-    if (e.field === 'qty_ordered' || e.field === 'unit_price') priceAffectedLineIds.add(e.id)
+    // market_price is a separate column that submitPOMarketPricing sets in
+    // lockstep with unit_price — every price-display helper on the PO detail
+    // page prefers market_price, so leaving it stale here meant a corrected
+    // price kept showing the OLD total everywhere except the PO's own real
+    // total_amount (which is always derived from unit_price, never
+    // market_price — so the money was always right, only the display lied).
+    if (e.field === 'unit_price') {
+      await client.query(`UPDATE po_lines SET market_price=$1 WHERE id=$2 AND po_id=$3`, [
+        e.to,
+        e.id,
+        poId,
+      ])
+    }
+    if (e.field === 'qty_ordered' || e.field === 'unit_price' || e.field === 'actual_unit_price')
+      priceAffectedLineIds.add(e.id)
   }
-  // qty_ordered/unit_price above only ever touch their own single column —
-  // total_price (and the PO-level totals derived from it further down) was
-  // never recalculated after an edit changed either one, so the printed PO
-  // and every other total_price consumer kept showing the pre-edit amount.
-  // Same zeroing rule as confirmPOInventoryCheck: a line fully covered from
-  // stock still contributes $0 regardless of what its price/qty now say.
+  // qty_ordered/unit_price/actual_unit_price/currency_code above only ever
+  // touch their own column(s) — total_price (and the PO-level totals derived
+  // from it further down) was never recalculated after an edit changed any
+  // of them, so the printed PO and every other total_price consumer kept
+  // showing the pre-edit amount. actual_unit_price takes priority over
+  // unit_price once recorded, mirroring setPOLineActualPrice's own formula —
+  // it's what really got paid. Same zeroing rule as confirmPOInventoryCheck:
+  // a line fully covered from stock still contributes $0 regardless of what
+  // its price/qty now say.
   if (priceAffectedLineIds.size > 0) {
     await client.query(
       `UPDATE po_lines
-       SET total_price = CASE WHEN qty_from_stock >= qty_ordered THEN 0 ELSE qty_ordered * unit_price END
+       SET total_price = CASE
+         WHEN qty_from_stock >= qty_ordered THEN 0
+         WHEN actual_unit_price IS NOT NULL THEN qty_ordered * actual_unit_price
+         ELSE qty_ordered * unit_price
+       END
        WHERE id = ANY($1) AND po_id = $2`,
       [Array.from(priceAffectedLineIds), poId],
     )
   }
   if ((changes.lines?.added ?? []).length > 0) {
-    const poRes = await client.query<{ company_id: string; base_currency_code: string }>(
-      `SELECT company_id, base_currency_code FROM purchase_orders WHERE id=$1`,
-      [poId],
-    )
-    const companyId = poRes.rows[0]!.company_id
-    const baseCurrencyCode = poRes.rows[0]!.base_currency_code
+    if (!poCurrencyInfo) {
+      const poRes = await client.query<{ company_id: string; base_currency_code: string }>(
+        `SELECT company_id, base_currency_code FROM purchase_orders WHERE id=$1`,
+        [poId],
+      )
+      poCurrencyInfo = poRes.rows[0]!
+    }
+    const companyId = poCurrencyInfo.company_id
+    const baseCurrencyCode = poCurrencyInfo.base_currency_code
     for (const line of changes.lines?.added ?? []) {
       // The frontend's added-line draft shape uses `qty` (matching the form
       // field name), not `qty_ordered` (the po_lines column name used for
@@ -9544,12 +9613,11 @@ export const resolvers = {
           )
           if (!po.rows[0]) throw new Error('PO not found')
           const poStatus = po.rows[0].status as string
-          // 'items_bought' included alongside the legacy 'approved' window
-          // (no PO rests there in practice anymore — approvePO now always
-          // chains straight into items_bought) — recording a receipt
-          // is equally authoritative as the buyer's checklist and
-          // shouldn't be blocked behind it.
-          if (!['approved', 'items_bought', 'goods_received'].includes(poStatus)) {
+          // 'approved' is the legacy direct-receipt window (practically
+          // unreachable now that approvePO always chains straight into
+          // items_bought) — a receipt can only be recorded once the buyer's
+          // checklist is done and the PO has reached goods_received.
+          if (!['approved', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record receipt on a PO with status '${poStatus}'`)
           }
 
@@ -9676,10 +9744,27 @@ export const resolvers = {
           const categories = new Set(
             photoCheck.rows.map((r) => (r as Record<string, unknown>).category as string),
           )
-          if (!categories.has('po_receipt_document') || !categories.has('po_receipt_photo')) {
-            throw new Error(
-              'Attach both the vendor receipt and materials photos before confirming this receipt',
+          if (!categories.has('po_receipt_photo')) {
+            throw new Error('Attach a materials photo before confirming this receipt')
+          }
+          // The vendor receipt is normally uploaded earlier, by the buyer
+          // during items_bought, straight onto the PO (entity_type
+          // 'purchase_order') rather than onto this specific receipt — so
+          // check there too, not just the receipt-level attachment a store
+          // keeper can still add themselves as a fallback (e.g. if the
+          // buyer never got around to it).
+          if (!categories.has('po_receipt_document')) {
+            const buyerReceiptCheck = await client.query(
+              `SELECT 1 FROM document_attachments da JOIN files f ON f.id=da.file_id
+               WHERE da.entity_type='purchase_order' AND da.entity_id=$1
+                 AND f.category='po_receipt_document' AND f.status != 'deleted' LIMIT 1`,
+              [receipt.po_id],
             )
+            if (!buyerReceiptCheck.rows[0]) {
+              throw new Error(
+                'Attach the vendor receipt (from the buyer, or here) before confirming this receipt',
+              )
+            }
           }
 
           const linesRes = await client.query(
@@ -9830,18 +9915,19 @@ export const resolvers = {
             }
           }
 
-          // Auto-transition into goods_received on first confirmed receipt — from
-          // the legacy 'approved' window or from 'items_bought' (a real receipt
-          // is equally authoritative as the buyer finishing their checklist,
-          // and shouldn't require it first).
+          // Legacy direct path only — practically unreachable now that
+          // approvePO always chains straight into items_bought, but kept in
+          // case a PO is ever found sitting at 'approved' directly. The
+          // items_bought->goods_received transition now happens in
+          // markPOLineBought instead, once the checklist is complete.
           const currentStatus = receipt.po_status as POStatus
-          if (currentStatus === 'approved' || currentStatus === 'items_bought') {
+          if (currentStatus === 'approved') {
             await poTransition(
               client,
               receipt.po_id as string,
               currentStatus,
               'goods_received',
-              currentStatus === 'approved' ? 'receive_goods' : 'finish_buying',
+              'receive_goods',
               ctx.auth!,
               'Auto-transitioned on receipt confirmation',
             )
@@ -9911,7 +9997,7 @@ export const resolvers = {
           if (!po.rows[0]) throw new Error('PO not found')
           const poRow = po.rows[0] as Record<string, unknown>
           const poStatus = poRow.status as string
-          if (!['approved', 'items_bought', 'goods_received'].includes(poStatus)) {
+          if (!['approved', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record a delivery on a PO with status '${poStatus}'`)
           }
           if (
@@ -9977,13 +10063,13 @@ export const resolvers = {
           }
 
           const currentStatus = poStatus as POStatus
-          if (currentStatus === 'approved' || currentStatus === 'items_bought') {
+          if (currentStatus === 'approved') {
             await poTransition(
               client,
               args.poId,
               currentStatus,
               'goods_received',
-              currentStatus === 'approved' ? 'receive_goods' : 'finish_buying',
+              'receive_goods',
               ctx.auth!,
               i.notes ? `Delivered directly to jobsite — ${i.notes}` : 'Delivered directly to jobsite',
             )
@@ -19520,6 +19606,12 @@ export const resolvers = {
       if (!check.rows[0]) throw new Error('PO line not found')
       if (check.rows[0].status !== 'items_bought')
         throw new Error('PO must be in items_bought status to set the actual price')
+      // 0 is ambiguous with "not actually recorded yet" (which is what null
+      // means) — reject it outright rather than silently accepting a price
+      // that almost certainly isn't real. null itself is still allowed, to
+      // clear a mistakenly-entered price back to unset.
+      if (args.actualUnitPrice != null && args.actualUnitPrice <= 0)
+        throw new Error('Actual price must be greater than 0 — use "clear" to unset it instead')
       // Mirrors markPOLineBought's authorization exactly: admin, OR the
       // legacy assigned_buyer_user_id fallback (POs created before the buyer
       // position redesign), OR the new branch-scoped 'buyer' position.
@@ -27353,6 +27445,20 @@ const phase5MutationResolvers = {
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'goods_received')
       throw new Error(`PO must be in goods_received status to send to audit`)
+    // goods_received no longer guarantees a receipt was ever recorded — it's
+    // now also reachable via the buyer's checklist alone (markPOLineBought),
+    // with zero receipts. That used to be implicit (a confirmed receipt was
+    // the only way to arrive here at all), so restore exactly that guarantee
+    // — not a stricter "every line fully received" rule, which was never
+    // required before and could block a partial audit an organizer already
+    // relies on (recordReceipt has always allowed confirming a receipt for
+    // only some lines, and that alone was enough to unlock this before).
+    const hasReceipt = await query(
+      `SELECT 1 FROM po_receipts WHERE po_id=$1 AND status='confirmed' LIMIT 1`,
+      [args.id],
+    )
+    if (!hasReceipt.rows[0])
+      throw new Error('Record at least one receipt before sending this PO to finance audit')
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -27546,12 +27652,10 @@ const phase5MutationResolvers = {
   // Every PO's assigned buyer ticks each line as bought while it sits in
   // items_bought (see approvePO, which now always chains straight into
   // this status on approval) — funding source doesn't matter here, the
-  // buyer needs to track what's bought either way. This is tracking only:
-  // it deliberately does NOT transition the PO on its own once every line
-  // is ticked — recordReceipt (which now also accepts items_bought) is the
-  // only real path to goods_received, so reaching that status still always
-  // means an actual receipt (quantities, location, price) was recorded,
-  // not just a checklist.
+  // buyer needs to track what's bought either way. The moment every line
+  // that actually needs purchasing (i.e. not already fully covered from
+  // stock) is ticked, this is what advances the PO to goods_received —
+  // Record Receipt is only ever available from that point on, not before.
   markPOLineBought: async (
     _: unknown,
     args: { poId: string; lineId: string; bought: boolean },
@@ -27575,12 +27679,45 @@ const phase5MutationResolvers = {
     const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
     if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this PO can mark items bought on this PO')
-    const result = await query(
-      `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
-      [args.bought, args.lineId, args.poId],
+    return withTransaction(
+      { companyId: auth.companyId, userId: auth.userId, role: auth.role },
+      async (client) => {
+        // FOR UPDATE: serializes concurrent ticks on the same PO so the
+        // "every line bought" check below can't race two simultaneous ticks
+        // into both seeing the checklist as still incomplete.
+        const cur = await client.query(`SELECT status FROM purchase_orders WHERE id=$1 FOR UPDATE`, [
+          args.poId,
+        ])
+        if (!cur.rows[0] || cur.rows[0].status !== 'items_bought')
+          throw new Error('PO must be in items_bought status to mark lines as bought')
+        const result = await client.query(
+          `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
+          [args.bought, args.lineId, args.poId],
+        )
+        if (!result.rows[0]) throw new Error('PO line not found')
+        // Lines fully covered from stock never needed buying and were never
+        // part of the checklist — only require the ones that actually do.
+        const remaining = await client.query(
+          `SELECT COUNT(*) AS c FROM po_lines
+           WHERE po_id=$1 AND qty_ordered - COALESCE(qty_from_stock,0) > 0 AND NOT is_bought`,
+          [args.poId],
+        )
+        if (parseInt(String(remaining.rows[0]?.c ?? '0')) === 0) {
+          // One-way: this is the only place the PO advances past
+          // items_bought. Unticking a line afterward never reverts it.
+          await poTransition(
+            client,
+            args.poId,
+            'items_bought',
+            'goods_received',
+            'finish_buying',
+            auth,
+            'Auto-transitioned — every purchased line ticked bought',
+          )
+        }
+        return result.rows[0]
+      },
     )
-    if (!result.rows[0]) throw new Error('PO line not found')
-    return result.rows[0]
   },
 
   // Finance decides vendor AP vs employee advance once the PO reaches

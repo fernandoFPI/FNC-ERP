@@ -123,8 +123,14 @@ export interface POLine {
 // fully covered from stock is never bought from a vendor, so it contributes
 // $0 (mirrors the backend: confirmPOInventoryCheck zeroes total_price the
 // moment a line is fully covered, regardless of which lifecycle path it
-// then takes). Otherwise the total is market price x the full qty ordered,
-// converted to the PO's base currency (po.base_currency_code) via
+// then takes). Otherwise, prefer line.total (total_price in the line's own
+// currency) — every write path (market pricing, edit requests, admin
+// correction, actual-price entry) keeps it correct, whereas market_price is
+// a separate column only market pricing itself is guaranteed to refresh, so
+// it can drift stale after a later price correction even though the real
+// total_price/total_amount are right. Falls back to qty * market_price only
+// when total is genuinely absent (e.g. a line never priced at all). Result
+// is converted to the PO's base currency (po.base_currency_code) via
 // fx_rate_to_base — mirrors recalcPO in the gateway resolver exactly, so
 // this always returns a value safe to sum/compare across lines even when
 // they're priced in different currencies. Never label this with
@@ -141,8 +147,9 @@ function poLineTotal(line: {
   const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
   if (qty > 0 && fromStock >= qty) return 0
   const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
+  if (line.total != null) return parseFloat(String(line.total)) * fxRate
   const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
-  return (qty * mp || parseFloat(String(line.total ?? 0))) * fxRate
+  return qty * mp * fxRate
 }
 
 export interface PO {
@@ -309,6 +316,9 @@ interface EditDraft {
     description: string
     qty: number
     unit_price: number
+    currency_code: string
+    store_price: number
+    actual_unit_price: number
     uom: string
     _removed?: boolean
   }[]
@@ -1750,12 +1760,52 @@ export default function PurchaseOrderDetail() {
               label: 'Total',
               // total_amount is always in base_currency_code (lines can be priced in
               // other currencies and converted — see recalcPO/resolveFxRateToBase in
-              // the gateway resolvers), not the header currency_code field.
-              value: (
-                <span style={{ color: BRAND_GREEN }}>
-                  <AmountDisplay amount={po.total_amount} currency={po.base_currency_code} size="lg" />
-                </span>
-              ),
+              // the gateway resolvers), not the header currency_code field. When lines
+              // span more than one native currency (e.g. imported items in USD,
+              // locally-bought items in IQD), show each currency's own un-converted
+              // subtotal underneath — the blended total above doesn't tell you how
+              // much cash you actually need in each currency.
+              value: (() => {
+                const breakdown = po.lines.reduce<Record<string, number>>((acc, line) => {
+                  const qty = parseFloat(String(line.qty ?? 0))
+                  const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
+                  if (qty > 0 && fromStock >= qty) return acc
+                  // actual_unit_price (once recorded) takes priority over unit_price —
+                  // mirrors the backend's own total_price formula (applyPOEditChanges).
+                  const price = parseFloat(
+                    String(line.actual_unit_price ?? line.unit_price ?? 0),
+                  )
+                  const amt = qty * price
+                  const ccy = line.market_price_currency || po.base_currency_code
+                  acc[ccy] = (acc[ccy] ?? 0) + amt
+                  return acc
+                }, {})
+                const currencies = Object.keys(breakdown)
+                return (
+                  <div>
+                    <span style={{ color: BRAND_GREEN }}>
+                      <AmountDisplay amount={po.total_amount} currency={po.base_currency_code} size="lg" />
+                    </span>
+                    {currencies.length > 1 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '2px',
+                          fontSize: '11px',
+                          color: theme.textMuted,
+                          fontWeight: 400,
+                          marginTop: '4px',
+                        }}
+                      >
+                        {currencies.map((ccy) => (
+                          <AmountDisplay key={ccy} amount={breakdown[ccy]} currency={ccy} size="sm" />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })(),
             },
             { label: 'Expected delivery', value: po.expected_delivery_date ?? '—' },
             { label: 'Created by', value: po.created_by_email ?? '—' },
@@ -3540,8 +3590,8 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         {buyerDisplayName} ticks each item off as
-                        it's bought — this is just tracking. A receipt still needs to be recorded
-                        below to move this PO on to Goods Received.
+                        it's bought. Once every item here is ticked, this PO moves on to Goods
+                        Received automatically, where the receipt gets recorded.
                         {!canMarkBought && (
                           <div style={{ marginTop: '4px', opacity: 0.85 }}>
                             You're viewing this read-only — only {buyerDisplayName} or an admin can check items off.
@@ -3645,7 +3695,11 @@ export default function PurchaseOrderDetail() {
                                       placeholder="Enter actual price…"
                                       value={
                                         actualPrices[line.id] ??
-                                        (actualPrice != null ? String(actualPrice) : '')
+                                        (actualPrice != null
+                                          ? String(actualPrice)
+                                          : poPrice > 0
+                                            ? String(poPrice)
+                                            : '')
                                       }
                                       onChange={(e) => {
                                         setActualPrices((p) => ({
@@ -3656,7 +3710,25 @@ export default function PurchaseOrderDetail() {
                                       onBlur={(e) => {
                                         const val = parseFloat(e.target.value)
                                         const newVal = isNaN(val) ? null : val
-                                        if (newVal === actualPrice) return
+                                        // Nothing saved yet defaults to the market price
+                                        // (poPrice) — skip the write if the buyer just
+                                        // tabbed through without actually changing it.
+                                        const effectiveCurrent =
+                                          actualPrice ?? (poPrice > 0 ? poPrice : null)
+                                        if (newVal === effectiveCurrent) return
+                                        // 0 is ambiguous with "not recorded yet" (null) —
+                                        // reject it rather than silently accepting a price
+                                        // that's almost certainly not real. Clearing the
+                                        // field entirely (newVal === null) still works.
+                                        if (newVal === 0) {
+                                          addToast({
+                                            type: 'error',
+                                            message: 'Actual price must be greater than 0 — clear the field to unset it instead',
+                                          })
+                                          e.target.value =
+                                            effectiveCurrent != null ? String(effectiveCurrent) : ''
+                                          return
+                                        }
                                         setActualPriceStatus((s) => ({ ...s, [line.id]: 'saving' }))
                                         setLineActualPrice({
                                           variables: { poId: po.id, lineId: line.id, actualUnitPrice: newVal },
@@ -3667,8 +3739,12 @@ export default function PurchaseOrderDetail() {
                                               setActualPriceStatus((s) => ({ ...s, [line.id]: undefined }))
                                             }, 2000)
                                           })
-                                          .catch(() => {
+                                          .catch((err: Error) => {
                                             setActualPriceStatus((s) => ({ ...s, [line.id]: undefined }))
+                                            addToast({
+                                              type: 'error',
+                                              message: err.message || 'Failed to save actual price',
+                                            })
                                           })
                                       }}
                                       style={{
@@ -3733,8 +3809,72 @@ export default function PurchaseOrderDetail() {
                         {boughtCount} / {po.lines.length} items bought
                       </div>
                       )}
-                      <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {allBought && (
+                        <button
+                          onClick={() => {
+                            setBoughtChecklistExpanded((v) => !v)
+                          }}
+                          style={{
+                            alignSelf: 'flex-start',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            color: theme.textMuted,
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          {boughtChecklistExpanded ? 'Hide items' : 'Review items'}
+                        </button>
+                      )}
+                      {!(po.purpose === 'project' && po.delivery_destination === 'jobsite') && (
+                        <EntityAttachments
+                          entityType="purchase_order"
+                          entityId={po.id}
+                          category="po_receipt_document"
+                          readOnly={!canMarkBought}
+                          title="Buyer Receipts"
+                          description="Upload the vendor's receipt or invoice as proof of what was paid — the store keeper will see this when confirming Goods Received."
+                          uploadButtonLabel="Upload Receipt"
+                          recordLabel="this purchase"
+                        />
+                      )}
+                    </div>
+                  )
+                })()}
+
+              {po.status === 'goods_received' &&
+                (() => {
+                  const fullyCovered = po.lines.every((line) => {
+                    const ord = parseFloat(String(line.qty ?? 0))
+                    const rcv = parseFloat(String(line.qty_received ?? 0))
+                    const fromStk = parseFloat(String(line.qty_from_stock ?? 0))
+                    return rcv + fromStk >= ord
+                  })
+                  // sendPOToAudit only requires one confirmed receipt to exist
+                  // (restoring the guarantee that held before the Items Bought
+                  // split, not a new "everything must be fully received" rule
+                  // — recordReceipt has always allowed confirming just some
+                  // lines, and that alone was always enough to send to audit).
+                  // So Send to Audit stays available here once any receipt is
+                  // confirmed, even mid-way through receiving the rest.
+                  const hasAnyReceipt = po.receipts.some((r) => r.status === 'confirmed')
+                  if (!hasAnyReceipt) {
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div
+                          style={{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            background: '#f0fdf4',
+                            border: '1px solid #16a34a',
+                            fontSize: '13px',
+                            color: '#166534',
+                          }}
+                        >
+                          Buying is done — record what's been delivered to move this PO forward.
+                        </div>
+                        <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                         <Button
                           data-tour="po-record-receipt-btn"
                           variant="primary"
@@ -3746,30 +3886,28 @@ export default function PurchaseOrderDetail() {
                         >
                           Record Receipt
                         </Button>
-                        {allBought && (
-                          <button
-                            onClick={() => {
-                              setBoughtChecklistExpanded((v) => !v)
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: '12px',
-                              color: theme.textMuted,
-                              textDecoration: 'underline',
-                            }}
-                          >
-                            {boughtChecklistExpanded ? 'Hide items' : 'Review items'}
-                          </button>
-                        )}
                       </div>
-                    </div>
-                  )
-                })()}
-
-              {po.status === 'goods_received' && (
+                    )
+                  }
+                  return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {!fullyCovered && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                        Not every line is fully received yet — you can still record more, or send
+                        what's arrived to audit now.
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          navigate(`/procurement/purchase-orders/${po.id}/receive`)
+                        }}
+                      >
+                        Record Receipt
+                      </Button>
+                    </div>
+                  )}
                   <div
                     style={{
                       padding: '10px 14px',
@@ -3911,7 +4049,8 @@ export default function PurchaseOrderDetail() {
                     Send to Finance Audit
                   </Button>
                 </div>
-              )}
+                  )
+                })()}
 
               {po.status === 'finance_audit' &&
                 (isSystemLevel || po.callerIsFinanceTeam) &&
@@ -5793,6 +5932,9 @@ export default function PurchaseOrderDetail() {
               // them so the edit-request inputs don't show trailing zeros.
               qty: parseFloat(String(l.qty)) || 0,
               unit_price: parseFloat(String(l.unit_price)) || 0,
+              currency_code: l.market_price_currency ?? l.requested_currency_code ?? po.currency_code,
+              store_price: parseFloat(String(l.store_price ?? 0)) || 0,
+              actual_unit_price: parseFloat(String(l.actual_unit_price ?? 0)) || 0,
               uom: l.uom,
             })),
             linesAdded: [],
@@ -5836,6 +5978,29 @@ export default function PurchaseOrderDetail() {
                   field: 'unit_price',
                   from: orig.unit_price,
                   to: dl.unit_price,
+                })
+              const origCurrency =
+                orig.market_price_currency ?? orig.requested_currency_code ?? po.currency_code
+              if (dl.currency_code !== origCurrency)
+                edited.push({
+                  id: dl.id,
+                  field: 'currency_code',
+                  from: origCurrency,
+                  to: dl.currency_code,
+                })
+              if (dl.store_price !== (parseFloat(String(orig.store_price ?? 0)) || 0))
+                edited.push({
+                  id: dl.id,
+                  field: 'store_price',
+                  from: orig.store_price ?? 0,
+                  to: dl.store_price,
+                })
+              if (dl.actual_unit_price !== (parseFloat(String(orig.actual_unit_price ?? 0)) || 0))
+                edited.push({
+                  id: dl.id,
+                  field: 'actual_unit_price',
+                  from: orig.actual_unit_price ?? 0,
+                  to: dl.actual_unit_price,
                 })
               if (dl.uom !== orig.uom)
                 edited.push({ id: dl.id, field: 'uom', from: orig.uom, to: dl.uom })
@@ -5959,6 +6124,65 @@ export default function PurchaseOrderDetail() {
                               onChange={(e) => {
                                 const lines = [...editDraft.lines]
                                 lines[i] = { ...lines[i], unit_price: Number(e.target.value) }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'currency_code',
+                          label: 'Currency',
+                          width: '90px',
+                          render: (line, i) => (
+                            <select
+                              value={line.currency_code}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], currency_code: e.target.value }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            >
+                              {marketPricingCurrencyOptions.map((c) => (
+                                <option key={c.value} value={c.value}>
+                                  {c.label}
+                                </option>
+                              ))}
+                            </select>
+                          ),
+                        },
+                        {
+                          key: 'store_price',
+                          label: 'Store price',
+                          width: '100px',
+                          render: (line, i) => (
+                            <input
+                              type="number"
+                              value={line.store_price}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], store_price: Number(e.target.value) }
+                                setEditDraft({ ...editDraft, lines })
+                              }}
+                            />
+                          ),
+                        },
+                        {
+                          key: 'actual_unit_price',
+                          label: 'Actual price',
+                          width: '100px',
+                          render: (line, i) => (
+                            <input
+                              type="number"
+                              value={line.actual_unit_price}
+                              style={inputStyle}
+                              disabled={line._removed}
+                              onChange={(e) => {
+                                const lines = [...editDraft.lines]
+                                lines[i] = { ...lines[i], actual_unit_price: Number(e.target.value) }
                                 setEditDraft({ ...editDraft, lines })
                               }}
                             />
@@ -6176,6 +6400,20 @@ export default function PurchaseOrderDetail() {
                               loading={leR}
                               onClick={() => {
                                 const changes = buildChanges(editDraft)
+                                // 0 is ambiguous with "not recorded" — reject it the same
+                                // way the items_bought checklist input does, rather than
+                                // silently submitting a price that's almost certainly not
+                                // real.
+                                const zeroActualPrice = changes.lines.edited.some(
+                                  (e) => e.field === 'actual_unit_price' && e.to === 0,
+                                )
+                                if (zeroActualPrice) {
+                                  addToast({
+                                    type: 'error',
+                                    message: 'Actual price must be greater than 0 — leave it as-is to keep it unset',
+                                  })
+                                  return
+                                }
                                 void submitEditRequest({
                                   variables: {
                                     id: po.id,

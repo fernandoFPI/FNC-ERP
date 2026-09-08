@@ -167,9 +167,7 @@ export default function PurchaseOrderForm() {
   // it has to be known before approval (it gates whether the from-stock
   // auto Store Out fires) and receiving (whether Record Receipt creates a
   // Store In or a direct-to-jobsite delivery).
-  const [deliveryDestination, setDeliveryDestination] = useState<'inventory' | 'jobsite'>(
-    'inventory',
-  )
+  const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
   const [linkedMoId, setLinkedMoId] = useState('')
   const [lines, setLines] = useState<POLine[]>([emptyLine()])
   const [currencyTouched, setCurrencyTouched] = useState(false)
@@ -381,6 +379,14 @@ export default function PurchaseOrderForm() {
       addToast({ type: 'error', message: 'Please select a project' })
       return
     }
+    if (purpose === 'project' && !deliveryDestination && !isTourMode) {
+      addToast({ type: 'error', message: 'Please select a delivery destination' })
+      return
+    }
+    if (purpose === 'project' && !form.assigned_receiver_id && !isTourMode) {
+      addToast({ type: 'error', message: 'Please select who will receive this PO' })
+      return
+    }
     if (purpose === 'manufacturing' && !linkedMoId) {
       addToast({ type: 'error', message: 'Please select a manufacturing order' })
       return
@@ -398,7 +404,7 @@ export default function PurchaseOrderForm() {
         notes: form.notes || undefined,
         fx_rate: parseFloat(form.fx_rate) || 1,
         purpose,
-        delivery_destination: purpose === 'project' ? deliveryDestination : undefined,
+        delivery_destination: purpose === 'project' && deliveryDestination ? deliveryDestination : undefined,
         priority,
         assigned_receiver_id: form.assigned_receiver_id || undefined,
         branch_id: form.branch_id || undefined,
@@ -605,7 +611,7 @@ export default function PurchaseOrderForm() {
                 {purpose === 'project' && (
                   <div style={{ flex: '1 1 200px' }}>
                     <SearchableSelect
-                      label="Project"
+                      label="Project *"
                       value={linkedProjectId}
                       onChange={(v) => {
                         setLinkedProjectId(v)
@@ -620,12 +626,13 @@ export default function PurchaseOrderForm() {
                 {purpose === 'project' && (
                   <div style={{ flex: '1 1 200px' }}>
                     <Select
-                      label="Delivery Destination"
+                      label="Delivery Destination *"
                       value={deliveryDestination}
                       onChange={(e) => {
-                        setDeliveryDestination(e.target.value as 'inventory' | 'jobsite')
+                        setDeliveryDestination(e.target.value as '' | 'inventory' | 'jobsite')
                       }}
                     >
+                      <option value="">Select destination…</option>
                       <option value="inventory">Delivered to inventory</option>
                       <option value="jobsite">Delivered directly to the jobsite</option>
                     </Select>
@@ -769,7 +776,7 @@ export default function PurchaseOrderForm() {
               <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <div style={{ flex: '1 1 200px' }}>
                   <SearchableSelect
-                    label="Received By"
+                    label={purpose === 'project' ? 'Received By *' : 'Received By'}
                     value={form.assigned_receiver_id}
                     onChange={(v) => {
                       setForm((f) => ({ ...f, assigned_receiver_id: v }))

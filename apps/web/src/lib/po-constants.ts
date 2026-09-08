@@ -110,7 +110,7 @@ export const PO_STATUS_ACTIONS: Record<
   items_bought: {
     label: 'Mark items bought',
     description:
-      "The assigned buyer ticks each line as bought (tracking only). A receipt still needs to be recorded to move on to goods_received.",
+      'The assigned buyer ticks each line as bought. Once every purchased line is ticked, the PO moves on to Goods Received automatically.',
     requiredPosition: 'buyer',
   },
   ready_to_issue: {
@@ -120,8 +120,9 @@ export const PO_STATUS_ACTIONS: Record<
     requiredPosition: 'store_keeper',
   },
   goods_received: {
-    label: 'Send to finance audit',
-    description: 'Organizer sends PO to finance team for three-way match audit',
+    label: 'Record receipt / send to audit',
+    description:
+      'Organizer records the goods receipt, then sends the PO to finance for three-way match audit once every line is fully received.',
     isOrganizer: true,
   },
   finance_audit: {

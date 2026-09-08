@@ -178,16 +178,17 @@ export const moStateMachine = new StateMachine<MOStatus, MOAction>({
 //   approved → items_bought           (start_buying — auto-chained by approvePO in the
 //                                       same transaction, for every PO; no PO is ever
 //                                       observably left at 'approved')
-//   items_bought → goods_received     (finish_buying — auto-triggered by recordReceipt
-//                                       logging a real receipt. Ticking every line bought
-//                                       is tracking only and does NOT transition on its
-//                                       own — a receipt is always required to reach
-//                                       goods_received, same guarantee as before
-//                                       items_bought existed)
+//   items_bought → goods_received     (finish_buying — auto-triggered by markPOLineBought
+//                                       the moment every line that actually needs
+//                                       purchasing is ticked bought. Record Receipt only
+//                                       becomes available once the PO is in
+//                                       goods_received — it can no longer happen while
+//                                       still in items_bought)
 //   approved → goods_received         (receive_goods — legacy direct path, kept for
 //                                       recordReceipt's status check but effectively
 //                                       unreachable now that 'approved' is instantaneous)
-//   goods_received → finance_audit    (send_to_audit)
+//   goods_received → finance_audit    (send_to_audit — requires every line fully
+//                                       received first)
 //   finance_audit → goods_received    (fail_audit — finance returns with flags)
 //   finance_audit → invoiced          (pass_audit — three-way match OK)
 //   invoiced → completed              (complete — triggered by payment voucher paid)
@@ -285,10 +286,10 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     // Every PO: approvePO chains straight from 'approved' into
     // 'items_bought' in the same transaction, regardless of funding
     // source (that's decided later, by Finance, at 'invoiced'). The buyer
-    // ticks each line bought there for tracking, but that alone never
-    // advances the PO — recordReceipt (which now also accepts
-    // 'items_bought') logging a real receipt is still the only way to
-    // reach goods_received, exactly as it was before this status existed.
+    // ticks each line bought there — the moment every line that actually
+    // needs purchasing is ticked, markPOLineBought fires this transition
+    // itself. Record Receipt only becomes available once the PO reaches
+    // goods_received, not before.
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'items_bought', to: 'goods_received', action: 'finish_buying' },
     // Legacy direct path — kept so recordReceipt's status check still has

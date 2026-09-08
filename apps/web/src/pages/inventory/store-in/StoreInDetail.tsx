@@ -7,7 +7,7 @@ import {
   CANCEL_RECEIPT,
   ATTACH_RECEIPT_PHOTO,
 } from '../../../graphql/procurement'
-import { DETACH_FILE, FILE_DOWNLOAD_URL_QUERY } from '../../../graphql/hr'
+import { DETACH_FILE, FILE_DOWNLOAD_URL_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
 import { api } from '../../../lib/axios'
 import { apiErrMsg } from '../../../lib/apiError'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -106,6 +106,18 @@ export default function StoreInDetail() {
   })
   const receipt: Receipt | undefined = data?.poReceipt
 
+  // The vendor receipt is normally uploaded earlier by the buyer, straight
+  // onto the PO — this just checks whether one's there so Confirm doesn't
+  // also demand a redundant copy attached to this specific receipt.
+  const { data: buyerReceiptData } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
+    variables: { entityType: 'purchase_order', entityId: receipt?.po_id },
+    skip: !receipt?.po_id,
+    fetchPolicy: 'cache-and-network',
+  })
+  const hasBuyerReceipt = (
+    buyerReceiptData?.entityAttachments as { file: { category: string } }[] | undefined
+  )?.some((a) => a.file.category === 'po_receipt_document') ?? false
+
   const [attachReceiptPhoto] = useMutation(ATTACH_RECEIPT_PHOTO)
   const [detachFile, { loading: detaching }] = useMutation(DETACH_FILE)
   const [getDownloadUrl] = useLazyQuery(FILE_DOWNLOAD_URL_QUERY)
@@ -146,7 +158,7 @@ export default function StoreInDetail() {
   const isDraft = receipt.status === 'draft'
   const hasDocPhoto = receipt.photos.some((p) => p.category === 'po_receipt_document')
   const hasMaterialsPhoto = receipt.photos.some((p) => p.category === 'po_receipt_photo')
-  const canConfirm = hasDocPhoto && hasMaterialsPhoto
+  const canConfirm = (hasDocPhoto || hasBuyerReceipt) && hasMaterialsPhoto
 
   function openCamera(kind: PhotoKind) {
     captureKindRef.current = kind
@@ -238,7 +250,7 @@ export default function StoreInDetail() {
     }
   }
 
-  function renderPhotoSection(kind: PhotoKind, label: string, hint: string) {
+  function renderPhotoSection(kind: PhotoKind, label: string, hint: string, optional = false) {
     const category = PHOTO_CATEGORY[kind]
     const photos = receipt!.photos.filter((p) => p.category === category)
     const isDragOver = dragOverKind === kind
@@ -275,7 +287,7 @@ export default function StoreInDetail() {
             fontSize: '13px',
           }}
         >
-          {label} {photos.length > 0 ? '✓' : '(required)'}
+          {label} {photos.length > 0 ? '✓' : optional ? '(optional)' : '(required)'}
         </div>
         {photos.length > 0 && (
           <div
@@ -489,13 +501,28 @@ export default function StoreInDetail() {
             Required Photos
           </div>
           <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '16px' }}>
-            This receipt is still a draft — nothing has been added to inventory yet. Attach both
-            photos below, then confirm to update stock and the linked PO.
+            This receipt is still a draft — nothing has been added to inventory yet.{' '}
+            {hasBuyerReceipt
+              ? 'The buyer already attached a vendor receipt below. Attach the materials photo, then confirm to update stock and the linked PO.'
+              : 'Attach both photos below, then confirm to update stock and the linked PO.'}
           </div>
+          {receipt.po_id && (
+            <div style={{ marginBottom: '16px' }}>
+              <EntityAttachments
+                entityType="purchase_order"
+                entityId={receipt.po_id}
+                readOnly
+                title="Buyer's Receipt"
+                description="Uploaded by the buyer during Items Bought — check this against what's physically arriving before confirming."
+                recordLabel="this purchase"
+              />
+            </div>
+          )}
           {renderPhotoSection(
             'vendor_receipt',
-            'Vendor Receipt',
-            "Photo, scan, or PDF of the vendor's actual receipt or invoice document.",
+            'Vendor Receipt (fallback)',
+            "Only needed if the buyer didn't already attach one above.",
+            hasBuyerReceipt,
           )}
           {renderPhotoSection(
             'materials',
@@ -532,7 +559,11 @@ export default function StoreInDetail() {
           </div>
           {!canConfirm && (
             <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '8px' }}>
-              Attach both required photos before confirming.
+              {hasMaterialsPhoto
+                ? 'Attach a vendor receipt before confirming — the buyer usually does this during Items Bought.'
+                : !(hasDocPhoto || hasBuyerReceipt)
+                  ? 'Attach a materials photo and a vendor receipt before confirming.'
+                  : 'Attach a materials photo before confirming.'}
             </div>
           )}
         </Card>

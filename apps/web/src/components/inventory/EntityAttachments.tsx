@@ -58,6 +58,8 @@ export function EntityAttachments({
   title = 'Signed Documents',
   description,
   uploadButtonLabel = 'Upload signed copy',
+  category = 'attachment',
+  readOnly = false,
 }: {
   entityType: string
   entityId: string
@@ -65,6 +67,13 @@ export function EntityAttachments({
   title?: string
   description?: string
   uploadButtonLabel?: string
+  // Passed through to requestUploadUrl's mime-type allowlist — defaults to
+  // the generic 'attachment' category every existing caller relies on.
+  category?: string
+  // Hides the upload control and each row's Remove button — for showing
+  // someone else's attachments (e.g. a buyer's receipt, to a store keeper)
+  // without letting the viewer manage files that aren't theirs to manage.
+  readOnly?: boolean
 }) {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
@@ -144,7 +153,7 @@ export function EntityAttachments({
           filename: pendingFile.name,
           mimeType: pendingFile.type || 'application/octet-stream',
           sizeBytes: pendingFile.size,
-          category: 'attachment',
+          category,
         },
       })
       const { fileId } = urlData.requestUploadUrl
@@ -226,13 +235,15 @@ export function EntityAttachments({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,application/pdf"
-        style={{ display: 'none' }}
-        onChange={handleFileChosen}
-      />
+      {!readOnly && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          style={{ display: 'none' }}
+          onChange={handleFileChosen}
+        />
+      )}
 
       <Card>
         <div
@@ -253,9 +264,11 @@ export function EntityAttachments({
                 `Print ${recordLabel}, get it signed, then upload a photo or scan of the signed copy here.`}
             </div>
           </div>
-          <Button variant="primary" size="sm" onClick={openFilePicker}>
-            {uploadButtonLabel}
-          </Button>
+          {!readOnly && (
+            <Button variant="primary" size="sm" onClick={openFilePicker}>
+              {uploadButtonLabel}
+            </Button>
+          )}
         </div>
 
         {loading && (
@@ -373,16 +386,18 @@ export function EntityAttachments({
                   >
                     Download
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    style={{ color: theme.danger }}
-                    onClick={() => {
-                      setDeleteTarget(att)
-                    }}
-                  >
-                    Remove
-                  </Button>
+                  {!readOnly && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      style={{ color: theme.danger }}
+                      onClick={() => {
+                        setDeleteTarget(att)
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
