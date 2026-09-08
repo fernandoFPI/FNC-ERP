@@ -9375,15 +9375,21 @@ export const resolvers = {
       // base_currency_code is snapshotted at creation (rather than joined live)
       // so a later change to the company's default PO currency doesn't
       // retroactively reinterpret what an existing PO's total_amount is
-      // denominated in. default_po_currency lives on system_configuration (one
-      // row per company), not on companies itself — and is distinct from
-      // system_configuration.default_currency, which is the company's general
-      // default, not PO-specific.
+      // denominated in. Prefer the organizer's own header currency pick
+      // (input.currency_code, saved into purchase_orders.currency_code below)
+      // — the PurchaseOrderForm already auto-fills this to the company's
+      // configured default_po_currency unless the organizer deliberately
+      // changes it, so this only diverges from the config when someone
+      // explicitly picked a different currency for THIS PO. Previously this
+      // ignored that pick entirely and always used the company default, so
+      // an organizer choosing e.g. USD for a genuinely USD purchase still
+      // got every total silently forced into IQD.
       const companyCurrencyRes = await query<{ default_po_currency: string }>(
         `SELECT default_po_currency FROM system_configuration WHERE company_id=$1`,
         [ctx.auth.companyId],
       )
-      const baseCurrencyCode = companyCurrencyRes.rows[0]?.default_po_currency ?? 'IQD'
+      const baseCurrencyCode =
+        i.currency_code || companyCurrencyRes.rows[0]?.default_po_currency || 'IQD'
       if (i.linkedProjectId) {
         const projCheck = await query(
           `SELECT status, is_rfq FROM projects WHERE id=$1 AND company_id=$2`,
