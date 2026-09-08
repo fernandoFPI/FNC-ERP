@@ -780,7 +780,10 @@
   # requests carries the individual fulfilled/confirmed requests behind the
   # total, so the UI can drill into one and show its own activity/status.
   type RechargeMonthlySummaryEntry {
-    requestedBy: ID!
+    # Null for a group of requests filed for someone not in the system at
+    # all (see RechargeRequest.requestedBy) — requestedByEmail still carries
+    # a display label (falls back to the typed name) either way.
+    requestedBy: ID
     requestedByEmail: String
     requestCount: Int!
     totalAmount: Float!

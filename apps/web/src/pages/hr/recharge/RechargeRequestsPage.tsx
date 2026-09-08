@@ -67,7 +67,7 @@ interface RechargeRequest extends RechargeRequestSummary {
 }
 
 interface MonthlySummaryEntry {
-  requestedBy: string
+  requestedBy: string | null
   requestedByEmail?: string | null
   requestCount: number
   totalAmount: number
@@ -696,7 +696,12 @@ function MonthlySummaryView({
               </thead>
               <tbody>
                 {entries.map((e) => {
-                  const key = `${e.requestedBy}::${e.currencyCode}`
+                  // requestedBy is null for a group filed for someone not in
+                  // the system at all — fall back to the display label
+                  // (which the backend already groups distinctly per typed
+                  // name) so two different external recipients in the same
+                  // currency don't collide on the same key.
+                  const key = `${e.requestedBy ?? e.requestedByEmail}::${e.currencyCode}`
                   const isExpanded = expandedKey === key
                   return (
                     <Fragment key={key}>
