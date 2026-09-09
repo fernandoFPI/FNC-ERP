@@ -23,31 +23,7 @@ import { useAuth } from '../../../hooks/useAuth'
 import { usePermission } from '../../../hooks/usePermission'
 import { useCompanyStore } from '../../../store/companyStore'
 import { formatDate } from '../../../lib/format'
-
-// Matches the real store list in use across the product catalog — see
-// ProductForm.tsx, which uses the same list for the same reason (each
-// entry drives SKU auto-generation via PRODUCT_STORE_SKU_PREFIXES).
-const RAW_MATERIAL_SUB_CATEGORIES = [
-  'AC Unit Store',
-  'Cleaning Materials Store',
-  'Ducts Store',
-  'Electrical Equipment Store',
-  'Factory Store',
-  'Frame Store',
-  'Furniture Store',
-  'General Construction Store',
-  'General Store',
-  'Iron Doors Store',
-  'Old Iron Boards Store',
-  'Outside Area Cables',
-  'Paint Store',
-  'Plumbing Store',
-  'PVC & Aluminum Store',
-  'PVC Store',
-  'Safety Store',
-  'Sandwich, Plywood, Vinyl',
-  'Steel Store',
-]
+import { useProductStoreCategories } from '../../../hooks/useProductStoreCategories'
 
 const ARABIC_RE = /[؀-ۿ]/
 
@@ -139,6 +115,11 @@ export default function PendingCatalogItemsPage() {
     variables: { companyId: targetCompanyId || undefined },
     skip: !canResolve || mode !== 'link',
   })
+  // Reflects whichever company the resolution currently targets — falls back
+  // to the caller's own when nothing's been picked yet (panel not open).
+  const { categories: storeCategories } = useProductStoreCategories(
+    targetCompanyId || activeCompanyId || undefined,
+  )
 
   const items = data?.pendingProductCatalogItems ?? []
   const products = productsData?.products ?? []
@@ -448,9 +429,9 @@ export default function PendingCatalogItemsPage() {
                           }
                         >
                           <option value="">— Generic SKU —</option>
-                          {RAW_MATERIAL_SUB_CATEGORIES.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
+                          {storeCategories.map((c) => (
+                            <option key={c.id} value={c.name}>
+                              {c.name}
                             </option>
                           ))}
                         </Select>

@@ -7,8 +7,8 @@
   withTransaction,
   nextDocumentNumber,
   listPoFxRates,
-  PRODUCT_STORE_SKU_PREFIXES,
   PRODUCT_CATEGORY_SKU_PREFIXES,
+  getProductStoreCategoryPrefix,
 } from '@fnc-erp/db'
 import type { PoolClient } from '@fnc-erp/db'
 import { notifyProjectFileUploadGW } from '../lib/projectNotify.js'
@@ -10129,13 +10129,15 @@ export const resolvers = {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
       const manualSku = typeof i.sku === 'string' ? i.sku.trim() : ''
-      // Store (sub_category) determines the prefix for raw materials — this
-      // continues the exact convention the real ~6,900-product catalog
-      // already uses (see PRODUCT_STORE_SKU_PREFIXES). Falls back to a
-      // category-level prefix for the other categories, and finally to a
-      // flat PRD- counter when no category/store was picked at all.
+      // Store (sub_category) determines the prefix for raw materials — looked
+      // up from product_store_categories, which admins manage themselves at
+      // Settings -> Store Categories. Falls back to a category-level prefix
+      // for the other categories, and finally to a flat PRD- counter when no
+      // category/store was picked at all.
       const storeEntry =
-        typeof i.sub_category === 'string' ? PRODUCT_STORE_SKU_PREFIXES[i.sub_category] : undefined
+        typeof i.sub_category === 'string'
+          ? await getProductStoreCategoryPrefix(ctx.auth.companyId, i.sub_category)
+          : undefined
       const categoryEntry =
         typeof i.category === 'string' ? PRODUCT_CATEGORY_SKU_PREFIXES[i.category] : undefined
       const generated = storeEntry ?? categoryEntry
@@ -10232,8 +10234,14 @@ export const resolvers = {
 
       const i = args.input
       const manualSku = typeof i.sku === 'string' ? i.sku.trim() : ''
+      // Looked up against targetCompanyId (not the caller's own company) —
+      // the store category has to belong to whichever company the product
+      // is actually being created in, matching the cross-company resolution
+      // path above.
       const storeEntry =
-        typeof i.sub_category === 'string' ? PRODUCT_STORE_SKU_PREFIXES[i.sub_category] : undefined
+        typeof i.sub_category === 'string'
+          ? await getProductStoreCategoryPrefix(targetCompanyId, i.sub_category)
+          : undefined
       const categoryEntry =
         typeof i.category === 'string' ? PRODUCT_CATEGORY_SKU_PREFIXES[i.category] : undefined
       const generated = storeEntry ?? categoryEntry

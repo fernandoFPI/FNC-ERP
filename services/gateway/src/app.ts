@@ -25,6 +25,7 @@ import { verifyRouter } from './routes/verify.js'
 import { systemConfigRouter } from './routes/system-config.js'
 import { documentSequencesRouter } from './routes/document-sequences.js'
 import { poFxRatesRouter } from './routes/po-fx-rates.js'
+import { productStoreCategoriesRouter } from './routes/product-store-categories.js'
 import { notificationRoutingRouter } from './routes/notification-routing.js'
 import { searchRouter } from './routes/search.js'
 import { jobRunsRouter } from './routes/job-runs.js'
@@ -153,6 +154,10 @@ export async function createApp(): Promise<express.Application> {
   // ── 11b-vi. Document sequences (system_admin only) ───────────
   app.use('/api/v1/admin/document-sequences', documentSequencesRouter)
   app.use('/api/v1/admin/po-fx-rates', poFxRatesRouter)
+
+  // Not admin-only — GET is open to any authenticated user (product
+  // creation needs the list), only the write routes require company_admin.
+  app.use('/api/v1/product-store-categories', productStoreCategoriesRouter)
 
   // ── 11b-vii. Notification routing (system_admin only) ────────
   app.use('/api/v1/admin/notification-routing', notificationRoutingRouter)

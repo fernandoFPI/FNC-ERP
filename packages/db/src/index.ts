@@ -18,7 +18,6 @@ export {
   listDocumentSequences,
   upsertDocumentSequence,
   DOC_TYPES,
-  PRODUCT_STORE_SKU_PREFIXES,
   PRODUCT_CATEGORY_SKU_PREFIXES,
 } from './document-sequence.js'
 export type { DocumentSequence, DocType } from './document-sequence.js'
@@ -29,6 +28,13 @@ export {
   setDefaultPoFxRate,
 } from './po-fx-rate.js'
 export type { PoFxRate } from './po-fx-rate.js'
+export {
+  listProductStoreCategories,
+  getProductStoreCategoryPrefix,
+  createProductStoreCategory,
+  setProductStoreCategoryActive,
+} from './product-store-category.js'
+export type { ProductStoreCategory } from './product-store-category.js'
 export {
   isEmailEnabled,
   listNotificationRouting,

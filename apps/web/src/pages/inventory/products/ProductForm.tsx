@@ -16,31 +16,7 @@ import { Select } from '../../../components/ui/Select'
 import { Textarea } from '../../../components/ui/Textarea'
 import { Checkbox } from '../../../components/ui/Checkbox'
 import { useToastStore } from '../../../store/toastStore'
-
-// Matches the real store list in use across the product catalog — each of
-// these has its own SKU prefix (see PRODUCT_STORE_SKU_PREFIXES in
-// @fnc-erp/db) that a new product's SKU is auto-generated from.
-const RAW_MATERIAL_SUB_CATEGORIES = [
-  'AC Unit Store',
-  'Cleaning Materials Store',
-  'Ducts Store',
-  'Electrical Equipment Store',
-  'Factory Store',
-  'Frame Store',
-  'Furniture Store',
-  'General Construction Store',
-  'General Store',
-  'Iron Doors Store',
-  'Old Iron Boards Store',
-  'Outside Area Cables',
-  'Paint Store',
-  'Plumbing Store',
-  'PVC & Aluminum Store',
-  'PVC Store',
-  'Safety Store',
-  'Sandwich, Plywood, Vinyl',
-  'Steel Store',
-]
+import { useProductStoreCategories } from '../../../hooks/useProductStoreCategories'
 
 export default function ProductForm() {
   const { id } = useParams<{ id: string }>()
@@ -72,6 +48,7 @@ export default function ProductForm() {
     variables: { id },
     skip: !isEdit,
   })
+  const { categories: storeCategories } = useProductStoreCategories()
 
   useEffect(() => {
     const p = productData?.product
@@ -211,9 +188,9 @@ export default function ProductForm() {
                 onChange={field('sub_category')}
               >
                 <option value="">— All Stores —</option>
-                {RAW_MATERIAL_SUB_CATEGORIES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
+                {storeCategories.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
                   </option>
                 ))}
               </Select>
