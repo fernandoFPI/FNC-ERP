@@ -248,11 +248,95 @@ async function applyPOEditChanges(
     'store_price',
     'store_price_currency',
     'actual_unit_price',
+    'qty_from_stock',
   ]
   const priceAffectedLineIds = new Set<string>()
   let poCurrencyInfo: { company_id: string; base_currency_code: string } | null = null
   for (const e of changes.lines?.edited ?? []) {
     if (!lineAllowed.includes(e.field)) continue
+    if (e.field === 'qty_from_stock') {
+      // qty_from_stock has a real stock_balances.qty_reserved claim behind
+      // it since confirmPOInventoryCheck (Site 1 of the reservation system)
+      // — editing the number here without touching the reservation would
+      // leave it either understating what's actually locked (if increased)
+      // or permanently over-locking stock nobody can use (if decreased).
+      const lineRes = await client.query<{
+        product_id: string | null
+        source_location_id: string | null
+        qty_from_stock: string
+        sku: string | null
+        product_name: string | null
+      }>(
+        `SELECT pl.product_id, pl.source_location_id, pl.qty_from_stock, p.sku, p.name AS product_name
+         FROM po_lines pl LEFT JOIN products p ON p.id = pl.product_id
+         WHERE pl.id=$1 AND pl.po_id=$2`,
+        [e.id, poId],
+      )
+      const line = lineRes.rows[0]
+      if (!line) throw new Error(`Line ${e.id} not found`)
+      const oldQty = parseFloat(line.qty_from_stock)
+      const newQty = Number(e.to)
+      if (!(newQty >= 0)) throw new Error('qty_from_stock cannot be negative')
+      const delta = newQty - oldQty
+      const productLabel = line.sku
+        ? `${line.sku} (${line.product_name ?? line.product_id ?? e.id})`
+        : String(line.product_name ?? line.product_id ?? e.id)
+      if (delta !== 0) {
+        if (!line.source_location_id)
+          throw new Error(
+            `Cannot change the from-stock quantity for ${productLabel} — no source stock location is set on this line`,
+          )
+        const balRes = await client.query(
+          `SELECT qty_on_hand, qty_reserved FROM stock_balances
+           WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+           FOR UPDATE`,
+          [line.product_id, line.source_location_id],
+        )
+        const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+        const reserved = parseFloat(String(balRes.rows[0]?.qty_reserved ?? 0))
+        if (delta > 0) {
+          const available = onHand - reserved
+          if (available < delta)
+            throw new Error(
+              `Insufficient available stock to increase the from-stock quantity for ${productLabel} — ${available} available, ${delta} more required`,
+            )
+          await client.query(
+            `UPDATE stock_balances SET qty_reserved = qty_reserved + $1, updated_at = NOW()
+             WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+            [delta, line.product_id, line.source_location_id],
+          )
+        } else {
+          // Cap the release at what this line could still actually have
+          // reserved — part of oldQty may already have gone through a
+          // confirmed Store Out (which released its own share at confirm
+          // time), so releasing the full decrease here could double-release
+          // a shared (product, location) balance that other POs also draw
+          // reservations from.
+          const issuedRes = await client.query<{ qty_issued_confirmed: string | null }>(
+            `SELECT SUM(pmil.qty_issued) AS qty_issued_confirmed
+             FROM project_material_issue_lines pmil
+             JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+             WHERE pmil.po_line_id=$1 AND pmi.status != 'draft'`,
+            [e.id],
+          )
+          const confirmed = parseFloat(String(issuedRes.rows[0]?.qty_issued_confirmed ?? 0))
+          const stillReservedForLine = Math.max(oldQty - confirmed, 0)
+          const release = Math.min(-delta, stillReservedForLine, reserved)
+          if (release > 0)
+            await client.query(
+              `UPDATE stock_balances SET qty_reserved = qty_reserved - $1, updated_at = NOW()
+               WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+              [release, line.product_id, line.source_location_id],
+            )
+        }
+      }
+      await client.query(
+        `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered) WHERE id=$2 AND po_id=$3`,
+        [newQty, e.id, poId],
+      )
+      priceAffectedLineIds.add(e.id)
+      continue
+    }
     if (e.field === 'currency_code') {
       // Market pricing sets currency_code + fx_rate_to_base together (see
       // submitPOMarketPricing) — editing just the currency here without also
@@ -1515,6 +1599,46 @@ async function reverseStockIssuanceForPO(
         'Reversal — PO cancelled',
         userId,
       ],
+    )
+  }
+}
+
+// Releases whatever's left of a PO's inventory-check reservation
+// (confirmPOInventoryCheck's qty_reserved write) back to stock_balances —
+// called when a PO with from-stock lines is rejected, cancelled, or deleted
+// before every one of them has gone through a confirmed Store Out. Only
+// releases the unconfirmed remainder: a line whose Store Out already
+// confirmed (issueMaterialIssue) already decremented its own reservation
+// there, so releasing its full qty_from_stock again here would double-
+// release and drive qty_reserved negative. A no-op for any PO that never
+// reached confirmPOInventoryCheck (nothing was ever reserved).
+async function releasePOStockReservations(client: PoolClient, poId: string): Promise<void> {
+  const rows = await client.query<{
+    product_id: string
+    source_location_id: string
+    remaining: string
+  }>(
+    `SELECT pl.product_id, pl.source_location_id,
+            pl.qty_from_stock - COALESCE(issued.qty_issued_confirmed, 0) AS remaining
+     FROM po_lines pl
+     LEFT JOIN (
+       SELECT pmil.po_line_id, SUM(pmil.qty_issued) AS qty_issued_confirmed
+       FROM project_material_issue_lines pmil
+       JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+       WHERE pmi.status != 'draft'
+       GROUP BY pmil.po_line_id
+     ) issued ON issued.po_line_id = pl.id
+     WHERE pl.po_id=$1 AND pl.qty_from_stock > 0 AND pl.source_location_id IS NOT NULL
+     ORDER BY pl.product_id, pl.source_location_id`,
+    [poId],
+  )
+  for (const row of rows.rows) {
+    const remaining = parseFloat(String(row.remaining ?? 0))
+    if (remaining <= 0) continue
+    await client.query(
+      `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
+       WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+      [remaining, row.product_id, row.source_location_id],
     )
   }
 }
@@ -4374,8 +4498,11 @@ export const resolvers = {
            pol.description                                    AS description,
            pol.qty_ordered                                    AS "qtyRequired",
            COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0)                  AS "qtyOnHand",
-           GREATEST(COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0), 0) AS "qtyAvailable",
-           GREATEST(COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0), 0)
+           -- Not floored at 0 — a genuinely negative available quantity
+           -- (more reserved than actually on hand) should surface as
+           -- negative here rather than be hidden behind a false "0 available".
+           (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable",
+           (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0))
              >= pol.qty_ordered                               AS "isAvailable"
          FROM po_lines pol
          JOIN purchase_orders po ON po.id = pol.po_id
@@ -4397,7 +4524,7 @@ export const resolvers = {
            pol.id AS "lineId", c.id AS "companyId", c.name AS "companyName",
            sl.id AS "locationId", sl.name AS "locationName",
            COALESCE(sb.qty_on_hand, 0) AS "qtyOnHand",
-           GREATEST(COALESCE(sb.qty_on_hand, 0) - COALESCE(sb.qty_reserved, 0), 0) AS "qtyAvailable",
+           (COALESCE(sb.qty_on_hand, 0) - COALESCE(sb.qty_reserved, 0)) AS "qtyAvailable",
            sb.average_cost AS "averageCost"
          FROM po_lines pol
          JOIN stock_balances sb ON sb.product_id = pol.product_id AND sb.qty_on_hand > 0
@@ -10465,11 +10592,39 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
+      // Sorted for deterministic lock order, same reasoning as
+      // issueMaterialIssue — avoids deadlocking against another transfer
+      // that touches the same product/location pair in the opposite order.
+      const sortedLines = [...i.lines].sort((a, b) => {
+        if (a.product_id !== b.product_id) return a.product_id < b.product_id ? -1 : 1
+        return 0
+      })
       return withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           let lastMove: Record<string, unknown> = {}
-          for (const l of i.lines) {
+          for (const l of sortedLines) {
+            // Lock the balance row and verify there's enough before posting
+            // — this used to have no availability check at all, so a manual
+            // transfer could take a product's balance negative outright.
+            const balRes = await client.query(
+              `SELECT qty_on_hand FROM stock_balances
+               WHERE product_id=$1 AND location_id=$2 AND lot_id IS NOT DISTINCT FROM $3
+               FOR UPDATE`,
+              [l.product_id, i.from_location_id, l.lot_id ?? null],
+            )
+            const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+            if (onHand < l.qty) {
+              const prodRes = await client.query(`SELECT sku, name FROM products WHERE id=$1`, [
+                l.product_id,
+              ])
+              const p = prodRes.rows[0] as { sku: string | null; name: string | null } | undefined
+              const label = p?.sku ? `${p.sku} (${p.name ?? l.product_id})` : (p?.name ?? l.product_id)
+              throw new Error(
+                `Insufficient stock to transfer ${label} — ${onHand} on hand at the source location, ${l.qty} required`,
+              )
+            }
+
             const mv = await client.query(
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,lot_id,moved_by)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual',$9,$10,$11) RETURNING *, moved_at AS move_date`,
@@ -10533,9 +10688,12 @@ export const resolvers = {
       return withTransaction(
         { companyId: auth.companyId, userId: auth.userId, role: auth.role },
         async (client) => {
-          // Get current balance (lot_id IS NULL for non-lot items — constraint is product+location+lot_id)
+          // Get current balance (lot_id IS NULL for non-lot items — constraint is product+location+lot_id).
+          // Locked so the diff below is computed against a balance that can't
+          // change out from under it (a concurrent Store Out, receipt, or a
+          // second adjustment on the same row) before this adjustment posts.
           const balRes = await client.query(
-            `SELECT qty_on_hand, average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+            `SELECT qty_on_hand, average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
             [i.product_id, i.location_id],
           )
           const currentQty = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
@@ -19211,8 +19369,16 @@ export const resolvers = {
         // the company's default warehouse / virtual consumption location so
         // confirming an old draft never breaks.
         const companyId = ctx.auth.companyId
+        // Ordered by (product_id, location_id) so that when multiple lines
+        // touch the same stock_balances row, every concurrent transaction
+        // acquires its FOR UPDATE locks in the same order — avoids deadlocks
+        // between two Store Outs that share a product/location pair.
         const issueLinesRes = await client.query(
-          `SELECT * FROM project_material_issue_lines WHERE issue_id=$1`,
+          `SELECT piml.*, p.sku, p.name AS product_name
+           FROM project_material_issue_lines piml
+           LEFT JOIN products p ON p.id = piml.product_id
+           WHERE piml.issue_id=$1
+           ORDER BY piml.product_id, piml.from_location_id`,
           [args.id],
         )
         let fallbackFromLocationId: string | undefined
@@ -19264,6 +19430,56 @@ export const resolvers = {
           if (!fromCompanyId) continue
 
           const unitCost = parseFloat(String(line.unit_cost ?? 0))
+
+          // Lock the balance row and verify there's actually enough before
+          // posting the move — this used to be entirely unchecked. A
+          // PO-originated line already had its qty reserved at Inventory
+          // Check time (confirmPOInventoryCheck writes qty_reserved), so it
+          // only needs the physical on-hand check, and confirming here is
+          // what releases that reservation. A manual/ad-hoc issue has no
+          // reservation behind it, so it must respect what other POs have
+          // already reserved too — it can only draw from the unreserved
+          // portion, not on_hand as a whole.
+          const balRes = await client.query(
+            `SELECT qty_on_hand, qty_reserved FROM stock_balances
+             WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+             FOR UPDATE`,
+            [productId, fromLocationId],
+          )
+          const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+          const reserved = parseFloat(String(balRes.rows[0]?.qty_reserved ?? 0))
+          const productLabel = line.sku
+            ? `${String(line.sku)} (${String(line.product_name ?? productId)})`
+            : String(line.product_name ?? productId)
+          if (issue.po_id) {
+            if (onHand < qty) {
+              throw new Error(
+                `Insufficient stock to confirm this Store Out — ${productLabel}: ${onHand} on hand, ${qty} required`,
+              )
+            }
+            // Strict, not floored — a PO-originated line should always have
+            // enough of its own reservation to cover its confirmed qty. If it
+            // doesn't, something desynced qty_reserved from qty_from_stock
+            // (a bypassed edit, a bad backfill) and silently flooring to 0
+            // would hide that instead of surfacing it.
+            if (reserved < qty) {
+              throw new Error(
+                `Reservation mismatch confirming this Store Out — ${productLabel}: only ${reserved} reserved, ${qty} required. Check the PO's Inventory Check quantity against this issue.`,
+              )
+            }
+            await client.query(
+              `UPDATE stock_balances SET qty_reserved = qty_reserved - $1, updated_at = NOW()
+               WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+              [qty, productId, fromLocationId],
+            )
+          } else {
+            const available = onHand - reserved
+            if (available < qty) {
+              throw new Error(
+                `Insufficient available stock to confirm this Store Out — ${productLabel}: ${available} available (${onHand} on hand, ${reserved} reserved by other POs), ${qty} required`,
+              )
+            }
+          }
 
           if (fromCompanyId === companyId) {
             await client.query(
@@ -21033,6 +21249,9 @@ export const resolvers = {
             [args.id],
           )
           const consumptions = consRes.rows as Record<string, unknown>[]
+          const productNameById = new Map(
+            consumptions.map((c) => [String(c.component_product_id), c.product_name as string | null]),
+          )
 
           // Merge with input lines (input overrides planned qty if provided)
           const consumedMap: Record<string, { qty: number; unitCost: number }> = {}
@@ -21065,6 +21284,25 @@ export const resolvers = {
             const fromLocationId =
               (stockLocRes.rows[0]?.location_id as string | undefined) ?? defaultWarehouseId
             if (!fromLocationId) continue
+
+            // Lock and re-verify at the chosen location before posting the
+            // deduction — the location pick above already favored wherever
+            // has the most on hand, but that read wasn't inside a lock, so a
+            // concurrent consumption (another MO completion, a Store Out)
+            // could have moved stock out from under it since.
+            const balRes = await client.query(
+              `SELECT qty_on_hand FROM stock_balances
+               WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+               FOR UPDATE`,
+              [productId, fromLocationId],
+            )
+            const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+            if (onHand < qty) {
+              const label = productNameById.get(productId) ?? productId
+              throw new Error(
+                `Insufficient stock to complete this MO — ${label}: ${onHand} on hand at the selected location, ${qty} required`,
+              )
+            }
 
             await client.query(
               `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
@@ -26687,6 +26925,75 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
 
+      // Reserve stock for every from-stock line before anything else — this
+      // is the point a PO's from-stock quantity becomes a real claim on
+      // inventory instead of just a number on the line. issueMaterialIssue
+      // (the actual Store Out confirmation) trusts this reservation and only
+      // releases what's reserved here; it never re-checks raw availability
+      // for a PO-originated line. A line with qtyFromStock>0 but no chosen
+      // source location has nothing to reserve against, so it's rejected
+      // here rather than silently left unreserved (that gap is exactly what
+      // let a from-stock quantity go unbacked by any real stock before).
+      const lineIds = args.lineStockQtys.map((l) => l.lineId)
+      const lineInfoRes = await client.query<{
+        id: string
+        product_id: string | null
+        sku: string | null
+        product_name: string | null
+      }>(
+        `SELECT pol.id, pol.product_id, p.sku, p.name AS product_name
+         FROM po_lines pol LEFT JOIN products p ON p.id = pol.product_id
+         WHERE pol.id = ANY($1) AND pol.po_id = $2`,
+        [lineIds, args.id],
+      )
+      const lineInfoById = new Map(lineInfoRes.rows.map((r) => [r.id, r]))
+
+      // Sorted by (product_id, location_id) so concurrent confirmations (or
+      // a concurrent Store Out in issueMaterialIssue) acquire FOR UPDATE
+      // locks on shared stock_balances rows in the same order — avoids
+      // deadlocks between transactions that touch the same product/location
+      // pair in opposite orders.
+      const sortedLineStockQtys = [...args.lineStockQtys].sort((a, b) => {
+        const pa = lineInfoById.get(a.lineId)?.product_id ?? ''
+        const pb = lineInfoById.get(b.lineId)?.product_id ?? ''
+        if (pa !== pb) return pa < pb ? -1 : 1
+        const la = a.sourceLocationId ?? ''
+        const lb = b.sourceLocationId ?? ''
+        return la === lb ? 0 : la < lb ? -1 : 1
+      })
+
+      for (const lsq of sortedLineStockQtys) {
+        const qty = Number(lsq.qtyFromStock) || 0
+        if (qty <= 0) continue
+        const info = lineInfoById.get(lsq.lineId)
+        const productLabel = info?.sku
+          ? `${info.sku} (${info.product_name ?? info.product_id ?? lsq.lineId})`
+          : String(info?.product_name ?? info?.product_id ?? lsq.lineId)
+        if (!lsq.sourceLocationId)
+          throw new Error(
+            `A source stock location is required for ${productLabel} — it has a from-stock quantity of ${qty} but no location was chosen`,
+          )
+        const balRes = await client.query(
+          `SELECT qty_on_hand, qty_reserved FROM stock_balances
+           WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+           FOR UPDATE`,
+          [info?.product_id, lsq.sourceLocationId],
+        )
+        const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+        const reserved = parseFloat(String(balRes.rows[0]?.qty_reserved ?? 0))
+        const available = onHand - reserved
+        if (available < qty) {
+          throw new Error(
+            `Insufficient available stock to reserve for ${productLabel} — ${available} available (${onHand} on hand, ${reserved} already reserved by other POs), ${qty} required`,
+          )
+        }
+        await client.query(
+          `UPDATE stock_balances SET qty_reserved = qty_reserved + $1, updated_at = NOW()
+           WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+          [qty, info?.product_id, lsq.sourceLocationId],
+        )
+      }
+
       // Update qty_from_stock (+ chosen source location, if any) per line. A
       // line fully covered from stock is never bought from a vendor — it
       // never reaches market pricing at all (skipped there, and the whole
@@ -27379,6 +27686,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await releasePOStockReservations(client, args.id)
       await poTransition(
         client,
         args.id,
@@ -27450,6 +27758,11 @@ const phase5MutationResolvers = {
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
     const fromStatus = poRow.rows[0].status as POStatus
+    // goods_received/finance_audit/invoiced excluded (interim G7 guard):
+    // once goods have actually been received, cancelling silently orphans
+    // real inventory and (past finance_audit) posted AP records with no
+    // reversal path — until that reversal exists, those stages must be
+    // unwound deliberately instead of through a one-click cancel.
     const cancellable = [
       'draft',
       'inventory_check',
@@ -27460,9 +27773,6 @@ const phase5MutationResolvers = {
       'approved',
       'ready_to_issue',
       'items_bought',
-      'goods_received',
-      'finance_audit',
-      'invoiced',
     ]
     if (!cancellable.includes(fromStatus))
       throw new Error(`Cannot cancel PO in status '${fromStatus}'`)
@@ -27470,6 +27780,7 @@ const phase5MutationResolvers = {
     try {
       await client.query('BEGIN')
       await reverseStockIssuanceForPO(client, args.id, auth.userId)
+      await releasePOStockReservations(client, args.id)
       await poTransition(client, args.id, fromStatus, 'cancelled', 'cancel', auth, args.reason)
       await client.query('COMMIT')
     } catch (e) {
@@ -27951,6 +28262,10 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      // No-op today — deletePO only runs from draft/inventory_check, both
+      // strictly before confirmPOInventoryCheck ever reserves anything —
+      // kept here as a guard in case that invariant ever changes.
+      await releasePOStockReservations(client, args.id)
       await poTransition(client, args.id, fromStatus, 'deleted', 'delete', auth, args.reason)
       await client.query('COMMIT')
     } catch (e) {
@@ -28104,11 +28419,27 @@ const phase5MutationResolvers = {
           const toLocId = String(l.to_location_id)
           const qty = Number(l.qty)
 
-          // Get current avco from stock_balances
+          // Lock the balance row and verify there's enough before deducting
+          // — this used to just read average_cost with no availability
+          // check at all, so a transfer could take a product's balance
+          // negative outright.
           const balRes = await client.query(
-            `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 LIMIT 1`,
+            `SELECT qty_on_hand, average_cost FROM stock_balances
+             WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+             FOR UPDATE`,
             [productId, fromLocId],
           )
+          const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+          if (onHand < qty) {
+            const prodRes = await client.query(`SELECT sku, name FROM products WHERE id=$1`, [
+              productId,
+            ])
+            const p = prodRes.rows[0] as { sku: string | null; name: string | null } | undefined
+            const label = p?.sku ? `${p.sku} (${p.name ?? productId})` : (p?.name ?? productId)
+            throw new Error(
+              `Insufficient stock to transfer ${label} — ${onHand} on hand at the source location, ${qty} required`,
+            )
+          }
           const avco = Number(balRes.rows[0]?.average_cost ?? l.unit_cost ?? 0)
 
           // Stock move: deduct from source (from_company warehouse → virtual_out)
