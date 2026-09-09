@@ -1,10 +1,3 @@
--- HELD — do not move back into packages/db/migrations/ until the negative
--- balances on production have been reconciled. Run
--- packages/db/scripts/negative_stock_balances.sql on prod first; once
--- everything under "real location (needs reconciling)" is resolved (or
--- explicitly accepted), move this file back into migrations/ with the next
--- free number and it'll apply on the next deploy like any other migration.
---
 -- Blocks a stock move from driving qty_on_hand negative at a real physical
 -- location (warehouse/site), while still allowing it at a transit/virtual
 -- pass-through location — 'transit' plus 'virtual_in'/'virtual_out', which
@@ -26,9 +19,12 @@ CREATE OR REPLACE FUNCTION update_stock_balance()
 RETURNS TRIGGER AS $$
 DECLARE
   from_loc_type TEXT;
+  from_loc_name TEXT;
+  product_sku TEXT;
+  product_name TEXT;
   resulting_qty NUMERIC(20,4);
 BEGIN
-  SELECT type INTO from_loc_type FROM stock_locations WHERE id = NEW.from_location_id;
+  SELECT type, name INTO from_loc_type, from_loc_name FROM stock_locations WHERE id = NEW.from_location_id;
 
   IF NEW.lot_id IS NULL THEN
     -- No lot: use partial index (NULL-safe)
@@ -42,7 +38,10 @@ BEGIN
     RETURNING qty_on_hand INTO resulting_qty;
 
     IF resulting_qty < 0 AND (from_loc_type IS NULL OR from_loc_type NOT IN ('transit', 'virtual_in', 'virtual_out')) THEN
-      RAISE EXCEPTION 'Stock move would leave % units on hand for product % at location % — not enough stock at this location', resulting_qty, NEW.product_id, NEW.from_location_id;
+      SELECT sku, name INTO product_sku, product_name FROM products WHERE id = NEW.product_id;
+      RAISE EXCEPTION 'Insufficient stock — % (%) at % would go to % on hand',
+        COALESCE(product_sku, NEW.product_id::text), COALESCE(product_name, 'unknown product'),
+        COALESCE(from_loc_name, NEW.from_location_id::text), resulting_qty;
     END IF;
 
     INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, average_cost, last_move_at, updated_at)
@@ -68,7 +67,10 @@ BEGIN
     RETURNING qty_on_hand INTO resulting_qty;
 
     IF resulting_qty < 0 AND (from_loc_type IS NULL OR from_loc_type NOT IN ('transit', 'virtual_in', 'virtual_out')) THEN
-      RAISE EXCEPTION 'Stock move would leave % units on hand for product % (lot %) at location % — not enough stock at this location', resulting_qty, NEW.product_id, NEW.lot_id, NEW.from_location_id;
+      SELECT sku, name INTO product_sku, product_name FROM products WHERE id = NEW.product_id;
+      RAISE EXCEPTION 'Insufficient stock — % (%) lot % at % would go to % on hand',
+        COALESCE(product_sku, NEW.product_id::text), COALESCE(product_name, 'unknown product'),
+        NEW.lot_id, COALESCE(from_loc_name, NEW.from_location_id::text), resulting_qty;
     END IF;
 
     INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, average_cost, last_move_at, updated_at)

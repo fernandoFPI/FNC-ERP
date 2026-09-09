@@ -23,7 +23,7 @@ const INSERT_SQL = `
 export async function logAudit(params: AuditParams): Promise<void> {
   const values = [
     params.userId || null,
-    params.companyId || null,
+    params.companyId ?? null,
     params.action,
     params.tableName ?? null,
     params.recordId ?? null,
