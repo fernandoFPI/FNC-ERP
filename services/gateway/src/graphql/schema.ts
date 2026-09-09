@@ -3059,6 +3059,11 @@
     component_product_id: ID!
     qty_consumed: Float!
     unit_cost: Float
+    # Optional — which stock location to deduct this component from. If
+    # omitted, the resolver auto-picks whichever warehouse currently holds
+    # the most of this product; if none has any on hand, it now requires
+    # this to be set explicitly rather than silently guessing a default.
+    source_location_id: ID
   }
 
   extend type Query {

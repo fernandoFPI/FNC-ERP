@@ -21172,7 +21172,12 @@ export const resolvers = {
         input: {
           qty_produced: number
           actual_cost?: number
-          lines?: { component_product_id: string; qty_consumed: number; unit_cost?: number }[]
+          lines?: {
+            component_product_id: string
+            qty_consumed: number
+            unit_cost?: number
+            source_location_id?: string
+          }[]
           notes?: string
         }
       },
@@ -21254,7 +21259,10 @@ export const resolvers = {
           )
 
           // Merge with input lines (input overrides planned qty if provided)
-          const consumedMap: Record<string, { qty: number; unitCost: number }> = {}
+          const consumedMap: Record<
+            string,
+            { qty: number; unitCost: number; sourceLocationId?: string | undefined }
+          > = {}
           for (const c of consumptions) {
             const productId = String(c.component_product_id)
             consumedMap[productId] = {
@@ -21266,24 +21274,45 @@ export const resolvers = {
             consumedMap[l.component_product_id] = {
               qty: l.qty_consumed,
               unitCost: l.unit_cost ?? consumedMap[l.component_product_id].unitCost ?? 0,
+              sourceLocationId: l.source_location_id,
             }
           }
 
           // Deduct each component from the location where it actually has stock
-          for (const [productId, { qty, unitCost }] of Object.entries(consumedMap)) {
+          for (const [productId, { qty, unitCost, sourceLocationId }] of Object.entries(
+            consumedMap,
+          )) {
             if (qty <= 0) continue
 
-            // Find the warehouse location that actually holds this product's stock
-            const stockLocRes = await client.query(
-              `SELECT sb.location_id FROM stock_balances sb
+            // Explicit location takes priority — a caller who knows exactly
+            // where the components came from should never be second-guessed
+            // by the auto-pick below. Otherwise, auto-pick whichever
+            // warehouse currently holds the most of this product (the
+            // common case, unattended completion). If NEITHER exists —
+            // nothing has any of this product on hand — this used to
+            // silently fall back to "the" default warehouse, deducting
+            // from wherever the components physically weren't; the qty
+            // guard below would still catch it going negative, but the
+            // audit trail would point at the wrong shelf. Requiring an
+            // explicit location here instead is the Site 3 decision from
+            // the G9 stock-locking work.
+            let fromLocationId = sourceLocationId
+            if (!fromLocationId) {
+              const stockLocRes = await client.query(
+                `SELECT sb.location_id FROM stock_balances sb
              JOIN stock_locations sl ON sl.id = sb.location_id
              WHERE sb.product_id=$1 AND sl.company_id=$2 AND sl.type='warehouse' AND sb.qty_on_hand > 0
              ORDER BY sb.qty_on_hand DESC LIMIT 1`,
-              [productId, auth.companyId],
-            )
-            const fromLocationId =
-              (stockLocRes.rows[0]?.location_id as string | undefined) ?? defaultWarehouseId
-            if (!fromLocationId) continue
+                [productId, auth.companyId],
+              )
+              fromLocationId = stockLocRes.rows[0]?.location_id as string | undefined
+              if (!fromLocationId) {
+                const label = productNameById.get(productId) ?? productId
+                throw new Error(
+                  `No stock location currently holds any ${label} — specify source_location_id for this line explicitly`,
+                )
+              }
+            }
 
             // Lock and re-verify at the chosen location before posting the
             // deduction — the location pick above already favored wherever

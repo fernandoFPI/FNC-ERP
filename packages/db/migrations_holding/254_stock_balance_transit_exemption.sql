@@ -1,3 +1,10 @@
+-- HELD — do not move back into packages/db/migrations/ until the negative
+-- balances on production have been reconciled. Run
+-- packages/db/scripts/negative_stock_balances.sql on prod first; once
+-- everything under "real location (needs reconciling)" is resolved (or
+-- explicitly accepted), move this file back into migrations/ with the next
+-- free number and it'll apply on the next deploy like any other migration.
+--
 -- Blocks a stock move from driving qty_on_hand negative at a real physical
 -- location (warehouse/site), while still allowing it at a transit/virtual
 -- pass-through location — 'transit' plus 'virtual_in'/'virtual_out', which
