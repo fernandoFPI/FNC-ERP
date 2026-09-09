@@ -1576,6 +1576,37 @@ async function getEmployeeIdGW(userId: string, companyId: string): Promise<strin
   return (r.rows[0]?.id as string | null) ?? null
 }
 
+// Whether the caller is the employee explicitly named as this PO's receiver
+// (purchase_orders.assigned_receiver_id, the "Received By" field set at
+// creation) — distinct from holding the general buyer/store_keeper
+// position. Being named as receiver for a specific PO is enough on its own
+// to view and act on it once goods_received, regardless of any position
+// grant (or lack of one).
+async function callerIsAssignedReceiverGW(auth: GWAuth, poId: string): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM purchase_orders po JOIN employees e ON e.id = po.assigned_receiver_id
+     WHERE po.id=$1 AND po.company_id=$3 AND e.user_id=$2 AND e.company_id=$3`,
+    [poId, auth.userId, auth.companyId],
+  )
+  return r.rows.length > 0
+}
+
+// Same check, starting from a po_receipts id instead of a PO id — for the
+// mutations (confirmReceipt, cancelReceipt) that only take a receipt id.
+async function callerIsAssignedReceiverForReceiptGW(
+  auth: GWAuth,
+  receiptId: string,
+): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM po_receipts por
+     JOIN purchase_orders po ON po.id = por.po_id
+     JOIN employees e ON e.id = po.assigned_receiver_id
+     WHERE por.id=$1 AND po.company_id=$3 AND e.user_id=$2 AND e.company_id=$3`,
+    [receiptId, auth.userId, auth.companyId],
+  )
+  return r.rows.length > 0
+}
+
 async function userHasPositionGW(
   userId: string,
   companyId: string,
@@ -1638,9 +1669,9 @@ async function isUserFinanceTeamGW(userId: string, companyId: string): Promise<b
 // (submitPOStorePricing, submitPOMarketPricing, submitPOPriceVerification,
 // approvePO, approveStockIssuance, markPOLineBought, confirmPOInventoryCheck)
 // so PO-detail visibility and the ability to act on it never disagree.
-// Stages with no dedicated position (draft, approved, goods_received, and
-// terminal states) fall through to false — those are organizer/admin-only,
-// handled by the caller alongside this check.
+// Stages with no dedicated position (draft, approved, and terminal states)
+// fall through to false — those are organizer/admin-only, handled by the
+// caller alongside this check.
 async function callerHasCurrentStagePositionGW(
   auth: GWAuth,
   poId: string,
@@ -1665,6 +1696,11 @@ async function callerHasCurrentStagePositionGW(
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_keeper')
     case 'items_bought':
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'buyer')
+    case 'goods_received':
+      // Not a position grant — whoever is explicitly named as this PO's
+      // receiver ("Received By") can view and record the receipt for it,
+      // regardless of holding any buyer/store_keeper position.
+      return callerIsAssignedReceiverGW(auth, poId)
     default:
       return false
   }
@@ -4692,6 +4728,11 @@ export const resolvers = {
                -- alongside the other owner-actioned statuses for the
                -- organizer clause, plus its own position lookup below.
                (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
+               -- Whoever is explicitly named as this PO's receiver ("Received
+               -- By") sees it once goods_received too, regardless of whether
+               -- they hold a buyer/store_keeper position — see
+               -- callerIsAssignedReceiverGW.
+               OR (po.status = 'goods_received' AND po.assigned_receiver_id = $3)
                OR (po.status = 'inventory_check' AND ${positionScope('store_keeper')})
                OR (po.status = 'items_bought' AND (
                  po.assigned_buyer_user_id = $2
@@ -9594,9 +9635,12 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
-        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
-        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
-          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        const isReceiver = await callerIsAssignedReceiverGW(ctx.auth as GWAuth, args.poId)
+        if (!isReceiver) {
+          const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+          if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+            throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        }
       }
       const i = args.input
       return withTransaction(
@@ -9718,9 +9762,12 @@ export const resolvers = {
     confirmReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
-        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
-        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
-          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        const isReceiver = await callerIsAssignedReceiverForReceiptGW(ctx.auth as GWAuth, args.id)
+        if (!isReceiver) {
+          const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+          if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+            throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        }
       }
       return withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
@@ -9948,9 +9995,12 @@ export const resolvers = {
     cancelReceipt: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
-        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
-        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
-          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        const isReceiver = await callerIsAssignedReceiverForReceiptGW(ctx.auth as GWAuth, args.id)
+        if (!isReceiver) {
+          const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+          if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+            throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        }
       }
       const r = await query(
         `UPDATE po_receipts por SET status='cancelled'
@@ -9982,9 +10032,12 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       if (ctx.auth.role !== 'system_admin' && ctx.auth.role !== 'company_admin') {
-        const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
-        if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
-          throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        const isReceiver = await callerIsAssignedReceiverGW(ctx.auth as GWAuth, args.poId)
+        if (!isReceiver) {
+          const perms = await loadPermissions(ctx.auth.userId, ctx.auth.companyId)
+          if (!meetsLevel(perms['procurement.po.edit'], 'edit'))
+            throw new Error("Requires 'edit' access to 'procurement.po.edit'")
+        }
       }
       const i = args.input
       return withTransaction(
