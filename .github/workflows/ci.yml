@@ -11,9 +11,14 @@ jobs:
   # the monorepo has substantial pre-existing lint debt across most
   # packages (never caught before, since this workflow's trigger branches
   # didn't match this repo's real branches until recently). Runs and stays
-  # visible so it doesn't bit-rot further, but doesn't block merges. Once
-  # the backlog's paid down (or lint is scoped to changed-files-only),
-  # promote it back to required in branch protection.
+  # visible so it doesn't bit-rot further, but doesn't block merges.
+  #
+  # Planned follow-up (not yet built): a lint ratchet — required status
+  # check scoped to files changed in the PR/push (e.g. via a base-branch
+  # diff passed to eslint), so new violations block merging without
+  # requiring the existing backlog to be cleared first. The backlog stays
+  # visible via this job (informational) and must not grow; the ratchet
+  # job is what actually enforces that going forward.
   lint:
     name: Lint
     runs-on: ubuntu-latest

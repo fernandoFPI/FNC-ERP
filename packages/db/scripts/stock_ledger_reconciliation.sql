@@ -7,12 +7,24 @@
 -- supposed to exist), so every row this returns is evidence of an
 -- untracked patch.
 --
+-- Excludes superseded_at IS NOT NULL rows from the ledger sum (migration
+-- 231's correction-tracking column, already respected everywhere else a
+-- move gets corrected — see findStockMovesForCorrection). Two kinds of
+-- rows carry it: a genuine correction's reversal/replaced pair, and a
+-- deliberate "silent balance correction" move — one that changes
+-- qty_on_hand via the trigger same as any other move, but is inserted
+-- already-superseded so it never counts as ledger documentation. That's
+-- the mechanism the opening-balance backfill (migrations 255/256) uses to
+-- adjust a balance without changing what the ledger claims to explain —
+-- the alternative, a raw UPDATE on stock_balances, would just be a new
+-- untracked patch of the exact kind this script exists to catch.
+--
 -- Usage: psql "$DATABASE_URL" -f packages/db/scripts/stock_ledger_reconciliation.sql
 
 WITH ledger AS (
-  SELECT product_id, to_location_id AS location_id, lot_id, qty AS delta FROM stock_moves
+  SELECT product_id, to_location_id AS location_id, lot_id, qty AS delta FROM stock_moves WHERE superseded_at IS NULL
   UNION ALL
-  SELECT product_id, from_location_id AS location_id, lot_id, -qty AS delta FROM stock_moves
+  SELECT product_id, from_location_id AS location_id, lot_id, -qty AS delta FROM stock_moves WHERE superseded_at IS NULL
 ),
 computed AS (
   SELECT product_id, location_id, lot_id, SUM(delta) AS ledger_qty
