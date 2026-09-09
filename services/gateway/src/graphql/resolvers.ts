@@ -27660,10 +27660,12 @@ const phase5MutationResolvers = {
   // Every PO's assigned buyer ticks each line as bought while it sits in
   // items_bought (see approvePO, which now always chains straight into
   // this status on approval) — funding source doesn't matter here, the
-  // buyer needs to track what's bought either way. The moment every line
-  // that actually needs purchasing (i.e. not already fully covered from
-  // stock) is ticked, this is what advances the PO to goods_received —
-  // Record Receipt is only ever available from that point on, not before.
+  // buyer needs to track what's bought either way. This is tracking only —
+  // it does NOT advance the PO on its own. Moving to goods_received is a
+  // deliberate action (see finishBuyingPO below), gated on this checklist
+  // being complete AND a buyer receipt having been uploaded — ticking the
+  // last box alone isn't enough, since a buyer might finish the checklist
+  // before getting around to uploading the receipt.
   markPOLineBought: async (
     _: unknown,
     args: { poId: string; lineId: string; bought: boolean },
@@ -27687,45 +27689,74 @@ const phase5MutationResolvers = {
     const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
     if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this PO can mark items bought on this PO')
-    return withTransaction(
+    const result = await query(
+      `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
+      [args.bought, args.lineId, args.poId],
+    )
+    if (!result.rows[0]) throw new Error('PO line not found')
+    return result.rows[0]
+  },
+
+  // The deliberate action that actually advances items_bought ->
+  // goods_received — requires both the checklist complete AND at least one
+  // buyer receipt (vendor receipt photo/PDF, attached at the PO level —
+  // see the "Buyer Receipts" upload in Items Bought) already uploaded.
+  // Neither condition alone is enough: the checklist alone doesn't prove
+  // anything was actually paid for, and a receipt alone doesn't cover every
+  // line. Explicit rather than auto-triggered off either the last checkbox
+  // tick or the receipt upload, since either one could legitimately happen
+  // first/last and there's no single event to hang an auto-transition on.
+  finishBuyingPO: async (_: unknown, args: { poId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const poRow = await query(
+      `SELECT status, company_id, assigned_buyer_user_id FROM purchase_orders WHERE id=$1`,
+      [args.poId],
+    )
+    if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
+      throw new Error('PO not found')
+    if (poRow.rows[0].status !== 'items_bought')
+      throw new Error('PO must be in items_bought status to finish buying')
+    const isAdmin = isAdminGW(auth.role)
+    const isFrozenBuyer = poRow.rows[0].assigned_buyer_user_id === auth.userId
+    const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
+    if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
+      throw new Error('Only a buyer position holder for this PO can finish buying on this PO')
+    await withTransaction(
       { companyId: auth.companyId, userId: auth.userId, role: auth.role },
       async (client) => {
-        // FOR UPDATE: serializes concurrent ticks on the same PO so the
-        // "every line bought" check below can't race two simultaneous ticks
-        // into both seeing the checklist as still incomplete.
         const cur = await client.query(`SELECT status FROM purchase_orders WHERE id=$1 FOR UPDATE`, [
           args.poId,
         ])
         if (!cur.rows[0] || cur.rows[0].status !== 'items_bought')
-          throw new Error('PO must be in items_bought status to mark lines as bought')
-        const result = await client.query(
-          `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
-          [args.bought, args.lineId, args.poId],
-        )
-        if (!result.rows[0]) throw new Error('PO line not found')
-        // Lines fully covered from stock never needed buying and were never
-        // part of the checklist — only require the ones that actually do.
+          throw new Error('PO must be in items_bought status to finish buying')
         const remaining = await client.query(
           `SELECT COUNT(*) AS c FROM po_lines
            WHERE po_id=$1 AND qty_ordered - COALESCE(qty_from_stock,0) > 0 AND NOT is_bought`,
           [args.poId],
         )
-        if (parseInt(String(remaining.rows[0]?.c ?? '0')) === 0) {
-          // One-way: this is the only place the PO advances past
-          // items_bought. Unticking a line afterward never reverts it.
-          await poTransition(
-            client,
-            args.poId,
-            'items_bought',
-            'goods_received',
-            'finish_buying',
-            auth,
-            'Auto-transitioned — every purchased line ticked bought',
-          )
-        }
-        return result.rows[0]
+        if (parseInt(String(remaining.rows[0]?.c ?? '0')) > 0)
+          throw new Error('Every purchased line must be ticked bought first')
+        const hasReceipt = await client.query(
+          `SELECT 1 FROM document_attachments da JOIN files f ON f.id=da.file_id
+           WHERE da.entity_type='purchase_order' AND da.entity_id=$1
+             AND f.category='po_receipt_document' AND f.status != 'deleted' LIMIT 1`,
+          [args.poId],
+        )
+        if (!hasReceipt.rows[0])
+          throw new Error('Attach at least one buyer receipt before finishing buying')
+        await poTransition(
+          client,
+          args.poId,
+          'items_bought',
+          'goods_received',
+          'finish_buying',
+          auth,
+          'Buyer marked buying finished',
+        )
       },
     )
+    return getPOForReturn(args.poId)
   },
 
   // Finance decides vendor AP vs employee advance once the PO reaches

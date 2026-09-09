@@ -178,12 +178,15 @@ export const moStateMachine = new StateMachine<MOStatus, MOAction>({
 //   approved → items_bought           (start_buying — auto-chained by approvePO in the
 //                                       same transaction, for every PO; no PO is ever
 //                                       observably left at 'approved')
-//   items_bought → goods_received     (finish_buying — auto-triggered by markPOLineBought
-//                                       the moment every line that actually needs
-//                                       purchasing is ticked bought. Record Receipt only
-//                                       becomes available once the PO is in
-//                                       goods_received — it can no longer happen while
-//                                       still in items_bought)
+//   items_bought → goods_received     (finish_buying — explicit action (finishBuyingPO),
+//                                       gated on the checklist being fully ticked AND at
+//                                       least one buyer receipt already uploaded. Neither
+//                                       alone is enough, and there's no single tick/upload
+//                                       event to safely auto-trigger off since either can
+//                                       legitimately happen last. Record Receipt (the real
+//                                       one, creating an actual po_receipt) only becomes
+//                                       available once the PO is in goods_received — it
+//                                       can no longer happen while still in items_bought)
 //   approved → goods_received         (receive_goods — legacy direct path, kept for
 //                                       recordReceipt's status check but effectively
 //                                       unreachable now that 'approved' is instantaneous)
@@ -286,10 +289,9 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     // Every PO: approvePO chains straight from 'approved' into
     // 'items_bought' in the same transaction, regardless of funding
     // source (that's decided later, by Finance, at 'invoiced'). The buyer
-    // ticks each line bought there — the moment every line that actually
-    // needs purchasing is ticked, markPOLineBought fires this transition
-    // itself. Record Receipt only becomes available once the PO reaches
-    // goods_received, not before.
+    // ticks each line bought there and uploads a receipt, then explicitly
+    // finishes buying (finishBuyingPO) once both are done. Record Receipt
+    // only becomes available once the PO reaches goods_received, not before.
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'items_bought', to: 'goods_received', action: 'finish_buying' },
     // Legacy direct path — kept so recordReceipt's status check still has

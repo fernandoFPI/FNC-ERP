@@ -110,7 +110,7 @@ export const PO_STATUS_ACTIONS: Record<
   items_bought: {
     label: 'Mark items bought',
     description:
-      'The assigned buyer ticks each line as bought. Once every purchased line is ticked, the PO moves on to Goods Received automatically.',
+      'The assigned buyer ticks each line as bought and uploads the vendor receipt, then clicks Finish Buying to move the PO on to Goods Received.',
     requiredPosition: 'buyer',
   },
   ready_to_issue: {

@@ -35,6 +35,7 @@ import {
   SET_PO_LINE_ACTUAL_PRICE,
   SET_PO_LINE_ACCOUNTING,
   MARK_PO_LINE_BOUGHT,
+  FINISH_BUYING_PO,
   SET_PO_FUNDING,
   PO_LINE_COMMENTS_QUERY,
   ADD_PO_LINE_COMMENT,
@@ -43,7 +44,7 @@ import {
   ADMIN_CORRECT_PO,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
-import { EMPLOYEES_QUERY } from '../../../graphql/hr'
+import { EMPLOYEES_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
 import { ACCOUNTS_QUERY, COST_CENTERS_QUERY, ANALYTIC_ACCOUNTS_QUERY } from '../../../graphql/finance'
 import { PRODUCTS_QUERY, STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
@@ -1005,6 +1006,23 @@ export default function PurchaseOrderDetail() {
     },
     onError: onErr,
   })
+  const [finishBuyingPO, { loading: finishingBuying }] = useMutation(FINISH_BUYING_PO, {
+    onCompleted: () => {
+      addToast({ type: 'success', message: 'Buying finished — moved to Goods Received' })
+      void refetch()
+    },
+    onError: onErr,
+  })
+  // Whether at least one buyer receipt (vendor receipt photo/PDF) has been
+  // uploaded — gates the "Finish Buying" button alongside the checklist.
+  const { data: buyerReceiptData } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
+    variables: { entityType: 'purchase_order', entityId: id },
+    skip: !id || po?.status !== 'items_bought',
+    fetchPolicy: 'cache-and-network',
+  })
+  const hasBuyerReceipt = (
+    (buyerReceiptData?.entityAttachments as { file: { category: string } }[] | undefined) ?? []
+  ).some((a) => a.file.category === 'po_receipt_document')
   const [setPOFunding, { loading: settingFunding }] = useMutation(SET_PO_FUNDING, {
     onCompleted: () => {
       setFundingChoice('')
@@ -3590,8 +3608,8 @@ export default function PurchaseOrderDetail() {
                         }}
                       >
                         {buyerDisplayName} ticks each item off as
-                        it's bought. Once every item here is ticked, this PO moves on to Goods
-                        Received automatically, where the receipt gets recorded.
+                        it's bought and uploads the vendor's receipt below. Once both are done,
+                        click Finish Buying to move this PO on to Goods Received.
                         {!canMarkBought && (
                           <div style={{ marginTop: '4px', opacity: 0.85 }}>
                             You're viewing this read-only — only {buyerDisplayName} or an admin can check items off.
@@ -3838,6 +3856,25 @@ export default function PurchaseOrderDetail() {
                           uploadButtonLabel="Upload Receipt"
                           recordLabel="this purchase"
                         />
+                      )}
+                      {allBought && canMarkBought && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <Button
+                            variant="primary"
+                            style={PRIMARY_CTA_STYLE}
+                            size="sm"
+                            disabled={!hasBuyerReceipt}
+                            loading={finishingBuying}
+                            onClick={() => void finishBuyingPO({ variables: { poId: po.id } })}
+                          >
+                            Finish Buying
+                          </Button>
+                          {!hasBuyerReceipt && (
+                            <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                              Upload at least one buyer receipt above before finishing.
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )

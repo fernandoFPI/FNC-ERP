@@ -842,6 +842,15 @@ export const MARK_PO_LINE_BOUGHT = gql`
   }
 `
 
+export const FINISH_BUYING_PO = gql`
+  mutation FinishBuyingPO($poId: ID!) {
+    finishBuyingPO(poId: $poId) {
+      id
+      status
+    }
+  }
+`
+
 export const SET_PO_FUNDING = gql`
   mutation SetPOFunding($id: ID!, $fundingSource: String!, $fundingAdvanceId: ID) {
     setPOFunding(id: $id, fundingSource: $fundingSource, fundingAdvanceId: $fundingAdvanceId) {

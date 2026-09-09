@@ -146,6 +146,7 @@
     setPOLineAuditStatus(poId: ID!, lineId: ID!, auditStatus: String!, auditNote: String): POLine!
     setPOLineAccounting(poId: ID!, lineId: ID!, glAccountId: ID, costCenterId: ID): POLine!
     markPOLineBought(poId: ID!, lineId: ID!, bought: Boolean!): POLine!
+    finishBuyingPO(poId: ID!): PurchaseOrder!
     setPOFunding(id: ID!, fundingSource: String!, fundingAdvanceId: ID): PurchaseOrder!
     completePO(id: ID!, receiptNotes: String): PurchaseOrder!
     deletePO(id: ID!, reason: String): PurchaseOrder!
