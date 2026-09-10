@@ -138,6 +138,16 @@
     approveRequisition(id: ID!): Requisition!
     rejectRequisitionApproval(id: ID!, reason: String!): Requisition!
 
+    # G1 PR 3: Items Bought — record an actual purchase against a
+    # requisition line (one call per vendor; call it more than once on the
+    # same line, each against a different vendor, to split the line),
+    # flag it over_tolerance against the line's approved_unit_price
+    # snapshot, a supervisor override for that flag, and closing out a
+    # line's unfulfillable remainder as short.
+    recordLinePurchase(input: RecordLinePurchaseInput!): POLinePurchase!
+    approveTolerancePurchase(purchaseId: ID!): POLinePurchase!
+    markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
+
     # PO lifecycle
     submitPOToInventoryCheck(id: ID!, notes: String): PurchaseOrder!
     confirmPOInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): PurchaseOrder!
@@ -1942,6 +1952,52 @@
     cost_center_name: String
     advance_settlement_id: ID
     is_bought: Boolean
+    # G1 PR 3 — snapshotted at approval (migration 262), the tolerance
+    # check compares actual_unit_price on each po_line_purchases entry
+    # against this, never a live/current price.
+    approved_unit_price: String
+    short_reason: String
+    short_marked_by: ID
+    short_marked_at: String
+    # One row per vendor a line was bought from — more than one means the
+    # line was split across vendors. Only populated when fetched via the
+    # requisition(id) query; a bare RETURNING * from a line mutation (e.g.
+    # markRequisitionLineShort) leaves this null, matching how POLine's
+    # other joined-in fields (product_name, account_code, etc.) already
+    # behave in that situation.
+    purchases: [POLinePurchase!]
+  }
+
+  # G1 PR 3 — one row per (line, vendor) purchase actually recorded at
+  # Items Bought. currency_code/qty/actual_unit_price are this specific
+  # purchase's own — never converted against the line's original
+  # currency_code, per the no-conversion policy.
+  type POLinePurchase {
+    id: ID!
+    po_line_id: ID!
+    vendor_id: ID!
+    vendor_name: String
+    currency_code: String!
+    qty: String!
+    actual_unit_price: String!
+    receipt_attachment_id: ID
+    receipt_file_id: ID
+    receipt_filename: String
+    bought_by: ID
+    bought_by_name: String
+    bought_at: String!
+    over_tolerance: Boolean!
+    tolerance_approved_by: ID
+    tolerance_approved_by_name: String
+  }
+
+  input RecordLinePurchaseInput {
+    lineId: ID!
+    vendorId: ID!
+    qty: Float!
+    actualUnitPrice: Float!
+    currencyCode: String!
+    receiptFileId: ID
   }
 
   type ReceivablePO {
