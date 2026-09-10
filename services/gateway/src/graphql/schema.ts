@@ -19,6 +19,9 @@
     purchaseOrders(status: String, vendor_id: ID, project_id: ID, myPOsOnly: Boolean): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
     requisition(id: ID!): Requisition
+    # G1 PR 4 — child POs Finish Buying forked for this requisition (or,
+    # for pre-G1 data, the BECOMES_CHILD rows migration 258 kept in place).
+    requisitionChildPurchaseOrders(requisitionId: ID!): [PurchaseOrder!]!
     # Same shape as purchaseOrder(id), but not subject to its viewerRestricted
     # gate — backs Record Receipt / Create Return, which have their own,
     # separate authorization (see the resolver's comment).
@@ -147,6 +150,11 @@
     recordLinePurchase(input: RecordLinePurchaseInput!): POLinePurchase!
     approveTolerancePurchase(purchaseId: ID!): POLinePurchase!
     markRequisitionLineShort(lineId: ID!, reason: String!): POLine!
+
+    # G1 PR 4: Finish Buying — forks one child purchase_orders row per
+    # distinct vendor among this requisition's recorded purchases, moving
+    # the requisition from items_bought to sourcing.
+    finishBuyingRequisition(id: ID!): Requisition!
 
     # PO lifecycle
     submitPOToInventoryCheck(id: ID!, notes: String): PurchaseOrder!
@@ -361,6 +369,11 @@
     created_at: String!
     updated_at: String!
     invoice_count: Int!
+    requisition_id: ID
+    # G1 PR 4 — true only for a pre-G1 migrated child with zero real
+    # po_line_purchases-backed entries; always false for anything
+    # finishBuyingRequisition forks. Resolved lazily, not stored.
+    isLegacyNoPurchaseRecord: Boolean!
   }
 
   type POPositionAssignment {
