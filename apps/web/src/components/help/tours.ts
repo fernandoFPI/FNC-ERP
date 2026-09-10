@@ -1145,7 +1145,7 @@ const informationalTours: Record<string, { title: string; steps: DriveStep[] }> 
         popover: {
           title: 'Step 4 — Inventory valuation',
           description:
-            'Go to <strong>Inventory → Valuation</strong> to see total stock value.<br/><br/>Value = Quantity × Unit Cost (FIFO or weighted average, per product setting).<br/><br/>The valuation report is the source of truth for the <strong>Inventory asset</strong> on the Balance Sheet. Run it monthly and reconcile to the GL before closing the period.',
+            'Go to <strong>Inventory → Valuation</strong> to see total stock value.<br/><br/>Value = Quantity × Unit Cost, where Unit Cost is the last recorded cost from that product\'s most recent receipt.<br/><br/>The valuation report is the source of truth for the <strong>Inventory asset</strong> on the Balance Sheet. Run it monthly and reconcile to the GL before closing the period.',
         },
       },
       {

@@ -30,20 +30,21 @@
 --     been touched since the import itself.
 --   * unit_cost: last_cost if recorded (>0) — stock_balances.average_cost,
 --     despite its column name, is populated by the trigger with the last
---     recorded move cost (migration 203), not a true weighted average —
---     else the product's standard_cost if set (>0), else 0. The tier
---     actually used is recorded in the notes text itself (not just
---     inferable from the number), since which one fired isn't otherwise
---     reconstructable later — and when it falls all the way to 0, the
---     notes are flagged for a Finance/costing review: these rows have no
---     cost basis to replay from once G8 catches up on real costing, and
---     are candidates for a future cost-only revaluation move (see the G8
---     follow-up list below).
+--     recorded move cost (migration 203), which migration 257 made the
+--     product's one and only permanent valuation method (not a
+--     placeholder pending a future weighted-average implementation — that
+--     idea was explicitly dropped) — else the product's standard_cost if
+--     set (>0), else 0. The tier actually used is recorded in the notes
+--     text itself (not just inferable from the number), since which one
+--     fired isn't otherwise reconstructable later — and when it falls all
+--     the way to 0, the notes are flagged for a Finance/costing review:
+--     these rows have no cost basis to replay from, and are candidates
+--     for a future cost-only revaluation move (see the G8 follow-up list
+--     below).
 --
 -- Does not touch the trigger's costing logic (still last_cost, per
--- migration 203). G8 follow-up items, not part of this migration:
---   * restoring true weighted-average cost computation in the trigger
---     (replacing last_cost).
+-- migration 203 — and, as of 257, permanently). G8 follow-up items, not
+-- part of this migration:
 --   * landed cost (freight/duty/handling folded into unit_cost, not just
 --     the vendor line price).
 --   * a cost-only revaluation move for the zero-cost opening rows this
