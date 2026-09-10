@@ -27987,28 +27987,27 @@ const phase5MutationResolvers = {
         }
       }
 
-      // Self-service override: if whoever is recording this purchase
-      // already carries supervisor authority (the same set approveRequisition
-      // recognizes), stamp the approval immediately instead of forcing a
-      // separate approveTolerancePurchase round trip. Anyone else's
-      // over-tolerance entry is still recorded (the buyer needs to log what
-      // actually happened) but sits unapproved until a supervisor reviews it.
-      let toleranceApprovedBy: string | null = null
-      if (overTolerance) {
-        const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, line.requisition_id)
-        const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, line.requisition_id)
-        const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
-        if (isAdmin || isDeptHead || isApprover || isReqAdmin) toleranceApprovedBy = auth.userId
-      }
-
+      // No self-approval: an over-tolerance entry always starts unapproved,
+      // even when the recorder personally holds supervisor authority —
+      // approveTolerancePurchase itself refuses an approver who matches
+      // bought_by, so there is no path (inline or otherwise) for the same
+      // person to both record and clear their own over-tolerance purchase.
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO po_line_purchases
-           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance, tolerance_approved_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-        [lineId, vendorId, currencyCode, qty, actualUnitPrice, auth.userId, overTolerance, toleranceApprovedBy],
+           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [lineId, vendorId, currencyCode, qty, actualUnitPrice, auth.userId, overTolerance],
       )
       purchaseId = inserted.rows[0]!.id
 
+      // One receipt attachment per bought entry (not per line) — a split
+      // line's several po_line_purchases rows each carry their own, since
+      // each represents a separate real-world purchase/receipt. PR 4's
+      // Finish Buying gate will require receipt_attachment_id on every
+      // entry before a requisition can leave items_bought, mirroring
+      // finishBuyingPO's own "at least one receipt" gate for the old
+      // single-vendor model — not enforced here, since a photo may
+      // legitimately arrive after the purchase is recorded.
       if (receiptFileId) {
         const attach = await client.query<{ id: string }>(
           `INSERT INTO document_attachments (entity_type, entity_id, file_id, uploaded_by)
@@ -28032,10 +28031,12 @@ const phase5MutationResolvers = {
     return getPOLinePurchaseForReturn(purchaseId)
   },
 
-  // Supervisor sign-off on a purchase recordLinePurchase already flagged
-  // over_tolerance but couldn't self-approve (recorded by a plain buyer,
-  // not someone who also holds supervisor authority). Same authorization
-  // set as approveRequisition/rejectRequisitionApproval.
+  // Supervisor sign-off on a purchase recordLinePurchase flagged
+  // over_tolerance. Same authorization set as approveRequisition/
+  // rejectRequisitionApproval, but no self-approval regardless of
+  // position: the approver must be a different person than whoever
+  // recorded the purchase (plp.bought_by), full stop — a supervisor who
+  // happened to record it themselves must have someone else clear it.
   approveTolerancePurchase: async (_: unknown, args: { purchaseId: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
@@ -28043,10 +28044,11 @@ const phase5MutationResolvers = {
       id: string
       requisition_id: string
       company_id: string
+      bought_by: string | null
       over_tolerance: boolean
       tolerance_approved_by: string | null
     }>(
-      `SELECT plp.id, pl.requisition_id, req.company_id, plp.over_tolerance, plp.tolerance_approved_by
+      `SELECT plp.id, pl.requisition_id, req.company_id, plp.bought_by, plp.over_tolerance, plp.tolerance_approved_by
        FROM po_line_purchases plp
        JOIN po_lines pl ON pl.id=plp.po_line_id
        JOIN requisitions req ON req.id=pl.requisition_id
@@ -28064,6 +28066,12 @@ const phase5MutationResolvers = {
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
     if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
       throw new Error('Not authorized to approve an over-tolerance purchase for this requisition')
+    // Checked only once the caller has otherwise-sufficient authority, so
+    // the error a plain buyer sees is "not authorized" (the real reason
+    // for them) rather than this one, which is specifically about a
+    // supervisor who happens to also be the recorder.
+    if (purchase.bought_by === auth.userId)
+      throw new Error('The buyer who recorded this purchase cannot also approve its tolerance override — a different supervisor must review it')
 
     await query(`UPDATE po_line_purchases SET tolerance_approved_by=$1 WHERE id=$2`, [
       auth.userId,

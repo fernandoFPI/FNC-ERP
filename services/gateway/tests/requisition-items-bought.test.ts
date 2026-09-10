@@ -10,6 +10,7 @@ const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const TEST_USER_EMAIL = 'g1-items-bought-test@fnc-erp.local'
 const BUYER_USER_EMAIL = 'g1-items-bought-buyer-test@fnc-erp.local'
 const BUYER_EMPLOYEE_NUMBER = 'G1IBTEST-BUYER'
+const SECOND_ADMIN_EMAIL = 'g1-items-bought-second-admin-test@fnc-erp.local'
 const VENDOR_PREFIX = 'G1IBTEST-VENDOR-'
 const SKU_PREFIX = 'G1IBTEST-'
 
@@ -22,6 +23,10 @@ let ctx: { auth: { companyId: string; userId: string; role: string; module: stri
 let buyerUserId: string
 let buyerEmployeeId: string
 let buyerCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
+// A second admin, distinct from `userId` — proves approveTolerancePurchase's
+// no-self-approval rule is about the specific person, not just position.
+let secondAdminUserId: string
+let secondAdminCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 let vendorAId: string
 let vendorBId: string
 
@@ -152,6 +157,16 @@ beforeAll(async () => {
     auth: { companyId: TEST_COMPANY_ID, userId: buyerUserId, role: 'user', module: 'all', sessionId: 'g1-ib-test-buyer' },
   }
 
+  const secondAdminR = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, password_hash) VALUES ($1,'test-hash-not-used')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash RETURNING id`,
+    [SECOND_ADMIN_EMAIL],
+  )
+  secondAdminUserId = secondAdminR.rows[0]!.id
+  secondAdminCtx = {
+    auth: { companyId: TEST_COMPANY_ID, userId: secondAdminUserId, role: 'system_admin', module: 'all', sessionId: 'g1-ib-test-second-admin' },
+  }
+
   const whR = await pool.query<{ id: string }>(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
     [TEST_COMPANY_ID],
@@ -188,6 +203,7 @@ afterAll(async () => {
   await pool.query(`DELETE FROM employees WHERE employee_number=$1`, [BUYER_EMPLOYEE_NUMBER])
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
   await pool.query(`DELETE FROM users WHERE email=$1`, [BUYER_USER_EMAIL])
+  await pool.query(`DELETE FROM users WHERE email=$1`, [SECOND_ADMIN_EMAIL])
   await pool.end()
 })
 
@@ -276,8 +292,7 @@ describe('recordLinePurchase', () => {
     expect((withinPurchase as { over_tolerance: boolean }).over_tolerance).toBe(false)
 
     const over = await makeReqAtItemsBought({ qtyOrdered: 5, marketPrice: 100 })
-    // Recorded by the plain buyer (no supervisor authority) — flagged but
-    // not self-approved.
+    // Recorded by the plain buyer — flagged, unapproved.
     const overPurchase = await resolvers.Mutation.recordLinePurchase(
       null,
       { input: { lineId: over.lineId, vendorId: vendorAId, qty: 5, actualUnitPrice: 120, currencyCode: 'IQD' } },
@@ -287,25 +302,42 @@ describe('recordLinePurchase', () => {
     expect(op.over_tolerance).toBe(true)
     expect(op.tolerance_approved_by).toBeNull()
 
-    // A non-supervisor can't self-approve it either.
+    // A non-supervisor can't approve it.
     await expect(
       resolvers.Mutation.approveTolerancePurchase(null, { purchaseId: op.id }, buyerCtx as never),
     ).rejects.toThrow(/not authorized/i)
 
+    // A different supervisor (admin ctx) can.
     const approved = await resolvers.Mutation.approveTolerancePurchase(null, { purchaseId: op.id }, ctx as never)
     expect((approved as { tolerance_approved_by: string | null }).tolerance_approved_by).toBe(userId)
+  })
 
-    // Recorded directly by a supervisor (admin ctx) self-approves inline —
-    // no separate approveTolerancePurchase call needed.
-    const overBySupervisor = await makeReqAtItemsBought({ qtyOrdered: 5, marketPrice: 100 })
-    const selfApproved = await resolvers.Mutation.recordLinePurchase(
+  it('never self-approves — even a supervisor who recorded the purchase themselves cannot clear it', async () => {
+    const { lineId } = await makeReqAtItemsBought({ qtyOrdered: 5, marketPrice: 100 })
+    // Recorded directly by the admin ctx — still starts unapproved. No
+    // inline self-service override exists, regardless of the recorder's
+    // own authority.
+    const purchase = await resolvers.Mutation.recordLinePurchase(
       null,
-      { input: { lineId: overBySupervisor.lineId, vendorId: vendorAId, qty: 5, actualUnitPrice: 120, currencyCode: 'IQD' } },
+      { input: { lineId, vendorId: vendorAId, qty: 5, actualUnitPrice: 120, currencyCode: 'IQD' } },
       ctx as never,
     )
-    const sa = selfApproved as { over_tolerance: boolean; tolerance_approved_by: string | null }
-    expect(sa.over_tolerance).toBe(true)
-    expect(sa.tolerance_approved_by).toBe(userId)
+    const p = purchase as { id: string; over_tolerance: boolean; tolerance_approved_by: string | null }
+    expect(p.over_tolerance).toBe(true)
+    expect(p.tolerance_approved_by).toBeNull()
+
+    // The same admin who recorded it cannot approve their own entry.
+    await expect(
+      resolvers.Mutation.approveTolerancePurchase(null, { purchaseId: p.id }, ctx as never),
+    ).rejects.toThrow(/cannot also approve/i)
+
+    // A second, distinct admin can.
+    const approved = await resolvers.Mutation.approveTolerancePurchase(
+      null,
+      { purchaseId: p.id },
+      secondAdminCtx as never,
+    )
+    expect((approved as { tolerance_approved_by: string | null }).tolerance_approved_by).toBe(secondAdminUserId)
   })
 
   it('rejects recording from a user with no buyer position, allows one holding it', async () => {
