@@ -324,8 +324,12 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 //                                 In the same transaction: draft Store Out created for every
 //                                 from-stock quantity (full or partial coverage alike), and
 //                                 any line still needing purchase moves toward items_bought)
-// pending_approval → rejected   (reject — releases the requisition's own stock reservations)
-// rejected → draft              (reopen)
+// pending_approval → draft      (reject — releases the requisition's own stock reservations and
+//                                 returns straight to draft, no separate reopen step. Unlike the
+//                                 old PO model, 'rejected' is not a state reject ever produces —
+//                                 it's kept in RequisitionStatus and the CHECK constraint purely
+//                                 because the G1 Phase 1 migration's backfill can set it on
+//                                 historical/migrated data (a legacy PO that really was rejected)
 // approved → items_bought       (start_buying — auto-chained by approveRequisition in the
 //                                 same transaction, mirroring how approvePO used to. Always
 //                                 taken, even when there are zero bought lines — items_bought
@@ -378,7 +382,6 @@ export type RequisitionAction =
   | 'reject_to_market_pricing'
   | 'approve'
   | 'reject'
-  | 'reopen'
   | 'start_buying'
   | 'finish_buying'
   | 'complete'
@@ -417,9 +420,8 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
     },
 
     { from: 'pending_approval', to: 'approved', action: 'approve' },
-    { from: 'pending_approval', to: 'rejected', action: 'reject' },
+    { from: 'pending_approval', to: 'draft', action: 'reject' },
     { from: 'pending_approval', to: 'market_pricing', action: 'reject_to_market_pricing' },
-    { from: 'rejected', to: 'draft', action: 'reopen' },
 
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'items_bought', to: 'sourcing', action: 'finish_buying' },

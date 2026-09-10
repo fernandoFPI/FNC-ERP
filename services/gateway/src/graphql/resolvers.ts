@@ -1229,6 +1229,13 @@ async function reqTransition(
   action: RequisitionAction,
   auth: GWAuth,
   notes?: string,
+  // Which position actually qualified the actor for THIS transition
+  // (admin / dept_head / po_admin) — not who they are, which authority
+  // they used. Nullable/omitted for every transition except PR 2's
+  // approve/reject: those are the ones where an audit trail of "approved
+  // by X acting as Y" actually matters. No retroactive backfill for
+  // earlier transitions.
+  actorPosition?: string,
 ): Promise<void> {
   const cur = await client.query(`SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`, [
     reqId,
@@ -1249,8 +1256,8 @@ async function reqTransition(
     reqId,
   ])
   await client.query(
-    `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
-    [reqId, fromStatus, toStatus, action, auth.userId, notes ?? null],
+    `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes, actor_position) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [reqId, fromStatus, toStatus, action, auth.userId, notes ?? null, actorPosition ?? null],
   )
   await logAudit({
     userId: auth.userId,
@@ -1343,6 +1350,118 @@ async function userHasPositionForRequisitionGW(
     ],
   )
   return r.rows.length > 0
+}
+
+// Mirrors userIsDeptHeadGW exactly, scoped to requisitions.organizer_id
+// instead of purchase_orders.organizer_id.
+async function userIsDeptHeadForRequisitionGW(userId: string, reqId: string): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM departments d JOIN employees mgr ON mgr.id=d.manager_id JOIN users mu ON mu.id=mgr.user_id
+     WHERE mu.id=$1 AND d.id=(SELECT e.department_id FROM employees e JOIN users ou ON ou.id=e.user_id JOIN requisitions req ON req.organizer_id=ou.id WHERE req.id=$2 LIMIT 1) LIMIT 1`,
+    [userId, reqId],
+  )
+  return r.rows.length > 0
+}
+
+// Mirrors issueStockForPOLines exactly (see that function's own comments
+// for the reasoning behind each piece — unchanged here) but scoped to
+// requisition_id instead of po_id, and stamps requisition_id (not po_id)
+// onto both the Store Out header and the queued pending-catalog-item row
+// — there is no child purchase_orders row yet at approval time.
+async function issueStockForRequisitionLines(
+  client: PoolClient,
+  req: Record<string, unknown>,
+  companyId: string,
+  userId: string,
+): Promise<{ issueId: string; issueNumber: string } | undefined> {
+  if (req.purpose === 'project' && req.delivery_destination === 'inventory') return undefined
+
+  const reqId = String(req.id)
+  const linesRes = await client.query(
+    `SELECT * FROM po_lines WHERE requisition_id=$1 AND qty_from_stock > 0`,
+    [reqId],
+  )
+  const lines = linesRes.rows as Record<string, unknown>[]
+  if (lines.length === 0) return undefined
+
+  const { defaultFromLocationId, ownDestLocationId } = await getStockIssuanceLocations(
+    client,
+    companyId,
+  )
+
+  const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
+
+  const issueRes = await client.query(
+    `INSERT INTO project_material_issues
+       (project_id, company_id, requisition_id, issue_number, issue_date, status,
+        created_by, notes)
+     VALUES ($1,$2,$3,$4,NOW()::date,'draft',$5,
+             'Auto-created from requisition stock issuance')
+     RETURNING id`,
+    [req.project_id, companyId, reqId, issueNumber, userId],
+  )
+  const issueId = issueRes.rows[0]?.id as string
+
+  for (const line of lines) {
+    const qty = parseFloat(String(line.qty_from_stock ?? 0))
+    if (qty <= 0) continue
+    if (!line.product_id) {
+      await client.query(
+        `INSERT INTO pending_product_catalog_items
+           (company_id, requisition_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'stock_issuance')
+         ON CONFLICT (po_line_id) DO NOTHING`,
+        [
+          companyId,
+          reqId,
+          line.id,
+          line.description ?? '',
+          qty,
+          line.uom ?? 'unit',
+          line.unit_price ?? null,
+          line.currency_code ?? null,
+        ],
+      )
+      continue
+    }
+    await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
+  }
+  return { issueId, issueNumber }
+}
+
+// Mirrors releasePOStockReservations exactly, scoped to requisition_id.
+async function releaseRequisitionStockReservations(
+  client: PoolClient,
+  reqId: string,
+): Promise<void> {
+  const rows = await client.query<{
+    product_id: string
+    source_location_id: string
+    remaining: string
+  }>(
+    `SELECT pl.product_id, pl.source_location_id,
+            pl.qty_from_stock - COALESCE(issued.qty_issued_confirmed, 0) AS remaining
+     FROM po_lines pl
+     LEFT JOIN (
+       SELECT pmil.po_line_id, SUM(pmil.qty_issued) AS qty_issued_confirmed
+       FROM project_material_issue_lines pmil
+       JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+       WHERE pmi.status != 'draft'
+       GROUP BY pmil.po_line_id
+     ) issued ON issued.po_line_id = pl.id
+     WHERE pl.requisition_id=$1 AND pl.qty_from_stock > 0 AND pl.source_location_id IS NOT NULL
+     ORDER BY pl.product_id, pl.source_location_id`,
+    [reqId],
+  )
+  for (const row of rows.rows) {
+    const remaining = parseFloat(String(row.remaining ?? 0))
+    if (remaining <= 0) continue
+    await client.query(
+      `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
+       WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+      [remaining, row.product_id, row.source_location_id],
+    )
+  }
 }
 
 async function getPOForReturn(poId: string): Promise<Record<string, unknown>> {
@@ -7798,7 +7917,7 @@ export const resolvers = {
           [args.id],
         ),
         query(
-          `SELECT ral.id, ral.from_status, ral.to_status, ral.action, ral.actor_id, ral.notes, ral.created_at,
+          `SELECT ral.id, ral.from_status, ral.to_status, ral.action, ral.actor_id, ral.notes, ral.created_at, ral.actor_position,
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS actor_name
            FROM requisition_approval_log ral LEFT JOIN users u ON u.id=ral.actor_id
            WHERE ral.requisition_id=$1 ORDER BY ral.created_at`,
@@ -27479,6 +27598,156 @@ const phase5MutationResolvers = {
         'submit_for_approval',
         auth,
         args.verificationNotes,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  // ── G1 requisition lifecycle mutations (PR 2: single approval gate) ──────
+  // Authorization mirrors approvePO/rejectPO minus the assigned-approver
+  // path — requisitions has no assigned_approver_id column (no equivalent
+  // concept built yet; admin/dept_head/po_admin cover it for now, flagged
+  // rather than silently assumed complete). callerHasPOAdmin is reused
+  // as-is: it's already company-wide, not PO-specific, despite the name.
+  //
+  // Notifications deliberately deferred to Phase 4, same as PR 1b.
+
+  approveRequisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
+    const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isReqAdmin)
+      throw new Error('Not authorized to approve this requisition')
+    const actorPosition = isAdmin ? 'admin' : isDeptHead ? 'dept_head' : 'po_admin'
+
+    const reqRow = await query(
+      `SELECT status, organizer_id, requisition_number FROM requisitions WHERE id=$1`,
+      [args.id],
+    )
+    if (!reqRow.rows[0]) throw new Error('Requisition not found')
+    if (reqRow.rows[0].status !== 'pending_approval')
+      throw new Error(`Cannot approve requisition in status '${reqRow.rows[0].status as string}'`)
+
+    const client = await pool.connect()
+    let issued: { issueId: string; issueNumber: string } | undefined
+    try {
+      await client.query('BEGIN')
+      const fullReqRes = await client.query(`SELECT * FROM requisitions WHERE id=$1`, [args.id])
+      const fullReq = fullReqRes.rows[0] as Record<string, unknown>
+      issued = await issueStockForRequisitionLines(client, fullReq, auth.companyId, auth.userId)
+
+      // Snapshot per-line approved prices before anything else touches
+      // status — PR 3's tolerance check compares an actual bought price
+      // against this, never against live market_price/verified_price/
+      // unit_price.
+      await client.query(
+        `UPDATE po_lines SET approved_unit_price = unit_price WHERE requisition_id=$1`,
+        [args.id],
+      )
+
+      // Snapshot per-currency totals — same query getRequisitionCurrencyTotals
+      // runs live, frozen here as a fact about this specific approval moment.
+      const totals = await client.query<{
+        currency_code: string
+        subtotal: string
+        line_count: string
+      }>(
+        `SELECT currency_code, COALESCE(SUM(total_price), 0) AS subtotal, COUNT(*) AS line_count
+         FROM po_lines WHERE requisition_id=$1 GROUP BY currency_code`,
+        [args.id],
+      )
+      for (const t of totals.rows) {
+        await client.query(
+          `INSERT INTO requisition_approved_totals (requisition_id, currency_code, subtotal, line_count)
+           VALUES ($1,$2,$3,$4)
+           ON CONFLICT (requisition_id, currency_code) DO UPDATE SET
+             subtotal = EXCLUDED.subtotal, line_count = EXCLUDED.line_count, snapshotted_at = NOW()`,
+          [args.id, t.currency_code, t.subtotal, parseInt(t.line_count, 10)],
+        )
+      }
+
+      await reqTransition(
+        client,
+        args.id,
+        'pending_approval',
+        'approved',
+        'approve',
+        auth,
+        undefined,
+        actorPosition,
+      )
+      // Every requisition goes through items_bought, same reasoning as
+      // approvePO's own chain — trivially empty/no-op for a 100%-stock
+      // requisition rather than a special case (see reqStateMachine).
+      await reqTransition(
+        client,
+        args.id,
+        'approved',
+        'items_bought',
+        'start_buying',
+        auth,
+        undefined,
+        actorPosition,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void issued // Phase 4: notify store_keeper position holders a Store Out was created
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  rejectRequisitionApproval: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
+    const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isReqAdmin)
+      throw new Error('Not authorized to reject this requisition')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const actorPosition = isAdmin ? 'admin' : isDeptHead ? 'dept_head' : 'po_admin'
+
+    const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1`, [args.id])
+    if (!reqRow.rows[0]) throw new Error('Requisition not found')
+    if (reqRow.rows[0].status !== 'pending_approval')
+      throw new Error(`Cannot reject requisition in status '${reqRow.rows[0].status as string}'`)
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      // Unlike rejectPO (pending_approval -> rejected, a terminal status
+      // needing a separate reopen action), rejecting a requisition goes
+      // straight back to draft in one step — see reqStateMachine's header
+      // comment for why 'rejected' is kept as a status value at all
+      // (historical/migrated data only, not reachable via this action).
+      await releaseRequisitionStockReservations(client, args.id)
+      await reqTransition(
+        client,
+        args.id,
+        'pending_approval',
+        'draft',
+        'reject',
+        auth,
+        args.reason,
+        actorPosition,
       )
       await client.query('COMMIT')
     } catch (e) {
