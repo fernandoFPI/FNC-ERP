@@ -2121,6 +2121,7 @@
     priority: String
     organizer_id: ID
     organizerName: String
+    assigned_approver_id: ID
     notes: String
     created_at: String!
     updated_at: String!

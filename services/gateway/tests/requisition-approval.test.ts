@@ -9,12 +9,20 @@ import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const TEST_USER_EMAIL = 'g1-requisition-approval-test@fnc-erp.local'
+const APPROVER_USER_EMAIL = 'g1-requisition-approval-approver-test@fnc-erp.local'
+const APPROVER_EMPLOYEE_NUMBER = 'G1ATEST-APPROVER'
 const SKU_PREFIX = 'G1ATEST-'
 
 let userId: string
 let warehouseId: string
 let virtualInId: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
+// A second, non-admin/non-dept-head user + employee row, used only to prove
+// requisitions.assigned_approver_id is its own authorization path — not
+// just admin/dept_head/po_admin in disguise.
+let approverUserId: string
+let approverEmployeeId: string
+let approverCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 
 async function makeProduct(suffix: string): Promise<string> {
   const sku = `${SKU_PREFIX}${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -134,6 +142,23 @@ beforeAll(async () => {
   userId = userR.rows[0]!.id
   ctx = { auth: { companyId: TEST_COMPANY_ID, userId, role: 'system_admin', module: 'all', sessionId: 'g1-test' } }
 
+  const approverUserR = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, password_hash) VALUES ($1,'test-hash-not-used')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash RETURNING id`,
+    [APPROVER_USER_EMAIL],
+  )
+  approverUserId = approverUserR.rows[0]!.id
+  const approverEmployeeR = await pool.query<{ id: string }>(
+    `INSERT INTO employees (company_id, user_id, first_name, last_name, hire_date, employee_number)
+     VALUES ($1,$2,'Test','Approver',CURRENT_DATE,$3)
+     ON CONFLICT (company_id, employee_number) DO UPDATE SET user_id = EXCLUDED.user_id RETURNING id`,
+    [TEST_COMPANY_ID, approverUserId, APPROVER_EMPLOYEE_NUMBER],
+  )
+  approverEmployeeId = approverEmployeeR.rows[0]!.id
+  approverCtx = {
+    auth: { companyId: TEST_COMPANY_ID, userId: approverUserId, role: 'user', module: 'all', sessionId: 'g1-test-approver' },
+  }
+
   const whR = await pool.query<{ id: string }>(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
     [TEST_COMPANY_ID],
@@ -153,7 +178,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
+  await pool.query(`DELETE FROM employees WHERE employee_number=$1`, [APPROVER_EMPLOYEE_NUMBER])
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
+  await pool.query(`DELETE FROM users WHERE email=$1`, [APPROVER_USER_EMAIL])
   await pool.end()
 })
 
@@ -207,6 +234,123 @@ describe('approveRequisition', () => {
     expect(log.rows[0]!.actor_position).toBe('admin')
   })
 
+  it('a fully stock-covered requisition (zero bought lines) goes to sourcing, not items_bought', async () => {
+    // Deliberately not reusing makeReqAtPendingApproval here — a fully-
+    // covered line has nothing to price, so this calls store/market
+    // pricing with empty linePrices (advancing the requisition's status
+    // without touching the line, which is already correctly zeroed by
+    // confirmRequisitionInventoryCheck).
+    const productId = await makeProduct('zerobought')
+    await receive(productId, warehouseId, 10)
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: 5, unit_price: 1 }] } },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+    const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
+    const lineId = lineRow.rows[0]!.id
+
+    await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
+
+    const line = await pool.query<{ total_price: string; qty_from_stock: string }>(
+      `SELECT total_price, qty_from_stock FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(line.rows[0]!.total_price)).toBe(0) // still zeroed — never touched
+    expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(5)
+
+    const result = await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
+    expect((result as { status: string }).status).toBe('sourcing')
+
+    // Still a draft Store Out for the covered qty, exactly as the mixed
+    // case — the only thing that changes with zero bought lines is which
+    // status the requisition lands in afterward.
+    const issue = await pool.query(`SELECT id FROM project_material_issues WHERE requisition_id=$1`, [reqId])
+    expect(issue.rows).toHaveLength(1)
+  })
+
+  it('creates one Store Out draft per distinct source location', async () => {
+    const productA = await makeProduct('locA')
+    const productB = await makeProduct('locB')
+    const whR = await pool.query<{ id: string }>(
+      `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true AND id != $2 LIMIT 1`,
+      [TEST_COMPANY_ID, warehouseId],
+    )
+    // Falls back to reusing the same warehouse (still proves per-line
+    // location grouping and single-issue-per-line-group correctness) if
+    // the test company genuinely only seeds one warehouse — the assertion
+    // below adapts to whichever is true rather than assuming a second
+    // location exists.
+    const secondLocationId = whR.rows[0]?.id ?? warehouseId
+    const expectedIssueCount = whR.rows[0] ? 2 : 1
+
+    await receive(productA, warehouseId, 10)
+    await receive(productB, secondLocationId, 10)
+
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      {
+        input: {
+          purpose: 'stock',
+          lines: [
+            { product_id: productA, description: 'from wh1', qty: 3, unit_price: 1 },
+            { product_id: productB, description: 'from wh2', qty: 4, unit_price: 1 },
+          ],
+        },
+      },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+    const lines = await pool.query<{ id: string; description: string }>(
+      `SELECT id, description FROM po_lines WHERE requisition_id=$1 ORDER BY line_number`,
+      [reqId],
+    )
+    const lineA = lines.rows.find((l) => l.description === 'from wh1')!.id
+    const lineB = lines.rows.find((l) => l.description === 'from wh2')!.id
+
+    await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      {
+        id: reqId,
+        lineStockQtys: [
+          { lineId: lineA, qtyFromStock: 3, sourceLocationId: warehouseId },
+          { lineId: lineB, qtyFromStock: 4, sourceLocationId: secondLocationId },
+        ],
+      },
+      ctx as never,
+    )
+    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
+    await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
+
+    const issues = await pool.query<{ id: string }>(
+      `SELECT id FROM project_material_issues WHERE requisition_id=$1`,
+      [reqId],
+    )
+    expect(issues.rows).toHaveLength(expectedIssueCount)
+
+    // Every issue line traces back to exactly one of the two lines, and
+    // each issue carries requisition_id (no child PO exists yet).
+    const allIssueLines = await pool.query<{ po_line_id: string }>(
+      `SELECT pmil.po_line_id FROM project_material_issue_lines pmil
+       JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+       WHERE pmi.requisition_id=$1`,
+      [reqId],
+    )
+    expect(allIssueLines.rows.map((r) => r.po_line_id).sort()).toEqual([lineA, lineB].sort())
+  })
+
   it('snapshots approved_unit_price per line and per-currency totals, immune to later drift', async () => {
     const { reqId, lineId } = await makeReqAtPendingApproval({ qtyOrdered: 5, qtyFromStock: 0, marketPrice: 30, currencyCode: 'USD' })
 
@@ -243,6 +387,29 @@ describe('approveRequisition', () => {
     await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
     const issue = await pool.query(`SELECT id FROM project_material_issues WHERE requisition_id=$1`, [reqId])
     expect(issue.rows).toHaveLength(0)
+  })
+
+  it('assigned_approver_id grants approval rights to a non-admin, non-dept-head user', async () => {
+    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
+
+    await expect(
+      resolvers.Mutation.approveRequisition(null, { id: reqId }, approverCtx as never),
+    ).rejects.toThrow(/not authorized to approve this requisition/i)
+
+    await pool.query(`UPDATE requisitions SET assigned_approver_id=$1 WHERE id=$2`, [approverEmployeeId, reqId])
+
+    const result = await resolvers.Mutation.approveRequisition(null, { id: reqId }, approverCtx as never)
+    // qtyFromStock: 0 in this fixture — still needs purchasing, so
+    // items_bought is correct here; the zero-bought-lines -> sourcing
+    // branch is covered separately above. This test's only concern is
+    // authorization.
+    expect((result as { status: string }).status).toBe('items_bought')
+
+    const log = await pool.query<{ actor_position: string }>(
+      `SELECT actor_position FROM requisition_approval_log WHERE requisition_id=$1 AND action='approve'`,
+      [reqId],
+    )
+    expect(log.rows[0]!.actor_position).toBe('assigned_approver')
   })
 })
 
@@ -289,5 +456,32 @@ describe('rejectRequisitionApproval', () => {
       [lineId],
     )
     expect(line.rows[0]!.approved_unit_price).toBeNull()
+  })
+
+  it('assigned_approver_id grants rejection rights to a non-admin, non-dept-head user', async () => {
+    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
+
+    await expect(
+      resolvers.Mutation.rejectRequisitionApproval(
+        null,
+        { id: reqId, reason: 'not authorized yet' },
+        approverCtx as never,
+      ),
+    ).rejects.toThrow(/not authorized to reject this requisition/i)
+
+    await pool.query(`UPDATE requisitions SET assigned_approver_id=$1 WHERE id=$2`, [approverEmployeeId, reqId])
+
+    const result = await resolvers.Mutation.rejectRequisitionApproval(
+      null,
+      { id: reqId, reason: 'assigned approver says redo' },
+      approverCtx as never,
+    )
+    expect((result as { status: string }).status).toBe('draft')
+
+    const log = await pool.query<{ actor_position: string }>(
+      `SELECT actor_position FROM requisition_approval_log WHERE requisition_id=$1 AND action='reject'`,
+      [reqId],
+    )
+    expect(log.rows[0]!.actor_position).toBe('assigned_approver')
   })
 })

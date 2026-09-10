@@ -1,0 +1,15 @@
+-- Mirrors purchase_orders.assigned_approver_id (migration 030) exactly —
+-- same type, same target table. Lets a requisition have a specific,
+-- pre-assigned approver as a fourth authorization path alongside admin/
+-- dept_head/po_admin, matching approvePO/rejectPO's own authorization
+-- shape.
+--
+-- Checked before assuming this needed a setter mutation here: the PO
+-- side has none either — assigned_approver_id isn't in
+-- applyPOEditChanges' header-edit allowlist, and grep across
+-- resolvers.ts finds only reads (the authorization check, and two list-
+-- query filters). Whatever sets it today isn't a live GraphQL mutation.
+-- This PR keeps exact parity with that — the column and the
+-- authorization check, nothing more — rather than building a requisition
+-- side that's more capable than the PO original it's mirroring.
+ALTER TABLE requisitions ADD COLUMN assigned_approver_id UUID REFERENCES employees(id);

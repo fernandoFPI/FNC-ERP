@@ -1363,18 +1363,46 @@ async function userIsDeptHeadForRequisitionGW(userId: string, reqId: string): Pr
   return r.rows.length > 0
 }
 
+// Mirrors userIsAssignedApproverGW exactly, scoped to
+// requisitions.assigned_approver_id instead of
+// purchase_orders.assigned_approver_id.
+async function userIsAssignedApproverForRequisitionGW(
+  userId: string,
+  reqId: string,
+): Promise<boolean> {
+  const r = await query(
+    `SELECT 1 FROM requisitions req JOIN employees e ON e.id=req.assigned_approver_id JOIN users u ON u.id=e.user_id WHERE req.id=$1 AND u.id=$2 LIMIT 1`,
+    [reqId, userId],
+  )
+  return r.rows.length > 0
+}
+
 // Mirrors issueStockForPOLines exactly (see that function's own comments
 // for the reasoning behind each piece — unchanged here) but scoped to
 // requisition_id instead of po_id, and stamps requisition_id (not po_id)
 // onto both the Store Out header and the queued pending-catalog-item row
 // — there is no child purchase_orders row yet at approval time.
+// Diverges from issueStockForPOLines here, deliberately: that function
+// bundles every from-stock line into ONE project_material_issues row
+// regardless of how many distinct source_location_id values they carry —
+// including across companies, for interco-sourced lines (confirmPOInventoryCheck
+// already lets a line's source location belong to a different company than
+// the requisition's own, see its own cross-company check). A single Store
+// Out spanning multiple physical locations (or companies) doesn't represent
+// one real pick/transaction, so this groups by source_location_id first and
+// creates one draft per group. Since every stock_locations row belongs to
+// exactly one company, this also means one draft per company for any
+// interco split, with no separate company-grouping step needed — a location
+// split already implies a company split wherever the companies actually
+// differ. (issueStockForPOLines has this same latent bundling gap; fixing
+// it is out of scope here — G1 doesn't touch old PO code paths.)
 async function issueStockForRequisitionLines(
   client: PoolClient,
   req: Record<string, unknown>,
   companyId: string,
   userId: string,
-): Promise<{ issueId: string; issueNumber: string } | undefined> {
-  if (req.purpose === 'project' && req.delivery_destination === 'inventory') return undefined
+): Promise<{ issueId: string; issueNumber: string }[]> {
+  if (req.purpose === 'project' && req.delivery_destination === 'inventory') return []
 
   const reqId = String(req.id)
   const linesRes = await client.query(
@@ -1382,51 +1410,62 @@ async function issueStockForRequisitionLines(
     [reqId],
   )
   const lines = linesRes.rows as Record<string, unknown>[]
-  if (lines.length === 0) return undefined
+  if (lines.length === 0) return []
 
   const { defaultFromLocationId, ownDestLocationId } = await getStockIssuanceLocations(
     client,
     companyId,
   )
 
-  const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
-
-  const issueRes = await client.query(
-    `INSERT INTO project_material_issues
-       (project_id, company_id, requisition_id, issue_number, issue_date, status,
-        created_by, notes)
-     VALUES ($1,$2,$3,$4,NOW()::date,'draft',$5,
-             'Auto-created from requisition stock issuance')
-     RETURNING id`,
-    [req.project_id, companyId, reqId, issueNumber, userId],
-  )
-  const issueId = issueRes.rows[0]?.id as string
-
+  const byLocation = new Map<string, Record<string, unknown>[]>()
   for (const line of lines) {
-    const qty = parseFloat(String(line.qty_from_stock ?? 0))
-    if (qty <= 0) continue
-    if (!line.product_id) {
-      await client.query(
-        `INSERT INTO pending_product_catalog_items
-           (company_id, requisition_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'stock_issuance')
-         ON CONFLICT (po_line_id) DO NOTHING`,
-        [
-          companyId,
-          reqId,
-          line.id,
-          line.description ?? '',
-          qty,
-          line.uom ?? 'unit',
-          line.unit_price ?? null,
-          line.currency_code ?? null,
-        ],
-      )
-      continue
-    }
-    await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
+    const locId = (line.source_location_id as string | null) ?? defaultFromLocationId
+    const group = byLocation.get(locId)
+    if (group) group.push(line)
+    else byLocation.set(locId, [line])
   }
-  return { issueId, issueNumber }
+
+  const issued: { issueId: string; issueNumber: string }[] = []
+  for (const locLines of byLocation.values()) {
+    const issueNumber = await nextDocumentNumber(companyId, 'material_issue', 'SO')
+    const issueRes = await client.query(
+      `INSERT INTO project_material_issues
+         (project_id, company_id, requisition_id, issue_number, issue_date, status,
+          created_by, notes)
+       VALUES ($1,$2,$3,$4,NOW()::date,'draft',$5,
+               'Auto-created from requisition stock issuance')
+       RETURNING id`,
+      [req.project_id, companyId, reqId, issueNumber, userId],
+    )
+    const issueId = issueRes.rows[0]?.id as string
+
+    for (const line of locLines) {
+      const qty = parseFloat(String(line.qty_from_stock ?? 0))
+      if (qty <= 0) continue
+      if (!line.product_id) {
+        await client.query(
+          `INSERT INTO pending_product_catalog_items
+             (company_id, requisition_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'stock_issuance')
+           ON CONFLICT (po_line_id) DO NOTHING`,
+          [
+            companyId,
+            reqId,
+            line.id,
+            line.description ?? '',
+            qty,
+            line.uom ?? 'unit',
+            line.unit_price ?? null,
+            line.currency_code ?? null,
+          ],
+        )
+        continue
+      }
+      await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
+    }
+    issued.push({ issueId, issueNumber })
+  }
+  return issued
 }
 
 // Mirrors releasePOStockReservations exactly, scoped to requisition_id.
@@ -27624,10 +27663,17 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
-    if (!isAdmin && !isDeptHead && !isReqAdmin)
+    if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
       throw new Error('Not authorized to approve this requisition')
-    const actorPosition = isAdmin ? 'admin' : isDeptHead ? 'dept_head' : 'po_admin'
+    const actorPosition = isAdmin
+      ? 'admin'
+      : isDeptHead
+        ? 'dept_head'
+        : isApprover
+          ? 'assigned_approver'
+          : 'po_admin'
 
     const reqRow = await query(
       `SELECT status, organizer_id, requisition_number FROM requisitions WHERE id=$1`,
@@ -27638,7 +27684,7 @@ const phase5MutationResolvers = {
       throw new Error(`Cannot approve requisition in status '${reqRow.rows[0].status as string}'`)
 
     const client = await pool.connect()
-    let issued: { issueId: string; issueNumber: string } | undefined
+    let issued: { issueId: string; issueNumber: string }[] = []
     try {
       await client.query('BEGIN')
       const fullReqRes = await client.query(`SELECT * FROM requisitions WHERE id=$1`, [args.id])
@@ -27685,19 +27731,40 @@ const phase5MutationResolvers = {
         undefined,
         actorPosition,
       )
-      // Every requisition goes through items_bought, same reasoning as
-      // approvePO's own chain — trivially empty/no-op for a 100%-stock
-      // requisition rather than a special case (see reqStateMachine).
-      await reqTransition(
-        client,
-        args.id,
-        'approved',
-        'items_bought',
-        'start_buying',
-        auth,
-        undefined,
-        actorPosition,
+      // Branches on whether any line still needs purchasing — a 100%-
+      // stock requisition (no bought lines at all) skips items_bought
+      // entirely and goes straight to sourcing, since there is no
+      // buyer checklist to enter (see reqStateMachine's header comment;
+      // this corrects an earlier version of this PR that forced every
+      // requisition through items_bought as a "trivial no-op").
+      const needsPurchase = await client.query<{ needs_purchase: string }>(
+        `SELECT COUNT(*) FILTER (WHERE qty_from_stock < qty_ordered) AS needs_purchase
+         FROM po_lines WHERE requisition_id=$1`,
+        [args.id],
       )
+      if (parseInt(needsPurchase.rows[0]?.needs_purchase ?? '0', 10) > 0) {
+        await reqTransition(
+          client,
+          args.id,
+          'approved',
+          'items_bought',
+          'start_buying',
+          auth,
+          undefined,
+          actorPosition,
+        )
+      } else {
+        await reqTransition(
+          client,
+          args.id,
+          'approved',
+          'sourcing',
+          'skip_buying',
+          auth,
+          undefined,
+          actorPosition,
+        )
+      }
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -27719,11 +27786,18 @@ const phase5MutationResolvers = {
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
-    if (!isAdmin && !isDeptHead && !isReqAdmin)
+    if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
       throw new Error('Not authorized to reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
-    const actorPosition = isAdmin ? 'admin' : isDeptHead ? 'dept_head' : 'po_admin'
+    const actorPosition = isAdmin
+      ? 'admin'
+      : isDeptHead
+        ? 'dept_head'
+        : isApprover
+          ? 'assigned_approver'
+          : 'po_admin'
 
     const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1`, [args.id])
     if (!reqRow.rows[0]) throw new Error('Requisition not found')
