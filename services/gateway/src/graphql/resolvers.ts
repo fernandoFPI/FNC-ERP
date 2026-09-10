@@ -1313,6 +1313,28 @@ async function getRequisitionCurrencyTotals(
   return r.rows.map((row) => ({ ...row, line_count: parseInt(row.line_count, 10) }))
 }
 
+// G1 PR 3 — shapes one po_line_purchases row for GraphQL return
+// (recordLinePurchase / approveTolerancePurchase), joining in the display
+// names the POLinePurchase type expects.
+async function getPOLinePurchaseForReturn(id: string): Promise<Record<string, unknown>> {
+  const r = await query(
+    `SELECT plp.*, v.name AS vendor_name,
+            COALESCE(bu.first_name || ' ' || bu.last_name, bu.email) AS bought_by_name,
+            COALESCE(tu.first_name || ' ' || tu.last_name, tu.email) AS tolerance_approved_by_name,
+            f.id AS receipt_file_id, f.original_filename AS receipt_filename
+     FROM po_line_purchases plp
+     LEFT JOIN vendors v ON v.id=plp.vendor_id
+     LEFT JOIN users bu ON bu.id=plp.bought_by
+     LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
+     LEFT JOIN document_attachments da ON da.id=plp.receipt_attachment_id
+     LEFT JOIN files f ON f.id=da.file_id
+     WHERE plp.id=$1`,
+    [id],
+  )
+  if (!r.rows[0]) throw new Error('Purchase entry not found')
+  return r.rows[0] as Record<string, unknown>
+}
+
 async function userIsOrganizerForRequisitionGW(
   userId: string,
   reqId: string,
@@ -7944,7 +7966,18 @@ export const resolvers = {
                   pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
                   pol.account_id, coa.code AS account_code, coa.name AS account_name,
                   pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
-                  pol.is_bought
+                  pol.is_bought,
+                  pol.approved_unit_price, pol.short_reason, pol.short_marked_by, pol.short_marked_at,
+                  (SELECT COALESCE(json_agg(jsonb_build_object(
+                     'id', plp.id, 'po_line_id', plp.po_line_id, 'vendor_id', plp.vendor_id,
+                     'vendor_name', v.name, 'currency_code', plp.currency_code, 'qty', plp.qty,
+                     'actual_unit_price', plp.actual_unit_price,
+                     'receipt_attachment_id', plp.receipt_attachment_id,
+                     'bought_by', plp.bought_by, 'bought_at', plp.bought_at,
+                     'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by
+                   ) ORDER BY plp.bought_at), '[]')
+                   FROM po_line_purchases plp LEFT JOIN vendors v ON v.id=plp.vendor_id
+                   WHERE plp.po_line_id = pol.id) AS purchases
            FROM po_lines pol
            LEFT JOIN products p ON p.id=pol.product_id
            LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
@@ -27832,6 +27865,278 @@ const phase5MutationResolvers = {
     }
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
+  },
+
+  // G1 PR 3 — Items Bought. Mirrors setPOLineActualPrice's authorization
+  // exactly (admin OR a 'buyer' position holder — there's no
+  // assigned_buyer_user_id fallback here since requisitions never had that
+  // column), but records into po_line_purchases instead of stamping a
+  // single actual_unit_price onto the line, since a line can be bought
+  // from more than one vendor. Calling this more than once against the
+  // same line, each with a different vendorId, is how a split purchase
+  // happens — there's no separate "split" action, the qty-remaining check
+  // below is what makes repeated calls safe.
+  recordLinePurchase: async (
+    _: unknown,
+    args: {
+      input: {
+        lineId: string
+        vendorId: string
+        qty: number
+        actualUnitPrice: number
+        currencyCode: string
+        receiptFileId?: string
+      }
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const { lineId, vendorId, qty, actualUnitPrice, currencyCode, receiptFileId } = args.input
+    if (!(qty > 0)) throw new Error('qty must be greater than 0')
+    if (!(actualUnitPrice > 0)) throw new Error('actualUnitPrice must be greater than 0')
+
+    const lineRow = await query<{
+      requisition_id: string
+      company_id: string
+      requisition_status: string
+      short_marked_at: string | null
+    }>(
+      `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status, pl.short_marked_at
+       FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
+       WHERE pl.id=$1`,
+      [lineId],
+    )
+    const line = lineRow.rows[0]
+    if (!line || line.company_id !== auth.companyId) throw new Error('Requisition line not found')
+    if (line.requisition_status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to record a purchase')
+    if (line.short_marked_at)
+      throw new Error('This line was marked short — no further purchases can be recorded against it')
+
+    const isAdmin = isAdminGW(auth.role)
+    const hasBuyerPosition = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      line.requisition_id,
+      'buyer',
+    )
+    if (!isAdmin && !hasBuyerPosition)
+      throw new Error('Only a buyer position holder for this requisition can record a purchase')
+
+    const vendorCheck = await query(
+      `SELECT id FROM vendors WHERE id=$1 AND company_id=$2 AND is_active=true`,
+      [vendorId, auth.companyId],
+    )
+    if (!vendorCheck.rows[0]) throw new Error('Vendor not found')
+
+    if (receiptFileId) {
+      const file = await query(
+        `SELECT id FROM files WHERE id=$1 AND company_id=$2 AND status='uploaded'`,
+        [receiptFileId, auth.companyId],
+      )
+      if (!file.rows[0]) throw new Error('Receipt file not found or not yet uploaded')
+    }
+
+    const client = await pool.connect()
+    let purchaseId: string
+    try {
+      await client.query('BEGIN')
+      const locked = await client.query<{
+        qty_ordered: string
+        qty_from_stock: string | null
+        approved_unit_price: string | null
+        currency_code: string
+        short_marked_at: string | null
+      }>(
+        `SELECT qty_ordered, qty_from_stock, approved_unit_price, currency_code, short_marked_at
+         FROM po_lines WHERE id=$1 FOR UPDATE`,
+        [lineId],
+      )
+      if (!locked.rows[0]) throw new Error('Requisition line not found')
+      if (locked.rows[0].short_marked_at)
+        throw new Error('This line was marked short — no further purchases can be recorded against it')
+      const qtyOrdered = parseFloat(locked.rows[0].qty_ordered)
+      const qtyFromStock = parseFloat(locked.rows[0].qty_from_stock ?? '0')
+      const alreadyBought = await client.query<{ total: string }>(
+        `SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
+        [lineId],
+      )
+      const alreadyQty = parseFloat(alreadyBought.rows[0]?.total ?? '0')
+      const remaining = qtyOrdered - qtyFromStock - alreadyQty
+      if (qty > remaining + 0.0001)
+        throw new Error(`Cannot record ${qty} — only ${remaining} remaining to purchase on this line`)
+
+      // Tolerance is only meaningful when this purchase's currency matches
+      // the currency approved_unit_price was snapshotted in — no-conversion
+      // policy means there's no honest way to compare across currencies, so
+      // a purchase in a different currency is simply never flagged.
+      const approvedPrice =
+        locked.rows[0].approved_unit_price != null ? parseFloat(locked.rows[0].approved_unit_price) : null
+      let overTolerance = false
+      if (approvedPrice != null && currencyCode === locked.rows[0].currency_code) {
+        const tol = await client.query<{ tolerance_pct: string; tolerance_abs: string }>(
+          `SELECT tolerance_pct, tolerance_abs FROM company_price_tolerance WHERE company_id=$1 AND currency_code=$2`,
+          [auth.companyId, currencyCode],
+        )
+        if (tol.rows[0]) {
+          const pctAllowance = approvedPrice * (parseFloat(tol.rows[0].tolerance_pct) / 100)
+          const absAllowance = parseFloat(tol.rows[0].tolerance_abs)
+          const allowance = Math.min(pctAllowance, absAllowance)
+          overTolerance = actualUnitPrice > approvedPrice + allowance
+        }
+      }
+
+      // No self-approval: an over-tolerance entry always starts unapproved,
+      // even when the recorder personally holds supervisor authority —
+      // approveTolerancePurchase itself refuses an approver who matches
+      // bought_by, so there is no path (inline or otherwise) for the same
+      // person to both record and clear their own over-tolerance purchase.
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO po_line_purchases
+           (po_line_id, vendor_id, currency_code, qty, actual_unit_price, bought_by, over_tolerance)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [lineId, vendorId, currencyCode, qty, actualUnitPrice, auth.userId, overTolerance],
+      )
+      purchaseId = inserted.rows[0]!.id
+
+      // One receipt attachment per bought entry (not per line) — a split
+      // line's several po_line_purchases rows each carry their own, since
+      // each represents a separate real-world purchase/receipt. PR 4's
+      // Finish Buying gate will require receipt_attachment_id on every
+      // entry before a requisition can leave items_bought, mirroring
+      // finishBuyingPO's own "at least one receipt" gate for the old
+      // single-vendor model — not enforced here, since a photo may
+      // legitimately arrive after the purchase is recorded.
+      if (receiptFileId) {
+        const attach = await client.query<{ id: string }>(
+          `INSERT INTO document_attachments (entity_type, entity_id, file_id, uploaded_by)
+           VALUES ('po_line_purchase',$1,$2,$3) RETURNING id`,
+          [purchaseId, receiptFileId, auth.userId],
+        )
+        await client.query(`UPDATE po_line_purchases SET receipt_attachment_id=$1 WHERE id=$2`, [
+          attach.rows[0]!.id,
+          purchaseId,
+        ])
+        await client.query(`UPDATE files SET status='attached' WHERE id=$1`, [receiptFileId])
+      }
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
+    return getPOLinePurchaseForReturn(purchaseId)
+  },
+
+  // Supervisor sign-off on a purchase recordLinePurchase flagged
+  // over_tolerance. Same authorization set as approveRequisition/
+  // rejectRequisitionApproval, but no self-approval regardless of
+  // position: the approver must be a different person than whoever
+  // recorded the purchase (plp.bought_by), full stop — a supervisor who
+  // happened to record it themselves must have someone else clear it.
+  approveTolerancePurchase: async (_: unknown, args: { purchaseId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const row = await query<{
+      id: string
+      requisition_id: string
+      company_id: string
+      bought_by: string | null
+      over_tolerance: boolean
+      tolerance_approved_by: string | null
+    }>(
+      `SELECT plp.id, pl.requisition_id, req.company_id, plp.bought_by, plp.over_tolerance, plp.tolerance_approved_by
+       FROM po_line_purchases plp
+       JOIN po_lines pl ON pl.id=plp.po_line_id
+       JOIN requisitions req ON req.id=pl.requisition_id
+       WHERE plp.id=$1`,
+      [args.purchaseId],
+    )
+    const purchase = row.rows[0]
+    if (!purchase || purchase.company_id !== auth.companyId) throw new Error('Purchase entry not found')
+    if (!purchase.over_tolerance) throw new Error('This purchase is not over tolerance — nothing to approve')
+    if (purchase.tolerance_approved_by) throw new Error('This purchase has already been approved')
+
+    const isAdmin = isAdminGW(auth.role)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, purchase.requisition_id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, purchase.requisition_id)
+    const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
+      throw new Error('Not authorized to approve an over-tolerance purchase for this requisition')
+    // Checked only once the caller has otherwise-sufficient authority, so
+    // the error a plain buyer sees is "not authorized" (the real reason
+    // for them) rather than this one, which is specifically about a
+    // supervisor who happens to also be the recorder.
+    if (purchase.bought_by === auth.userId)
+      throw new Error('The buyer who recorded this purchase cannot also approve its tolerance override — a different supervisor must review it')
+
+    await query(`UPDATE po_line_purchases SET tolerance_approved_by=$1 WHERE id=$2`, [
+      auth.userId,
+      args.purchaseId,
+    ])
+    void publishEntityChanged(auth.companyId, 'requisition', purchase.requisition_id, 'updated')
+    return getPOLinePurchaseForReturn(args.purchaseId)
+  },
+
+  // Closes out a line's remaining not-yet-purchased qty as unfulfillable.
+  // Same authorization as recordLinePurchase (admin or buyer position
+  // holder) — this is a buying-stage call, not a supervisor one.
+  markRequisitionLineShort: async (
+    _: unknown,
+    args: { lineId: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    if (!args.reason.trim()) throw new Error('reason is required')
+
+    const lineRow = await query<{
+      requisition_id: string
+      company_id: string
+      requisition_status: string
+      qty_ordered: string
+      qty_from_stock: string | null
+      short_marked_at: string | null
+    }>(
+      `SELECT pl.requisition_id, req.company_id, req.status AS requisition_status,
+              pl.qty_ordered, pl.qty_from_stock, pl.short_marked_at
+       FROM po_lines pl JOIN requisitions req ON req.id=pl.requisition_id
+       WHERE pl.id=$1`,
+      [args.lineId],
+    )
+    const line = lineRow.rows[0]
+    if (!line || line.company_id !== auth.companyId) throw new Error('Requisition line not found')
+    if (line.requisition_status !== 'items_bought')
+      throw new Error('Requisition must be in items_bought status to mark a line short')
+    if (line.short_marked_at) throw new Error('This line was already marked short')
+
+    const isAdmin = isAdminGW(auth.role)
+    const hasBuyerPosition = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      line.requisition_id,
+      'buyer',
+    )
+    if (!isAdmin && !hasBuyerPosition)
+      throw new Error('Only a buyer position holder for this requisition can mark a line short')
+
+    const boughtRes = await query<{ total: string }>(
+      `SELECT COALESCE(SUM(qty),0) AS total FROM po_line_purchases WHERE po_line_id=$1`,
+      [args.lineId],
+    )
+    const remaining =
+      parseFloat(line.qty_ordered) - parseFloat(line.qty_from_stock ?? '0') - parseFloat(boughtRes.rows[0]?.total ?? '0')
+    if (remaining <= 0) throw new Error('This line has nothing remaining to purchase — cannot mark short')
+
+    const r = await query(
+      `UPDATE po_lines SET short_reason=$1, short_marked_by=$2, short_marked_at=NOW() WHERE id=$3 RETURNING *`,
+      [args.reason.trim(), auth.userId, args.lineId],
+    )
+    void publishEntityChanged(auth.companyId, 'requisition', line.requisition_id, 'updated')
+    return r.rows[0]
   },
 
   // ── PO lifecycle mutations ────────────────────────────────────────────────
