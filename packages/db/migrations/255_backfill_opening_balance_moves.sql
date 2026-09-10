@@ -13,20 +13,15 @@
 --     found 4 of these on dev (PVC-063/PLMB-800 at two locations each),
 --     and they are NOT legacy-import gaps: they're a residual side effect
 --     of an earlier ad-hoc reconciliation adjustment made this session,
---     before this backfill's existence was known. Backfilling them the
---     same way as everything else (an inbound virtual_in -> location
---     move) would be semantically backwards for a negative drift, and the
---     only correct direction (location -> virtual_in) would immediately
---     trip migration 254's negative-balance guard, since these locations
---     are already sitting at exactly 0. Left for manual review — do not
---     add them to this backfill without first re-checking whether they
---     still apply on the target database (they may not exist on prod at
---     all, since they trace back to a dev-only fix).
+--     before this backfill's existence was known. See migration 256,
+--     which closes them with a different technique.
 --
 -- Per-row opening-balance move:
 --   * source_type = 'opening_balance' (new value; stock_moves.source_type
 --     has no CHECK constraint, so this needs no schema change).
---   * virtual_in -> the drifted location, qty = drift.
+--   * virtual_in -> the drifted location, qty = drift. Inserted as a
+--     plain, live row — not superseded. See the mechanics note below for
+--     why that's now possible.
 --   * moved_at: if the location already has real move history for this
 --     product/lot, dated one second before the earliest such move (so the
 --     ledger reads as "this stock already existed, then real activity
@@ -34,43 +29,58 @@
 --     updated_at, which — for a row with zero move history — has never
 --     been touched since the import itself.
 --   * unit_cost: average_cost if recorded (>0), else the product's
---     standard_cost if set (>0), else 0 — and when it falls all the way
---     to 0, the notes field is flagged for a Finance/costing review,
---     since G8's later step (restoring real average-cost computation in
---     the trigger) needs a real cost basis to replay from and won't have
---     one for these.
+--     standard_cost if set (>0), else 0. The tier actually used is
+--     recorded in the notes text itself (not just inferable from the
+--     number), since which one fired isn't otherwise reconstructable
+--     later — and when it falls all the way to 0, the notes are flagged
+--     for a Finance/costing review, since G8's later step (restoring real
+--     average-cost computation in the trigger) needs a real cost basis to
+--     replay from and won't have one for these.
 --
 -- Does not touch the trigger's costing logic (still "last recorded
 -- cost", per migration 203) — that is a separate, later G8 step.
 --
--- On letting the trigger run vs. not (this took two attempts to get
--- right — noting the reasoning so it isn't re-litigated): the naive
--- approach of just inserting these moves normally double-counts, because
--- stock_balances.qty_on_hand at the real (to_location) side already
--- includes the phantom import quantity — that gap is the literal
--- definition of "drift". Letting the trigger add the same quantity again
--- pushes the balance further from the ledger, not closer (confirmed by
--- dry run: positive-drift count was completely unchanged after a
--- trigger-on backfill). But disabling the trigger entirely is also
--- wrong: the virtual_in (from_location) side has never had this quantity
--- subtracted from it either, and — unlike the real side — it genuinely
--- needs that decrement for double-entry to hold once a real ledger row
--- says stock left it. So: let the trigger run normally (it correctly
--- decrements virtual_in and increments the real location), then
--- immediately compensate ONLY the real-location side back down by the
--- same amount, using the INSERT's own RETURNING to target exactly the
--- rows just written. Net effect: virtual_in decremented (correct, new
--- information), real location unchanged (correct, already known),
--- ledger on both sides now matches their balances.
+-- Mechanics — why the trigger is disabled for this migration, and why
+-- these rows need no superseded_at at all (this took three attempts to
+-- get right; kept so it isn't re-derived):
+--
+-- A plain insert lets the trigger update qty_on_hand on both sides by the
+-- same delta that also lands in the ledger sum for both sides — so aading
+-- a live move can never, by itself, change either side's own drift,
+-- whatever quantity is chosen. Compensating the real-location side back
+-- down afterward (what this migration used to do, via a direct
+-- stock_balances UPDATE once the trigger had already applied the insert)
+-- reaches the right balance, but the compensation itself is a write to
+-- stock_balances with no stock_moves row behind it — exactly the kind of
+-- untracked patch stock_ledger_reconciliation.sql exists to catch, just
+-- introduced by the fix meant to close those.
+--
+-- The trigger-disabled version avoids that: with
+-- trg_update_stock_balance off, the insert itself has zero effect on
+-- either location's qty_on_hand. Only the virtual_in side needs a real
+-- change — it has never had this quantity subtracted from it before, and
+-- unlike the real-location side (whose balance already includes the
+-- phantom import quantity and must not move), virtual_in genuinely needs
+-- the debit for double-entry to hold. So: insert the move plain (it's
+-- correctly counted in the real location's ledger, which needed exactly
+-- this to catch up to the balance it already has), then apply the
+-- virtual_in decrement directly via stock_balances, since nothing else
+-- will. The real-location side is deliberately left completely untouched
+-- — no insert effect (trigger off) and no explicit update either. Both
+-- sides land on their correct values, and the only non-trigger write is
+-- the one side that genuinely needs a first-time correction (virtual_in),
+-- not a compensation for the trigger's own side effects.
 
 BEGIN;
 
+ALTER TABLE stock_moves DISABLE TRIGGER trg_update_stock_balance;
+
 WITH ledger AS (
   SELECT product_id, to_location_id AS location_id, lot_id, qty AS delta, moved_at
-  FROM stock_moves
+  FROM stock_moves WHERE superseded_at IS NULL
   UNION ALL
   SELECT product_id, from_location_id AS location_id, lot_id, -qty AS delta, moved_at
-  FROM stock_moves
+  FROM stock_moves WHERE superseded_at IS NULL
 ),
 computed AS (
   SELECT product_id, location_id, lot_id,
@@ -102,47 +112,64 @@ target AS (
     AND sl.type NOT IN ('transit', 'virtual_in', 'virtual_out')
     AND d.drift > 0
 ),
+costed AS (
+  SELECT
+    t.*,
+    p.standard_cost,
+    CASE
+      WHEN NULLIF(t.average_cost, 0) IS NOT NULL THEN t.average_cost
+      WHEN NULLIF(p.standard_cost, 0) IS NOT NULL THEN p.standard_cost
+      ELSE 0
+    END AS unit_cost,
+    CASE
+      WHEN NULLIF(t.average_cost, 0) IS NOT NULL THEN 'average_cost'
+      WHEN NULLIF(p.standard_cost, 0) IS NOT NULL THEN 'standard_cost'
+      ELSE 'zero'
+    END AS cost_tier
+  FROM target t
+  JOIN products p ON p.id = t.product_id
+),
 inserted AS (
   INSERT INTO stock_moves (
     company_id, product_id, from_location_id, to_location_id, lot_id,
     moved_at, qty, unit_cost, total_cost, source_type, notes, moved_by
   )
   SELECT
-    t.company_id,
-    t.product_id,
+    c.company_id,
+    c.product_id,
     vloc.id,
-    t.location_id,
-    t.lot_id,
-    COALESCE(t.earliest_move_at - INTERVAL '1 second', t.balance_updated_at, NOW()),
-    t.drift,
-    cost.unit_cost,
-    t.drift * cost.unit_cost,
+    c.location_id,
+    c.lot_id,
+    COALESCE(c.earliest_move_at - INTERVAL '1 second', c.balance_updated_at, NOW()),
+    c.drift,
+    c.unit_cost,
+    c.drift * c.unit_cost,
     'opening_balance',
-    CASE
-      WHEN cost.unit_cost = 0 THEN
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row. No average_cost or standard_cost was available; cost basis defaulted to 0. FLAGGED for Finance/costing review before G8''s average-cost restoration replays this ledger.'
+    CASE c.cost_tier
+      WHEN 'average_cost' THEN
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: average_cost (' || c.unit_cost || ').'
+      WHEN 'standard_cost' THEN
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: standard_cost (' || c.unit_cost || ') — no average_cost was recorded.'
       ELSE
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift.'
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: none available (no average_cost or standard_cost). FLAGGED for Finance/costing review before G8''s average-cost restoration replays this ledger.'
     END,
     NULL
-  FROM target t
-  JOIN products p ON p.id = t.product_id
+  FROM costed c
   CROSS JOIN LATERAL (
     SELECT id FROM stock_locations
-    WHERE company_id = t.company_id AND type = 'virtual_in' AND is_active = true
+    WHERE company_id = c.company_id AND type = 'virtual_in' AND is_active = true
     LIMIT 1
   ) vloc
-  CROSS JOIN LATERAL (
-    SELECT COALESCE(NULLIF(t.average_cost, 0), NULLIF(p.standard_cost, 0), 0) AS unit_cost
-  ) cost
-  RETURNING product_id, to_location_id AS location_id, lot_id, qty
+  RETURNING product_id, from_location_id AS virtual_in_id, lot_id, qty
 )
 UPDATE stock_balances sb
 SET qty_on_hand = sb.qty_on_hand - i.qty,
     updated_at = NOW()
 FROM inserted i
 WHERE sb.product_id = i.product_id
-  AND sb.location_id = i.location_id
+  AND sb.location_id = i.virtual_in_id
   AND sb.lot_id IS NOT DISTINCT FROM i.lot_id;
+
+ALTER TABLE stock_moves ENABLE TRIGGER trg_update_stock_balance;
 
 COMMIT;
