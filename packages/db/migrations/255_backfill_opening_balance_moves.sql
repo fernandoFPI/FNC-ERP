@@ -28,17 +28,28 @@
 --     happened on top of it"); otherwise the stock_balances row's own
 --     updated_at, which — for a row with zero move history — has never
 --     been touched since the import itself.
---   * unit_cost: average_cost if recorded (>0), else the product's
---     standard_cost if set (>0), else 0. The tier actually used is
---     recorded in the notes text itself (not just inferable from the
---     number), since which one fired isn't otherwise reconstructable
---     later — and when it falls all the way to 0, the notes are flagged
---     for a Finance/costing review, since G8's later step (restoring real
---     average-cost computation in the trigger) needs a real cost basis to
---     replay from and won't have one for these.
+--   * unit_cost: last_cost if recorded (>0) — stock_balances.average_cost,
+--     despite its column name, is populated by the trigger with the last
+--     recorded move cost (migration 203), not a true weighted average —
+--     else the product's standard_cost if set (>0), else 0. The tier
+--     actually used is recorded in the notes text itself (not just
+--     inferable from the number), since which one fired isn't otherwise
+--     reconstructable later — and when it falls all the way to 0, the
+--     notes are flagged for a Finance/costing review: these rows have no
+--     cost basis to replay from once G8 catches up on real costing, and
+--     are candidates for a future cost-only revaluation move (see the G8
+--     follow-up list below).
 --
--- Does not touch the trigger's costing logic (still "last recorded
--- cost", per migration 203) — that is a separate, later G8 step.
+-- Does not touch the trigger's costing logic (still last_cost, per
+-- migration 203). G8 follow-up items, not part of this migration:
+--   * restoring true weighted-average cost computation in the trigger
+--     (replacing last_cost).
+--   * landed cost (freight/duty/handling folded into unit_cost, not just
+--     the vendor line price).
+--   * a cost-only revaluation move for the zero-cost opening rows this
+--     migration flags (480 across dev, 5.5-6.9% of qty per company) —
+--     once a real cost basis exists for them, closes the gap without
+--     touching quantity or location.
 --
 -- Mechanics — why the trigger is disabled for this migration, and why
 -- these rows need no superseded_at at all (this took three attempts to
@@ -70,6 +81,22 @@
 -- sides land on their correct values, and the only non-trigger write is
 -- the one side that genuinely needs a first-time correction (virtual_in),
 -- not a compensation for the trigger's own side effects.
+--
+-- Transaction safety: run-migrations.ts strips this file's own BEGIN/
+-- COMMIT and re-wraps the whole body in its own per-file transaction
+-- (BEGIN before, COMMIT after, ROLLBACK on any error — see
+-- migrations/run-migrations.ts:55-65). ALTER TABLE ... DISABLE/ENABLE
+-- TRIGGER is ordinary transactional DDL in Postgres, so a failure
+-- anywhere between the two rolls the whole transaction back, including
+-- the disable — the trigger can never be left off. The BEGIN;/COMMIT;
+-- below are kept only so this file also reads correctly and runs
+-- correctly standalone (e.g. via psql -f); they're redundant, not load-
+-- bearing, under the real runner.
+--
+-- Deploy note: ALTER TABLE ... DISABLE TRIGGER takes an ACCESS EXCLUSIVE
+-- lock on stock_moves for the life of the transaction — every read and
+-- write against that table (including Store In/Store Out) blocks until
+-- this migration commits. Run outside working hours.
 
 BEGIN;
 
@@ -122,7 +149,7 @@ costed AS (
       ELSE 0
     END AS unit_cost,
     CASE
-      WHEN NULLIF(t.average_cost, 0) IS NOT NULL THEN 'average_cost'
+      WHEN NULLIF(t.average_cost, 0) IS NOT NULL THEN 'last_cost'
       WHEN NULLIF(p.standard_cost, 0) IS NOT NULL THEN 'standard_cost'
       ELSE 'zero'
     END AS cost_tier
@@ -146,12 +173,12 @@ inserted AS (
     c.drift * c.unit_cost,
     'opening_balance',
     CASE c.cost_tier
-      WHEN 'average_cost' THEN
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: average_cost (' || c.unit_cost || ').'
+      WHEN 'last_cost' THEN
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: last_cost (' || c.unit_cost || ').'
       WHEN 'standard_cost' THEN
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: standard_cost (' || c.unit_cost || ') — no average_cost was recorded.'
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: standard_cost (' || c.unit_cost || ') — no last_cost was recorded.'
       ELSE
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: none available (no average_cost or standard_cost). FLAGGED for Finance/costing review before G8''s average-cost restoration replays this ledger.'
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: none available (no last_cost or standard_cost). FLAGGED for Finance/costing review — candidate for a future cost-only revaluation move once a real cost basis exists.'
     END,
     NULL
   FROM costed c

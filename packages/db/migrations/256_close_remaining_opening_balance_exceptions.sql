@@ -49,6 +49,13 @@
 -- one genuinely-needed real-location change, and the only row marked
 -- superseded is the pre-existing one it replaces — precisely the
 -- pattern findStockMovesForCorrection already expects.
+--
+-- Transaction safety and deploy note: same as migration 255 — the runner
+-- wraps this whole file in one transaction (see
+-- migrations/run-migrations.ts:55-65), so a failure between DISABLE and
+-- ENABLE TRIGGER rolls back the disable too, and the ACCESS EXCLUSIVE
+-- lock DISABLE TRIGGER takes on stock_moves blocks all reads/writes to
+-- it until commit — run outside working hours.
 
 BEGIN;
 
@@ -68,7 +75,7 @@ target AS (
       ELSE 0
     END AS unit_cost,
     CASE
-      WHEN NULLIF(sb.average_cost, 0) IS NOT NULL THEN 'average_cost'
+      WHEN NULLIF(sb.average_cost, 0) IS NOT NULL THEN 'last_cost'
       WHEN NULLIF(p.standard_cost, 0) IS NOT NULL THEN 'standard_cost'
       ELSE 'zero'
     END AS cost_tier
@@ -105,12 +112,12 @@ inserted AS (
     NOW(), t.qty, t.unit_cost, t.qty * t.unit_cost,
     'opening_balance',
     CASE t.cost_tier
-      WHEN 'average_cost' THEN
-        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: average_cost (' || t.unit_cost || ').'
+      WHEN 'last_cost' THEN
+        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: last_cost (' || t.unit_cost || ').'
       WHEN 'standard_cost' THEN
-        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: standard_cost (' || t.unit_cost || ') — no average_cost was recorded.'
+        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: standard_cost (' || t.unit_cost || ') — no last_cost was recorded.'
       ELSE
-        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: none available. FLAGGED for Finance/costing review.'
+        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: none available. FLAGGED for Finance/costing review — candidate for a future cost-only revaluation move once a real cost basis exists.'
     END,
     NULL
   FROM target t

@@ -1,14 +1,30 @@
 -- Read-only dry-run projection for migrations 255 + 256 (G8 step 1) on
 -- prod. Applies both migrations' exact logic (copied verbatim from the
--- migration files, minus their own BEGIN/COMMIT and the trigger
--- disable/enable — this script wraps in its own transaction that's always
--- rolled back, so leaving the trigger live changes nothing observable here
--- and avoids a superuser-only statement some read replicas/roles reject)
--- inside one transaction, reports before/after reconciliation counts, a
+-- migration files, minus their own BEGIN/COMMIT — this script wraps in
+-- its own transaction that's always rolled back) inside one transaction,
+-- including the ALTER TABLE ... DISABLE/ENABLE TRIGGER pair, so the
+-- projection matches the real migrations' actual behavior and locking
+-- exactly, not an approximation of it. That means this script needs the
+-- same privilege the real migrations do (table owner, or a role granted
+-- ALTER on stock_moves — not just SELECT) and can't run against a
+-- read-only replica. Reports before/after reconciliation counts, a
 -- per-company qty/value breakdown, and a cost-basis tier breakdown (now
 -- exact — read directly from each row's notes, not reconstructed), then
 -- rolls everything back. Nothing persists — safe to run on prod as many
 -- times as needed.
+--
+-- Note: cost tier is now labeled last_cost, not average_cost —
+-- stock_balances.average_cost is populated by the trigger with the last
+-- recorded move cost (migration 203), not a true weighted average. See
+-- migration 255's header for the full G8 follow-up list (true weighted-
+-- average costing, landed cost, and a cost-only revaluation move for the
+-- zero-cost rows this backfill flags).
+--
+-- Lock note: like the real migrations, this script's DISABLE TRIGGER
+-- takes an ACCESS EXCLUSIVE lock on stock_moves for the life of the
+-- transaction. It always rolls back, but for the duration of the run it
+-- blocks all reads/writes to that table exactly like a real deploy would
+-- — run it outside working hours too, not just the real migrations.
 --
 -- Usage: psql "$DATABASE_URL" -P pager=off -f packages/db/scripts/dry_run_g8_step1_prod_projection.sql
 
@@ -82,7 +98,7 @@ costed AS (
       ELSE 0
     END AS unit_cost,
     CASE
-      WHEN NULLIF(t.average_cost, 0) IS NOT NULL THEN 'average_cost'
+      WHEN NULLIF(t.average_cost, 0) IS NOT NULL THEN 'last_cost'
       WHEN NULLIF(p.standard_cost, 0) IS NOT NULL THEN 'standard_cost'
       ELSE 'zero'
     END AS cost_tier
@@ -106,12 +122,12 @@ inserted AS (
     c.drift * c.unit_cost,
     'opening_balance',
     CASE c.cost_tier
-      WHEN 'average_cost' THEN
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: average_cost (' || c.unit_cost || ').'
+      WHEN 'last_cost' THEN
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: last_cost (' || c.unit_cost || ').'
       WHEN 'standard_cost' THEN
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: standard_cost (' || c.unit_cost || ') — no average_cost was recorded.'
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: standard_cost (' || c.unit_cost || ') — no last_cost was recorded.'
       ELSE
-        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: none available (no average_cost or standard_cost). FLAGGED for Finance/costing review before G8''s average-cost restoration replays this ledger.'
+        'Opening balance backfill (G8 step 1) — legacy import never recorded this quantity as a stock_moves row; reconstructed from the stock_balances/stock_moves drift. Cost basis: none available (no last_cost or standard_cost). FLAGGED for Finance/costing review — candidate for a future cost-only revaluation move once a real cost basis exists.'
     END,
     NULL
   FROM costed c
@@ -145,7 +161,7 @@ target AS (
       ELSE 0
     END AS unit_cost,
     CASE
-      WHEN NULLIF(sb.average_cost, 0) IS NOT NULL THEN 'average_cost'
+      WHEN NULLIF(sb.average_cost, 0) IS NOT NULL THEN 'last_cost'
       WHEN NULLIF(p.standard_cost, 0) IS NOT NULL THEN 'standard_cost'
       ELSE 'zero'
     END AS cost_tier
@@ -182,12 +198,12 @@ inserted AS (
     NOW(), t.qty, t.unit_cost, t.qty * t.unit_cost,
     'opening_balance',
     CASE t.cost_tier
-      WHEN 'average_cost' THEN
-        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: average_cost (' || t.unit_cost || ').'
+      WHEN 'last_cost' THEN
+        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: last_cost (' || t.unit_cost || ').'
       WHEN 'standard_cost' THEN
-        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: standard_cost (' || t.unit_cost || ') — no average_cost was recorded.'
+        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: standard_cost (' || t.unit_cost || ') — no last_cost was recorded.'
       ELSE
-        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: none available. FLAGGED for Finance/costing review.'
+        'G8 step 1 follow-up — replaces an earlier ad-hoc fix (this session, pre-dating the opening-balance backfill) that under-corrected this row''s negative drift; that fix is now superseded, this row is the full corrected quantity. Cost basis: none available. FLAGGED for Finance/costing review — candidate for a future cost-only revaluation move once a real cost basis exists.'
     END,
     NULL
   FROM target t
@@ -254,7 +270,7 @@ GROUP BY c.name ORDER BY c.name;
 -- now records the tier that actually fired for it, not a reconstruction) ──
 SELECT
   c.name AS company,
-  COUNT(*) FILTER (WHERE sm.notes LIKE '%Cost basis: average_cost%') AS average_cost_rows,
+  COUNT(*) FILTER (WHERE sm.notes LIKE '%Cost basis: last_cost%') AS last_cost_rows,
   COUNT(*) FILTER (WHERE sm.notes LIKE '%Cost basis: standard_cost%') AS standard_cost_rows,
   COUNT(*) FILTER (WHERE sm.notes LIKE '%Cost basis: none available%') AS zero_flagged_rows,
   SUM(sm.qty) FILTER (WHERE sm.notes LIKE '%Cost basis: none available%') AS zero_flagged_qty,
