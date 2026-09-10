@@ -1265,20 +1265,45 @@ async function reqTransition(
 }
 
 async function getRequisitionForReturn(reqId: string): Promise<Record<string, unknown>> {
-  const r = await query(
-    `SELECT req.*,
-            cb.name AS branch_name,
-            p.name AS "projectName",
-            COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
-     FROM requisitions req
-     LEFT JOIN company_branches cb ON cb.id = req.branch_id
-     LEFT JOIN projects p ON p.id = req.project_id
-     LEFT JOIN users u ON u.id = req.organizer_id
-     WHERE req.id = $1`,
+  const [r, currencyTotals] = await Promise.all([
+    query(
+      `SELECT req.*,
+              cb.name AS branch_name,
+              p.name AS "projectName",
+              COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+       FROM requisitions req
+       LEFT JOIN company_branches cb ON cb.id = req.branch_id
+       LEFT JOIN projects p ON p.id = req.project_id
+       LEFT JOIN users u ON u.id = req.organizer_id
+       WHERE req.id = $1`,
+      [reqId],
+    ),
+    getRequisitionCurrencyTotals(reqId),
+  ])
+  if (!r.rows[0]) throw new Error('Requisition not found')
+  return { ...r.rows[0], currencyTotals } as Record<string, unknown>
+}
+
+// Per-currency totals — no-conversion policy (see G1's design decisions):
+// every line keeps its own currency_code, and this is deliberately never
+// collapsed into one number the way recalcPO's subtotal/total_amount does
+// for purchase_orders. Not stored anywhere (requisitions has no subtotal/
+// total_amount column at all) — computed fresh on every read, which is
+// what "the approval screen will consume" actually needs: a live, always-
+// correct breakdown, not a cached figure that could drift from the lines
+// it's supposed to summarize.
+async function getRequisitionCurrencyTotals(
+  reqId: string,
+): Promise<{ currency_code: string; subtotal: string; line_count: number }[]> {
+  const r = await query<{ currency_code: string; subtotal: string; line_count: string }>(
+    `SELECT currency_code, COALESCE(SUM(total_price), 0) AS subtotal, COUNT(*) AS line_count
+     FROM po_lines
+     WHERE requisition_id = $1
+     GROUP BY currency_code
+     ORDER BY currency_code`,
     [reqId],
   )
-  if (!r.rows[0]) throw new Error('Requisition not found')
-  return r.rows[0] as Record<string, unknown>
+  return r.rows.map((row) => ({ ...row, line_count: parseInt(row.line_count, 10) }))
 }
 
 async function userIsOrganizerForRequisitionGW(
@@ -7736,7 +7761,7 @@ export const resolvers = {
     // caller might not be authorized to see fields for.
     requisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      const [req, lines, approvals] = await Promise.all([
+      const [req, lines, approvals, currencyTotals] = await Promise.all([
         query(
           `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
@@ -7779,9 +7804,10 @@ export const resolvers = {
            WHERE ral.requisition_id=$1 ORDER BY ral.created_at`,
           [args.id],
         ),
+        getRequisitionCurrencyTotals(args.id),
       ])
       if (!req.rows[0]) return null
-      return { ...req.rows[0], lines: lines.rows, approval_log: approvals.rows }
+      return { ...req.rows[0], lines: lines.rows, approval_log: approvals.rows, currencyTotals }
     },
 
     purchaseOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -27262,6 +27288,197 @@ const phase5MutationResolvers = {
         'confirm_inventory_check',
         auth,
         args.notes,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  // ── G1 requisition lifecycle mutations (PR 1b: store/market pricing +
+  // verification) ────────────────────────────────────────────────────────
+  // Ported from submitPOStorePricing/submitPOMarketPricing/
+  // submitPOPriceVerification — same position gates, same "store price is
+  // a reference only, market/verified price is what sets the real total"
+  // rule. Two deliberate differences from the PO versions, per G1's design:
+  //   * no vendor input anywhere — vendor is chosen only at Items Bought
+  //     (PR 3), recorded per bought entry, not per line here.
+  //   * no fx_rate_to_base stamping — G1's no-conversion policy means a
+  //     line's currency_code is its one real currency, never converted;
+  //     totals are per-currency (getRequisitionCurrencyTotals), never
+  //     collapsed into one number the way recalcPO's total_amount is.
+  // Also deliberately NOT ported: the store_pricing_id/procurement_officer_id/
+  // procurement_2nd_id position-holder stamping and the position-holder
+  // push notifications submitPOStorePricing/submitPOMarketPricing/
+  // submitPOPriceVerification each send — requisitions has no equivalent
+  // tracking columns yet, and notifyPositionHoldersGW/
+  // notifyDeptHeadsAndAdminsGW are hardcoded to purchase_orders. Scoped
+  // out rather than silently built wrong; flagging for a decision on
+  // whether requisitions need their own version of either.
+
+  submitRequisitionStorePricing: async (
+    _: unknown,
+    args: {
+      id: string
+      linePrices?: { lineId: string; storePrice: number; currencyCode: string; notes?: string }[]
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'store_pricing',
+    )
+    if (!isAdmin && !hasPos) throw new Error('store_pricing position required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const lp of args.linePrices ?? []) {
+        // Reference record only — never feeds the total (see
+        // submitRequisitionMarketPricing, which sets the real total).
+        await client.query(
+          `UPDATE po_lines SET store_price=$1, store_price_currency=$2
+           WHERE id=$3 AND requisition_id=$4`,
+          [lp.storePrice, lp.currencyCode, lp.lineId, args.id],
+        )
+      }
+      await reqTransition(
+        client,
+        args.id,
+        'store_pricing',
+        'market_pricing',
+        'submit_to_market_pricing',
+        auth,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  submitRequisitionMarketPricing: async (
+    _: unknown,
+    args: {
+      id: string
+      linePrices?: {
+        lineId: string
+        marketPrice: number
+        vendorQuoteRef?: string
+        currencyCode: string
+      }[]
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_officer',
+    )
+    if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const lp of args.linePrices ?? []) {
+        // No fx_rate_to_base — currency_code becomes this line's one real
+        // currency here, full stop, never converted.
+        const updated = await client.query<{ product_id: string | null }>(
+          `UPDATE po_lines SET unit_price=$1, market_price=$1, market_price_currency=$2, vendor_quote_ref=$3,
+             currency_code=$2,
+             total_price = qty_ordered * $1
+           WHERE id=$4 AND requisition_id=$5
+           RETURNING product_id`,
+          [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
+        )
+        // Same product-level cache as submitPOMarketPricing — read back by
+        // confirmRequisitionInventoryCheck's future store-pricing auto-fill
+        // (not yet built — see PR 1's scope note) for the next
+        // requisition/PO needing this product.
+        const productId = updated.rows[0]?.product_id
+        if (productId && lp.marketPrice > 0) {
+          await client.query(
+            `UPDATE products SET last_market_price=$1, last_market_price_currency=$2, last_market_price_at=NOW()
+             WHERE id=$3`,
+            [lp.marketPrice, lp.currencyCode, productId],
+          )
+        }
+      }
+      await reqTransition(
+        client,
+        args.id,
+        'market_pricing',
+        'price_verification',
+        'submit_to_price_verification',
+        auth,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  verifyRequisitionPrices: async (
+    _: unknown,
+    args: {
+      id: string
+      verificationNotes?: string
+      lineAdjustments?: { lineId: string; verifiedPrice: number; notes?: string }[]
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      for (const la of args.lineAdjustments ?? []) {
+        // Same rule as submitRequisitionMarketPricing: total is verified
+        // price x the full qty_ordered — store_price stays a record only.
+        await client.query(
+          `UPDATE po_lines SET verified_price=$1, verified_price_currency=currency_code, unit_price=$1,
+             total_price = qty_ordered * $1
+           WHERE id=$2 AND requisition_id=$3`,
+          [la.verifiedPrice, la.lineId, args.id],
+        )
+      }
+      await reqTransition(
+        client,
+        args.id,
+        'price_verification',
+        'pending_approval',
+        'submit_for_approval',
+        auth,
+        args.verificationNotes,
       )
       await client.query('COMMIT')
     } catch (e) {
