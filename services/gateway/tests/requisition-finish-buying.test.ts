@@ -340,14 +340,16 @@ describe('finishBuyingRequisition', () => {
     expect(parseFloat(original.rows[0]!.qty_ordered)).toBe(4)
     expect(parseFloat(original.rows[0]!.qty_from_stock)).toBe(4)
 
-    const fragment = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string }>(
-      `SELECT po_id, qty_ordered, unit_price FROM po_lines WHERE requisition_id=$1 AND id != $2`,
+    const fragment = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string; origin_line_id: string | null }>(
+      `SELECT po_id, qty_ordered, unit_price, origin_line_id FROM po_lines WHERE requisition_id=$1 AND id != $2`,
       [reqId, lineId],
     )
     expect(fragment.rows).toHaveLength(1)
     expect(fragment.rows[0]!.po_id).not.toBeNull()
     expect(parseFloat(fragment.rows[0]!.qty_ordered)).toBe(6)
     expect(parseFloat(fragment.rows[0]!.unit_price)).toBe(15)
+    // Traces back to the requisition line it was forked from.
+    expect(fragment.rows[0]!.origin_line_id).toBe(lineId)
   })
 
   it('split case: two vendors, nothing from stock — first entry mutates the original row, second gets a new row', async () => {
@@ -356,8 +358,8 @@ describe('finishBuyingRequisition', () => {
     await recordPurchase(lineId, vendorBId, 4, 20) // same price, stays within tolerance
     await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
 
-    const allLines = await pool.query<{ id: string; po_id: string; qty_ordered: string }>(
-      `SELECT pl.id, pl.po_id, pl.qty_ordered FROM po_lines pl WHERE pl.requisition_id=$1`,
+    const allLines = await pool.query<{ id: string; po_id: string; qty_ordered: string; origin_line_id: string | null }>(
+      `SELECT pl.id, pl.po_id, pl.qty_ordered, pl.origin_line_id FROM po_lines pl WHERE pl.requisition_id=$1`,
       [reqId],
     )
     expect(allLines.rows).toHaveLength(2)
@@ -365,12 +367,74 @@ describe('finishBuyingRequisition', () => {
     const totalQty = allLines.rows.reduce((s, l) => s + parseFloat(l.qty_ordered), 0)
     expect(totalQty).toBe(10)
 
+    // The mutated-in-place row IS the original line (id === lineId, so it
+    // needs no origin_line_id — it's not a fork, it's the same row); the
+    // brand-new row for the second vendor traces back to it.
+    const mutated = allLines.rows.find((l) => l.id === lineId)!
+    const forked = allLines.rows.find((l) => l.id !== lineId)!
+    expect(mutated.origin_line_id).toBeNull()
+    expect(forked.origin_line_id).toBe(lineId)
+
     const children = await pool.query<{ id: string; vendor_id: string }>(
       `SELECT id, vendor_id FROM purchase_orders WHERE requisition_id=$1`,
       [reqId],
     )
     expect(children.rows).toHaveLength(2)
     expect(children.rows.map((c) => c.vendor_id).sort()).toEqual([vendorAId, vendorBId].sort())
+  })
+
+  it('reservations and pending catalog items still reference the original, untouched row after forking', async () => {
+    const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 10, marketPrice: 15, qtyFromStock: 4 })
+
+    // The Store Out draft created at approval time (PR 2) for the
+    // 4-unit stock portion.
+    const issueLineBefore = await pool.query<{ po_line_id: string; qty_issued: string }>(
+      `SELECT pmil.po_line_id, pmil.qty_issued FROM project_material_issue_lines pmil
+       JOIN project_material_issues pmi ON pmi.id = pmil.issue_id WHERE pmi.requisition_id=$1`,
+      [reqId],
+    )
+    expect(issueLineBefore.rows).toHaveLength(1)
+    expect(issueLineBefore.rows[0]!.po_line_id).toBe(lineId)
+    expect(parseFloat(issueLineBefore.rows[0]!.qty_issued)).toBe(4)
+
+    // issueStockForRequisitionLines only reaches the pending-catalog-item
+    // branch for a from-stock line with no product_id — not reachable
+    // through the normal flow here, since confirmRequisitionInventoryCheck
+    // itself requires a real, stocked product to confirm any qty_from_stock
+    // against. Simulated directly, matching that insert's exact shape, to
+    // verify Finish Buying leaves an existing row like it alone.
+    await pool.query(
+      `INSERT INTO pending_product_catalog_items
+         (company_id, requisition_id, po_line_id, description, qty, uom, unit_price, currency_code, source)
+       VALUES ($1,$2,$3,'simulated uncatalogued portion',1,'unit',1,'IQD','stock_issuance')`,
+      [TEST_COMPANY_ID, reqId, lineId],
+    )
+
+    await recordPurchase(lineId, vendorAId, 6, 15)
+    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+
+    // Same lineId, unaffected by the fork/reduction — po_lines.id never
+    // changes, only the row's other columns do.
+    const issueLineAfter = await pool.query<{ po_line_id: string }>(
+      `SELECT pmil.po_line_id FROM project_material_issue_lines pmil
+       JOIN project_material_issues pmi ON pmi.id = pmil.issue_id WHERE pmi.requisition_id=$1`,
+      [reqId],
+    )
+    expect(issueLineAfter.rows[0]!.po_line_id).toBe(lineId)
+
+    const pendingAfter = await pool.query<{ po_line_id: string }>(
+      `SELECT po_line_id FROM pending_product_catalog_items WHERE requisition_id=$1`,
+      [reqId],
+    )
+    expect(pendingAfter.rows).toHaveLength(1)
+    expect(pendingAfter.rows[0]!.po_line_id).toBe(lineId)
+
+    const originalLine = await pool.query<{ qty_from_stock: string; qty_ordered: string }>(
+      `SELECT qty_from_stock, qty_ordered FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(originalLine.rows[0]!.qty_from_stock)).toBe(4)
+    expect(parseFloat(originalLine.rows[0]!.qty_ordered)).toBe(4) // reduced to just the stock portion
   })
 
   it('short-marked line with nothing ever bought: no purchases recorded — transitions straight to sourcing with no fork', async () => {

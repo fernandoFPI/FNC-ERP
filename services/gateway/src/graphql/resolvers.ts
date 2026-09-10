@@ -7967,7 +7967,7 @@ export const resolvers = {
                   pol.account_id, coa.code AS account_code, coa.name AS account_name,
                   pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
                   pol.is_bought,
-                  pol.approved_unit_price, pol.short_reason, pol.short_marked_by, pol.short_marked_at,
+                  pol.approved_unit_price, pol.short_reason, pol.short_marked_by, pol.short_marked_at, pol.origin_line_id,
                   (SELECT COALESCE(json_agg(jsonb_build_object(
                      'id', plp.id, 'po_line_id', plp.po_line_id, 'vendor_id', plp.vendor_id,
                      'vendor_name', v.name, 'currency_code', plp.currency_code, 'qty', plp.qty,
@@ -28336,8 +28336,8 @@ const phase5MutationResolvers = {
                 `INSERT INTO po_lines
                    (po_id, requisition_id, line_number, description, product_id, qty_ordered, unit_price,
                     initial_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
-                    approved_unit_price, qty_from_stock, in_stock)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,0,false)`,
+                    approved_unit_price, qty_from_stock, in_stock, origin_line_id)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
                 [
                   childId,
                   args.id,
@@ -28352,6 +28352,7 @@ const phase5MutationResolvers = {
                   line.account_id,
                   line.cost_center_id,
                   line.approved_unit_price,
+                  line.id,
                 ],
               )
             }

@@ -1972,6 +1972,13 @@
     short_reason: String
     short_marked_by: ID
     short_marked_at: String
+    # G1 PR 4 — set only on a line finishBuyingRequisition forked into a
+    # new row (the mixed stock+vendor case, or a multi-vendor split
+    # beyond the first entry); points back to the requisition line it
+    # came from. Null for a requisition's own master lines, and for the
+    # simple single-vendor-zero-stock case that gains po_id on its
+    # existing row instead of forking a new one.
+    origin_line_id: ID
     # One row per vendor a line was bought from — more than one means the
     # line was split across vendors. Only populated when fetched via the
     # requisition(id) query; a bare RETURNING * from a line mutation (e.g.
