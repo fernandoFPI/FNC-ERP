@@ -4,6 +4,7 @@ export const DOC_TYPES = [
   { key: 'rfq', label: 'RFQ Number', defaultPrefix: 'RFQ' },
   { key: 'project', label: 'Project Number', defaultPrefix: 'PRJ' },
   { key: 'purchase_order', label: 'Purchase Order', defaultPrefix: 'PO' },
+  { key: 'requisition', label: 'Requisition', defaultPrefix: 'REQ' },
   { key: 'project_contract', label: 'Project Contract', defaultPrefix: 'CTR' },
   { key: 'project_invoice', label: 'Project Invoice', defaultPrefix: 'INV' },
   { key: 'rental_contract', label: 'Rental Contract', defaultPrefix: 'RC' },

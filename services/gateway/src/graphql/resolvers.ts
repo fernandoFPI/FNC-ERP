@@ -22,7 +22,7 @@ import { env } from '@fnc-erp/config'
 import { resolveTransferPrice } from '@fnc-erp/fx'
 import { checkRateStaleness } from '@fnc-erp/fx/staleness'
 import { generateUploadUrl, generateDownloadUrl, validateFile } from '@fnc-erp/storage'
-import { projectStateMachine, poStateMachine } from '@fnc-erp/workflow'
+import { projectStateMachine, poStateMachine, reqStateMachine } from '@fnc-erp/workflow'
 import {
   pubsub,
   CHANNELS,
@@ -38,7 +38,7 @@ import {
   type LockState,
 } from './pubsub.js'
 import { invalidatePermissionCache, loadPermissions, meetsLevel } from '@fnc-erp/permissions'
-import type { POStatus, POAction } from '@fnc-erp/workflow'
+import type { POStatus, POAction, RequisitionStatus, RequisitionAction } from '@fnc-erp/workflow'
 import { logAudit } from '@fnc-erp/audit'
 import {
   generateMFASecret,
@@ -1213,6 +1213,111 @@ async function poTransition(
     newValues: { status: toStatus },
     client,
   })
+}
+
+// ── G1: Requisition helpers ──────────────────────────────────────────────
+// Mirror the PO equivalents above exactly (poTransition / getPOForReturn /
+// userIsOrganizerGW / userHasPositionGW) — same shape, same guarantees,
+// just against requisitions/requisition_approval_log instead of
+// purchase_orders/po_approval_log. See PR 1 of G1 Phase 2.
+
+async function reqTransition(
+  client: import('@fnc-erp/db').PoolClient,
+  reqId: string,
+  fromStatus: RequisitionStatus,
+  toStatus: RequisitionStatus,
+  action: RequisitionAction,
+  auth: GWAuth,
+  notes?: string,
+): Promise<void> {
+  const cur = await client.query(`SELECT status FROM requisitions WHERE id=$1 FOR UPDATE`, [
+    reqId,
+  ])
+  if (!cur.rows[0])
+    throw Object.assign(new Error('Requisition not found'), { extensions: { code: 'NOT_FOUND' } })
+  const cs = cur.rows[0].status as RequisitionStatus
+  if (cs !== fromStatus)
+    throw Object.assign(new Error(`Expected '${fromStatus}', got '${cs}'`), {
+      extensions: { code: 'INVALID_STATUS' },
+    })
+  if (!reqStateMachine.canTransition(cs, action))
+    throw Object.assign(new Error(`Action '${action}' not allowed from '${cs}'`), {
+      extensions: { code: 'INVALID_TRANSITION' },
+    })
+  await client.query(`UPDATE requisitions SET status=$1, updated_at=NOW() WHERE id=$2`, [
+    toStatus,
+    reqId,
+  ])
+  await client.query(
+    `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [reqId, fromStatus, toStatus, action, auth.userId, notes ?? null],
+  )
+  await logAudit({
+    userId: auth.userId,
+    companyId: auth.companyId,
+    action,
+    tableName: 'requisitions',
+    recordId: reqId,
+    oldValues: { status: fromStatus },
+    newValues: { status: toStatus },
+    client,
+  })
+}
+
+async function getRequisitionForReturn(reqId: string): Promise<Record<string, unknown>> {
+  const r = await query(
+    `SELECT req.*,
+            cb.name AS branch_name,
+            p.name AS "projectName",
+            COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+     FROM requisitions req
+     LEFT JOIN company_branches cb ON cb.id = req.branch_id
+     LEFT JOIN projects p ON p.id = req.project_id
+     LEFT JOIN users u ON u.id = req.organizer_id
+     WHERE req.id = $1`,
+    [reqId],
+  )
+  if (!r.rows[0]) throw new Error('Requisition not found')
+  return r.rows[0] as Record<string, unknown>
+}
+
+async function userIsOrganizerForRequisitionGW(
+  userId: string,
+  reqId: string,
+  companyId: string,
+): Promise<boolean> {
+  const r = await query(
+    `SELECT id FROM requisitions WHERE id=$1 AND organizer_id=$2 AND company_id=$3 LIMIT 1`,
+    [reqId, userId, companyId],
+  )
+  return r.rows.length > 0
+}
+
+async function userHasPositionForRequisitionGW(
+  userId: string,
+  companyId: string,
+  reqId: string,
+  position: string,
+): Promise<boolean> {
+  const scope = await query(
+    `SELECT req.project_id, req.branch_id, e.department_id FROM requisitions req LEFT JOIN users ou ON ou.id=req.organizer_id LEFT JOIN employees e ON e.user_id=ou.id WHERE req.id=$1 LIMIT 1`,
+    [reqId],
+  )
+  if (!scope.rows[0]) return false
+  const empId = await getEmployeeIdGW(userId, companyId)
+  if (!empId) return false
+  const r = await query(
+    `SELECT id FROM po_position_assignments WHERE employee_id=$1 AND position=$2 AND is_active=true AND company_id=$3 AND (($4::uuid IS NOT NULL AND project_id=$4) OR ($5::uuid IS NOT NULL AND department_id=$5) OR ($6::uuid IS NOT NULL AND branch_id=$6) OR (project_id IS NULL AND department_id IS NULL AND branch_id IS NULL)) LIMIT 1`,
+    [
+      empId,
+      position,
+      companyId,
+      scope.rows[0].project_id ?? null,
+      scope.rows[0].department_id ?? null,
+      scope.rows[0].branch_id ?? null,
+    ],
+  )
+  return r.rows.length > 0
 }
 
 async function getPOForReturn(poId: string): Promise<Record<string, unknown>> {
@@ -7623,6 +7728,60 @@ export const resolvers = {
         ctx.auth.companyId,
       ])
       return r.rows[0] ?? null
+    },
+
+    // G1 PR 1 scope: company-scoped existence check only, no viewer-
+    // restriction tiers like purchaseOrder(id) has (see fetchFullPurchaseOrderGW)
+    // — that's a later-PR concern once there's more than one status a
+    // caller might not be authorized to see fields for.
+    requisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return null
+      const [req, lines, approvals] = await Promise.all([
+        query(
+          `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
+                  COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+           FROM requisitions req
+           LEFT JOIN company_branches cb ON cb.id = req.branch_id
+           LEFT JOIN projects p ON p.id = req.project_id
+           LEFT JOIN users u ON u.id = req.organizer_id
+           WHERE req.id=$1 AND req.company_id=$2`,
+          [args.id, ctx.auth.companyId],
+        ),
+        query(
+          `SELECT pol.id, pol.requisition_id, pol.po_id, pol.description, pol.product_id, pol.qty_ordered AS qty,
+                  pol.qty_received, pol.unit_price, pol.initial_unit_price, pol.total_price AS total, pol.currency_code, pol.uom,
+                  pol.requested_currency_code, pol.fx_rate_to_base,
+                  pol.actual_unit_price,
+                  pol.store_price, pol.store_price_currency,
+                  pol.market_price, pol.market_price_currency, pol.verified_price, pol.verified_price_currency,
+                  pol.in_stock, pol.qty_from_stock,
+                  pol.source_location_id, sl.name AS source_location_name,
+                  sl.company_id AS source_company_id, sc.name AS source_company_name,
+                  sb.average_cost AS source_average_cost,
+                  pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
+                  pol.account_id, coa.code AS account_code, coa.name AS account_name,
+                  pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
+                  pol.is_bought
+           FROM po_lines pol
+           LEFT JOIN products p ON p.id=pol.product_id
+           LEFT JOIN stock_locations sl ON sl.id=pol.source_location_id
+           LEFT JOIN companies sc ON sc.id=sl.company_id
+           LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
+           LEFT JOIN chart_of_accounts coa ON coa.id=pol.account_id
+           LEFT JOIN cost_centers cc ON cc.id=pol.cost_center_id
+           WHERE pol.requisition_id=$1 ORDER BY pol.line_number`,
+          [args.id],
+        ),
+        query(
+          `SELECT ral.id, ral.from_status, ral.to_status, ral.action, ral.actor_id, ral.notes, ral.created_at,
+                  COALESCE(u.first_name || ' ' || u.last_name, u.email) AS actor_name
+           FROM requisition_approval_log ral LEFT JOIN users u ON u.id=ral.actor_id
+           WHERE ral.requisition_id=$1 ORDER BY ral.created_at`,
+          [args.id],
+        ),
+      ])
+      if (!req.rows[0]) return null
+      return { ...req.rows[0], lines: lines.rows, approval_log: approvals.rows }
     },
 
     purchaseOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -26855,6 +27014,264 @@ const phase5MutationResolvers = {
 
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
+  },
+
+  // ── G1 requisition lifecycle mutations (PR 1: create + inventory check) ───
+  // Scope note: store_pricing/market_pricing/price_verification entry
+  // mutations are NOT part of this PR — confirmRequisitionInventoryCheck
+  // below always transitions to 'store_pricing' (per reqStateMachine) but
+  // does not populate any store-price values, since that's a distinct
+  // concern not yet scoped to a specific PR in the agreed 5-PR breakdown.
+  // Flagging this explicitly rather than silently building or skipping it.
+
+  createRequisition: async (
+    _: unknown,
+    args: {
+      input: {
+        project_id?: string
+        purpose?: string
+        delivery_destination?: string
+        priority?: string
+        branch_id?: string
+        notes?: string
+        lines: {
+          product_id?: string
+          description?: string
+          qty: number
+          unit_price: number
+          uom?: string
+          requested_currency_code?: string
+        }[]
+      }
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    await requirePermGW(ctx.auth, 'procurement.po.edit', 'edit')
+    const i = args.input
+    if (!i.lines || i.lines.length === 0)
+      throw new Error('A requisition needs at least one line')
+    const createdReq = await withTransaction(
+      { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
+      async (client) => {
+        const reqNum = await nextDocumentNumber(ctx.auth!.companyId, 'requisition', 'REQ')
+        const priority = ['low', 'high', 'emergency'].includes(i.priority ?? '')
+          ? i.priority
+          : 'low'
+        const req = await client.query(
+          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, notes, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft') RETURNING *`,
+          [
+            ctx.auth!.companyId,
+            i.branch_id ?? null,
+            reqNum,
+            i.project_id ?? null,
+            i.purpose ?? 'stock',
+            i.purpose === 'project' ? (i.delivery_destination ?? null) : null,
+            priority,
+            ctx.auth!.userId,
+            i.notes ?? null,
+          ],
+        )
+        const reqRow = req.rows[0] as Record<string, unknown>
+        for (let idx = 0; idx < i.lines.length; idx++) {
+          const l = i.lines[idx]
+          await client.query(
+            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id)
+             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9)`,
+            [
+              reqRow.id,
+              l.description ?? '',
+              idx + 1,
+              l.qty,
+              l.unit_price,
+              l.qty * l.unit_price,
+              l.uom ?? 'unit',
+              l.requested_currency_code ?? null,
+              l.product_id ?? null,
+            ],
+          )
+        }
+        return reqRow
+      },
+    )
+    void publishEntityChanged(ctx.auth.companyId, 'requisition', createdReq.id as string, 'created')
+    return getRequisitionForReturn(createdReq.id as string)
+  },
+
+  submitRequisitionToInventoryCheck: async (
+    _: unknown,
+    args: { id: string; notes?: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the requisition organizer or an admin can submit to inventory check')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await reqTransition(
+        client,
+        args.id,
+        'draft',
+        'inventory_check',
+        'submit_to_inventory_check',
+        auth,
+        args.notes,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  confirmRequisitionInventoryCheck: async (
+    _: unknown,
+    args: {
+      id: string
+      lineStockQtys: { lineId: string; qtyFromStock: number; sourceLocationId?: string }[]
+      notes?: string
+    },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    const isStoreKeeper = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'store_keeper',
+    )
+    if (!isAdmin && !isOrganizer && !isStoreKeeper)
+      throw new Error('Only the requisition owner or a Store Keeper can confirm the inventory check')
+    const isSysAdmin = auth.role === 'system_admin'
+
+    // Same cross-company location-ownership check as confirmPOInventoryCheck
+    // — a picked source location must belong to either the requisition's own
+    // company or a company the caller actually has a role in.
+    for (const lsq of args.lineStockQtys) {
+      if (!lsq.sourceLocationId) continue
+      const locCheck = await query(
+        `SELECT sl.company_id FROM stock_locations sl
+         WHERE sl.id=$1 AND sl.is_active=true
+           AND (sl.company_id=$2 OR $3 OR EXISTS (
+             SELECT 1 FROM user_company_roles ucr
+             WHERE ucr.user_id=$4 AND ucr.company_id=sl.company_id AND ucr.is_active=true
+           ))`,
+        [lsq.sourceLocationId, auth.companyId, isSysAdmin, auth.userId],
+      )
+      if (!locCheck.rows[0])
+        throw new Error('Source stock location not found or not accessible to you')
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // Reserve stock for every from-stock line before anything else — same
+      // mechanics as confirmPOInventoryCheck's own Site 1: the reservation
+      // pool (stock_balances.qty_reserved) is shared across every PO/
+      // requisition line touching the same (product, location) pair, so
+      // this doesn't need any requisition-specific accounting beyond
+      // scoping the line lookup to requisition_id instead of po_id.
+      const lineIds = args.lineStockQtys.map((l) => l.lineId)
+      const lineInfoRes = await client.query<{
+        id: string
+        product_id: string | null
+        sku: string | null
+        product_name: string | null
+      }>(
+        `SELECT pol.id, pol.product_id, p.sku, p.name AS product_name
+         FROM po_lines pol LEFT JOIN products p ON p.id = pol.product_id
+         WHERE pol.id = ANY($1) AND pol.requisition_id = $2`,
+        [lineIds, args.id],
+      )
+      const lineInfoById = new Map(lineInfoRes.rows.map((r) => [r.id, r]))
+
+      // Sorted by (product_id, location_id) for the same deadlock-avoidance
+      // reason as confirmPOInventoryCheck.
+      const sortedLineStockQtys = [...args.lineStockQtys].sort((a, b) => {
+        const pa = lineInfoById.get(a.lineId)?.product_id ?? ''
+        const pb = lineInfoById.get(b.lineId)?.product_id ?? ''
+        if (pa !== pb) return pa < pb ? -1 : 1
+        const la = a.sourceLocationId ?? ''
+        const lb = b.sourceLocationId ?? ''
+        return la === lb ? 0 : la < lb ? -1 : 1
+      })
+
+      for (const lsq of sortedLineStockQtys) {
+        const qty = Number(lsq.qtyFromStock) || 0
+        if (qty <= 0) continue
+        const info = lineInfoById.get(lsq.lineId)
+        const productLabel = info?.sku
+          ? `${info.sku} (${info.product_name ?? info.product_id ?? lsq.lineId})`
+          : String(info?.product_name ?? info?.product_id ?? lsq.lineId)
+        if (!lsq.sourceLocationId)
+          throw new Error(
+            `A source stock location is required for ${productLabel} — it has a from-stock quantity of ${qty} but no location was chosen`,
+          )
+        const balRes = await client.query(
+          `SELECT qty_on_hand, qty_reserved FROM stock_balances
+           WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
+           FOR UPDATE`,
+          [info?.product_id, lsq.sourceLocationId],
+        )
+        const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+        const reserved = parseFloat(String(balRes.rows[0]?.qty_reserved ?? 0))
+        const available = onHand - reserved
+        if (available < qty) {
+          throw new Error(
+            `Insufficient available stock to reserve for ${productLabel} — ${available} available (${onHand} on hand, ${reserved} already reserved), ${qty} required`,
+          )
+        }
+        await client.query(
+          `UPDATE stock_balances SET qty_reserved = qty_reserved + $1, updated_at = NOW()
+           WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+          [qty, info?.product_id, lsq.sourceLocationId],
+        )
+      }
+
+      // qty_from_stock (+ chosen source location) per line, same zeroing
+      // rule as confirmPOInventoryCheck: a fully-covered line's total is
+      // zeroed here (it never reaches market pricing), its real cost is
+      // recognized separately once the Store Out issues (PR 2).
+      for (const lsq of args.lineStockQtys) {
+        await client.query(
+          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4,
+             total_price = CASE WHEN $1>=qty_ordered THEN 0 ELSE total_price END
+           WHERE id=$2 AND requisition_id=$3`,
+          [lsq.qtyFromStock, lsq.lineId, args.id, lsq.sourceLocationId ?? null],
+        )
+      }
+
+      await reqTransition(
+        client,
+        args.id,
+        'inventory_check',
+        'store_pricing',
+        'confirm_inventory_check',
+        auth,
+        args.notes,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
   },
 
   // ── PO lifecycle mutations ────────────────────────────────────────────────
