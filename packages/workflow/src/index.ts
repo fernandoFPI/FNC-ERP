@@ -319,10 +319,6 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 // ── Requisition State Machine (G1) ──────────────────────────────────────────
 //
 // draft → inventory_check → store_pricing → market_pricing → price_verification → pending_approval
-//                         ↘ completed  (confirm_inventory_check, 0 lines need purchasing —
-//                                       stock issues immediately, no vendor dimension at all;
-//                                       this is what replaced the old PO model's
-//                                       ready_to_issue shortcut)
 // pending_approval → approved   (ONE gate — covers both the stock issue for from-stock
 //                                 lines and the spend for bought lines, shown per currency.
 //                                 In the same transaction: draft Store Out created for every
@@ -331,15 +327,24 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 // pending_approval → rejected   (reject — releases the requisition's own stock reservations)
 // rejected → draft              (reopen)
 // approved → items_bought       (start_buying — auto-chained by approveRequisition in the
-//                                 same transaction, mirroring how approvePO used to)
+//                                 same transaction, mirroring how approvePO used to. Always
+//                                 taken, even when there are zero bought lines — items_bought
+//                                 is just the buyer's checklist stage, trivially empty/no-op
+//                                 for a 100%-stock requisition rather than a special case)
 // items_bought → sourcing       (finish_buying — Finish Buying: groups bought entries by
 //                                 actual vendor, forks one child purchase_orders row per
 //                                 vendor, each starting at 'bought'. A line with no bought
-//                                 entry at all — e.g. fully covered from stock — never forks)
+//                                 entry at all — e.g. fully covered from stock — never forks.
+//                                 With zero bought lines this is a trivial no-op transition too)
 // sourcing → completed          (system-driven, via the completion evaluator — not a direct
 //                                 user action. Fires once every line is resolved: issued from
 //                                 stock, on a child that reached 'closed', or explicitly
-//                                 closed via closeRequisitionLine)
+//                                 closed via closeRequisitionLine. For a 100%-stock requisition
+//                                 this fires almost immediately after the Store Out confirms,
+//                                 since nothing else is outstanding — deliberately not a
+//                                 separate state-machine shortcut, so the same linear pipeline
+//                                 handles both cases uniformly and only the completion
+//                                 evaluator (PR 5) needs to reason about "is everything done")
 //
 // CANCELLATION: any non-terminal state → cancelled, blocked if any child purchase_orders row
 //               is at or past 'goods_received' (mirrors the old model's own no-reversal-past-
@@ -397,7 +402,6 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
   transitions: [
     { from: 'draft', to: 'inventory_check', action: 'submit_to_inventory_check' },
     { from: 'inventory_check', to: 'store_pricing', action: 'confirm_inventory_check' },
-    { from: 'inventory_check', to: 'completed', action: 'confirm_inventory_check' },
     { from: 'store_pricing', to: 'market_pricing', action: 'submit_to_market_pricing' },
     { from: 'market_pricing', to: 'price_verification', action: 'submit_to_price_verification' },
     { from: 'price_verification', to: 'pending_approval', action: 'submit_for_approval' },
