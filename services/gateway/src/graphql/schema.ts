@@ -126,11 +126,15 @@
     deleteContractMilestone(id: ID!): Boolean!
     recordInvoicePayment(invoiceId: ID!, paymentDate: String!, amount: Float!, currencyCode: String, paymentReference: String, paymentMethod: String, notes: String): InvoicePayment!
 
-    # G1 requisition lifecycle (PR 1: create + inventory check only —
-    # store_pricing onward ships in later PRs of this phase)
+    # G1 requisition lifecycle (PR 1: create + inventory check; PR 1b:
+    # store/market pricing + verification. Single-approval-gate mutations
+    # (approve/reject, Store Out draft creation) are PR 2)
     createRequisition(input: RequisitionInput!): Requisition!
     submitRequisitionToInventoryCheck(id: ID!, notes: String): Requisition!
     confirmRequisitionInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): Requisition!
+    submitRequisitionStorePricing(id: ID!, linePrices: [RequisitionStorePriceInput!]): Requisition!
+    submitRequisitionMarketPricing(id: ID!, linePrices: [RequisitionMarketPriceInput!]): Requisition!
+    verifyRequisitionPrices(id: ID!, verificationNotes: String, lineAdjustments: [RequisitionPriceVerificationAdjustment!]): Requisition!
 
     # PO lifecycle
     submitPOToInventoryCheck(id: ID!, notes: String): PurchaseOrder!
@@ -2120,6 +2124,18 @@
     updated_at: String!
     lines: [POLine!]
     approval_log: [RequisitionApprovalLogEntry!]
+    # No-conversion policy: one entry per currency actually used by this
+    # requisition's lines, never summed across currencies into one number
+    # (there is no subtotal/total_amount field on this type at all, unlike
+    # PurchaseOrder — that's deliberate, see getRequisitionCurrencyTotals).
+    # This is what the approval screen (PR 2) shows per currency.
+    currencyTotals: [RequisitionCurrencyTotal!]!
+  }
+
+  type RequisitionCurrencyTotal {
+    currency_code: String!
+    subtotal: String!
+    line_count: Int!
   }
 
   type RequisitionApprovalLogEntry {
@@ -2150,6 +2166,31 @@
     branch_id: ID
     notes: String
     lines: [RequisitionLineInput!]!
+  }
+
+  input RequisitionStorePriceInput {
+    lineId: ID!
+    storePrice: Float!
+    currencyCode: String!
+    notes: String
+  }
+
+  # No vendor field — checked market price per line, per line currency;
+  # vendor is chosen only at Items Bought (PR 3). No fx-rate field either
+  # — G1's no-conversion policy means there is nothing to stamp a
+  # conversion rate onto; a line's currency_code IS its real currency,
+  # full stop.
+  input RequisitionMarketPriceInput {
+    lineId: ID!
+    marketPrice: Float!
+    vendorQuoteRef: String
+    currencyCode: String!
+  }
+
+  input RequisitionPriceVerificationAdjustment {
+    lineId: ID!
+    verifiedPrice: Float!
+    notes: String
   }
 
   input StockConfirmLineInput {
