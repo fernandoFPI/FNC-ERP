@@ -315,3 +315,123 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     { from: 'inventory_check', to: 'deleted', action: 'delete' },
   ],
 })
+
+// ── Requisition State Machine (G1) ──────────────────────────────────────────
+//
+// draft → inventory_check → store_pricing → market_pricing → price_verification → pending_approval
+// pending_approval → approved   (ONE gate — covers both the stock issue for from-stock
+//                                 lines and the spend for bought lines, shown per currency.
+//                                 In the same transaction: draft Store Out created for every
+//                                 from-stock quantity (full or partial coverage alike), and
+//                                 any line still needing purchase moves toward items_bought)
+// pending_approval → rejected   (reject — releases the requisition's own stock reservations)
+// rejected → draft              (reopen)
+// approved → items_bought       (start_buying — auto-chained by approveRequisition in the
+//                                 same transaction, mirroring how approvePO used to. Always
+//                                 taken, even when there are zero bought lines — items_bought
+//                                 is just the buyer's checklist stage, trivially empty/no-op
+//                                 for a 100%-stock requisition rather than a special case)
+// items_bought → sourcing       (finish_buying — Finish Buying: groups bought entries by
+//                                 actual vendor, forks one child purchase_orders row per
+//                                 vendor, each starting at 'bought'. A line with no bought
+//                                 entry at all — e.g. fully covered from stock — never forks.
+//                                 With zero bought lines this is a trivial no-op transition too)
+// sourcing → completed          (system-driven, via the completion evaluator — not a direct
+//                                 user action. Fires once every line is resolved: issued from
+//                                 stock, on a child that reached 'closed', or explicitly
+//                                 closed via closeRequisitionLine. For a 100%-stock requisition
+//                                 this fires almost immediately after the Store Out confirms,
+//                                 since nothing else is outstanding — deliberately not a
+//                                 separate state-machine shortcut, so the same linear pipeline
+//                                 handles both cases uniformly and only the completion
+//                                 evaluator (PR 5) needs to reason about "is everything done")
+//
+// CANCELLATION: any non-terminal state → cancelled, blocked if any child purchase_orders row
+//               is at or past 'goods_received' (mirrors the old model's own no-reversal-past-
+//               that-point rule — see cancelPO's CANCELLABLE-vs-exclusion boundary).
+// DELETION:     draft | inventory_check → deleted (also reused, with superseded_by_requisition_id,
+//               as the G1 Phase 1 migration's tombstone marker for pre-vendor legacy POs)
+
+export type RequisitionStatus =
+  | 'draft'
+  | 'inventory_check'
+  | 'store_pricing'
+  | 'market_pricing'
+  | 'price_verification'
+  | 'pending_approval'
+  | 'approved'
+  | 'items_bought'
+  | 'sourcing'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled'
+  | 'deleted'
+
+export type RequisitionAction =
+  | 'submit_to_inventory_check'
+  | 'confirm_inventory_check'
+  | 'submit_to_market_pricing'
+  | 'submit_to_price_verification'
+  | 'submit_for_approval'
+  | 'reject_verification_to_market_pricing'
+  | 'reject_verification_to_store_pricing'
+  | 'reject_to_market_pricing'
+  | 'approve'
+  | 'reject'
+  | 'reopen'
+  | 'start_buying'
+  | 'finish_buying'
+  | 'complete'
+  | 'cancel'
+  | 'delete'
+
+const REQUISITION_CANCELLABLE: RequisitionStatus[] = [
+  'draft',
+  'inventory_check',
+  'store_pricing',
+  'market_pricing',
+  'price_verification',
+  'pending_approval',
+  'approved',
+  'items_bought',
+  'sourcing',
+]
+
+export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAction>({
+  initial: 'draft',
+  transitions: [
+    { from: 'draft', to: 'inventory_check', action: 'submit_to_inventory_check' },
+    { from: 'inventory_check', to: 'store_pricing', action: 'confirm_inventory_check' },
+    { from: 'store_pricing', to: 'market_pricing', action: 'submit_to_market_pricing' },
+    { from: 'market_pricing', to: 'price_verification', action: 'submit_to_price_verification' },
+    { from: 'price_verification', to: 'pending_approval', action: 'submit_for_approval' },
+    {
+      from: 'price_verification',
+      to: 'market_pricing',
+      action: 'reject_verification_to_market_pricing',
+    },
+    {
+      from: 'price_verification',
+      to: 'store_pricing',
+      action: 'reject_verification_to_store_pricing',
+    },
+
+    { from: 'pending_approval', to: 'approved', action: 'approve' },
+    { from: 'pending_approval', to: 'rejected', action: 'reject' },
+    { from: 'pending_approval', to: 'market_pricing', action: 'reject_to_market_pricing' },
+    { from: 'rejected', to: 'draft', action: 'reopen' },
+
+    { from: 'approved', to: 'items_bought', action: 'start_buying' },
+    { from: 'items_bought', to: 'sourcing', action: 'finish_buying' },
+    { from: 'sourcing', to: 'completed', action: 'complete' },
+
+    ...REQUISITION_CANCELLABLE.map((s) => ({
+      from: s,
+      to: 'cancelled' as RequisitionStatus,
+      action: 'cancel' as RequisitionAction,
+    })),
+
+    { from: 'draft', to: 'deleted', action: 'delete' },
+    { from: 'inventory_check', to: 'deleted', action: 'delete' },
+  ],
+})
