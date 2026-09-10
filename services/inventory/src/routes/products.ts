@@ -14,7 +14,7 @@ const CreateProductSchema = z.object({
   description: z.string().optional(),
   category: z.string().max(100).optional(),
   uom: z.string().max(20).default('unit'),
-  valuation_method: z.enum(['avco', 'fifo', 'standard']).default('avco'),
+  valuation_method: z.literal('last_cost').default('last_cost'),
   standard_cost: z.number().min(0).default(0),
   reorder_point: z.number().min(0).optional(),
   reorder_qty: z.number().min(0).optional(),

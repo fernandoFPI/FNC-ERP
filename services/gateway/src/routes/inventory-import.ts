@@ -405,7 +405,7 @@ inventoryImportRouter.post('/', requireAuth(), upload.single('file'), async (req
               `INSERT INTO products
                    (company_id, sku, name, name_ar, category, sub_category, uom,
                     valuation_method, standard_cost, average_cost, is_active)
-                 VALUES ($1,$2,$3,$4,'raw_material',$5,$6,'avco',$7,$7,true)
+                 VALUES ($1,$2,$3,$4,'raw_material',$5,$6,'last_cost',$7,$7,true)
                  ON CONFLICT (company_id, sku) DO UPDATE SET
                    name          = EXCLUDED.name,
                    name_ar       = COALESCE(EXCLUDED.name_ar, products.name_ar),
