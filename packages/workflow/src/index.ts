@@ -324,27 +324,38 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 //                                 In the same transaction: draft Store Out created for every
 //                                 from-stock quantity (full or partial coverage alike), and
 //                                 any line still needing purchase moves toward items_bought)
-// pending_approval → rejected   (reject — releases the requisition's own stock reservations)
-// rejected → draft              (reopen)
+// pending_approval → draft      (reject — releases the requisition's own stock reservations and
+//                                 returns straight to draft, no separate reopen step. Unlike the
+//                                 old PO model, 'rejected' is not a state reject ever produces —
+//                                 it's kept in RequisitionStatus and the CHECK constraint purely
+//                                 because the G1 Phase 1 migration's backfill can set it on
+//                                 historical/migrated data (a legacy PO that really was rejected)
 // approved → items_bought       (start_buying — auto-chained by approveRequisition in the
-//                                 same transaction, mirroring how approvePO used to. Always
-//                                 taken, even when there are zero bought lines — items_bought
-//                                 is just the buyer's checklist stage, trivially empty/no-op
-//                                 for a 100%-stock requisition rather than a special case)
+//                                 same transaction, mirroring how approvePO used to. Only
+//                                 taken when at least one line still needs purchasing —
+//                                 items_bought is the buyer's checklist stage, and forcing a
+//                                 100%-stock requisition through it as a "trivial no-op" was
+//                                 an earlier design mistake, corrected here: nobody is buying
+//                                 anything, so there is no checklist stage to enter at all)
+// approved → sourcing           (skip_buying — the zero-bought-lines case: every line is
+//                                 already fully covered from stock, so there is nothing for
+//                                 items_bought or Finish Buying to do. Goes straight to
+//                                 sourcing instead, which here just means "waiting on the
+//                                 Store Out(s) created above to confirm" rather than "waiting
+//                                 on child POs" — sourcing's definition covers both: it is
+//                                 "outstanding work remains, no further human requisition-
+//                                 level action needed", not specifically "children exist")
 // items_bought → sourcing       (finish_buying — Finish Buying: groups bought entries by
 //                                 actual vendor, forks one child purchase_orders row per
 //                                 vendor, each starting at 'bought'. A line with no bought
-//                                 entry at all — e.g. fully covered from stock — never forks.
-//                                 With zero bought lines this is a trivial no-op transition too)
+//                                 entry at all — e.g. fully covered from stock — never forks)
 // sourcing → completed          (system-driven, via the completion evaluator — not a direct
 //                                 user action. Fires once every line is resolved: issued from
 //                                 stock, on a child that reached 'closed', or explicitly
 //                                 closed via closeRequisitionLine. For a 100%-stock requisition
-//                                 this fires almost immediately after the Store Out confirms,
-//                                 since nothing else is outstanding — deliberately not a
-//                                 separate state-machine shortcut, so the same linear pipeline
-//                                 handles both cases uniformly and only the completion
-//                                 evaluator (PR 5) needs to reason about "is everything done")
+//                                 this fires once its Store Out(s) confirm, since nothing else
+//                                 is outstanding — the completion evaluator (PR 5) is what
+//                                 actually performs this transition; nothing before it does)
 //
 // CANCELLATION: any non-terminal state → cancelled, blocked if any child purchase_orders row
 //               is at or past 'goods_received' (mirrors the old model's own no-reversal-past-
@@ -378,8 +389,8 @@ export type RequisitionAction =
   | 'reject_to_market_pricing'
   | 'approve'
   | 'reject'
-  | 'reopen'
   | 'start_buying'
+  | 'skip_buying'
   | 'finish_buying'
   | 'complete'
   | 'cancel'
@@ -417,11 +428,11 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
     },
 
     { from: 'pending_approval', to: 'approved', action: 'approve' },
-    { from: 'pending_approval', to: 'rejected', action: 'reject' },
+    { from: 'pending_approval', to: 'draft', action: 'reject' },
     { from: 'pending_approval', to: 'market_pricing', action: 'reject_to_market_pricing' },
-    { from: 'rejected', to: 'draft', action: 'reopen' },
 
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
+    { from: 'approved', to: 'sourcing', action: 'skip_buying' },
     { from: 'items_bought', to: 'sourcing', action: 'finish_buying' },
     { from: 'sourcing', to: 'completed', action: 'complete' },
 

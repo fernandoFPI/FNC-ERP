@@ -135,6 +135,8 @@
     submitRequisitionStorePricing(id: ID!, linePrices: [RequisitionStorePriceInput!]): Requisition!
     submitRequisitionMarketPricing(id: ID!, linePrices: [RequisitionMarketPriceInput!]): Requisition!
     verifyRequisitionPrices(id: ID!, verificationNotes: String, lineAdjustments: [RequisitionPriceVerificationAdjustment!]): Requisition!
+    approveRequisition(id: ID!): Requisition!
+    rejectRequisitionApproval(id: ID!, reason: String!): Requisition!
 
     # PO lifecycle
     submitPOToInventoryCheck(id: ID!, notes: String): PurchaseOrder!
@@ -2119,6 +2121,7 @@
     priority: String
     organizer_id: ID
     organizerName: String
+    assigned_approver_id: ID
     notes: String
     created_at: String!
     updated_at: String!
@@ -2145,6 +2148,7 @@
     action: String!
     actor_id: ID!
     actor_name: String
+    actor_position: String
     notes: String
     created_at: String!
   }

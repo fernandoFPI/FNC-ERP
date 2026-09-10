@@ -19,6 +19,19 @@ jobs:
   # requiring the existing backlog to be cleared first. The backlog stays
   # visible via this job (informational) and must not grow; the ratchet
   # job is what actually enforces that going forward.
+  #
+  # Known pre-existing issue, not yet fixed — fix before the G1 Phase 3+4
+  # deploy: all services share one TEST_COMPANY_ID + one DB in the "Run
+  # tests" step below, causing residual flaky races under full parallel
+  # `pnpm test` (documented in project memory as "Test Fixture Sharing" /
+  # "Vitest File Parallelism Gotcha" — singleFork:true alone doesn't stop
+  # test files interleaving, fileParallelism:false is also needed for any
+  # service with 2+ test files). Already caused one real required-check
+  # failure this session (services/projects, unrelated to the change being
+  # merged — a re-run of the identical commit passed cleanly minutes
+  # later). Phase 3+4 adds substantially more requisition/PO test files
+  # sharing the same fixtures, which raises the odds of hitting this on
+  # every single deploy, not just occasionally.
   lint:
     name: Lint
     runs-on: ubuntu-latest
