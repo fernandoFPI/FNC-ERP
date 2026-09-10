@@ -18,6 +18,7 @@
     vendors: [Vendor]
     purchaseOrders(status: String, vendor_id: ID, project_id: ID, myPOsOnly: Boolean): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
+    requisition(id: ID!): Requisition
     # Same shape as purchaseOrder(id), but not subject to its viewerRestricted
     # gate — backs Record Receipt / Create Return, which have their own,
     # separate authorization (see the resolver's comment).
@@ -124,6 +125,12 @@
     updateContractMilestone(id: ID!, input: MilestoneInput!): ProjectMilestone!
     deleteContractMilestone(id: ID!): Boolean!
     recordInvoicePayment(invoiceId: ID!, paymentDate: String!, amount: Float!, currencyCode: String, paymentReference: String, paymentMethod: String, notes: String): InvoicePayment!
+
+    # G1 requisition lifecycle (PR 1: create + inventory check only —
+    # store_pricing onward ships in later PRs of this phase)
+    createRequisition(input: RequisitionInput!): Requisition!
+    submitRequisitionToInventoryCheck(id: ID!, notes: String): Requisition!
+    confirmRequisitionInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): Requisition!
 
     # PO lifecycle
     submitPOToInventoryCheck(id: ID!, notes: String): PurchaseOrder!
@@ -2086,6 +2093,63 @@
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]
     edit_requests: [POEditRequest!]
+  }
+
+  # G1: the pre-vendor document. Vendor is chosen only at Items Bought
+  # (PR 3), one requisition line at a time, recorded on po_line_purchases
+  # — there is no vendor field here. lines reuses the POLine type since
+  # po_lines is the same underlying table for both a requisition's own
+  # lines (po_id IS NULL, not yet assigned to a child) and a child PO's
+  # lines (po_id set) — see the G1 schema design.
+  type Requisition {
+    id: ID!
+    requisition_number: String!
+    status: String!
+    company_id: ID!
+    branch_id: ID
+    branch_name: String
+    project_id: ID
+    projectName: String
+    purpose: String
+    delivery_destination: String
+    priority: String
+    organizer_id: ID
+    organizerName: String
+    notes: String
+    created_at: String!
+    updated_at: String!
+    lines: [POLine!]
+    approval_log: [RequisitionApprovalLogEntry!]
+  }
+
+  type RequisitionApprovalLogEntry {
+    id: ID!
+    from_status: String!
+    to_status: String!
+    action: String!
+    actor_id: ID!
+    actor_name: String
+    notes: String
+    created_at: String!
+  }
+
+  input RequisitionLineInput {
+    product_id: ID
+    description: String
+    qty: Float!
+    unit_price: Float!
+    uom: String
+    requested_currency_code: String
+  }
+
+  input RequisitionInput {
+    project_id: ID
+    purpose: String
+    delivery_destination: String
+    priority: String
+    branch_id: ID
+    notes: String
+    lines: [RequisitionLineInput!]!
   }
 
   input StockConfirmLineInput {
