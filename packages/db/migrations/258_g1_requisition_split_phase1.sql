@@ -421,13 +421,26 @@ WHERE sm.po_receipt_line_id = prl.id
 -- ═══════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════
--- 9. Tighten po_lines.requisition_id to NOT NULL now that every row has
---    one — the one constraint this migration can safely finish, since
---    unlike account_id/cost_center_id this one really does apply to
---    every line, old and new, with no exceptions.
--- ═══════════════════════════════════════════════════════════════════════
-
-ALTER TABLE po_lines ALTER COLUMN requisition_id SET NOT NULL;
+-- 9. po_lines.requisition_id stays NULLABLE in Phase 1, despite every
+--    existing row now having one — NOT a leftover oversight, a corrected
+--    mistake. This migration originally set it NOT NULL here on the
+--    reasoning that every row (old and new) would have one with no
+--    exceptions; that reasoning only covers EXISTING rows, backfilled
+--    above. createPurchaseOrder (and every other old code path that
+--    inserts into po_lines) has an explicit column list that doesn't
+--    include requisition_id, since the column didn't exist when that
+--    code was written — a NOT NULL here with no DEFAULT would make every
+--    new PO creation start failing the moment this migration ships,
+--    which is exactly the "no behavior change" promise this file's
+--    header makes and the opposite of additive. Tightening this is
+--    Phase 3's job, once the resolvers that create po_lines rows are
+--    updated to always set it. Operational note for that gap: any PO
+--    created via the OLD createPurchaseOrder between this migration
+--    shipping and Phase 3's cutover will have po_lines rows with NULL
+--    requisition_id — Phase 3 needs its own small backfill for that
+--    window, or Phase 2 should backport requisition_id population into
+--    createPurchaseOrder as a minimal fast-follow to close the gap
+--    sooner rather than leaving it open for the full Phase 2 duration.
 
 DROP TABLE g1_po_classification;
 DROP TABLE g1_requisitions_to_create;
