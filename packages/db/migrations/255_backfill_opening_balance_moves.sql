@@ -82,6 +82,32 @@
 -- the one side that genuinely needs a first-time correction (virtual_in),
 -- not a compensation for the trigger's own side effects.
 --
+-- That virtual_in decrement MUST be an upsert (INSERT ... ON CONFLICT DO
+-- UPDATE), not a bare UPDATE — caught via a prod dry run after this
+-- migration read as fully correct on dev, kept here because it's exactly
+-- the kind of gap a clean-looking dry run doesn't surface on its own.
+-- update_stock_balance() (migration 254) always upserts, since a
+-- location's very first move has no existing stock_balances row to
+-- UPDATE; the drifted real locations in `target` already have a row (that
+-- row's existing balance is the drift itself), but virtual_in is looked
+-- up completely independently via the LATERAL join below and has no such
+-- guarantee — for any product whose company's virtual_in has never been
+-- touched before, a bare UPDATE silently affects zero rows, the
+-- compensation never happens, and a brand-new equal-magnitude drift
+-- appears at virtual_in in place of the one just closed at the real
+-- location. Dev never caught this because its virtual_in rows already
+-- existed from testing this migration's very first (pre-redesign)
+-- version, which went through the trigger — and a revert that came later
+-- zeroed those rows' quantities back out but never deleted the rows
+-- themselves, so every subsequent dev test of this redesign ran against
+-- an environment where the missing-row case could no longer occur. Only
+-- prod, which had genuinely never touched virtual_in for most of these
+-- products, actually exercised it. The upsert below mirrors
+-- update_stock_balance()'s own FROM-side logic exactly (same ON CONFLICT
+-- targets, same NULL-lot partial index, same "set average_cost only on
+-- first creation" behavior) so this compensation does precisely what the
+-- trigger would have done had it fired for this insert.
+--
 -- Transaction safety: run-migrations.ts strips this file's own BEGIN/
 -- COMMIT and re-wraps the whole body in its own per-file transaction
 -- (BEGIN before, COMMIT after, ROLLBACK on any error — see
@@ -187,15 +213,34 @@ inserted AS (
     WHERE company_id = c.company_id AND type = 'virtual_in' AND is_active = true
     LIMIT 1
   ) vloc
-  RETURNING product_id, from_location_id AS virtual_in_id, lot_id, qty
+  RETURNING product_id, from_location_id AS virtual_in_id, lot_id, qty, unit_cost, moved_at
+),
+compensated_no_lot AS (
+  INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, average_cost, last_move_at, updated_at)
+  SELECT i.product_id, i.virtual_in_id, NULL, -i.qty, i.unit_cost, i.moved_at, NOW()
+  FROM inserted i
+  WHERE i.lot_id IS NULL
+  ON CONFLICT (product_id, location_id) WHERE lot_id IS NULL
+  DO UPDATE SET
+    qty_on_hand  = stock_balances.qty_on_hand + EXCLUDED.qty_on_hand,
+    last_move_at = EXCLUDED.last_move_at,
+    updated_at   = NOW()
+  RETURNING 1
+),
+compensated_lot AS (
+  INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, average_cost, last_move_at, updated_at)
+  SELECT i.product_id, i.virtual_in_id, i.lot_id, -i.qty, i.unit_cost, i.moved_at, NOW()
+  FROM inserted i
+  WHERE i.lot_id IS NOT NULL
+  ON CONFLICT (product_id, location_id, lot_id)
+  DO UPDATE SET
+    qty_on_hand  = stock_balances.qty_on_hand + EXCLUDED.qty_on_hand,
+    last_move_at = EXCLUDED.last_move_at,
+    updated_at   = NOW()
+  RETURNING 1
 )
-UPDATE stock_balances sb
-SET qty_on_hand = sb.qty_on_hand - i.qty,
-    updated_at = NOW()
-FROM inserted i
-WHERE sb.product_id = i.product_id
-  AND sb.location_id = i.virtual_in_id
-  AND sb.lot_id IS NOT DISTINCT FROM i.lot_id;
+SELECT (SELECT COUNT(*) FROM compensated_no_lot) AS no_lot_compensated,
+       (SELECT COUNT(*) FROM compensated_lot) AS lot_compensated;
 
 ALTER TABLE stock_moves ENABLE TRIGGER trg_update_stock_balance;
 

@@ -136,15 +136,34 @@ inserted AS (
     WHERE company_id = c.company_id AND type = 'virtual_in' AND is_active = true
     LIMIT 1
   ) vloc
-  RETURNING product_id, from_location_id AS virtual_in_id, lot_id, qty
+  RETURNING product_id, from_location_id AS virtual_in_id, lot_id, qty, unit_cost, moved_at
+),
+compensated_no_lot AS (
+  INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, average_cost, last_move_at, updated_at)
+  SELECT i.product_id, i.virtual_in_id, NULL, -i.qty, i.unit_cost, i.moved_at, NOW()
+  FROM inserted i
+  WHERE i.lot_id IS NULL
+  ON CONFLICT (product_id, location_id) WHERE lot_id IS NULL
+  DO UPDATE SET
+    qty_on_hand  = stock_balances.qty_on_hand + EXCLUDED.qty_on_hand,
+    last_move_at = EXCLUDED.last_move_at,
+    updated_at   = NOW()
+  RETURNING 1
+),
+compensated_lot AS (
+  INSERT INTO stock_balances (product_id, location_id, lot_id, qty_on_hand, average_cost, last_move_at, updated_at)
+  SELECT i.product_id, i.virtual_in_id, i.lot_id, -i.qty, i.unit_cost, i.moved_at, NOW()
+  FROM inserted i
+  WHERE i.lot_id IS NOT NULL
+  ON CONFLICT (product_id, location_id, lot_id)
+  DO UPDATE SET
+    qty_on_hand  = stock_balances.qty_on_hand + EXCLUDED.qty_on_hand,
+    last_move_at = EXCLUDED.last_move_at,
+    updated_at   = NOW()
+  RETURNING 1
 )
-UPDATE stock_balances sb
-SET qty_on_hand = sb.qty_on_hand - i.qty,
-    updated_at = NOW()
-FROM inserted i
-WHERE sb.product_id = i.product_id
-  AND sb.location_id = i.virtual_in_id
-  AND sb.lot_id IS NOT DISTINCT FROM i.lot_id;
+SELECT (SELECT COUNT(*) FROM compensated_no_lot) AS no_lot_compensated,
+       (SELECT COUNT(*) FROM compensated_lot) AS lot_compensated;
 
 -- ── Migration 256 (verbatim body — case 1 only, per the shipped file) ──
 WITH want(sku, location_name, drift) AS (
