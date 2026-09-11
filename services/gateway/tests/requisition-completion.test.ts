@@ -283,10 +283,12 @@ describe('completion evaluator — Store Out confirm', () => {
 describe('completion evaluator — child close and child cancel', () => {
   it('completes the requisition once its only child PO is completed (completePO bridge)', async () => {
     const { reqId, childId } = await makeReqWithOneChildAtSourcing(3, 12)
-    // Simulate the child having reached 'invoiced' via the old-model
-    // receiving/audit pipeline — not part of what this PR tests, so
-    // fast-forwarded directly rather than re-driving the whole old flow.
-    await pool.query(`UPDATE purchase_orders SET status='invoiced', funding_decided=true WHERE id=$1`, [childId])
+    // Simulate the child having reached 'payment_pending' (G1 Phase 3
+    // Milestone A's child-vocabulary equivalent of 'invoiced', since this
+    // child has a requisition_id — see completePO's dual-vocab branch) via
+    // the receiving/audit pipeline — not part of what this PR tests, so
+    // fast-forwarded directly rather than re-driving the whole flow.
+    await pool.query(`UPDATE purchase_orders SET status='payment_pending', funding_decided=true WHERE id=$1`, [childId])
 
     await resolvers.Mutation.completePO(null, { id: childId }, ctx as never)
 

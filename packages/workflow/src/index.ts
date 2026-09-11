@@ -318,6 +318,24 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
     { from: 'finance_audit', to: 'invoiced', action: 'pass_audit' },
     { from: 'invoiced', to: 'completed', action: 'complete' },
 
+    // Phase 3 Milestone A — G1 child vocabulary from 'bought' onward,
+    // added alongside the old-vocab transitions above rather than
+    // replacing them (additive only; the old ones still serve any
+    // straggler pre-cutover PO until Phase 3 Milestone B's backfill +
+    // trim). 'goods_received' itself needs no new entry — it's the same
+    // name in both chains, so ('goods_received', action) pairs are
+    // already shared. Every action name below is reused as-is from its
+    // old-vocab counterpart (StateMachine keys transitions by the
+    // (from, action) pair, and `from` always differs here, so there's no
+    // ambiguity in reusing them) — see resolvers.ts for the per-mutation
+    // branch that picks old vs new target status by whether the PO has a
+    // requisition_id.
+    { from: 'bought', to: 'goods_received', action: 'receive_goods' },
+    { from: 'goods_received', to: 'finance_review', action: 'send_to_audit' },
+    { from: 'finance_review', to: 'goods_received', action: 'fail_audit' },
+    { from: 'finance_review', to: 'payment_pending', action: 'pass_audit' },
+    { from: 'payment_pending', to: 'closed', action: 'complete' },
+
     // Cancellation (any active non-terminal state)
     ...CANCELLABLE.map((s) => ({
       from: s,

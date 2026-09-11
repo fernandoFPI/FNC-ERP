@@ -106,6 +106,7 @@ export const PURCHASE_ORDER_QUERY = gql`
       id
       po_number
       status
+      requisition_id
       currency_code
       total_amount
       subtotal
@@ -724,11 +725,8 @@ export const REJECT_PO_VERIFICATION_TO_STORE_PRICING = gql`
 `
 
 export const NOTIFY_PO_OWNER_FOR_EDIT_REQUEST = gql`
-  mutation NotifyPOOwnerForEditRequest($id: ID!, $reason: String!) {
-    notifyPOOwnerForEditRequest(id: $id, reason: $reason) {
-      id
-      status
-    }
+  mutation NotifyPOOwnerForEditRequest($id: ID, $requisitionId: ID, $reason: String!) {
+    notifyPOOwnerForEditRequest(id: $id, requisitionId: $requisitionId, reason: $reason)
   }
 `
 
