@@ -2599,20 +2599,35 @@ async function hasFinanceApprovalGW(
   return meetsLevel(perms['finance.ap.approve'], 'approve')
 }
 
-// G1 Phase 3 Milestone A — distinguishes a real G1 child (forked by
-// finishBuyingRequisition, which only ever happens from real
-// po_line_purchases entries) from a pre-G1 PO retroactively stamped with
-// requisition_id by the Phase 1 migration but never driven through the new
-// buying flow — it continues on the OLD status vocabulary until Milestone
-// B's status remap, even though requisition_id is set. requisition_id
-// alone is NOT a safe proxy for "use the new vocab": at 'goods_received',
-// both an old-vocab PO (items_bought -> goods_received) and a new-vocab
-// child (bought -> goods_received) look identical by status, so this is
-// the only point that needs this check — every other post-goods_received
-// mutation can and does branch on the PO's *current* status directly
-// (finance_audit vs finance_review, invoiced vs payment_pending), which
-// already disambiguates on its own. Mirrors the PurchaseOrder.isLegacyNoPurchaseRecord
-// field resolver's same NOT EXISTS query (inverted).
+// G1 Phase 3 Milestone A — requisition_id alone is NOT a safe proxy for
+// "use the new vocab": at 'goods_received', both an old-vocab PO
+// (items_bought -> goods_received) and a real G1 child (bought ->
+// goods_received) look identical by status, so this is the one point
+// that needs a separate signal — every other post-goods_received
+// mutation branches on the PO's *current* status directly (finance_audit
+// vs finance_review, invoiced vs payment_pending), which already
+// disambiguates on its own with no help needed here.
+//
+// Verified invariant (checked against migrations/258_g1_requisition_
+// split_phase1.sql §4-5, and reconfirmed before this function shipped):
+// the 24 legacy children migration 258 retroactively stamped with
+// requisition_id do NOT hit the false branch below — that same migration,
+// in the same transaction, both remapped their status to the new vocab
+// (§4: items_bought->bought, finance_audit->finance_review, invoiced->
+// payment_pending, completed->closed) AND backfilled them a synthetic
+// po_line_purchases row per line (§5), so their status and their buy
+// records already agree. This function exists for a different, currently
+// hypothetical case this invariant depends on staying true: a PO given
+// requisition_id by some FUTURE backfill (e.g. Milestone B's "window
+// backfill" for POs created via the old createPurchaseOrder between
+// migration 258 and Phase 3's cutover) that does NOT also get synthetic
+// po_line_purchases the way 258's did — such a PO must keep reading as
+// old-vocab here. Any future backfill that assigns requisition_id to an
+// old-vocab PO MUST either also insert its synthetic po_line_purchases
+// (mirroring 258 §5) or accept that it'll read as old-vocab until it
+// actually earns new-vocab buy records — never silently misroute.
+// Mirrors the PurchaseOrder.isLegacyNoPurchaseRecord field resolver's
+// same NOT EXISTS query (inverted).
 async function poHasNewVocabBuyRecordsGW(poId: string): Promise<boolean> {
   const r = await query<{ has_records: boolean }>(
     `SELECT EXISTS (

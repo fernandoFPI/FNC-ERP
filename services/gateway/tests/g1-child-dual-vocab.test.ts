@@ -340,23 +340,29 @@ describe('G1 child dual-vocabulary lifecycle', () => {
     ).rejects.toThrow(/must be in finance_audit or finance_review status/i)
   })
 
-  // Regression test: a PO's requisition_id is NOT a safe proxy for "use the
-  // new vocab" — the 24 Phase 1 children on prod have requisition_id set
-  // but sit at old-vocab statuses until Milestone B's status remap (they
-  // were retroactively stamped with requisition_id by the Phase 1
-  // migration and never went through the real per-vendor buying flow, so
-  // they have zero po_line_purchases entries — see
-  // poHasNewVocabBuyRecordsGW). Simulated here by stripping the real
-  // child's po_line_purchases after the fact, which is exactly what
-  // distinguishes a real G1 child from one of those 24.
+  // Regression test for the invariant poHasNewVocabBuyRecordsGW depends on:
+  // requisition_id alone is NOT a safe proxy for "use the new vocab", so a
+  // PO with requisition_id set but zero po_line_purchases entries must stay
+  // on the old vocab through the ambiguous goods_received fork point.
+  //
+  // This is NOT the shape of the real 24 Phase 1 children on prod —
+  // verified against migrations/258_g1_requisition_split_phase1.sql §4-5,
+  // that migration remapped their status to the new vocab AND backfilled
+  // them synthetic po_line_purchases in the same transaction, so on prod
+  // today status and buy-records already agree for all 24. What this
+  // guards is a PO some FUTURE backfill (e.g. Milestone B's window
+  // backfill) gives requisition_id to without also giving it synthetic
+  // po_line_purchases the way 258 did — simulated here by stripping a
+  // real child's po_line_purchases after the fact.
   it('keeps a requisition_id-stamped PO with no purchase records on the old vocab all the way through completion', async () => {
     const { reqId, childId, childLineId } = await makeReqWithOneChildAtBought(2, 20)
     await pool.query(`DELETE FROM po_line_purchases WHERE po_line_id IN (SELECT id FROM po_lines WHERE po_id=$1)`, [childId])
-    // Force straight to goods_received the way a pre-G1 PO retroactively
-    // stamped with requisition_id would already be sitting there —
-    // markPOLineBought/finishBuyingPO (the real items_bought->goods_received
-    // path) never apply to a PO with requisition_id set, so there's no
-    // resolver call that gets it there other than this fast-forward.
+    // Force straight to goods_received the way a PO backfilled with
+    // requisition_id but no synthetic po_line_purchases would already be
+    // sitting there — markPOLineBought/finishBuyingPO (the real
+    // items_bought->goods_received path) never apply to a PO with
+    // requisition_id set, so there's no resolver call that gets it there
+    // other than this fast-forward.
     await pool.query(`UPDATE purchase_orders SET status='goods_received' WHERE id=$1`, [childId])
 
     const receipt = await resolvers.Mutation.recordReceipt(
