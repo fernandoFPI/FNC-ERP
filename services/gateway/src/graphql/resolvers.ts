@@ -1631,11 +1631,11 @@ async function releaseRequisitionStockReservations(
 //     folded into qty_ordered minus what was ever recorded as bought, so
 //     it never inflates qty_from_stock and never blocks this on its own,
 //   - po_id IS NOT NULL (a Finish-Buying-forked child line) and that
-//     child purchase_orders row has reached a terminal status. 'closed'
-//     is the real new-vocab terminal state (Phase 3, not built yet);
-//     'completed' is accepted too since a G1 child can currently only
-//     reach a finished state via the old completePO mutation, which
-//     still writes the old vocabulary — see completePO's own comment.
+//     child purchase_orders row has reached a terminal status. 'closed' is
+//     the real new-vocab terminal state; 'completed' is still accepted
+//     too since a pre-G1 PO retroactively stamped with requisition_id can
+//     remain on the old vocab until Milestone B's status remap, and still
+//     finishes via completePO's old-vocab branch — see its own comment.
 async function evaluateRequisitionCompletion(
   client: import('@fnc-erp/db').PoolClient,
   reqId: string,
@@ -2597,6 +2597,30 @@ async function hasFinanceApprovalGW(
   if (isPermissionBypassGW(role)) return true
   const perms = await loadPermissions(userId, companyId)
   return meetsLevel(perms['finance.ap.approve'], 'approve')
+}
+
+// G1 Phase 3 Milestone A — distinguishes a real G1 child (forked by
+// finishBuyingRequisition, which only ever happens from real
+// po_line_purchases entries) from a pre-G1 PO retroactively stamped with
+// requisition_id by the Phase 1 migration but never driven through the new
+// buying flow — it continues on the OLD status vocabulary until Milestone
+// B's status remap, even though requisition_id is set. requisition_id
+// alone is NOT a safe proxy for "use the new vocab": at 'goods_received',
+// both an old-vocab PO (items_bought -> goods_received) and a new-vocab
+// child (bought -> goods_received) look identical by status, so this is
+// the only point that needs this check — every other post-goods_received
+// mutation can and does branch on the PO's *current* status directly
+// (finance_audit vs finance_review, invoiced vs payment_pending), which
+// already disambiguates on its own. Mirrors the PurchaseOrder.isLegacyNoPurchaseRecord
+// field resolver's same NOT EXISTS query (inverted).
+async function poHasNewVocabBuyRecordsGW(poId: string): Promise<boolean> {
+  const r = await query<{ has_records: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM po_line_purchases plp JOIN po_lines pl ON pl.id=plp.po_line_id WHERE pl.po_id=$1
+     ) AS has_records`,
+    [poId],
+  )
+  return r.rows[0]?.has_records ?? false
 }
 
 // Generic granular-permission check for GraphQL mutations, matching
@@ -30008,12 +30032,17 @@ const phase5MutationResolvers = {
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'goods_received')
       throw new Error(`PO must be in goods_received status to send to audit`)
-    // 'goods_received' is shared between both vocabularies, so the status
-    // guard above needs no widening — only the target does: a G1 child
-    // (requisition_id set) moves to 'finance_review', an old-model PO to
-    // 'finance_audit'. Same for every subsequent post-goods_received
-    // mutation in this file.
-    const auditTargetStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
+    // 'goods_received' is shared between both vocabularies AND reachable
+    // from both a real G1 child's 'bought' and an old-model/pre-G1 PO's
+    // 'items_bought' — so unlike every other post-goods_received mutation
+    // in this file (which can branch on the PO's *current* status, since
+    // finance_audit/finance_review and invoiced/payment_pending don't
+    // overlap), the target here can't be read off status alone. A PO's
+    // requisition_id isn't a safe proxy either — a pre-G1 PO retroactively
+    // stamped with requisition_id by the Phase 1 migration keeps its
+    // requisition_id but must stay on the old vocab until Milestone B's
+    // status remap. See poHasNewVocabBuyRecordsGW's comment.
+    const auditTargetStatus = (await poHasNewVocabBuyRecordsGW(args.id)) ? 'finance_review' : 'finance_audit'
     // goods_received no longer guarantees a receipt was ever recorded — it's
     // now also reachable via the buyer's checklist alone (markPOLineBought),
     // with zero receipts. That used to be implicit (a confirmed receipt was
@@ -30065,12 +30094,16 @@ const phase5MutationResolvers = {
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
-    // 'finance_audit' (old vocab) / 'finance_review' (G1 child) — see
-    // sendPOToAudit's comment on why these two statuses diverge here.
-    const fromStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
-    const toStatus = poRow.rows[0].requisition_id ? 'payment_pending' : 'invoiced'
-    if (poRow.rows[0].status !== fromStatus)
-      throw new Error(`PO must be in ${fromStatus} status to pass audit`)
+    // Unlike sendPOToAudit, the PO's *current* status already disambiguates
+    // here — 'finance_audit' and 'finance_review' don't overlap the way
+    // 'goods_received' does, so this reads directly off status rather than
+    // requisition_id (which a pre-G1 PO can have set while still sitting on
+    // the old vocab — see poHasNewVocabBuyRecordsGW's comment).
+    const currentStatus = poRow.rows[0].status as string
+    if (currentStatus !== 'finance_audit' && currentStatus !== 'finance_review')
+      throw new Error(`PO must be in finance_audit or finance_review status to pass audit`)
+    const fromStatus = currentStatus
+    const toStatus = currentStatus === 'finance_review' ? 'payment_pending' : 'invoiced'
     const flaggedRes = await query(
       `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND audit_status='flagged'`,
       [args.id],
@@ -30113,9 +30146,10 @@ const phase5MutationResolvers = {
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
-    const fromStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
-    if (poRow.rows[0].status !== fromStatus)
-      throw new Error(`PO must be in ${fromStatus} status`)
+    // See passPOAudit's comment — current status disambiguates directly.
+    const fromStatus = poRow.rows[0].status as string
+    if (fromStatus !== 'finance_audit' && fromStatus !== 'finance_review')
+      throw new Error(`PO must be in finance_audit or finance_review status`)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -30161,13 +30195,12 @@ const phase5MutationResolvers = {
     const valid = ['pending', 'ok', 'flagged']
     if (!valid.includes(args.auditStatus))
       throw new Error(`auditStatus must be one of: ${valid.join(', ')}`)
-    const poRow = await query(`SELECT status, requisition_id FROM purchase_orders WHERE id=$1`, [args.poId])
+    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.poId])
     if (!poRow.rows[0]) throw new Error('PO not found')
-    // See sendPOToAudit's comment — 'finance_audit' (old vocab) vs
-    // 'finance_review' (G1 child) for the same audit stage.
-    const requiredStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
-    if (poRow.rows[0].status !== requiredStatus)
-      throw new Error(`PO must be in ${requiredStatus} status to audit lines`)
+    // See passPOAudit's comment — current status disambiguates directly.
+    const poStatus = poRow.rows[0].status as string
+    if (poStatus !== 'finance_audit' && poStatus !== 'finance_review')
+      throw new Error(`PO must be in finance_audit or finance_review status to audit lines`)
     let flaggedByEmail: string | null = null
     if (args.auditStatus === 'flagged') {
       const uRow = await query(`SELECT email FROM users WHERE id=$1`, [auth.userId])
@@ -30407,17 +30440,18 @@ const phase5MutationResolvers = {
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
-    // 'invoiced' (old vocab) / 'payment_pending' (G1 child) — same stage,
-    // see sendPOToAudit's comment. Target status diverges the same way:
-    // 'completed' vs 'closed'. Milestone B removes this branch once the
-    // old vocab is trimmed out of poStateMachine entirely — see this
-    // mutation's own "bridge" comment below for the other half of that.
-    const fundingFromStatus = poRow.rows[0].requisition_id ? 'payment_pending' : 'invoiced'
-    const completionToStatus = poRow.rows[0].requisition_id ? 'closed' : 'completed'
-    if (poRow.rows[0].status !== fundingFromStatus)
+    // See passPOAudit's comment — current status disambiguates directly
+    // ('invoiced' old vocab vs 'payment_pending' G1 child; target diverges
+    // the same way, 'completed' vs 'closed'). Milestone B removes this
+    // branch once the old vocab is trimmed out of poStateMachine entirely
+    // — see this mutation's own "bridge" comment below for the other half
+    // of that.
+    const fundingFromStatus = poRow.rows[0].status as string
+    if (fundingFromStatus !== 'invoiced' && fundingFromStatus !== 'payment_pending')
       throw new Error(
-        `PO must be in ${fundingFromStatus} status to complete. Current: '${poRow.rows[0].status as string}'`,
+        `PO must be in invoiced or payment_pending status to complete. Current: '${fundingFromStatus}'`,
       )
+    const completionToStatus = fundingFromStatus === 'payment_pending' ? 'closed' : 'completed'
     if (!poRow.rows[0].funding_decided)
       throw new Error('Finance must confirm the funding source (AP or Advance) before completing')
     if (poRow.rows[0].funding_source === 'employee_advance') {
@@ -30446,12 +30480,14 @@ const phase5MutationResolvers = {
       )
       await postPOCompletionJournal(client, args.id, auth.userId)
       // G1 PR 5 — bridge for the "child close" completion-evaluator
-      // trigger: Phase 3 hasn't cut over the real child pipeline
-      // (goods_received -> finance_review -> payment_pending -> closed)
-      // yet, so today the only way a G1 child PO reaches a finished state
-      // is through this same old-model mutation. evaluateRequisitionCompletion
-      // accepts 'completed' as a terminal child status for exactly this
-      // reason — see its own comment.
+      // trigger: completePO is still the one mutation that finishes a
+      // child PO either way (old vocab 'invoiced'->'completed', or the
+      // real child pipeline's 'payment_pending'->'closed' — see
+      // fundingFromStatus above), so this fires regardless of which vocab
+      // this particular child is on. evaluateRequisitionCompletion accepts
+      // both 'completed' and 'closed' as terminal child statuses for
+      // exactly this reason — see its own comment. Milestone B removes
+      // this bridge once every child is permanently on the new vocab.
       if (poRow.rows[0].requisition_id) {
         await evaluateRequisitionCompletion(client, String(poRow.rows[0].requisition_id), auth)
       }

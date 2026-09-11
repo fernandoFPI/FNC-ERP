@@ -337,7 +337,78 @@ describe('G1 child dual-vocabulary lifecycle', () => {
         { poId: childId, lineId: childLineId, auditStatus: 'ok' },
         ctx as never,
       ),
-    ).rejects.toThrow(/must be in finance_review status/i)
+    ).rejects.toThrow(/must be in finance_audit or finance_review status/i)
+  })
+
+  // Regression test: a PO's requisition_id is NOT a safe proxy for "use the
+  // new vocab" — the 24 Phase 1 children on prod have requisition_id set
+  // but sit at old-vocab statuses until Milestone B's status remap (they
+  // were retroactively stamped with requisition_id by the Phase 1
+  // migration and never went through the real per-vendor buying flow, so
+  // they have zero po_line_purchases entries — see
+  // poHasNewVocabBuyRecordsGW). Simulated here by stripping the real
+  // child's po_line_purchases after the fact, which is exactly what
+  // distinguishes a real G1 child from one of those 24.
+  it('keeps a requisition_id-stamped PO with no purchase records on the old vocab all the way through completion', async () => {
+    const { reqId, childId, childLineId } = await makeReqWithOneChildAtBought(2, 20)
+    await pool.query(`DELETE FROM po_line_purchases WHERE po_line_id IN (SELECT id FROM po_lines WHERE po_id=$1)`, [childId])
+    // Force straight to goods_received the way a pre-G1 PO retroactively
+    // stamped with requisition_id would already be sitting there —
+    // markPOLineBought/finishBuyingPO (the real items_bought->goods_received
+    // path) never apply to a PO with requisition_id set, so there's no
+    // resolver call that gets it there other than this fast-forward.
+    await pool.query(`UPDATE purchase_orders SET status='goods_received' WHERE id=$1`, [childId])
+
+    const receipt = await resolvers.Mutation.recordReceipt(
+      null,
+      {
+        poId: childId,
+        input: {
+          receipt_date: new Date().toISOString().slice(0, 10),
+          location_id: warehouseId,
+          lines: [{ po_line_id: childLineId, qty_received: 2, actual_unit_price: 20 }],
+        },
+      },
+      ctx as never,
+    )
+    const receiptId = (receipt as { id: string }).id
+    await pool.query(`UPDATE po_receipts SET status='confirmed', confirmed_at=NOW() WHERE id=$1`, [receiptId])
+
+    await resolvers.Mutation.sendPOToAudit(null, { id: childId }, ctx as never)
+    const afterAudit = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
+    expect(afterAudit.rows[0]!.status).toBe('finance_audit')
+
+    await resolvers.Mutation.passPOAudit(null, { id: childId }, ctx as never)
+    const afterPass = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
+    expect(afterPass.rows[0]!.status).toBe('invoiced')
+
+    await resolvers.Mutation.setPOFunding(null, { id: childId, fundingSource: 'vendor_ap' }, ctx as never)
+    await resolvers.Mutation.completePO(null, { id: childId }, ctx as never)
+    const afterComplete = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
+    expect(afterComplete.rows[0]!.status).toBe('completed')
+
+    // requisition_id was still set throughout — evaluateRequisitionCompletion
+    // runs as part of completePO's bridge either way and must not throw;
+    // this requisition isn't at 'sourcing' (skipped straight to a forced
+    // goods_received above) so it's a no-op, not an assertion on status.
+    await expect(
+      pool.query(`SELECT status FROM requisitions WHERE id=$1`, [reqId]),
+    ).resolves.toBeTruthy()
+  })
+
+  it('drives a requisition_id-stamped PO already at finance_audit through invoiced to completed on the old path (no receipt/audit re-drive needed)', async () => {
+    const { childId } = await makeReqWithOneChildAtBought(3, 30)
+    await pool.query(`DELETE FROM po_line_purchases WHERE po_line_id IN (SELECT id FROM po_lines WHERE po_id=$1)`, [childId])
+    await pool.query(`UPDATE purchase_orders SET status='finance_audit' WHERE id=$1`, [childId])
+
+    await resolvers.Mutation.passPOAudit(null, { id: childId }, ctx as never)
+    const afterPass = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
+    expect(afterPass.rows[0]!.status).toBe('invoiced')
+
+    await resolvers.Mutation.setPOFunding(null, { id: childId, fundingSource: 'vendor_ap' }, ctx as never)
+    await resolvers.Mutation.completePO(null, { id: childId }, ctx as never)
+    const afterComplete = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
+    expect(afterComplete.rows[0]!.status).toBe('completed')
   })
 })
 
