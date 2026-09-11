@@ -78,14 +78,20 @@ jobs:
         run: pnpm seed:permissions
 
       - name: Run tests
-        # Used to need --concurrency=1: every service's tests shared one
-        # hardcoded TEST_COMPANY_ID against one DB, so any two running at
-        # once could race on the same rows. Fixed — 8 services now each
-        # seed and use their own dedicated company
-        # (packages/db/seeds/seed-test-fixtures.ts, the step above);
-        # gateway keeps company 001 as its sole remaining consumer. Real
-        # parallelism restored now that no two services can collide.
-        run: pnpm test
+        # Still --concurrency=1. The data-collision race this used to be
+        # about (every service sharing one hardcoded TEST_COMPANY_ID) is
+        # fixed — 8 services now each seed and use their own dedicated
+        # company (packages/db/seeds/seed-test-fixtures.ts, the step
+        # above); gateway keeps company 001 as its sole remaining
+        # consumer. But a SEPARATE, still-unexplained issue showed up
+        # under real parallelism in CI: services/projects started
+        # getting 401s (session not found) partway through
+        # projects.test.ts, after four earlier tests using the same
+        # session succeeded — nothing in that test file or the app's
+        # /complete route touches sessions/users, so the mechanism isn't
+        # identified yet. Keeping this serialized until that's root-
+        # caused rather than risking the deploy gate on it.
+        run: pnpm test --concurrency=1
 
   deploy:
     name: Deploy to VPS
