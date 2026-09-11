@@ -730,6 +730,12 @@ export const NAV_SECTIONS: NavSection[] = [
     section: 'Procurement',
     items: [
       {
+        label: 'Requisitions',
+        icon: <Icon name="clipboard" />,
+        path: '/procurement/requisitions',
+        permKeys: ['procurement.po.view'],
+      },
+      {
         label: 'Vendors',
         icon: <Icon name="users" />,
         path: '/procurement/vendors',

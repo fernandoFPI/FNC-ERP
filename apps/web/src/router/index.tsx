@@ -79,6 +79,10 @@ const ExpenseCategoriesPage = lazy(
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
+// G1 Phase 3 Milestone A screen 1 — list only for now; screen 2 adds the
+// detail/creation routes below (currently unregistered, so New Requisition
+// and row-click both resolve to NotFoundPage until that PR lands).
+const RequisitionsPage = lazy(() => import('../pages/procurement/requisitions/RequisitionsPage'))
 const VendorsPage = lazy(() => import('../pages/procurement/vendors/VendorsPage'))
 const VendorForm = lazy(() => import('../pages/procurement/vendors/VendorForm'))
 const VendorDetail = lazy(() => import('../pages/procurement/vendors/VendorDetail'))
@@ -517,6 +521,10 @@ export const router = createBrowserRouter([
         element: withPerm('procurement.po.view', <ProcurementLayout />),
         children: [
           { index: true, element: <Navigate to="/procurement/purchase-orders" replace /> },
+          {
+            path: 'requisitions',
+            element: withPerm('procurement.po.view', <RequisitionsPage />),
+          },
           {
             path: 'purchase-orders',
             element: withPerm('procurement.po.view', <PurchaseOrdersPage />),
