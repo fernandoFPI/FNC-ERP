@@ -12,7 +12,17 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      // Integration tests have real side effects against an external
+      // Postgres DB turbo can't see into — caching this task risks
+      // replaying a stale pass/fail from a run against different DB
+      // state (discovered while verifying the shared-fixture-race fix:
+      // locally, repeated `pnpm test` runs were replaying old cached
+      // results instead of re-executing, producing confusing,
+      // inconsistent-looking failures unrelated to any real change).
+      // Matches migrate/seed below, which were already cache:false for
+      // the same reason.
+      "cache": false
     },
     "lint": {
       "outputs": []

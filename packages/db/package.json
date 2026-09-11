@@ -22,6 +22,7 @@
     "migrate": "tsx migrations/run-migrations.ts",
     "seed": "tsx seeds/run-seeds.ts",
     "seed:permissions": "tsx seeds/seed-permissions.ts",
+    "seed:test-fixtures": "tsx seeds/seed-test-fixtures.ts",
     "init-db": "psql postgresql://postgres:admin@localhost:5432/postgres -f scripts/init-db.sql"
   },
   "dependencies": {
