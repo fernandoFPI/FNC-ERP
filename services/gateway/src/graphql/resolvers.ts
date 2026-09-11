@@ -467,6 +467,95 @@ async function applyPOEditChanges(
   }
 }
 
+// G1 Phase 3 Milestone A — requisition equivalent of POST_APPROVAL_PO_STATUSES,
+// same reasoning: once a requisition has been approved, an edit needs
+// review rather than auto-applying. 'rejected' is included for the same
+// conservative reason the PO list includes 'cancelled' — the current
+// status alone can't tell "cancelled before approval" from "cancelled
+// after," so this errs toward requiring review.
+const POST_APPROVAL_REQUISITION_STATUSES = [
+  'approved',
+  'items_bought',
+  'sourcing',
+  'completed',
+  'cancelled',
+]
+
+// Requisition equivalent of applyPOEditChanges. Deliberately narrower:
+// no vendor_id/analytic_account_id/currency_code header fields (none
+// exist on requisitions — vendor is chosen per bought entry at Items
+// Bought, currency lives per line only, no conversion under G1's no-
+// conversion policy so there's no fx_rate_to_base to keep in lockstep
+// with a currency edit the way applyPOEditChanges' currency_code branch
+// has to). qty_from_stock editing is deliberately NOT supported yet —
+// unlike a PO line, a requisition line's qty_from_stock now also
+// interacts with PR 3/4's "remaining to purchase" tracking
+// (po_line_purchases), so adjusting it post-approval needs its own
+// dedicated reconciliation the same way applyPOEditChanges' qty_from_stock
+// branch does for stock_balances.qty_reserved — deferred rather than
+// half-built. Editing description/qty_ordered/unit_price/uom/product_id,
+// and adding/removing lines, are supported now.
+async function applyRequisitionEditChanges(
+  client: PoolClient,
+  reqId: string,
+  changes: EditChanges,
+): Promise<void> {
+  const allowed = ['notes', 'priority', 'delivery_destination', 'branch_id']
+  if (changes.header && Object.keys(changes.header).length > 0) {
+    const sets: string[] = []
+    const vals: unknown[] = []
+    for (const [field, diff] of Object.entries(changes.header)) {
+      if (!allowed.includes(field)) continue
+      sets.push(`${field}=$${vals.length + 1}`)
+      vals.push(diff.to)
+    }
+    if (sets.length > 0) {
+      vals.push(reqId)
+      await client.query(
+        `UPDATE requisitions SET ${sets.join(',')},updated_at=NOW() WHERE id=$${vals.length}`,
+        vals,
+      )
+    }
+  }
+  const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+  const priceAffectedLineIds = new Set<string>()
+  for (const e of changes.lines?.edited ?? []) {
+    if (!lineAllowed.includes(e.field)) continue
+    await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND requisition_id=$3`, [
+      e.to,
+      e.id,
+      reqId,
+    ])
+    if (e.field === 'qty_ordered' || e.field === 'unit_price') priceAffectedLineIds.add(e.id)
+  }
+  // Same zeroing rule as confirmRequisitionInventoryCheck: a line fully
+  // covered from stock still contributes $0 regardless of what its
+  // price/qty now say.
+  if (priceAffectedLineIds.size > 0) {
+    await client.query(
+      `UPDATE po_lines
+       SET total_price = CASE WHEN qty_from_stock >= qty_ordered THEN 0 ELSE qty_ordered * unit_price END
+       WHERE id = ANY($1) AND requisition_id = $2`,
+      [Array.from(priceAffectedLineIds), reqId],
+    )
+  }
+  if ((changes.lines?.added ?? []).length > 0) {
+    for (const line of changes.lines?.added ?? []) {
+      const qty = Number(line.qty ?? 0)
+      const price = Number(line.unit_price ?? 0)
+      const currencyCode = (line.currency_code as string | undefined) ?? 'IQD'
+      await client.query(
+        `INSERT INTO po_lines (requisition_id,line_number,description,product_id,qty_ordered,unit_price,initial_unit_price,currency_code,uom,total_price)
+         VALUES ($1,(SELECT COALESCE(MAX(line_number),0)+1 FROM po_lines WHERE requisition_id=$1),$2,$3,$4,$5,$5,$6,$7,$8)`,
+        [reqId, line.description, line.product_id ?? null, qty, price, currencyCode, line.uom ?? 'unit', qty * price],
+      )
+    }
+  }
+  for (const lineId of changes.lines?.removed ?? []) {
+    await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [lineId, reqId])
+  }
+}
+
 // ── Admin correction of a passed PO ─────────────────────────────────────
 // Statuses where a system_admin can retroactively correct fields the normal
 // PO edit-request flow (applyPOEditChanges) never reaches — receiving info,
@@ -8054,6 +8143,117 @@ export const resolvers = {
       return { ...req.rows[0], lines: lines.rows, approval_log: approvals.rows, currencyTotals }
     },
 
+    // G1 Phase 3 Milestone A — list view for RequisitionsPage, mirrors
+    // purchaseOrders' shape/filters exactly (including reusing
+    // branchScopedPOFilterGW as-is: it's auth-only, keyed off the same
+    // po_position_assignments/'buyer' position concept that already
+    // applies to requisitions unchanged). myQueueOnly is "did I organize
+    // this," same semantics as purchaseOrders' myPOsOnly — not "do I
+    // currently hold a position on it," which is myRequisitionApprovalQueue's
+    // job instead.
+    requisitions: async (
+      _: unknown,
+      args: { status?: string; projectId?: string; branchId?: string; myQueueOnly?: boolean },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      let sql = `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
+        COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+        FROM requisitions req
+        LEFT JOIN company_branches cb ON cb.id = req.branch_id
+        LEFT JOIN projects p ON p.id = req.project_id
+        LEFT JOIN users u ON u.id = req.organizer_id
+        WHERE req.company_id = $1 AND req.status != 'deleted'`
+      const params: unknown[] = [ctx.auth.companyId]
+      let idx = 2
+      if (args.status !== undefined) {
+        sql += ` AND req.status = $${idx++}`
+        params.push(args.status)
+      }
+      if (args.projectId !== undefined) {
+        sql += ` AND req.project_id = $${idx++}`
+        params.push(args.projectId)
+      }
+      if (args.branchId !== undefined) {
+        sql += ` AND req.branch_id = $${idx++}`
+        params.push(args.branchId)
+      }
+      if (args.myQueueOnly) {
+        sql += ` AND req.organizer_id = $${idx++}`
+        params.push(ctx.auth.userId)
+      }
+      const branchScope = await branchScopedPOFilterGW(ctx.auth)
+      if (branchScope) {
+        sql += ` AND req.branch_id = ANY($${idx++})`
+        params.push(branchScope)
+      }
+      sql += ' ORDER BY req.created_at DESC LIMIT 200'
+      const result = await query(sql, params)
+      return result.rows
+    },
+
+    // G1 Phase 3 Milestone A — requisition-scoped worklist, mirrors
+    // myApprovalQueue's per-stage position-holder mapping exactly (same
+    // position per stage: store_keeper/store_pricing/procurement_officer/
+    // procurement_2nd/dept_head-or-assigned_approver), scoped to the
+    // requisition's own stage vocabulary (draft through items_bought —
+    // 'sourcing'/'completed' have no further caller action to queue on).
+    // A separate query rather than widening myApprovalQueue's return type,
+    // since GraphQL can't mix PurchaseOrder/Requisition in one list
+    // without a union — additive, not a breaking schema change.
+    myRequisitionApprovalQueue: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) return []
+      const empResult = await query(
+        `SELECT id, department_id FROM employees WHERE user_id=$1 AND company_id=$2 LIMIT 1`,
+        [ctx.auth.userId, ctx.auth.companyId],
+      )
+      const employeeId: string | null = (empResult.rows[0]?.id as string | null) ?? null
+      const departmentId: string | null = (empResult.rows[0]?.department_id as string | null) ?? null
+      return (
+        await query(
+          `SELECT DISTINCT req.*, cb.name AS branch_name,
+                  COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+           FROM requisitions req
+           LEFT JOIN company_branches cb ON cb.id=req.branch_id
+           LEFT JOIN users u ON u.id=req.organizer_id
+           WHERE req.company_id=$1
+             AND req.status NOT IN ('deleted','completed','cancelled','sourcing')
+             AND (
+               (req.organizer_id=$2 AND req.status IN ('draft','rejected'))
+               OR (req.status='inventory_check' AND EXISTS (
+                     SELECT 1 FROM po_position_assignments ppa
+                     WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
+                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+               OR (req.status='store_pricing' AND EXISTS (
+                     SELECT 1 FROM po_position_assignments ppa
+                     WHERE ppa.employee_id=$3 AND ppa.position='store_pricing' AND ppa.is_active=true
+                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+               OR (req.status='market_pricing' AND EXISTS (
+                     SELECT 1 FROM po_position_assignments ppa
+                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
+                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+               OR (req.status='price_verification' AND EXISTS (
+                     SELECT 1 FROM po_position_assignments ppa
+                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
+                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
+               OR (req.status='pending_approval' AND (
+                     EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
+                     OR req.assigned_approver_id=$3))
+               OR (req.status='items_bought' AND EXISTS (
+                     SELECT 1 FROM po_position_assignments ppa
+                     WHERE ppa.employee_id=$3 AND ppa.position='buyer' AND ppa.is_active=true
+                       AND (ppa.branch_id=req.branch_id
+                         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL))))
+               OR ($5='system_admin' AND req.status IN (
+                     'inventory_check','store_pricing','market_pricing',
+                     'price_verification','pending_approval','items_bought'))
+             )
+           ORDER BY req.created_at DESC`,
+          [ctx.auth.companyId, ctx.auth.userId, employeeId, departmentId, ctx.auth.role],
+        )
+      ).rows
+    },
+
     purchaseOrder: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
       try {
@@ -10217,7 +10417,10 @@ export const resolvers = {
           // unreachable now that approvePO always chains straight into
           // items_bought) — a receipt can only be recorded once the buyer's
           // checklist is done and the PO has reached goods_received.
-          if (!['approved', 'goods_received'].includes(poStatus)) {
+          // 'bought' is the G1 child equivalent of 'approved' here — see
+          // confirmReceipt's own comment on why it's the main path there,
+          // not a legacy one.
+          if (!['approved', 'bought', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record receipt on a PO with status '${poStatus}'`)
           }
 
@@ -10518,13 +10721,22 @@ export const resolvers = {
             }
           }
 
-          // Legacy direct path only — practically unreachable now that
-          // approvePO always chains straight into items_bought, but kept in
-          // case a PO is ever found sitting at 'approved' directly. The
-          // items_bought->goods_received transition now happens in
-          // markPOLineBought instead, once the checklist is complete.
+          // Old-model 'approved': legacy direct path only — practically
+          // unreachable now that approvePO always chains straight into
+          // items_bought, but kept in case a PO is ever found sitting at
+          // 'approved' directly. The items_bought->goods_received
+          // transition now happens in markPOLineBought instead, once the
+          // checklist is complete.
+          //
+          // G1 child 'bought': THE main path, not a legacy fallback —
+          // finishBuyingRequisition already forked this child with every
+          // line's buying checklist trivially satisfied by construction
+          // (it only exists because real po_line_purchases entries were
+          // recorded), so there's no equivalent checklist gate left to
+          // wait on. Confirming any receipt against it is itself "goods
+          // physically received."
           const currentStatus = receipt.po_status as POStatus
-          if (currentStatus === 'approved') {
+          if (currentStatus === 'approved' || currentStatus === 'bought') {
             await poTransition(
               client,
               receipt.po_id as string,
@@ -10606,7 +10818,9 @@ export const resolvers = {
           if (!po.rows[0]) throw new Error('PO not found')
           const poRow = po.rows[0] as Record<string, unknown>
           const poStatus = poRow.status as string
-          if (!['approved', 'goods_received'].includes(poStatus)) {
+          // 'bought' is the G1 child equivalent of 'approved' — see
+          // confirmReceipt's comment on why it's the main path there.
+          if (!['approved', 'bought', 'goods_received'].includes(poStatus)) {
             throw new Error(`Cannot record a delivery on a PO with status '${poStatus}'`)
           }
           if (
@@ -10672,7 +10886,7 @@ export const resolvers = {
           }
 
           const currentStatus = poStatus as POStatus
-          if (currentStatus === 'approved') {
+          if (currentStatus === 'approved' || currentStatus === 'bought') {
             await poTransition(
               client,
               args.poId,
@@ -27070,14 +27284,108 @@ async function syncModuleAdminPermissions(
 const phase5MutationResolvers = {
   // ── PO edit requests ──────────────────────────────────────────────────────
 
+  // G1 Phase 3 Milestone A — widened to accept EITHER id (a PO) OR
+  // requisitionId, matching po_edit_requests' own XOR (migration 258).
+  // The PO branch below is completely unchanged from before this PR;
+  // the requisitionId branch is new, added alongside it, mirroring its
+  // structure with applyRequisitionEditChanges/POST_APPROVAL_REQUISITION_STATUSES/
+  // requisition_approval_log standing in for their PO equivalents.
   submitPOEditRequest: async (
     _: unknown,
-    args: { id: string; changes: string; notes?: string },
+    args: { id?: string; requisitionId?: string; changes: string; notes?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const isAdminRole = ['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)
 
+    let changesObj: unknown
+    try {
+      changesObj = JSON.parse(args.changes)
+    } catch {
+      throw new Error('changes must be valid JSON')
+    }
+
+    if (args.requisitionId) {
+      const reqId = args.requisitionId
+      const reqRow = await query(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2`,
+        [reqId, ctx.auth.companyId],
+      )
+      if (!reqRow.rows[0]) throw new Error('Requisition not found')
+      const reqStatus = (reqRow.rows[0] as { status: string }).status
+
+      if (!isAdminRole) {
+        const scope = await query(
+          `SELECT 1 FROM requisitions req
+           WHERE req.id=$1 AND req.company_id=$2
+             AND (req.organizer_id=$3 OR EXISTS (
+               SELECT 1 FROM project_members pm JOIN employees emp ON emp.id=pm.employee_id
+               WHERE pm.project_id=req.project_id AND emp.user_id=$3 AND pm.is_active=true
+             )) LIMIT 1`,
+          [reqId, ctx.auth.companyId, ctx.auth.userId],
+        )
+        if (!scope.rows[0])
+          throw new Error('You are not associated with this requisition or its project')
+      }
+
+      const existing = await query(
+        `SELECT id FROM po_edit_requests WHERE requisition_id=$1 AND status='pending' LIMIT 1`,
+        [reqId],
+      )
+      if (existing.rows[0])
+        throw new Error(
+          'A pending edit request already exists. It must be approved or rejected first.',
+        )
+
+      if (!POST_APPROVAL_REQUISITION_STATUSES.includes(reqStatus)) {
+        const client = await pool.connect()
+        let row: Record<string, unknown>
+        try {
+          await client.query('BEGIN')
+          const ins = await client.query(
+            `INSERT INTO po_edit_requests (requisition_id, requested_by, changes, request_notes, status, reviewed_by, review_notes, reviewed_at)
+             VALUES ($1,$2,$3,$4,'approved',$2,'Auto-applied — requisition not yet approved',NOW()) RETURNING *`,
+            [reqId, ctx.auth.userId, JSON.stringify(changesObj), args.notes ?? null],
+          )
+          row = ins.rows[0] as Record<string, unknown>
+          await applyRequisitionEditChanges(client, reqId, changesObj as EditChanges)
+          const changeSummary = buildEditChangeSummary(changesObj as EditChanges)
+          await client.query(
+            `INSERT INTO requisition_approval_log (requisition_id,from_status,to_status,action,actor_id,notes,actor_position) VALUES ($1,$2,$2,'edit_applied',$3,$4,NULL)`,
+            [reqId, reqStatus, ctx.auth.userId, changeSummary],
+          )
+          await client.query('COMMIT')
+        } catch (e) {
+          await client.query('ROLLBACK')
+          throw e
+        } finally {
+          client.release()
+        }
+        const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
+        return {
+          ...row,
+          changes: args.changes,
+          requested_by_email: usr.rows[0]?.email ?? null,
+          reviewed_by_email: usr.rows[0]?.email ?? null,
+        }
+      }
+
+      const r = await query(
+        `INSERT INTO po_edit_requests (requisition_id, requested_by, changes, request_notes)
+         VALUES ($1,$2,$3,$4) RETURNING *`,
+        [reqId, ctx.auth.userId, JSON.stringify(changesObj), args.notes ?? null],
+      )
+      const row = r.rows[0] as Record<string, unknown>
+      const usr = await query(`SELECT email FROM users WHERE id=$1`, [ctx.auth.userId])
+      return {
+        ...row,
+        changes: args.changes,
+        requested_by_email: usr.rows[0]?.email ?? null,
+        reviewed_by_email: null,
+      }
+    }
+
+    if (!args.id) throw new Error('Either id or requisitionId is required')
     const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1 AND company_id=$2`, [
       args.id,
       ctx.auth.companyId,
@@ -27106,13 +27414,6 @@ const phase5MutationResolvers = {
       throw new Error(
         'A pending edit request already exists. It must be approved or rejected first.',
       )
-
-    let changesObj: unknown
-    try {
-      changesObj = JSON.parse(args.changes)
-    } catch {
-      throw new Error('changes must be valid JSON')
-    }
 
     // A PO that hasn't been approved yet doesn't need admin sign-off to change —
     // apply it immediately, but still record it as an (auto-approved) edit request
@@ -27165,15 +27466,57 @@ const phase5MutationResolvers = {
     }
   },
 
+  // G1 Phase 3 Milestone A — widened the same way as submitPOEditRequest.
   approvePOEditRequest: async (
     _: unknown,
-    args: { id: string; requestId: string; reviewNotes?: string },
+    args: { id?: string; requisitionId?: string; requestId: string; reviewNotes?: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const isAdminRole = ['system_admin', 'company_admin', 'module_admin'].includes(ctx.auth.role)
     if (!isAdminRole) throw new Error('Admin role required')
 
+    if (args.requisitionId) {
+      const reqId = args.requisitionId
+      const erRow = await query(
+        `SELECT * FROM po_edit_requests WHERE id=$1 AND requisition_id=$2 AND status='pending'`,
+        [args.requestId, reqId],
+      )
+      if (!erRow.rows[0]) throw new Error('Pending edit request not found')
+      const changes = (erRow.rows[0] as Record<string, unknown>).changes as EditChanges
+
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await applyRequisitionEditChanges(client, reqId, changes)
+        await client.query(
+          `UPDATE po_edit_requests SET status='approved',reviewed_by=$1,review_notes=$2,reviewed_at=NOW() WHERE id=$3`,
+          [ctx.auth.userId, args.reviewNotes ?? null, args.requestId],
+        )
+        const reqStatusRow = await client.query(`SELECT status FROM requisitions WHERE id=$1`, [reqId])
+        const currentStatus = reqStatusRow.rows[0]?.status ?? 'unknown'
+        const changeSummary = buildEditChangeSummary(changes)
+        const logNotes = [args.reviewNotes, changeSummary].filter(Boolean).join(' — ')
+        await client.query(
+          `INSERT INTO requisition_approval_log (requisition_id,from_status,to_status,action,actor_id,notes,actor_position) VALUES ($1,$2,$2,'edit_approved',$3,$4,NULL)`,
+          [reqId, currentStatus, ctx.auth.userId, logNotes],
+        )
+        await client.query('COMMIT')
+      } catch (e) {
+        await client.query('ROLLBACK')
+        throw e
+      } finally {
+        client.release()
+      }
+      const updated = await query(
+        `SELECT er.*,req.email AS requested_by_email,rev.email AS reviewed_by_email FROM po_edit_requests er JOIN users req ON req.id=er.requested_by LEFT JOIN users rev ON rev.id=er.reviewed_by WHERE er.id=$1`,
+        [args.requestId],
+      )
+      const row = updated.rows[0] as Record<string, unknown>
+      return { ...row, changes: JSON.stringify(row.changes) }
+    }
+
+    if (!args.id) throw new Error('Either id or requisitionId is required')
     const erRow = await query(
       `SELECT * FROM po_edit_requests WHERE id=$1 AND po_id=$2 AND status='pending'`,
       [args.requestId, args.id],
@@ -27216,9 +27559,10 @@ const phase5MutationResolvers = {
     return { ...row, changes: JSON.stringify(row.changes) }
   },
 
+  // G1 Phase 3 Milestone A — widened the same way as submitPOEditRequest.
   rejectPOEditRequest: async (
     _: unknown,
-    args: { id: string; requestId: string; reviewNotes: string },
+    args: { id?: string; requisitionId?: string; requestId: string; reviewNotes: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -27226,6 +27570,32 @@ const phase5MutationResolvers = {
     if (!isAdminRole) throw new Error('Admin role required')
     if (!args.reviewNotes.trim()) throw new Error('reviewNotes is required when rejecting')
 
+    if (args.requisitionId) {
+      const reqId = args.requisitionId
+      const r = await query(
+        `UPDATE po_edit_requests SET status='rejected',reviewed_by=$1,review_notes=$2,reviewed_at=NOW()
+         WHERE id=$3 AND requisition_id=$4 AND status='pending' RETURNING *`,
+        [ctx.auth.userId, args.reviewNotes, args.requestId, reqId],
+      )
+      if (!r.rows[0]) throw new Error('Pending edit request not found')
+      const rejectedChanges = (r.rows[0] as Record<string, unknown>).changes as EditChanges
+      const rejectSummary = buildEditChangeSummary(rejectedChanges)
+      const reqStatusRes = await query(`SELECT status FROM requisitions WHERE id=$1`, [reqId])
+      const currentReqStatus = reqStatusRes.rows[0]?.status ?? 'unknown'
+      const rejectLogNotes = [args.reviewNotes, rejectSummary].filter(Boolean).join(' — ')
+      await query(
+        `INSERT INTO requisition_approval_log (requisition_id,from_status,to_status,action,actor_id,notes,actor_position) VALUES ($1,$2,$2,'edit_rejected',$3,$4,NULL)`,
+        [reqId, currentReqStatus, ctx.auth.userId, rejectLogNotes],
+      )
+      const updated = await query(
+        `SELECT er.*,req.email AS requested_by_email,rev.email AS reviewed_by_email FROM po_edit_requests er JOIN users req ON req.id=er.requested_by LEFT JOIN users rev ON rev.id=er.reviewed_by WHERE er.id=$1`,
+        [args.requestId],
+      )
+      const row = updated.rows[0] as Record<string, unknown>
+      return { ...row, changes: JSON.stringify(row.changes) }
+    }
+
+    if (!args.id) throw new Error('Either id or requisitionId is required')
     const r = await query(
       `UPDATE po_edit_requests SET status='rejected',reviewed_by=$1,review_notes=$2,reviewed_at=NOW()
        WHERE id=$3 AND po_id=$4 AND status='pending' RETURNING *`,
@@ -29355,17 +29725,48 @@ const phase5MutationResolvers = {
   // the PO's creator to fix something themselves via the existing Edit
   // Request tool (which auto-applies pre-approval, see submitPOEditRequest),
   // rather than bouncing the whole PO back through an earlier stage.
+  // G1 Phase 3 Milestone A — widened the same way as submitPOEditRequest.
+  // Notifications are still deferred to Phase 4 throughout G1 (per the
+  // PR 1b/2 scope notes), so the requisitionId branch's notifyUserGW call
+  // is a placeholder — the status check/response shape is real now so the
+  // frontend has something to build against, matching this PR's "spec"
+  // purpose, but nobody actually gets notified yet, same as everywhere
+  // else notifications are deferred in this initiative.
   notifyPOOwnerForEditRequest: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id?: string; requisitionId?: string; reason: string },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = isAdminGW(auth.role)
+    if (!args.reason.trim()) throw new Error('reason is required')
+
+    if (args.requisitionId) {
+      const reqId = args.requisitionId
+      const hasPos = await userHasPositionForRequisitionGW(auth.userId, auth.companyId, reqId, 'procurement_2nd')
+      if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+      const reqRow = await query(
+        `SELECT status, organizer_id FROM requisitions WHERE id=$1 AND company_id=$2`,
+        [reqId, auth.companyId],
+      )
+      if (!reqRow.rows[0]) throw new Error('Requisition not found')
+      if (reqRow.rows[0].status !== 'price_verification')
+        throw new Error(`Cannot do this from status '${reqRow.rows[0].status as string}'`)
+      if (reqRow.rows[0].organizer_id) {
+        void notifyUserGW(reqRow.rows[0].organizer_id as string, auth.companyId, {
+          type: 'PO_EDIT_REQUESTED',
+          title: 'Edit requested on your requisition',
+          body: `Price verification flagged an issue: ${args.reason}. Please submit an edit request to fix it.`,
+          poId: reqId,
+        })
+      }
+      return true
+    }
+
+    if (!args.id) throw new Error('Either id or requisitionId is required')
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
     if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
-    if (!args.reason.trim()) throw new Error('reason is required')
     const poRow = await query(
       `SELECT status, created_by FROM purchase_orders WHERE id=$1 AND company_id=$2`,
       [args.id, auth.companyId],
@@ -29381,7 +29782,7 @@ const phase5MutationResolvers = {
         poId: args.id,
       })
     }
-    return getPOForReturn(args.id)
+    return true
   },
 
   approvePO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -29600,12 +30001,19 @@ const phase5MutationResolvers = {
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can send a PO to finance audit')
-    const poRow = await query(`SELECT status, po_number FROM purchase_orders WHERE id=$1`, [
-      args.id,
-    ])
+    const poRow = await query(
+      `SELECT status, po_number, requisition_id FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     if (!poRow.rows[0]) throw new Error('PO not found')
     if (poRow.rows[0].status !== 'goods_received')
       throw new Error(`PO must be in goods_received status to send to audit`)
+    // 'goods_received' is shared between both vocabularies, so the status
+    // guard above needs no widening — only the target does: a G1 child
+    // (requisition_id set) moves to 'finance_review', an old-model PO to
+    // 'finance_audit'. Same for every subsequent post-goods_received
+    // mutation in this file.
+    const auditTargetStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
     // goods_received no longer guarantees a receipt was ever recorded — it's
     // now also reachable via the buyer's checklist alone (markPOLineBought),
     // with zero receipts. That used to be implicit (a confirmed receipt was
@@ -29623,7 +30031,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await poTransition(client, args.id, 'goods_received', 'finance_audit', 'send_to_audit', auth)
+      await poTransition(client, args.id, 'goods_received', auditTargetStatus, 'send_to_audit', auth)
       // Reset all line audit statuses to pending
       await client.query(
         `UPDATE po_lines SET audit_status='pending', audit_note=NULL WHERE po_id=$1`,
@@ -29653,12 +30061,16 @@ const phase5MutationResolvers = {
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to pass audit')
     const poRow = await query(
-      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      `SELECT status, organizer_id, po_number, requisition_id FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'finance_audit')
-      throw new Error(`PO must be in finance_audit status to pass audit`)
+    // 'finance_audit' (old vocab) / 'finance_review' (G1 child) — see
+    // sendPOToAudit's comment on why these two statuses diverge here.
+    const fromStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
+    const toStatus = poRow.rows[0].requisition_id ? 'payment_pending' : 'invoiced'
+    if (poRow.rows[0].status !== fromStatus)
+      throw new Error(`PO must be in ${fromStatus} status to pass audit`)
     const flaggedRes = await query(
       `SELECT COUNT(*) AS c FROM po_lines WHERE po_id=$1 AND audit_status='flagged'`,
       [args.id],
@@ -29669,7 +30081,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await poTransition(client, args.id, 'finance_audit', 'invoiced', 'pass_audit', auth)
+      await poTransition(client, args.id, fromStatus, toStatus, 'pass_audit', auth)
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -29697,19 +30109,20 @@ const phase5MutationResolvers = {
     if (!(await hasFinanceApprovalGW(auth.userId, auth.companyId, auth.role)))
       throw new Error('Finance approval permission required to fail audit')
     const poRow = await query(
-      `SELECT status, organizer_id, po_number FROM purchase_orders WHERE id=$1`,
+      `SELECT status, organizer_id, po_number, requisition_id FROM purchase_orders WHERE id=$1`,
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'finance_audit')
-      throw new Error(`PO must be in finance_audit status`)
+    const fromStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
+    if (poRow.rows[0].status !== fromStatus)
+      throw new Error(`PO must be in ${fromStatus} status`)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
       await poTransition(
         client,
         args.id,
-        'finance_audit',
+        fromStatus,
         'goods_received',
         'fail_audit',
         auth,
@@ -29748,10 +30161,13 @@ const phase5MutationResolvers = {
     const valid = ['pending', 'ok', 'flagged']
     if (!valid.includes(args.auditStatus))
       throw new Error(`auditStatus must be one of: ${valid.join(', ')}`)
-    const poRow = await query(`SELECT status FROM purchase_orders WHERE id=$1`, [args.poId])
+    const poRow = await query(`SELECT status, requisition_id FROM purchase_orders WHERE id=$1`, [args.poId])
     if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'finance_audit')
-      throw new Error('PO must be in finance_audit status to audit lines')
+    // See sendPOToAudit's comment — 'finance_audit' (old vocab) vs
+    // 'finance_review' (G1 child) for the same audit stage.
+    const requiredStatus = poRow.rows[0].requisition_id ? 'finance_review' : 'finance_audit'
+    if (poRow.rows[0].status !== requiredStatus)
+      throw new Error(`PO must be in ${requiredStatus} status to audit lines`)
     let flaggedByEmail: string | null = null
     if (args.auditStatus === 'flagged') {
       const uRow = await query(`SELECT email FROM users WHERE id=$1`, [auth.userId])
@@ -29793,7 +30209,12 @@ const phase5MutationResolvers = {
     )
     if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
       throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'invoiced' || poRow.rows[0].funding_source !== 'employee_advance')
+    // 'invoiced' (old vocab) / 'payment_pending' (G1 child) — same funding
+    // stage, see sendPOToAudit's comment for the pattern.
+    if (
+      !['invoiced', 'payment_pending'].includes(poRow.rows[0].status as string) ||
+      poRow.rows[0].funding_source !== 'employee_advance'
+    )
       throw new Error('PO must be invoiced and funded by an employee advance to classify lines')
     const result = await query(
       `UPDATE po_lines
@@ -29934,7 +30355,9 @@ const phase5MutationResolvers = {
     )
     if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
       throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'invoiced')
+    // 'invoiced' (old vocab) / 'payment_pending' (G1 child) — same stage,
+    // see sendPOToAudit's comment.
+    if (!['invoiced', 'payment_pending'].includes(poRow.rows[0].status as string))
       throw new Error('PO must be in invoiced status to set funding')
     if (poRow.rows[0].funding_decided)
       throw new Error('Funding source has already been set for this PO')
@@ -29984,9 +30407,16 @@ const phase5MutationResolvers = {
       [args.id],
     )
     if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'invoiced')
+    // 'invoiced' (old vocab) / 'payment_pending' (G1 child) — same stage,
+    // see sendPOToAudit's comment. Target status diverges the same way:
+    // 'completed' vs 'closed'. Milestone B removes this branch once the
+    // old vocab is trimmed out of poStateMachine entirely — see this
+    // mutation's own "bridge" comment below for the other half of that.
+    const fundingFromStatus = poRow.rows[0].requisition_id ? 'payment_pending' : 'invoiced'
+    const completionToStatus = poRow.rows[0].requisition_id ? 'closed' : 'completed'
+    if (poRow.rows[0].status !== fundingFromStatus)
       throw new Error(
-        `PO must be in invoiced status to complete. Current: '${poRow.rows[0].status as string}'`,
+        `PO must be in ${fundingFromStatus} status to complete. Current: '${poRow.rows[0].status as string}'`,
       )
     if (!poRow.rows[0].funding_decided)
       throw new Error('Finance must confirm the funding source (AP or Advance) before completing')
@@ -30008,8 +30438,8 @@ const phase5MutationResolvers = {
       await poTransition(
         client,
         args.id,
-        'invoiced',
-        'completed',
+        fundingFromStatus,
+        completionToStatus,
         'complete',
         auth,
         args.receiptNotes,

@@ -19,6 +19,10 @@
     purchaseOrders(status: String, vendor_id: ID, project_id: ID, myPOsOnly: Boolean): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
     requisition(id: ID!): Requisition
+    # G1 Phase 3 Milestone A — list view (RequisitionsPage) and worklist
+    # (myRequisitionApprovalQueue), mirroring purchaseOrders/myApprovalQueue.
+    requisitions(status: String, projectId: ID, branchId: ID, myQueueOnly: Boolean): [Requisition!]!
+    myRequisitionApprovalQueue: [Requisition!]!
     # G1 PR 4 — child POs Finish Buying forked for this requisition (or,
     # for pre-G1 data, the BECOMES_CHILD rows migration 258 kept in place).
     requisitionChildPurchaseOrders(requisitionId: ID!): [PurchaseOrder!]!
@@ -171,7 +175,13 @@
     rejectPOToMarketPricing(id: ID!, reason: String!): PurchaseOrder!
     rejectPOVerificationToMarketPricing(id: ID!, reason: String!): PurchaseOrder!
     rejectPOVerificationToStorePricing(id: ID!, reason: String!): PurchaseOrder!
-    notifyPOOwnerForEditRequest(id: ID!, reason: String!): PurchaseOrder!
+    # G1 Phase 3 Milestone A — id/requisitionId are mutually exclusive
+    # (exactly one required, enforced in the resolver). Return type is
+    # Boolean! rather than PurchaseOrder!/Requisition! since neither the
+    # old nor new caller reads anything off the result beyond success —
+    # avoids needing a union type for what's purely a fire-and-forget
+    # notification.
+    notifyPOOwnerForEditRequest(id: ID, requisitionId: ID, reason: String!): Boolean!
     approvePO(id: ID!): PurchaseOrder!
     rejectPO(id: ID!, reason: String!): PurchaseOrder!
     reopenPO(id: ID!): PurchaseOrder!
@@ -194,10 +204,12 @@
     addPOLineComment(poId: ID!, lineId: ID!, comment: String!, flag: String): POLineComment!
     resolvePOLineComment(poId: ID!, commentId: ID!): POLineComment!
 
-    # PO edit requests
-    submitPOEditRequest(id: ID!, changes: String!, notes: String): POEditRequest!
-    approvePOEditRequest(id: ID!, requestId: ID!, reviewNotes: String): POEditRequest!
-    rejectPOEditRequest(id: ID!, requestId: ID!, reviewNotes: String!): POEditRequest!
+    # PO edit requests — id/requisitionId mutually exclusive (exactly one
+    # required, enforced in the resolver); requisitionId added in G1 Phase
+    # 3 Milestone A alongside the original id-only signature.
+    submitPOEditRequest(id: ID, requisitionId: ID, changes: String!, notes: String): POEditRequest!
+    approvePOEditRequest(id: ID, requisitionId: ID, requestId: ID!, reviewNotes: String): POEditRequest!
+    rejectPOEditRequest(id: ID, requisitionId: ID, requestId: ID!, reviewNotes: String!): POEditRequest!
 
     # Admin correction of a passed PO — system_admin only, single-actor, no
     # approval step. Reaches receiving/product/price/location fields the

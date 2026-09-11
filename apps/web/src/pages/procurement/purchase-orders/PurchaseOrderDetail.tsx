@@ -65,7 +65,7 @@ import { AmountDisplay } from '../../../components/ui/AmountDisplay'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
-import { PO_STATUSES, getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
+import { getPOStatusVariant, getPOStatusLabel, getStatusesForPO } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
 import { api } from '../../../lib/axios'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -158,6 +158,10 @@ export interface PO {
   po_number: string
   status: string
   priority: string
+  // G1 — set when this PO is a per-vendor child forked from a requisition;
+  // its status vocabulary diverges from a legacy PO's from 'bought' onward
+  // (see CHILD_PO_STATUSES in po-constants.ts).
+  requisition_id?: string | null
   // Server-computed: true when the caller isn't the organizer, an admin, the
   // finance team (once at finance_audit+), or the position holder for this
   // PO's current stage. When true, every other field is withheld by the
@@ -1017,7 +1021,7 @@ export default function PurchaseOrderDetail() {
   // uploaded — gates the "Finish Buying" button alongside the checklist.
   const { data: buyerReceiptData } = useQuery(ENTITY_ATTACHMENTS_QUERY, {
     variables: { entityType: 'purchase_order', entityId: id },
-    skip: !id || po?.status !== 'items_bought',
+    skip: !id || (po?.status !== 'items_bought' && po?.status !== 'bought'),
     fetchPolicy: 'cache-and-network',
   })
   const hasBuyerReceipt = (
@@ -1182,7 +1186,9 @@ export default function PurchaseOrderDetail() {
   // the funding source (see the invoiced-status panel below) — before
   // that, or for vendor-AP POs, per-line classification never renders.
   const needsLineAccountingOptions =
-    po?.status === 'invoiced' && !!po?.funding_decided && po?.funding_source === 'employee_advance'
+    (po?.status === 'invoiced' || po?.status === 'payment_pending') &&
+    !!po?.funding_decided &&
+    po?.funding_source === 'employee_advance'
   const { data: accountsData } = useQuery(ACCOUNTS_QUERY, {
     variables: { isActive: true },
     fetchPolicy: 'cache-first',
@@ -1387,7 +1393,7 @@ export default function PurchaseOrderDetail() {
                   >
                     View Invoice
                   </Button>
-                ) : can('finance.ap.edit') && po.status === 'completed' ? (
+                ) : can('finance.ap.edit') && (po.status === 'completed' || po.status === 'closed') ? (
                   <Button
                     variant="secondary"
                     size="sm"
@@ -1399,7 +1405,7 @@ export default function PurchaseOrderDetail() {
                     Create Invoice
                   </Button>
                 ) : null)}
-              {['received', 'invoiced', 'completed'].includes(po.status) &&
+              {['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status) &&
                 can('procurement.po.edit', 'edit') && (
                   <Button
                     variant="secondary"
@@ -1657,10 +1663,14 @@ export default function PurchaseOrderDetail() {
                                 { value: 'approved', label: 'Approved' },
                                 { value: 'ready_to_issue', label: 'Ready to Issue' },
                                 { value: 'items_bought', label: 'Items Bought' },
+                                { value: 'bought', label: 'Bought (G1 child)' },
                                 { value: 'goods_received', label: 'Goods Received' },
                                 { value: 'finance_audit', label: 'Finance Audit' },
+                                { value: 'finance_review', label: 'Finance Review (G1 child)' },
                                 { value: 'invoiced', label: 'Invoiced' },
+                                { value: 'payment_pending', label: 'Payment Pending (G1 child)' },
                                 { value: 'completed', label: 'Completed' },
+                                { value: 'closed', label: 'Closed (G1 child)' },
                                 { value: 'rejected', label: 'Rejected' },
                                 { value: 'cancelled', label: 'Cancelled' },
                                 { value: 'deleted', label: 'Deleted' },
@@ -1730,7 +1740,7 @@ export default function PurchaseOrderDetail() {
       <div style={{ marginTop: '16px', marginBottom: '16px' }}>
         <StatusBar
           steps={(po.priority === 'emergency'
-            ? PO_STATUSES.filter((s) =>
+            ? getStatusesForPO(po).filter((s) =>
                 [
                   'draft',
                   'pending_approval',
@@ -1739,9 +1749,13 @@ export default function PurchaseOrderDetail() {
                   'finance_audit',
                   'invoiced',
                   'completed',
+                  // G1 child-vocabulary counterparts.
+                  'finance_review',
+                  'payment_pending',
+                  'closed',
                 ].includes(s.key),
               )
-            : PO_STATUSES
+            : getStatusesForPO(po)
           ).map((s) => ({ key: s.key, label: s.label }))}
           currentStep={po.status}
           rejectedSteps={['deleted']}
@@ -2013,7 +2027,7 @@ export default function PurchaseOrderDetail() {
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 460px', minWidth: 0 }}>
           {/* Inline action panel — replaces the former Action tab */}
-          {!['completed', 'deleted', 'cancelled'].includes(po.status) && (
+          {!['completed', 'closed', 'deleted', 'cancelled'].includes(po.status) && (
         <Card
           style={{
             marginBottom: '16px',
@@ -3578,7 +3592,7 @@ export default function PurchaseOrderDetail() {
                 </div>
               )}
 
-              {po.status === 'items_bought' &&
+              {(po.status === 'items_bought' || po.status === 'bought') &&
                 (() => {
                   const isBuyer = !!po.callerIsBuyer
                   const canMarkBought = isSystemLevel || isBuyer
@@ -4089,7 +4103,7 @@ export default function PurchaseOrderDetail() {
                   )
                 })()}
 
-              {po.status === 'finance_audit' &&
+              {(po.status === 'finance_audit' || po.status === 'finance_review') &&
                 (isSystemLevel || po.callerIsFinanceTeam) &&
                 (() => {
                   const flaggedCount = po.lines.filter((l) => l.audit_status === 'flagged').length
@@ -4683,7 +4697,7 @@ export default function PurchaseOrderDetail() {
                   )
                 })()}
 
-              {po.status === 'invoiced' &&
+              {(po.status === 'invoiced' || po.status === 'payment_pending') &&
                 (isSystemLevel || po.callerIsFinanceTeam) &&
                 (!po.funding_decided ? (
                   can('finance.ap.approve', 'approve') ? (
@@ -5544,7 +5558,7 @@ export default function PurchaseOrderDetail() {
 
       {activeTab === 'receipts' && (
         <div>
-          {(po.status === 'approved' || po.status === 'goods_received') && (
+          {(po.status === 'approved' || po.status === 'bought' || po.status === 'goods_received') && (
             <div style={{ marginBottom: '12px' }}>
               <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
@@ -5754,7 +5768,7 @@ export default function PurchaseOrderDetail() {
 
       {activeTab === 'returns' && (
         <div>
-          {['received', 'invoiced', 'completed'].includes(po.status) &&
+          {['received', 'invoiced', 'completed', 'payment_pending', 'closed'].includes(po.status) &&
             can('procurement.po.edit', 'edit') && (
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
                 <Button

@@ -21,6 +21,30 @@ export type POStatus = (typeof PO_STATUSES)[number]['key'] | 'rejected' | 'cance
 
 export const PO_TERMINAL_STATUSES = ['completed', 'rejected', 'cancelled', 'deleted'] as const
 
+// G1 Phase 3 Milestone A — a per-vendor child PO (po.requisition_id set)
+// shares the pre-'bought' sequence above but diverges from 'bought'
+// onward: bought -> goods_received -> finance_review -> payment_pending ->
+// closed. 'goods_received' is intentionally the same key as in
+// PO_STATUSES (it's the same status in both vocabularies), so it's not
+// repeated with a different label here. Added alongside PO_STATUSES
+// rather than folding into it, since a single PO row is only ever in one
+// vocabulary at a time — see getStatusesForPO below for the pick.
+export const CHILD_PO_STATUSES = [
+  ...PO_STATUSES.filter((s) => s.sequence <= 8), // draft .. items_bought
+  { key: 'bought', label: 'Bought', sequence: 8.5 },
+  { key: 'goods_received', label: 'Goods received', sequence: 9 },
+  { key: 'finance_review', label: 'Finance review', sequence: 10 },
+  { key: 'payment_pending', label: 'Payment pending', sequence: 11 },
+  { key: 'closed', label: 'Closed', sequence: 12 },
+] as const
+
+export const CHILD_PO_TERMINAL_STATUSES = ['closed', 'rejected', 'cancelled', 'deleted'] as const
+
+/** Picks the right ordered status list for a StatusBar, based on whether this PO is a G1 child. */
+export function getStatusesForPO(po: { requisition_id?: string | null }): typeof PO_STATUSES | typeof CHILD_PO_STATUSES {
+  return po.requisition_id ? CHILD_PO_STATUSES : PO_STATUSES
+}
+
 export const PO_POSITIONS = [
   {
     key: 'buyer',
@@ -136,6 +160,26 @@ export const PO_STATUS_ACTIONS: Record<
     description: 'Finance marks PO as completed after payment voucher is paid',
     requiredRole: 'finance',
   },
+  // G1 Phase 3 Milestone A — child-vocabulary counterparts of the entries
+  // above (bought instead of items_bought/approved, finance_review
+  // instead of finance_audit, payment_pending instead of invoiced).
+  bought: {
+    label: 'Mark items bought',
+    description:
+      'The assigned buyer ticks each line as bought and uploads the vendor receipt, then clicks Finish Buying to move the PO on to Goods Received.',
+    requiredPosition: 'buyer',
+  },
+  finance_review: {
+    label: 'Audit lines / Pass or Fail audit',
+    description:
+      'Finance audits each line (qty, price). Pass → payment_pending. Fail → back to goods_received.',
+    requiredRole: 'finance',
+  },
+  payment_pending: {
+    label: 'Complete',
+    description: 'Finance marks the child PO as closed after payment voucher is paid',
+    requiredRole: 'finance',
+  },
 }
 
 export function getPOStatusVariant(status: string): BadgeVariant {
@@ -172,13 +216,22 @@ export function getPOStatusVariant(status: string): BadgeVariant {
       return 'neutral'
     case 'deleted':
       return 'danger'
+    // G1 Phase 3 Milestone A — child vocabulary from 'bought' onward.
+    case 'bought':
+      return 'accent'
+    case 'finance_review':
+      return 'warning'
+    case 'payment_pending':
+      return 'info'
+    case 'closed':
+      return 'success'
     default:
       return 'neutral'
   }
 }
 
 export function getPOStatusLabel(status: string): string {
-  const found = PO_STATUSES.find((s) => s.key === status)
+  const found = PO_STATUSES.find((s) => s.key === status) ?? CHILD_PO_STATUSES.find((s) => s.key === status)
   if (found) return found.label
   switch (status) {
     case 'rejected':
