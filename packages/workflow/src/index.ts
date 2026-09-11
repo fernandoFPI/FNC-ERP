@@ -216,6 +216,15 @@ export type POStatus =
   | 'rejected'
   | 'cancelled'
   | 'deleted'
+  // G1 child-PO vocabulary (migration 258's widened CHECK constraint) —
+  // 'goods_received' is shared with the old vocabulary above; these four
+  // are new. Only 'bought' has any transition defined yet (start state,
+  // cancellable) — the rest await Phase 3's own cutover of
+  // receiving/finance/payment into this vocabulary.
+  | 'bought'
+  | 'finance_review'
+  | 'payment_pending'
+  | 'closed'
 
 export type POAction =
   | 'submit_to_inventory_check'
@@ -254,6 +263,12 @@ const CANCELLABLE: POStatus[] = [
   'goods_received',
   'finance_audit',
   'invoiced',
+  // G1 PR 5 — a freshly-forked child PO starts here. Only this one new-
+  // vocab status is cancellable: everything from 'goods_received' onward
+  // means goods physically arrived and/or financial obligations exist,
+  // which cancelRequisition's own guard blocks on rather than letting a
+  // child (or the whole requisition) cancel through it.
+  'bought',
 ]
 
 export const poStateMachine = new StateMachine<POStatus, POAction>({

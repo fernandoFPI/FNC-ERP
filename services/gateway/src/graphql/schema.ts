@@ -156,6 +156,11 @@
     # the requisition from items_bought to sourcing.
     finishBuyingRequisition(id: ID!): Requisition!
 
+    # G1 PR 5: completion evaluator + cancel guard.
+    cancelChildPurchaseOrder(id: ID!, reason: String): PurchaseOrder!
+    closeRequisitionLine(lineId: ID!, reason: String!): POLine!
+    cancelRequisition(id: ID!, reason: String): Requisition!
+
     # PO lifecycle
     submitPOToInventoryCheck(id: ID!, notes: String): PurchaseOrder!
     confirmPOInventoryCheck(id: ID!, lineStockQtys: [StockConfirmLineInput!]!, notes: String): PurchaseOrder!
@@ -1979,6 +1984,13 @@
     # simple single-vendor-zero-stock case that gains po_id on its
     # existing row instead of forking a new one.
     origin_line_id: ID
+    # G1 PR 5 — closeRequisitionLine's manual override: the completion
+    # evaluator treats this line as resolved regardless of its normal
+    # resolution rule once this is set. Sourcing-stage only, distinct
+    # from short_marked_at (items_bought-stage, blocks further purchases).
+    closed_at: String
+    closed_reason: String
+    closed_by: ID
     # One row per vendor a line was bought from — more than one means the
     # line was split across vendors. Only populated when fetched via the
     # requisition(id) query; a bare RETURNING * from a line mutation (e.g.
