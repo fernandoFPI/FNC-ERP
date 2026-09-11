@@ -71,18 +71,26 @@ jobs:
       - name: Seed test DB
         run: pnpm seed:test
 
+      - name: Seed test-fixture companies (test DB)
+        run: pnpm seed:test-fixtures
+
       - name: Seed permissions registry (test DB)
         run: pnpm seed:permissions
 
       - name: Run tests
-        # Every service's tests share one hardcoded TEST_COMPANY_ID against one
-        # DB. --concurrency=4 + one retry was not reliable enough in practice —
-        # two real deploys failed back to back on two different services, both
-        # passing standalone. --concurrency=1 serializes every test task so no
-        # two ever touch the DB at the same time, removing the race outright
-        # instead of just reducing its odds. Slower, but this is a deploy gate,
-        # not an interactive loop. Revisit only if this stops being enough too —
-        # at that point the shared fixture needs isolating, not more retries.
+        # Still --concurrency=1. The data-collision race this used to be
+        # about (every service sharing one hardcoded TEST_COMPANY_ID) is
+        # fixed — 8 services now each seed and use their own dedicated
+        # company (packages/db/seeds/seed-test-fixtures.ts, the step
+        # above); gateway keeps company 001 as its sole remaining
+        # consumer. But a SEPARATE, still-unexplained issue showed up
+        # under real parallelism in CI: services/projects started
+        # getting 401s (session not found) partway through
+        # projects.test.ts, after four earlier tests using the same
+        # session succeeded — nothing in that test file or the app's
+        # /complete route touches sessions/users, so the mechanism isn't
+        # identified yet. Keeping this serialized until that's root-
+        # caused rather than risking the deploy gate on it.
         run: pnpm test --concurrency=1
 
   deploy:

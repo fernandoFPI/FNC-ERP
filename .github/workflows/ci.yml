@@ -20,18 +20,18 @@ jobs:
   # visible via this job (informational) and must not grow; the ratchet
   # job is what actually enforces that going forward.
   #
-  # Known pre-existing issue, not yet fixed — fix before the G1 Phase 3+4
-  # deploy: all services share one TEST_COMPANY_ID + one DB in the "Run
-  # tests" step below, causing residual flaky races under full parallel
-  # `pnpm test` (documented in project memory as "Test Fixture Sharing" /
-  # "Vitest File Parallelism Gotcha" — singleFork:true alone doesn't stop
-  # test files interleaving, fileParallelism:false is also needed for any
-  # service with 2+ test files). Already caused one real required-check
-  # failure this session (services/projects, unrelated to the change being
-  # merged — a re-run of the identical commit passed cleanly minutes
-  # later). Phase 3+4 adds substantially more requisition/PO test files
-  # sharing the same fixtures, which raises the odds of hitting this on
-  # every single deploy, not just occasionally.
+  # The shared-fixture race (every service sharing one TEST_COMPANY_ID +
+  # one DB — see project memory "Test Fixture Sharing" / "Vitest File
+  # Parallelism Gotcha") is partially fixed: 8 services now each seed and
+  # use their own dedicated company (packages/db/seeds/seed-test-
+  # fixtures.ts, "Seed test-fixture companies" step below) instead of
+  # racing on the same rows; gateway keeps company 001 as its sole
+  # remaining consumer. Real parallelism is NOT yet restored below (still
+  # --concurrency=1) — a separate, still-unexplained issue surfaced under
+  # full parallelism (services/projects getting spurious session-
+  # invalid 401s partway through a test file, root cause not yet
+  # identified — see "Run tests" step's own comment). Revisit once
+  # that's root-caused.
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -126,9 +126,21 @@ jobs:
       - name: Seed test DB
         run: pnpm seed:test
 
+      - name: Seed test-fixture companies (test DB)
+        run: pnpm seed:test-fixtures
+
       - name: Seed permissions registry (test DB)
         run: pnpm seed:permissions
 
       - name: Run tests
-        # See deploy.yml's "Run tests" step — full sequential run, no retry needed.
+        # Still --concurrency=1 — the data-collision race this PR fixes
+        # (every service sharing one company) is confirmed gone, but a
+        # SEPARATE, still-unexplained issue showed up when this branch's
+        # first CI run tried real parallelism: services/projects started
+        # getting 401s (session not found) partway through
+        # projects.test.ts, after four earlier tests using the same
+        # session succeeded — nothing in that test file or the app's
+        # /complete route touches sessions/users, so the mechanism isn't
+        # identified yet. Not worth risking the required check on an
+        # unconfirmed fix — see PR description for what was tried.
         run: pnpm test --concurrency=1

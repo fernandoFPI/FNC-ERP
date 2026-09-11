@@ -2,7 +2,10 @@ import { createHash } from 'crypto'
 import { pool } from '@fnc-erp/db'
 import { hashPassword, signAccessToken } from '@fnc-erp/auth'
 
-export const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+// Dedicated to finance's own tests — see packages/db/seeds/seed-test-fixtures.ts
+// (fixes the shared-fixture race: every service used to share company
+// 00000000-0000-0000-0000-000000000001, racing under full parallel `pnpm test`).
+export const TEST_COMPANY_ID = 'f0000000-0000-0000-0000-000000000002'
 export const TEST_USER_EMAIL = 'finance-test@fnc-erp.local'
 export const TEST_USER_PASSWORD = 'TestPass123!'
 
