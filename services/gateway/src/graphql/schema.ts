@@ -2135,7 +2135,11 @@
 
   type POEditRequest {
     id: ID!
-    po_id: ID!
+    # G1 Phase 3 Milestone A — po_id/requisition_id mutually exclusive,
+    # mirroring po_edit_requests' own XOR constraint; po_id widened from
+    # ID! to ID here since a requisition-scoped row has it NULL.
+    po_id: ID
+    requisition_id: ID
     requested_by_email: String
     status: String!
     changes: String!
@@ -2233,6 +2237,25 @@
     # PurchaseOrder — that's deliberate, see getRequisitionCurrencyTotals).
     # This is what the approval screen (PR 2) shows per currency.
     currencyTotals: [RequisitionCurrencyTotal!]!
+    # G1 Phase 3 Milestone A screen 2 — reuses PurchaseOrder's own
+    # POEditRequest type (po_edit_requests rows work for both parents, see
+    # the widened submitPOEditRequest/approvePOEditRequest/
+    # rejectPOEditRequest from PR #15). Only populated by requisition(id) —
+    # requisitions (the list query) doesn't fetch it, same as PurchaseOrder's.
+    edit_requests: [POEditRequest!]
+    # G1 Phase 3 Milestone A screen 2 — per-status action panel gating,
+    # only populated by requisition(id), mirroring PurchaseOrder's
+    # callerHasStorePricingPosition/callerHasMarketPricingPosition/
+    # callerHasStoreKeeperPosition (computed the same way, via
+    # userHasPositionForRequisitionGW instead of userHasPositionGW).
+    callerHasStoreKeeperPosition: Boolean
+    callerHasStorePricingPosition: Boolean
+    callerHasMarketPricingPosition: Boolean
+    callerHasPriceVerificationPosition: Boolean
+    # Mirrors approveRequisition/rejectRequisitionApproval's own
+    # authorization exactly (admin OR dept head OR assigned approver OR
+    # po_admin position) — gates the pending_approval panel.
+    callerCanApprove: Boolean
   }
 
   type RequisitionCurrencyTotal {

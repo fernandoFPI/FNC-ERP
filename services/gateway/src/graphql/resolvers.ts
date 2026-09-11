@@ -8121,7 +8121,7 @@ export const resolvers = {
     // caller might not be authorized to see fields for.
     requisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      const [req, lines, approvals, currencyTotals] = await Promise.all([
+      const [req, lines, approvals, currencyTotals, editRequests] = await Promise.all([
         query(
           `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
@@ -8177,9 +8177,60 @@ export const resolvers = {
           [args.id],
         ),
         getRequisitionCurrencyTotals(args.id),
+        // G1 Phase 3 Milestone A screen 2 — mirrors purchaseOrder/
+        // purchaseOrderForAction's own edit_requests fetch exactly, scoped
+        // to requisition_id instead of po_id.
+        query(
+          `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email
+           FROM po_edit_requests er
+           JOIN users req ON req.id = er.requested_by
+           LEFT JOIN users rev ON rev.id = er.reviewed_by
+           WHERE er.requisition_id = $1 ORDER BY er.created_at DESC`,
+          [args.id],
+        ),
       ])
       if (!req.rows[0]) return null
-      return { ...req.rows[0], lines: lines.rows, approval_log: approvals.rows, currencyTotals }
+      // G1 Phase 3 Milestone A screen 2 — lets the detail page gate each
+      // per-status action panel client-side, mirroring PurchaseOrder's own
+      // callerHasXPosition fields (computed the same way there, via
+      // userHasPositionGW instead of userHasPositionForRequisitionGW).
+      // isAdmin bypasses every one of these, same as the mutations they
+      // mirror the authorization of.
+      const isAdmin = isAdminGW(ctx.auth.role)
+      const [
+        callerHasStoreKeeperPosition,
+        callerHasStorePricingPosition,
+        callerHasMarketPricingPosition,
+        callerHasPriceVerificationPosition,
+        callerIsDeptHead,
+        callerIsAssignedApprover,
+        callerHasReqAdmin,
+      ] = await Promise.all([
+        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_keeper'),
+        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'),
+        isAdmin ||
+          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_officer'),
+        isAdmin ||
+          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_2nd'),
+        userIsDeptHeadForRequisitionGW(ctx.auth.userId, args.id),
+        userIsAssignedApproverForRequisitionGW(ctx.auth.userId, args.id),
+        callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId),
+      ])
+      return {
+        ...req.rows[0],
+        lines: lines.rows,
+        approval_log: approvals.rows,
+        currencyTotals,
+        edit_requests: editRequests.rows.map((r) => ({ ...r, changes: JSON.stringify(r.changes) })),
+        callerHasStoreKeeperPosition,
+        callerHasStorePricingPosition,
+        callerHasMarketPricingPosition,
+        callerHasPriceVerificationPosition,
+        // Mirrors approveRequisition/rejectRequisitionApproval's own
+        // authorization check exactly (admin OR dept head OR assigned
+        // approver OR po_admin position).
+        callerCanApprove: isAdmin || callerIsDeptHead || callerIsAssignedApprover || callerHasReqAdmin,
+      }
     },
 
     // G1 Phase 3 Milestone A — list view for RequisitionsPage, mirrors
