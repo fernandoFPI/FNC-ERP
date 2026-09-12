@@ -29077,9 +29077,19 @@ const phase5MutationResolvers = {
             const totalPrice = qty * price
 
             if (mutateOriginal && i === 0) {
+              // actual_unit_price mirrors unit_price here — the buyer's
+              // recorded purchase price *is* this line's real price, there
+              // being no separate pre-purchase "PO price" preserved once a
+              // line's forked. Left unset, the Finance Audit panel's own
+              // "Actual Price (entered by buyer)" box — which reads
+              // po_lines.actual_unit_price specifically, a column the
+              // legacy items_bought checklist populates but this fork path
+              // never did — falsely claimed "buyer hasn't recorded a
+              // price" even though the purchase total right next to it was
+              // computed off that exact price. Found live on PO-2026-0028.
               await client.query(
                 `UPDATE po_lines
-                 SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4,
+                 SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4, actual_unit_price=$4,
                      initial_unit_price=COALESCE(initial_unit_price,$4), currency_code=$5, total_price=$6
                  WHERE id=$7`,
                 [childId, nextLineNumber, qty, price, entry.currency_code, totalPrice, line.id],
@@ -29088,9 +29098,9 @@ const phase5MutationResolvers = {
               await client.query(
                 `INSERT INTO po_lines
                    (po_id, requisition_id, line_number, description, product_id, qty_ordered, unit_price,
-                    initial_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
+                    initial_unit_price, actual_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
                     approved_unit_price, qty_from_stock, in_stock, origin_line_id)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
                 [
                   childId,
                   args.id,
