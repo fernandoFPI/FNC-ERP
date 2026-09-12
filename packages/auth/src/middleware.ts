@@ -35,6 +35,12 @@ function sendInternalError(res: Response): void {
 }
 
 export function requireAuth(): RequestHandler {
+  // Express's RequestHandler type wants a void return, not Promise<void> —
+  // but every path below is already wrapped in its own try/catch (the
+  // verifyAccessToken call, the session lookup) and either returns after
+  // sending a response or falls through to next(), so there's no actual
+  // unhandled-rejection risk despite the type mismatch.
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const authHeader = req.headers.authorization
     if (!authHeader?.startsWith('Bearer ')) {

@@ -50,11 +50,18 @@ export function signMfaTempToken(userId: string): string {
 
 export function verifyAccessToken(token: string): JwtAccessPayload {
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtAccessPayload
+    // Cast to the honest jsonwebtoken return shape first, not straight to
+    // JwtAccessPayload — casting directly made `type` a literal 'access' as
+    // far as the compiler was concerned, so it flagged the type check below
+    // (a real, load-bearing guard against a refresh/MFA token decoding
+    // successfully here since they're signed with different types) as an
+    // unnecessary conditional. The check was always genuinely needed at
+    // runtime; only the type annotation was lying about that.
+    const decoded = jwt.verify(token, env.JWT_SECRET) as jwt.JwtPayload & { type?: string }
     if (decoded.type !== 'access') {
       throw new Error('Invalid token type')
     }
-    return decoded
+    return decoded as JwtAccessPayload
   } catch {
     throw Object.assign(new Error('Access token invalid or expired'), {
       code: ERROR_CODES.TOKEN_INVALID,
@@ -64,11 +71,11 @@ export function verifyAccessToken(token: string): JwtAccessPayload {
 
 export function verifyRefreshToken(token: string): JwtRefreshPayload {
   try {
-    const decoded = jwt.verify(token, env.JWT_REFRESH_SECRET) as JwtRefreshPayload
+    const decoded = jwt.verify(token, env.JWT_REFRESH_SECRET) as jwt.JwtPayload & { type?: string }
     if (decoded.type !== 'refresh') {
       throw new Error('Invalid token type')
     }
-    return decoded
+    return decoded as JwtRefreshPayload
   } catch {
     throw Object.assign(new Error('Refresh token invalid or expired'), {
       code: ERROR_CODES.TOKEN_EXPIRED,
@@ -78,11 +85,11 @@ export function verifyRefreshToken(token: string): JwtRefreshPayload {
 
 export function verifyMfaTempToken(token: string): JwtMfaTempPayload {
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as JwtMfaTempPayload
+    const decoded = jwt.verify(token, env.JWT_SECRET) as jwt.JwtPayload & { type?: string }
     if (decoded.type !== 'mfa_temp') {
       throw new Error('Invalid token type')
     }
-    return decoded
+    return decoded as JwtMfaTempPayload
   } catch {
     throw Object.assign(new Error('MFA temp token invalid or expired'), {
       code: ERROR_CODES.TOKEN_INVALID,
