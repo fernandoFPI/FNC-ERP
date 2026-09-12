@@ -95,6 +95,57 @@ describe('RequisitionForm', () => {
     expect(screen.getByText('PRJ-001 — Erbil Tower')).toBeInTheDocument()
   })
 
+  // Third of three call sites migrated onto requisitions (Project and
+  // Vendor already done) — ManufacturingOrderDetail's "Create Requisition
+  // for missing items" now links here with ?moId=, and pre-fills specific
+  // line items via sessionStorage instead of a URL param (mirrors
+  // PurchaseOrderForm's own ?moId=/po_prefill_lines handling, under its
+  // own req_prefill_lines key so the two forms' prefill state never
+  // collides).
+  it('pre-selects Manufacturing / BOM and the MO, and consumes req_prefill_lines, when opened with ?moId=', async () => {
+    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = doc?.definitions?.[0]?.name?.value
+      if (opName === 'ManufacturingOrders') {
+        return { data: { manufacturingOrders: [{ id: 'mo-1', mo_number: 'MO-2026-0001', product_name: 'Steel Frame' }] }, loading: false }
+      }
+      return { data: undefined, loading: false }
+    })
+    sessionStorage.setItem(
+      'req_prefill_lines',
+      JSON.stringify([
+        { product_id: 'p1', description: 'Rebar 12mm', qty: '20', unit_price: '0', uom: 'pc', account_id: '', cost_center_id: '' },
+      ]),
+    )
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />, '/procurement/requisitions/new?moId=mo-1')
+    expect(screen.getByText(/manufacturing order \*/i)).toBeInTheDocument()
+    expect(screen.getByText('MO-2026-0001 — Steel Frame')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Rebar 12mm')).toBeInTheDocument()
+    expect(sessionStorage.getItem('req_prefill_lines')).toBeNull()
+  })
+
+  it('submits a Manufacturing / BOM requisition with linked_mo_id set', async () => {
+    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = doc?.definitions?.[0]?.name?.value
+      if (opName === 'ManufacturingOrders') {
+        return { data: { manufacturingOrders: [{ id: 'mo-1', mo_number: 'MO-2026-0001' }] }, loading: false }
+      }
+      return { data: undefined, loading: false }
+    })
+    const createMock = vi.fn().mockResolvedValue({ data: { createRequisition: { id: 'req-new-1' } } })
+    mockUseMutation.mockReturnValue([createMock, { loading: false }])
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />, '/procurement/requisitions/new?moId=mo-1')
+    fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar 12mm' } })
+    fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
+    await vi.waitFor(() => {
+      expect(createMock).toHaveBeenCalled()
+    })
+    const callArgs = createMock.mock.calls[0][0]
+    expect(callArgs.variables.input.purpose).toBe('manufacturing')
+    expect(callArgs.variables.input.linked_mo_id).toBe('mo-1')
+  })
+
   it('starts with one line and can add another', async () => {
     const RequisitionForm = (await import('../RequisitionForm')).default
     wrap(<RequisitionForm />)

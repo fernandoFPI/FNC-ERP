@@ -61,12 +61,31 @@ async function makeUploadedFile(): Promise<string> {
   return r.rows[0]!.id
 }
 
+// finished_product_id has no FK constraint (see 017_manufacturing_schema.sql's
+// own comment), so a plain products row stands in for it — only bom_id is a
+// real FK a manufacturing_orders row needs satisfied.
+async function makeManufacturingOrder(): Promise<string> {
+  const productId = await makeProduct('mo')
+  const bom = await pool.query<{ id: string }>(
+    `INSERT INTO boms (company_id, finished_product_id, created_by) VALUES ($1,$2,$3) RETURNING id`,
+    [TEST_COMPANY_ID, productId, userId],
+  )
+  const moNumber = `G1FBTEST-MO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const mo = await pool.query<{ id: string }>(
+    `INSERT INTO manufacturing_orders (company_id, mo_number, bom_id, finished_product_id, qty_planned, created_by)
+     VALUES ($1,$2,$3,$4,1,$5) RETURNING id`,
+    [TEST_COMPANY_ID, moNumber, bom.rows[0]!.id, productId, userId],
+  )
+  return mo.rows[0]!.id
+}
+
 // Drives a fresh requisition (one line) to items_bought. qtyFromStock
 // defaults to 0 (whole line needs purchasing).
 async function makeReqAtItemsBought(opts: {
   qtyOrdered: number
   marketPrice: number
   qtyFromStock?: number
+  linkedMoId?: string
 }): Promise<{ reqId: string; lineId: string; productId: string }> {
   const productId = await makeProduct('fb')
   const qtyFromStock = opts.qtyFromStock ?? 0
@@ -74,7 +93,13 @@ async function makeReqAtItemsBought(opts: {
 
   const created = await resolvers.Mutation.createRequisition(
     null,
-    { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: opts.qtyOrdered, unit_price: 1 }] } },
+    {
+      input: {
+        purpose: opts.linkedMoId ? 'manufacturing' : 'stock',
+        linked_mo_id: opts.linkedMoId,
+        lines: [{ product_id: productId, description: 'x', qty: opts.qtyOrdered, unit_price: 1 }],
+      },
+    },
     ctx as never,
   )
   const reqId = (created as { id: string }).id
@@ -172,6 +197,14 @@ async function cleanup(): Promise<void> {
     `DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
     [TEST_COMPANY_ID, `${SKU_PREFIX}%`],
   )
+  // manufacturing_orders.bom_id is a real FK into boms — delete in that order.
+  // Both filtered by created_by=userId rather than SKU, since neither table
+  // is keyed off a product's own SKU.
+  await pool.query(`DELETE FROM manufacturing_orders WHERE company_id=$1 AND created_by=$2`, [
+    TEST_COMPANY_ID,
+    userId,
+  ])
+  await pool.query(`DELETE FROM boms WHERE company_id=$1 AND created_by=$2`, [TEST_COMPANY_ID, userId])
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [TEST_COMPANY_ID, `${SKU_PREFIX}%`])
   await pool.query(`DELETE FROM vendors WHERE company_id=$1 AND name LIKE $2`, [TEST_COMPANY_ID, `${VENDOR_PREFIX}%`])
 }
@@ -331,6 +364,36 @@ describe('finishBuyingRequisition', () => {
     )
     expect(child.rows[0]!.status).toBe('bought')
     expect(child.rows[0]!.vendor_id).toBe(vendorAId)
+  })
+
+  // G1 Phase 3 — Manufacturing Order is the third call site migrated from
+  // direct PO creation to requisition-first purchasing (Project and Vendor
+  // already done). purchase_orders.linked_mo_id is what the existing MO-
+  // consumption-on-receipt logic (confirmReceipt, issueMaterialIssue) reads
+  // — it never knows or cares whether the PO came from a requisition fork
+  // or a direct create, so the only thing that has to work is this
+  // propagation at fork time.
+  it('propagates linked_mo_id from a manufacturing requisition onto its forked child PO', async () => {
+    const moId = await makeManufacturingOrder()
+    const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 5, marketPrice: 12, linkedMoId: moId })
+
+    const reqRow = await pool.query<{ purpose: string; linked_mo_id: string | null }>(
+      `SELECT purpose, linked_mo_id FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    expect(reqRow.rows[0]!.purpose).toBe('manufacturing')
+    expect(reqRow.rows[0]!.linked_mo_id).toBe(moId)
+
+    await recordPurchase(lineId, vendorAId, 5, 12)
+    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+
+    const line = await pool.query<{ po_id: string | null }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
+    const childId = line.rows[0]!.po_id!
+    const child = await pool.query<{ linked_mo_id: string | null }>(
+      `SELECT linked_mo_id FROM purchase_orders WHERE id=$1`,
+      [childId],
+    )
+    expect(child.rows[0]!.linked_mo_id).toBe(moId)
   })
 
   // Regression: the receipt attached to a purchase during Items Bought
