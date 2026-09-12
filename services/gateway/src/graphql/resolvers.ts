@@ -8258,10 +8258,24 @@ export const resolvers = {
                      'vendor_name', v.name, 'currency_code', plp.currency_code, 'qty', plp.qty,
                      'actual_unit_price', plp.actual_unit_price,
                      'receipt_attachment_id', plp.receipt_attachment_id,
+                     -- G1 Phase 3 Milestone A screen 3 — resolved the same
+                     -- way getPOLinePurchaseForReturn does for a single
+                     -- purchase; this list version was never widened to
+                     -- match when ItemsBoughtPage started reading these,
+                     -- so every purchase silently rendered as if it had no
+                     -- receipt and no recorder/approver name.
+                     'receipt_file_id', rf.id, 'receipt_filename', rf.original_filename,
                      'bought_by', plp.bought_by, 'bought_at', plp.bought_at,
-                     'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by
+                     'bought_by_name', COALESCE(bu.first_name || ' ' || bu.last_name, bu.email),
+                     'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by,
+                     'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email)
                    ) ORDER BY plp.bought_at), '[]')
-                   FROM po_line_purchases plp LEFT JOIN vendors v ON v.id=plp.vendor_id
+                   FROM po_line_purchases plp
+                   LEFT JOIN vendors v ON v.id=plp.vendor_id
+                   LEFT JOIN document_attachments da ON da.id=plp.receipt_attachment_id
+                   LEFT JOIN files rf ON rf.id=da.file_id
+                   LEFT JOIN users bu ON bu.id=plp.bought_by
+                   LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
                    WHERE plp.po_line_id = pol.id) AS purchases
            FROM po_lines pol
            LEFT JOIN products p ON p.id=pol.product_id
