@@ -3563,7 +3563,7 @@ export default function PurchaseOrderDetail() {
                   )
                 })()}
 
-              {po.status === 'approved' && (
+              {(po.status === 'approved' || po.status === 'bought') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div
                     style={{
@@ -3575,7 +3575,14 @@ export default function PurchaseOrderDetail() {
                       color: '#166534',
                     }}
                   >
-                    PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.
+                    {po.status === 'bought'
+                      ? // G1 child PO: buying already happened at the requisition's
+                        // Items Bought stage (recordLinePurchase, per vendor) — this
+                        // PO's own lines were never ticked one-by-one, so there's
+                        // nothing to check off here. Record the goods receipt to
+                        // advance it to Goods Received.
+                        'Items for this purchase order were already bought at the requisition stage. Record a goods receipt to advance it.'
+                      : 'PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.'}
                   </div>
                   <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                   <Button
@@ -3592,7 +3599,7 @@ export default function PurchaseOrderDetail() {
                 </div>
               )}
 
-              {(po.status === 'items_bought' || po.status === 'bought') &&
+              {po.status === 'items_bought' &&
                 (() => {
                   const isBuyer = !!po.callerIsBuyer
                   const canMarkBought = isSystemLevel || isBuyer

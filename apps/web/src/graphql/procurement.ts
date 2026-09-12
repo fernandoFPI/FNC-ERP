@@ -412,6 +412,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       po_number
       status
       priority
+      requisition_id
       viewerRestricted
       currency_code
       base_currency_code
