@@ -52,6 +52,8 @@ export const REQUISITION_QUERY = gql`
       delivery_destination
       project_id
       projectName
+      linked_mo_id
+      linkedMoNumber
       branch_id
       branch_name
       organizer_id
