@@ -80,10 +80,8 @@ const ExpenseCategoriesPage = lazy(
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
 const RequisitionsPage = lazy(() => import('../pages/procurement/requisitions/RequisitionsPage'))
-// G1 Phase 3 Milestone A screen 2 — detail view only; the creation form
-// (New Requisition) is not part of this screen and still resolves to
-// NotFoundPage until it's built.
 const RequisitionDetail = lazy(() => import('../pages/procurement/requisitions/RequisitionDetail'))
+const RequisitionForm = lazy(() => import('../pages/procurement/requisitions/RequisitionForm'))
 const VendorsPage = lazy(() => import('../pages/procurement/vendors/VendorsPage'))
 const VendorForm = lazy(() => import('../pages/procurement/vendors/VendorForm'))
 const VendorDetail = lazy(() => import('../pages/procurement/vendors/VendorDetail'))
@@ -525,6 +523,10 @@ export const router = createBrowserRouter([
           {
             path: 'requisitions',
             element: withPerm('procurement.po.view', <RequisitionsPage />),
+          },
+          {
+            path: 'requisitions/new',
+            element: withPerm('procurement.po.edit', <RequisitionForm />, 'edit'),
           },
           {
             path: 'requisitions/:id',

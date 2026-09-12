@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@apollo/client'
 import {
   REQUISITION_QUERY,
   REQUISITION_CHILD_POS_QUERY,
+  REQUISITION_STOCK_AVAILABILITY_QUERY,
   SUBMIT_REQUISITION_TO_INVENTORY_CHECK,
   CONFIRM_REQUISITION_INVENTORY_CHECK,
   SUBMIT_REQUISITION_STORE_PRICING,
@@ -135,6 +136,24 @@ interface ChildPO {
   created_at: string
 }
 
+interface LineLocationAvailability {
+  companyId: string
+  companyName: string
+  locationId: string
+  locationName: string
+  qtyOnHand: number
+  qtyAvailable: number
+}
+
+interface LineAvailability {
+  lineId: string
+  qtyRequired: number
+  qtyOnHand: number
+  qtyAvailable: number
+  isAvailable: boolean
+  byLocation: LineLocationAvailability[]
+}
+
 const fmtN = (n: string | number | null | undefined) =>
   parseFloat(String(n ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 
@@ -204,6 +223,15 @@ export default function RequisitionDetail() {
     skip: !req || req.status !== 'inventory_check',
   })
   const locations: { id: string; name: string }[] = locData?.stockLocations ?? []
+
+  const { data: availData } = useQuery(REQUISITION_STOCK_AVAILABILITY_QUERY, {
+    variables: { requisitionId: id },
+    skip: !id || !req || req.status !== 'inventory_check',
+    fetchPolicy: 'cache-and-network',
+  })
+  const availabilityByLine = new Map<string, LineAvailability>(
+    (availData?.requisitionStockAvailability ?? []).map((a: LineAvailability) => [a.lineId, a]),
+  )
 
   // ── Per-line form state (keyed by lineId) ───────────────────────────────
   const [invQty, setInvQty] = useState<Record<string, string>>({})
@@ -503,7 +531,10 @@ export default function RequisitionDetail() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => (
+              {req.lines.map((l) => {
+                const avail = availabilityByLine.get(l.id)
+                const qtyReserved = avail ? avail.qtyOnHand - avail.qtyAvailable : null
+                return (
                 <div
                   key={l.id}
                   style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
@@ -511,6 +542,45 @@ export default function RequisitionDetail() {
                   <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
                     {l.description || l.product_name} — needs {fmtN(l.qty)} {l.uom}
                   </div>
+                  {avail ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '16px',
+                        flexWrap: 'wrap',
+                        fontSize: '12px',
+                        color: theme.textMuted,
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <span>
+                        On hand: <strong style={{ color: theme.textPrimary }}>{fmtN(avail.qtyOnHand)}</strong>
+                      </span>
+                      <span>
+                        Reserved: <strong style={{ color: theme.textPrimary }}>{fmtN(qtyReserved)}</strong>
+                      </span>
+                      <span>
+                        Available:{' '}
+                        <strong style={{ color: avail.isAvailable ? theme.success : theme.warning }}>
+                          {fmtN(avail.qtyAvailable)}
+                        </strong>
+                      </span>
+                      {avail.byLocation.length > 0 && (
+                        <span style={{ width: '100%' }}>
+                          {avail.byLocation.map((loc) => (
+                            <span key={loc.locationId} style={{ marginRight: '12px' }}>
+                              {loc.locationName}
+                              {loc.companyName ? ` (${loc.companyName})` : ''}: {fmtN(loc.qtyAvailable)} avail.
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
+                      Loading stock levels…
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{ width: '140px' }}>
                       <Input
@@ -534,7 +604,8 @@ export default function RequisitionDetail() {
                     </div>
                   </div>
                 </div>
-              ))}
+                )
+              })}
               <Button
                 variant="primary"
                 loading={lConfirm}

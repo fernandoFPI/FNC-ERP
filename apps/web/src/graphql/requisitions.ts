@@ -1,5 +1,42 @@
 import { gql } from '@apollo/client'
 
+// G1 Phase 3 Milestone A screen 2 — the creation form. accountId/
+// costCenterId per line are optional — createRequisition fills in a
+// default (project's cost center for Project Supply, else the branch's;
+// system_configuration's company-wide default account) when omitted.
+export const CREATE_REQUISITION = gql`
+  mutation CreateRequisition($input: RequisitionInput!) {
+    createRequisition(input: $input) {
+      id
+      requisition_number
+      status
+    }
+  }
+`
+
+// G1 Phase 3 Milestone A screen 2 — inventory-check panel. Company-wide
+// scoped, same as poStockAvailability (not narrowed to the requisition's
+// branch — see the resolver's own comment for why).
+export const REQUISITION_STOCK_AVAILABILITY_QUERY = gql`
+  query RequisitionStockAvailability($requisitionId: ID!) {
+    requisitionStockAvailability(requisitionId: $requisitionId) {
+      lineId
+      qtyRequired
+      qtyOnHand
+      qtyAvailable
+      isAvailable
+      byLocation {
+        companyId
+        companyName
+        locationId
+        locationName
+        qtyOnHand
+        qtyAvailable
+      }
+    }
+  }
+`
+
 // G1 Phase 3 Milestone A screen 2 — RequisitionDetail. purchases is only
 // populated when a line is fetched via this query (see POLine.purchases'
 // schema comment) — it's the Items Bought record, read-only here (the

@@ -94,11 +94,18 @@ function baseReq(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function mockReq(overrides: Record<string, unknown> = {}) {
-  mockUseQuery.mockImplementation((_doc: unknown, opts?: { variables?: Record<string, unknown> }) => {
-    // requisitionChildPurchaseOrders / stockLocations queries — return empty
-    if (opts?.variables && 'requisitionId' in opts.variables) {
+function mockReq(
+  overrides: Record<string, unknown> = {},
+  availability: Record<string, unknown>[] = [],
+) {
+  mockUseQuery.mockImplementation((doc: unknown, opts?: { variables?: Record<string, unknown> }) => {
+    const opName = (doc as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name
+      ?.value
+    if (opName === 'RequisitionChildPurchaseOrders') {
       return { data: { requisitionChildPurchaseOrders: [] }, loading: false, refetch: vi.fn() }
+    }
+    if (opName === 'RequisitionStockAvailability') {
+      return { data: { requisitionStockAvailability: availability }, loading: false, refetch: vi.fn() }
     }
     if (opts?.variables && 'isActive' in opts.variables) {
       return { data: { stockLocations: [] }, loading: false, refetch: vi.fn() }
@@ -151,6 +158,31 @@ describe('RequisitionDetail', () => {
     wrap(<RequisitionDetail />)
     expect(screen.queryByRole('button', { name: /confirm inventory check/i })).not.toBeInTheDocument()
     expect(screen.getByText(/only the organizer, a store keeper/i)).toBeInTheDocument()
+  })
+
+  it('inventory_check: shows on-hand/reserved/available and a per-location breakdown from requisitionStockAvailability', async () => {
+    mockReq(
+      { status: 'inventory_check', callerHasStoreKeeperPosition: true },
+      [
+        {
+          lineId: 'line-1',
+          qtyRequired: 5,
+          qtyOnHand: 8,
+          qtyAvailable: 3,
+          isAvailable: false,
+          byLocation: [
+            { companyId: 'co-1', companyName: 'Main Co', locationId: 'loc-1', locationName: 'Main Warehouse', qtyOnHand: 8, qtyAvailable: 3 },
+          ],
+        },
+      ],
+    )
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('8')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+    // qtyReserved is derived client-side as qtyOnHand - qtyAvailable = 5.
+    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.getByText(/main warehouse/i)).toBeInTheDocument()
   })
 
   it('store_pricing: shows the submit button when caller has the position', async () => {

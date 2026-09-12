@@ -12,6 +12,12 @@
     products(category: String, companyId: ID): [Product]
     stockBalances(product_id: ID, location_id: ID): [StockBalance]
     poStockAvailability(poId: ID!): [POLineAvailability!]!
+    # G1 Phase 3 Milestone A screen 2 — requisition equivalent of
+    # poStockAvailability, same formula and same POLineAvailability shape,
+    # keyed on requisition_id/company_id instead of po_id. Company-wide
+    # scoped exactly like poStockAvailability today, NOT narrowed to the
+    # requisition's branch — see this query's resolver comment for why.
+    requisitionStockAvailability(requisitionId: ID!): [POLineAvailability!]!
     moMissingComponents(moId: ID!): [MOComponentStatus!]!
 
     # Procurement
@@ -2283,6 +2289,11 @@
     unit_price: Float!
     uom: String
     requested_currency_code: String
+    # G1 Phase 3 Milestone A screen 2 — optional; createRequisition fills
+    # in a default (project's cost center for Project Supply, else the
+    # branch's; system_configuration's default account) when omitted.
+    accountId: ID
+    costCenterId: ID
   }
 
   input RequisitionInput {
@@ -4149,6 +4160,11 @@
     createdAt: String!
     defaultProcurementUserId: ID
     defaultProcurementUserEmail: String
+    # G1 Phase 3 Milestone A screen 2 — added by migration 258 (nullable,
+    # not backfilled per-branch — set via the Settings screen Phase 4/
+    # Milestone B adds), the requisition creation form's cost-center
+    # default for this branch.
+    defaultCostCenterId: ID
   }
 
   input CompanyBranchInput {

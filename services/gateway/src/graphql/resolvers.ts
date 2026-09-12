@@ -5054,6 +5054,110 @@ export const resolvers = {
       }))
     },
 
+    // G1 Phase 3 Milestone A screen 2 — requisition equivalent of
+    // poStockAvailability directly above (same two-query shape: a
+    // company-scoped aggregate per line, plus a cross-company byLocation
+    // breakdown), keyed on pol.requisition_id/req.company_id instead of
+    // pol.po_id/po.company_id.
+    //
+    // NOT branch-subtree scoped, despite the requisition having its own
+    // branch_id: stock_locations has no branch_id column and
+    // company_branches has no parent_id hierarchy, so there is no existing
+    // relationship to scope "this branch's stock" by — the main aggregate
+    // below is company-wide, exactly like poStockAvailability's. Narrowing
+    // it to a branch (or a branch + descendants) needs a schema decision
+    // (add stock_locations.branch_id? a company_branches hierarchy? scope
+    // by something else entirely) before it can be built — flagged rather
+    // than guessed at.
+    requisitionStockAvailability: async (
+      _: unknown,
+      args: { requisitionId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      const auth = ctx.auth as GWAuth
+      // Same visibility gate as confirmRequisitionInventoryCheck's own
+      // authorization — this query is only ever fetched while a
+      // requisition is in inventory_check (see the frontend's skip
+      // condition).
+      const gateReqRow = await query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2`,
+        [args.requisitionId, auth.companyId],
+      )
+      if (!gateReqRow.rows[0]) return []
+      const canViewStock =
+        isAdminGW(auth.role) ||
+        (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
+        (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
+      if (!canViewStock) return []
+      const result = await query(
+        `SELECT
+           pol.id                                              AS "lineId",
+           pol.product_id                                     AS "productId",
+           p.name                                             AS "productName",
+           pol.description                                    AS description,
+           pol.qty_ordered                                    AS "qtyRequired",
+           COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0)                  AS "qtyOnHand",
+           (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable",
+           (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0))
+             >= pol.qty_ordered                               AS "isAvailable"
+         FROM po_lines pol
+         JOIN requisitions req ON req.id = pol.requisition_id
+         LEFT JOIN products p ON p.id = pol.product_id
+         LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
+         LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.company_id = req.company_id AND sl.type NOT IN ('virtual_in','virtual_out')
+         WHERE pol.requisition_id = $1 AND req.company_id = $2
+         GROUP BY pol.id, pol.product_id, p.name, pol.description, pol.qty_ordered
+         ORDER BY pol.line_number`,
+        [args.requisitionId, auth.companyId],
+      )
+
+      const isSysAdmin = auth.role === 'system_admin'
+      const byLocationRes = await query(
+        `SELECT
+           pol.id AS "lineId", c.id AS "companyId", c.name AS "companyName",
+           sl.id AS "locationId", sl.name AS "locationName",
+           COALESCE(sb.qty_on_hand, 0) AS "qtyOnHand",
+           (COALESCE(sb.qty_on_hand, 0) - COALESCE(sb.qty_reserved, 0)) AS "qtyAvailable",
+           sb.average_cost AS "averageCost"
+         FROM po_lines pol
+         JOIN stock_balances sb ON sb.product_id = pol.product_id AND sb.qty_on_hand > 0
+         JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
+         JOIN companies c ON c.id = sl.company_id
+         WHERE pol.requisition_id = $1
+           AND ($2 OR EXISTS (
+             SELECT 1 FROM user_company_roles ucr
+             WHERE ucr.user_id = $3 AND ucr.company_id = sl.company_id AND ucr.is_active = true
+           ))
+         ORDER BY pol.id, "qtyOnHand" DESC`,
+        [args.requisitionId, isSysAdmin, auth.userId],
+      )
+      const byLocationByLine = new Map<string, Record<string, unknown>[]>()
+      for (const row of byLocationRes.rows as Record<string, unknown>[]) {
+        const lineId = String(row.lineId)
+        const list = byLocationByLine.get(lineId) ?? []
+        list.push({
+          companyId: row.companyId,
+          companyName: row.companyName,
+          locationId: row.locationId,
+          locationName: row.locationName,
+          qtyOnHand: parseFloat(String(row.qtyOnHand ?? 0)),
+          qtyAvailable: parseFloat(String(row.qtyAvailable ?? 0)),
+          averageCost: row.averageCost != null ? parseFloat(String(row.averageCost)) : null,
+        })
+        byLocationByLine.set(lineId, list)
+      }
+
+      return result.rows.map((r: Record<string, unknown>) => ({
+        ...r,
+        qtyRequired: parseFloat(String(r.qtyRequired ?? 0)),
+        qtyOnHand: parseFloat(String(r.qtyOnHand ?? 0)),
+        qtyAvailable: parseFloat(String(r.qtyAvailable ?? 0)),
+        isAvailable: Boolean(r.isAvailable),
+        byLocation: byLocationByLine.get(String(r.lineId)) ?? [],
+      }))
+    },
+
     moMissingComponents: async (_: unknown, args: { moId: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
       const result = await query(
@@ -27784,6 +27888,8 @@ const phase5MutationResolvers = {
           unit_price: number
           uom?: string
           requested_currency_code?: string
+          accountId?: string
+          costCenterId?: string
         }[]
       }
     },
@@ -27794,6 +27900,32 @@ const phase5MutationResolvers = {
     const i = args.input
     if (!i.lines || i.lines.length === 0)
       throw new Error('A requisition needs at least one line')
+    // G1 Phase 3 Milestone A screen 2 — every line gets an account/cost
+    // center tag even if the creation form's own defaulting left one
+    // blank, per migration 258's original intent (§3's comment). Cost
+    // center prefers the project's own (Project Supply only) over the
+    // branch's default; account has no purpose/branch-specific mapping in
+    // the schema, so it's always the one company-wide default.
+    const [projectRow, branchRow, sysConfigRow] = await Promise.all([
+      i.purpose === 'project' && i.project_id
+        ? query<{ cost_center_id: string | null }>(`SELECT cost_center_id FROM projects WHERE id=$1`, [
+            i.project_id,
+          ])
+        : Promise.resolve({ rows: [] as { cost_center_id: string | null }[] }),
+      i.branch_id
+        ? query<{ default_cost_center_id: string | null }>(
+            `SELECT default_cost_center_id FROM company_branches WHERE id=$1`,
+            [i.branch_id],
+          )
+        : Promise.resolve({ rows: [] as { default_cost_center_id: string | null }[] }),
+      query<{ default_unallocated_purchase_account_id: string | null }>(
+        `SELECT default_unallocated_purchase_account_id FROM system_configuration WHERE company_id=$1`,
+        [ctx.auth.companyId],
+      ),
+    ])
+    const defaultCostCenterId =
+      projectRow.rows[0]?.cost_center_id ?? branchRow.rows[0]?.default_cost_center_id ?? null
+    const defaultAccountId = sysConfigRow.rows[0]?.default_unallocated_purchase_account_id ?? null
     const createdReq = await withTransaction(
       { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
       async (client) => {
@@ -27820,8 +27952,8 @@ const phase5MutationResolvers = {
         for (let idx = 0; idx < i.lines.length; idx++) {
           const l = i.lines[idx]
           await client.query(
-            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id)
-             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9)`,
+            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id, account_id, cost_center_id)
+             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,$10,$11)`,
             [
               reqRow.id,
               l.description ?? '',
@@ -27832,6 +27964,8 @@ const phase5MutationResolvers = {
               l.uom ?? 'unit',
               l.requested_currency_code ?? null,
               l.product_id ?? null,
+              l.accountId ?? defaultAccountId,
+              l.costCenterId ?? defaultCostCenterId,
             ],
           )
         }
@@ -32285,6 +32419,9 @@ function branchRow(r: Record<string, unknown>) {
     createdAt: r.created_at,
     defaultProcurementUserId: r.default_procurement_user_id ?? null,
     defaultProcurementUserEmail: r.default_procurement_user_email ?? null,
+    // G1 Phase 3 Milestone A screen 2 — added by migration 258, unused
+    // until now; the requisition creation form's cost-center default.
+    defaultCostCenterId: r.default_cost_center_id ?? null,
   }
 }
 
