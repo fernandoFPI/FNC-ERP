@@ -255,4 +255,105 @@ describe('RequisitionDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /submit for inventory check/i }))
     expect(submitMock).toHaveBeenCalledWith({ variables: { id: 'req-1' } })
   })
+
+  // Regression coverage for matching PurchaseOrderDetail's own page
+  // structure: stat-card Summary + Lines/Log/Edit-requests tabs.
+  it('shows the Summary as stat cards, including the per-currency Total', async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    // "Total" also appears as a Lines-table column header, and "500 IQD"
+    // also as that single line's own total — both coincidentally the same
+    // figure here since there's only one line.
+    expect(screen.getAllByText('Total').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('500 IQD').length).toBeGreaterThan(0)
+    expect(screen.getByText('Priority')).toBeInTheDocument()
+    expect(screen.getByText('Organizer')).toBeInTheDocument()
+    expect(screen.getByText('Jane Doe')).toBeInTheDocument()
+  })
+
+  it('renders Lines/Log/Edit requests tabs, defaulting to Lines', async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('Cement bags')).toBeInTheDocument()
+    expect(screen.queryByText('Approval Log')).not.toBeInTheDocument()
+    expect(screen.queryByText('Request an edit')).not.toBeInTheDocument()
+  })
+
+  it('Log tab shows approval_log entries and requisition notes', async () => {
+    mockReq({
+      notes: 'Urgent — client site is waiting',
+      approval_log: [
+        {
+          id: 'log-1',
+          from_status: 'draft',
+          to_status: 'inventory_check',
+          action: 'submitted',
+          actor_id: 'user-organizer',
+          actor_name: 'Jane Doe',
+          actor_position: null,
+          notes: null,
+          created_at: '2026-01-16T09:00:00.000Z',
+        },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /^log$/i }))
+    expect(screen.getByText('Approval Log')).toBeInTheDocument()
+    expect(screen.getByText('Urgent — client site is waiting')).toBeInTheDocument()
+    expect(screen.getByText('submitted')).toBeInTheDocument()
+    // "Jane Doe" also appears in the Summary's Organizer stat card, which
+    // stays rendered regardless of active tab.
+    expect(screen.getAllByText('Jane Doe').length).toBeGreaterThan(0)
+  })
+
+  it('Edit requests tab: Start editing reveals the form, submit sends requisitionId (not id)', async () => {
+    const submitMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([submitMock, { loading: false }])
+    mockReq()
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+    expect(screen.getByText('Request an edit')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /start editing/i }))
+    expect(screen.getByDisplayValue('Cement bags')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /submit edit request/i }))
+    expect(submitMock).not.toHaveBeenCalled() // no fields changed yet — nothing to submit
+
+    const notesInputs = screen.getAllByDisplayValue('')
+    fireEvent.change(notesInputs[0]!, { target: { value: 'Please expedite' } })
+    fireEvent.click(screen.getByRole('button', { name: /submit edit request/i }))
+
+    expect(submitMock).toHaveBeenCalledTimes(1)
+    const call = submitMock.mock.calls[0][0]
+    expect(call.variables.requisitionId).toBe('req-1')
+    expect(call.variables.id).toBeUndefined()
+    const changes = JSON.parse(call.variables.changes)
+    expect(changes.header.notes).toEqual({ from: '', to: 'Please expedite' })
+  })
+
+  it('Edit requests tab: shows a pending edit request with Approve/Reject for an admin', async () => {
+    mockReq({
+      edit_requests: [
+        {
+          id: 'er-1',
+          status: 'pending',
+          changes: JSON.stringify({ header: { notes: { from: '', to: 'Please expedite' } }, lines: {} }),
+          request_notes: null,
+          requested_by_email: 'buyer@fnc.com',
+          reviewed_by_email: null,
+          review_notes: null,
+          reviewed_at: null,
+          created_at: '2026-01-16T09:00:00.000Z',
+        },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+    expect(screen.getByText('buyer@fnc.com')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^reject$/i })).toBeInTheDocument()
+  })
 })

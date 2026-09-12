@@ -120,6 +120,59 @@ export const REQUISITION_QUERY = gql`
         notes
         created_at
       }
+      edit_requests {
+        id
+        status
+        changes
+        request_notes
+        requested_by_email
+        reviewed_by_email
+        review_notes
+        reviewed_at
+        created_at
+      }
+    }
+  }
+`
+
+// Requisition-scoped edit requests — same submitPOEditRequest/
+// approvePOEditRequest/rejectPOEditRequest mutations the PO detail page
+// uses (they accept id OR requisitionId, mutually exclusive), just called
+// with requisitionId instead. See resolvers.ts's applyRequisitionEditChanges
+// for the field whitelist these changes payloads must stay within: header
+// notes/priority/delivery_destination/branch_id, line description/
+// qty_ordered/unit_price/uom/product_id.
+export const SUBMIT_REQUISITION_EDIT_REQUEST = gql`
+  mutation SubmitRequisitionEditRequest($requisitionId: ID!, $changes: String!, $notes: String) {
+    submitPOEditRequest(requisitionId: $requisitionId, changes: $changes, notes: $notes) {
+      id
+      status
+      created_at
+      requested_by_email
+    }
+  }
+`
+
+export const APPROVE_REQUISITION_EDIT_REQUEST = gql`
+  mutation ApproveRequisitionEditRequest($requisitionId: ID!, $requestId: ID!, $reviewNotes: String) {
+    approvePOEditRequest(requisitionId: $requisitionId, requestId: $requestId, reviewNotes: $reviewNotes) {
+      id
+      status
+      reviewed_at
+      reviewed_by_email
+      review_notes
+    }
+  }
+`
+
+export const REJECT_REQUISITION_EDIT_REQUEST = gql`
+  mutation RejectRequisitionEditRequest($requisitionId: ID!, $requestId: ID!, $reviewNotes: String!) {
+    rejectPOEditRequest(requisitionId: $requisitionId, requestId: $requestId, reviewNotes: $reviewNotes) {
+      id
+      status
+      reviewed_at
+      reviewed_by_email
+      review_notes
     }
   }
 `

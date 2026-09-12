@@ -13,6 +13,9 @@ import {
   APPROVE_REQUISITION,
   REJECT_REQUISITION_APPROVAL,
   CANCEL_REQUISITION,
+  SUBMIT_REQUISITION_EDIT_REQUEST,
+  APPROVE_REQUISITION_EDIT_REQUEST,
+  REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
@@ -25,10 +28,12 @@ import { Card } from '../../../components/ui/Card'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { StatusBar } from '../../../components/ui/StatusBar'
+import { TabBar } from '../../../components/ui/TabBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
+import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import {
   REQUISITION_STATUSES,
   REQUISITION_PRIORITY_LABELS,
@@ -98,6 +103,39 @@ interface ApprovalLogEntry {
   created_at: string
 }
 
+interface EditRequest {
+  id: string
+  status: string
+  changes: string
+  request_notes?: string | null
+  requested_by_email?: string | null
+  reviewed_by_email?: string | null
+  review_notes?: string | null
+  reviewed_at?: string | null
+  created_at: string
+}
+
+// Fields kept in step with applyRequisitionEditChanges' own whitelist
+// (resolvers.ts) — header notes/priority, line description/qty_ordered/
+// unit_price/uom. delivery_destination/branch_id and line product_id are
+// also backend-allowed but left out of this form to keep it to the fields
+// someone would realistically want to correct mid-flight.
+interface EditLineDraft {
+  id: string
+  description: string
+  qty: number
+  unit_price: number
+  uom: string
+  _removed?: boolean
+}
+interface EditDraft {
+  notes: string
+  priority: string
+  lines: EditLineDraft[]
+  linesAdded: { description: string; qty: number; unit_price: number; uom: string }[]
+}
+type Tab = 'lines' | 'log' | 'changes'
+
 interface Requisition {
   id: string
   requisition_number: string
@@ -122,6 +160,7 @@ interface Requisition {
   currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   lines: ReqLine[]
   approval_log: ApprovalLogEntry[]
+  edit_requests?: EditRequest[] | null
 }
 
 interface ChildPO {
@@ -208,6 +247,18 @@ export default function RequisitionDetail() {
     },
     onError: onErr,
   })
+  const [submitEditRequest, { loading: leSubmit }] = useMutation(SUBMIT_REQUISITION_EDIT_REQUEST, {
+    onCompleted: () => {
+      setEditDraft(null)
+      void refetch()
+    },
+    onError: onErr,
+  })
+  const [approveEditRequest, { loading: leApprove }] = useMutation(
+    APPROVE_REQUISITION_EDIT_REQUEST,
+    mutOpts,
+  )
+  const [rejectEditRequest, { loading: leReject }] = useMutation(REJECT_REQUISITION_EDIT_REQUEST, mutOpts)
 
   const showChildren = !!req && CHILD_PO_VISIBLE_STATUSES.includes(req.status)
   const { data: childData } = useQuery(REQUISITION_CHILD_POS_QUERY, {
@@ -243,6 +294,9 @@ export default function RequisitionDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [cancelReason, setCancelReason] = useState('')
   const [showCancelBox, setShowCancelBox] = useState(false)
+  const [activeTab, setActiveTab] = useState<Tab>('lines')
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
 
   if (!id) return null
 
@@ -393,6 +447,47 @@ export default function RequisitionDetail() {
     { key: 'total', header: 'Total', render: (l) => <span style={{ fontSize: '13px' }}>{fmtN(l.total)} {l.currency_code}</span> },
   ]
 
+  // ── Edit requests: diff builder (mirrors PurchaseOrderDetail's own
+  // 'changes' tab, scoped to the fields applyRequisitionEditChanges allows)
+  const initEditDraft = (): EditDraft => ({
+    notes: req.notes ?? '',
+    priority: req.priority ?? 'low',
+    lines: req.lines.map((l) => ({
+      id: l.id,
+      description: l.description ?? '',
+      qty: parseFloat(String(l.qty)) || 0,
+      unit_price: parseFloat(String(l.unit_price)) || 0,
+      uom: l.uom ?? '',
+    })),
+    linesAdded: [],
+  })
+
+  const buildEditChanges = (draft: EditDraft) => {
+    const header: Record<string, { from: unknown; to: unknown }> = {}
+    if (draft.notes !== (req.notes ?? '')) header.notes = { from: req.notes ?? '', to: draft.notes }
+    if (draft.priority !== (req.priority ?? 'low'))
+      header.priority = { from: req.priority ?? 'low', to: draft.priority }
+
+    const edited: { id: string; field: string; from: unknown; to: unknown }[] = []
+    const removed: string[] = []
+    for (const dl of draft.lines) {
+      if (dl._removed) {
+        removed.push(dl.id)
+        continue
+      }
+      const orig = req.lines.find((l) => l.id === dl.id)
+      if (!orig) continue
+      if (dl.description !== (orig.description ?? ''))
+        edited.push({ id: dl.id, field: 'description', from: orig.description, to: dl.description })
+      if (dl.qty !== (parseFloat(String(orig.qty)) || 0))
+        edited.push({ id: dl.id, field: 'qty_ordered', from: orig.qty, to: dl.qty })
+      if (dl.unit_price !== (parseFloat(String(orig.unit_price)) || 0))
+        edited.push({ id: dl.id, field: 'unit_price', from: orig.unit_price, to: dl.unit_price })
+      if (dl.uom !== (orig.uom ?? '')) edited.push({ id: dl.id, field: 'uom', from: orig.uom, to: dl.uom })
+    }
+    return { header, lines: { edited, added: draft.linesAdded, removed } }
+  }
+
   return (
     <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
       <PageHeader
@@ -445,53 +540,531 @@ export default function RequisitionDetail() {
         />
       </div>
 
-      <Card style={sectionCard}>
-        <div style={sectionTitle}>Summary</div>
+      {/* Summary — colored stat-card grid, matching PurchaseOrderDetail's own "PO Summary" */}
+      <Card style={{ padding: '24px', marginBottom: '16px' }}>
+        <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
+          Summary
+        </div>
         <div
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-            gap: '14px',
-            marginTop: '10px',
+            gap: '12px',
           }}
         >
           {[
+            {
+              label: 'Total',
+              value:
+                req.currencyTotals.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {req.currencyTotals.map((ct) => (
+                      <span key={ct.currency_code}>
+                        {fmtN(ct.subtotal)} {ct.currency_code}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  '—'
+                ),
+            },
             { label: 'Priority', value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—' },
             { label: 'Project', value: req.projectName ?? '—' },
             { label: 'Branch', value: req.branch_name ?? '—' },
-            { label: 'Delivery to', value: req.delivery_destination ?? '—' },
             { label: 'Organizer', value: req.organizerName ?? '—' },
             { label: 'Created', value: req.created_at.slice(0, 10) },
           ].map((f) => (
-            <div key={f.label}>
-              <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>{f.label}</div>
-              <div style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: 500 }}>{f.value}</div>
+            <div
+              key={f.label}
+              style={{
+                padding: '14px',
+                borderRadius: '10px',
+                background: theme.bgCanvas,
+                border: `1px solid ${theme.border}`,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+                {f.label}
+              </div>
+              <div
+                style={{
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  color: theme.textPrimary,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {f.value}
+              </div>
             </div>
           ))}
         </div>
-        {req.notes && (
-          <div style={{ marginTop: '14px', fontSize: '13px', color: theme.textSecondary }}>
-            <strong style={{ color: theme.textPrimary }}>Notes: </strong>
-            {req.notes}
-          </div>
-        )}
-        {req.currencyTotals.length > 0 && (
-          <div style={{ marginTop: '14px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            {req.currencyTotals.map((ct) => (
-              <div key={ct.currency_code} style={{ fontSize: '13px' }}>
-                <span style={{ color: theme.textMuted }}>{ct.currency_code}: </span>
-                <strong style={{ color: theme.textPrimary }}>{fmtN(ct.subtotal)}</strong>
-                <span style={{ color: theme.textMuted }}> ({ct.line_count} line{ct.line_count !== 1 ? 's' : ''})</span>
-              </div>
-            ))}
-          </div>
-        )}
       </Card>
 
-      <Card style={sectionCard}>
-        <div style={sectionTitle}>Lines</div>
-        <Table columns={lineColumns} data={req.lines} rowKey="id" />
-      </Card>
+      {/* Tabs — Lines / Log / Edit requests (Receipts/Returns/Finance-Audit
+          tabs from PurchaseOrderDetail don't apply: those are post-fork,
+          PO-side concerns this page never reaches) */}
+      <div style={{ marginBottom: '16px' }}>
+        <TabBar
+          tabs={[
+            { key: 'lines', label: 'Lines' },
+            { key: 'log', label: 'Log' },
+            {
+              key: 'changes',
+              label: 'Edit requests',
+              badge: (req.edit_requests ?? []).filter((r) => r.status === 'pending').length || undefined,
+            },
+          ]}
+          active={activeTab}
+          onChange={(key) => setActiveTab(key as Tab)}
+        />
+      </div>
+
+      {activeTab === 'lines' && (
+        <Card style={sectionCard}>
+          <Table columns={lineColumns} data={req.lines} rowKey="id" />
+        </Card>
+      )}
+
+      {activeTab === 'log' && (
+        <Card>
+          <div
+            style={{
+              padding: '16px 20px',
+              borderBottom: `1px solid ${theme.border}`,
+              fontWeight: 600,
+              fontSize: '15px',
+              color: theme.textPrimary,
+            }}
+          >
+            Approval Log
+          </div>
+          {req.notes && (
+            <div style={{ padding: '14px 16px', borderBottom: `1px solid ${theme.border}`, background: theme.bgSurface }}>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: theme.textMuted,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  marginBottom: '6px',
+                }}
+              >
+                Requisition Notes
+              </div>
+              <div style={{ fontSize: '13px', color: theme.textPrimary, whiteSpace: 'pre-wrap' }}>{req.notes}</div>
+            </div>
+          )}
+          {req.approval_log.length === 0 && (
+            <div style={{ padding: '32px', textAlign: 'center', color: theme.textMuted, fontSize: '13px' }}>
+              No activity yet.
+            </div>
+          )}
+          {req.approval_log.map((entry) => (
+            <div
+              key={entry.id}
+              style={{
+                display: 'flex',
+                gap: '16px',
+                padding: '12px 16px',
+                borderBottom: `1px solid ${theme.border}22`,
+                alignItems: 'center',
+                flexWrap: 'wrap',
+              }}
+            >
+              <Badge
+                variant={
+                  entry.action === 'approved' ? 'success' : entry.action.startsWith('reject') ? 'danger' : 'info'
+                }
+              >
+                {entry.action.replace(/_/g, ' ')}
+              </Badge>
+              <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+                {entry.actor_name ?? 'System'}
+                {entry.actor_position ? ` (${entry.actor_position})` : ''}
+              </span>
+              {entry.notes && <span style={{ fontSize: '12px', color: theme.textMuted }}>{entry.notes}</span>}
+              <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
+                {entry.created_at.slice(0, 16).replace('T', ' ')}
+              </span>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {activeTab === 'changes' &&
+        (() => {
+          const inputStyle: React.CSSProperties = {
+            width: '100%',
+            padding: '7px 10px',
+            borderRadius: '6px',
+            border: `1px solid ${theme.borderInput}`,
+            background: theme.bgCanvas,
+            color: theme.textPrimary,
+            fontSize: '13px',
+            boxSizing: 'border-box',
+          }
+          const hasPendingEdit = (req.edit_requests ?? []).some((r) => r.status === 'pending')
+
+          const lineFields: LineItemField<EditLineDraft>[] = [
+            {
+              key: 'description',
+              label: 'Description',
+              render: (line, i) => (
+                <input
+                  value={line.description}
+                  style={inputStyle}
+                  disabled={line._removed}
+                  onChange={(e) => {
+                    const lines = [...editDraft!.lines]
+                    lines[i] = { ...lines[i]!, description: e.target.value }
+                    setEditDraft({ ...editDraft!, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'qty',
+              label: 'Qty',
+              width: '90px',
+              render: (line, i) => (
+                <input
+                  type="number"
+                  value={line.qty}
+                  style={inputStyle}
+                  disabled={line._removed}
+                  onChange={(e) => {
+                    const lines = [...editDraft!.lines]
+                    lines[i] = { ...lines[i]!, qty: parseFloat(e.target.value) || 0 }
+                    setEditDraft({ ...editDraft!, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'unit_price',
+              label: 'Unit Price',
+              width: '110px',
+              render: (line, i) => (
+                <input
+                  type="number"
+                  value={line.unit_price}
+                  style={inputStyle}
+                  disabled={line._removed}
+                  onChange={(e) => {
+                    const lines = [...editDraft!.lines]
+                    lines[i] = { ...lines[i]!, unit_price: parseFloat(e.target.value) || 0 }
+                    setEditDraft({ ...editDraft!, lines })
+                  }}
+                />
+              ),
+            },
+            {
+              key: 'uom',
+              label: 'UOM',
+              width: '90px',
+              render: (line, i) => (
+                <input
+                  value={line.uom}
+                  style={inputStyle}
+                  disabled={line._removed}
+                  onChange={(e) => {
+                    const lines = [...editDraft!.lines]
+                    lines[i] = { ...lines[i]!, uom: e.target.value }
+                    setEditDraft({ ...editDraft!, lines })
+                  }}
+                />
+              ),
+            },
+          ]
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <Card style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Request an edit</div>
+                  {hasPendingEdit && <Badge variant="warning">Pending review — submit locked</Badge>}
+                  {!editDraft && !hasPendingEdit && (
+                    <Button size="sm" variant="secondary" onClick={() => setEditDraft(initEditDraft())}>
+                      Start editing
+                    </Button>
+                  )}
+                  {editDraft && (
+                    <Button size="sm" variant="secondary" onClick={() => setEditDraft(null)}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+
+                {!editDraft && (
+                  <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                    {hasPendingEdit
+                      ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
+                      : 'Click "Start editing" to propose changes to the notes, priority, or lines. Once approved, the requisition is unaffected before approval is reached — a pre-approval edit applies immediately; a post-approval edit needs admin review first.'}
+                  </div>
+                )}
+
+                {editDraft && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+                      <div style={{ flex: '1 1 240px' }}>
+                        <Input
+                          label="Notes"
+                          value={editDraft.notes}
+                          onChange={(e) => setEditDraft({ ...editDraft, notes: e.target.value })}
+                        />
+                      </div>
+                      <div style={{ flex: '1 1 160px' }}>
+                        <Select
+                          label="Priority"
+                          value={editDraft.priority}
+                          onChange={(e) => setEditDraft({ ...editDraft, priority: e.target.value })}
+                        >
+                          <option value="low">Low</option>
+                          <option value="high">High</option>
+                          <option value="emergency">Emergency</option>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <LineItemEditor
+                      fields={lineFields}
+                      rows={editDraft.lines}
+                      onRemoveRow={(i) => {
+                        const lines = [...editDraft.lines]
+                        lines[i] = { ...lines[i]!, _removed: !lines[i]!._removed }
+                        setEditDraft({ ...editDraft, lines })
+                      }}
+                      onAddRow={() =>
+                        setEditDraft({
+                          ...editDraft,
+                          linesAdded: [...editDraft.linesAdded, { description: '', qty: 1, unit_price: 0, uom: 'unit' }],
+                        })
+                      }
+                    />
+
+                    {editDraft.linesAdded.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: theme.textMuted }}>New lines</div>
+                        {editDraft.linesAdded.map((al, i) => (
+                          <div key={i} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <input
+                              value={al.description}
+                              placeholder="Description"
+                              style={{ ...inputStyle, flex: '1 1 200px' }}
+                              onChange={(e) => {
+                                const linesAdded = [...editDraft.linesAdded]
+                                linesAdded[i] = { ...linesAdded[i]!, description: e.target.value }
+                                setEditDraft({ ...editDraft, linesAdded })
+                              }}
+                            />
+                            <input
+                              type="number"
+                              value={al.qty}
+                              placeholder="Qty"
+                              style={{ ...inputStyle, width: '80px' }}
+                              onChange={(e) => {
+                                const linesAdded = [...editDraft.linesAdded]
+                                linesAdded[i] = { ...linesAdded[i]!, qty: parseFloat(e.target.value) || 0 }
+                                setEditDraft({ ...editDraft, linesAdded })
+                              }}
+                            />
+                            <input
+                              type="number"
+                              value={al.unit_price}
+                              placeholder="Unit price"
+                              style={{ ...inputStyle, width: '100px' }}
+                              onChange={(e) => {
+                                const linesAdded = [...editDraft.linesAdded]
+                                linesAdded[i] = { ...linesAdded[i]!, unit_price: parseFloat(e.target.value) || 0 }
+                                setEditDraft({ ...editDraft, linesAdded })
+                              }}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditDraft({
+                                  ...editDraft,
+                                  linesAdded: editDraft.linesAdded.filter((_, idx) => idx !== i),
+                                })
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <Button
+                      variant="primary"
+                      loading={leSubmit}
+                      onClick={() => {
+                        const changes = buildEditChanges(editDraft)
+                        const totalChanges =
+                          Object.keys(changes.header).length +
+                          changes.lines.edited.length +
+                          changes.lines.added.length +
+                          changes.lines.removed.length
+                        if (totalChanges === 0) {
+                          addToast({ type: 'error', message: 'No changes to submit' })
+                          return
+                        }
+                        void submitEditRequest({
+                          variables: { requisitionId: req.id, changes: JSON.stringify(changes) },
+                        })
+                      }}
+                    >
+                      Submit edit request
+                    </Button>
+                  </div>
+                )}
+              </Card>
+
+              {(req.edit_requests ?? []).length > 0 && (
+                <Card style={{ padding: '20px' }}>
+                  <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '14px' }}>
+                    History
+                  </div>
+                  {(req.edit_requests ?? []).map((er) => {
+                    const parsed = JSON.parse(er.changes) as {
+                      header?: Record<string, { from: unknown; to: unknown }>
+                      lines?: {
+                        edited?: { id: string; field: string; from: unknown; to: unknown }[]
+                        added?: unknown[]
+                        removed?: string[]
+                      }
+                    }
+                    const headerChanges = Object.entries(parsed.header ?? {})
+                    const editedLines = parsed.lines?.edited ?? []
+                    const addedLines = parsed.lines?.added ?? []
+                    const removedLines = parsed.lines?.removed ?? []
+                    const totalChanges = headerChanges.length + editedLines.length + addedLines.length + removedLines.length
+                    return (
+                      <div
+                        key={er.id}
+                        style={{ padding: '14px 0', borderTop: `1px solid ${theme.border}` }}
+                      >
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                          <Badge
+                            variant={er.status === 'approved' ? 'success' : er.status === 'rejected' ? 'danger' : 'warning'}
+                          >
+                            {er.status}
+                          </Badge>
+                          <span style={{ fontSize: '13px', color: theme.textPrimary }}>{er.requested_by_email}</span>
+                          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                            {er.created_at.slice(0, 16).replace('T', ' ')}
+                          </span>
+                          <span style={{ fontSize: '12px', color: theme.textMuted, marginLeft: 'auto' }}>
+                            {totalChanges} change{totalChanges !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', marginBottom: '10px' }}>
+                          {headerChanges.map(([field, diff]) => (
+                            <div key={field} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span style={{ color: theme.textMuted, minWidth: '110px' }}>{field.replace(/_/g, ' ')}</span>
+                              <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
+                                {String(diff.from || '—')}
+                              </span>
+                              <span style={{ color: theme.textMuted }}>→</span>
+                              <span style={{ color: theme.accent }}>{String(diff.to || '—')}</span>
+                            </div>
+                          ))}
+                          {editedLines.map((e, i) => (
+                            <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span style={{ color: theme.textMuted, minWidth: '110px' }}>
+                                line {e.field.replace(/_/g, ' ')}
+                              </span>
+                              <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
+                                {String(e.from ?? '—')}
+                              </span>
+                              <span style={{ color: theme.textMuted }}>→</span>
+                              <span style={{ color: theme.accent }}>{String(e.to ?? '—')}</span>
+                            </div>
+                          ))}
+                          {addedLines.length > 0 && (
+                            <div style={{ color: theme.accent }}>
+                              + {addedLines.length} line{addedLines.length !== 1 ? 's' : ''} added
+                            </div>
+                          )}
+                          {removedLines.length > 0 && (
+                            <div style={{ color: theme.danger }}>
+                              − {removedLines.length} line{removedLines.length !== 1 ? 's' : ''} removed
+                            </div>
+                          )}
+                        </div>
+
+                        {er.request_notes && (
+                          <div style={{ fontSize: '12px', color: theme.textMuted, fontStyle: 'italic', marginBottom: '8px' }}>
+                            "{er.request_notes}"
+                          </div>
+                        )}
+
+                        {er.status !== 'pending' && (
+                          <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                            {er.status === 'approved' ? 'Approved' : 'Rejected'} by {er.reviewed_by_email} on{' '}
+                            {er.reviewed_at?.slice(0, 16).replace('T', ' ')}
+                            {er.review_notes && ` — "${er.review_notes}"`}
+                          </div>
+                        )}
+
+                        {er.status === 'pending' && isSystemLevel && (
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              loading={leApprove}
+                              onClick={() =>
+                                void approveEditRequest({
+                                  variables: {
+                                    requisitionId: req.id,
+                                    requestId: er.id,
+                                    reviewNotes: reviewNotes[er.id] || undefined,
+                                  },
+                                })
+                              }
+                            >
+                              Approve
+                            </Button>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <input
+                                value={reviewNotes[er.id] ?? ''}
+                                onChange={(e) => setReviewNotes((p) => ({ ...p, [er.id]: e.target.value }))}
+                                placeholder="Rejection reason (required)"
+                                style={{ ...inputStyle, width: '220px' }}
+                              />
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                loading={leReject}
+                                disabled={!reviewNotes[er.id]?.trim()}
+                                onClick={() =>
+                                  void rejectEditRequest({
+                                    variables: {
+                                      requisitionId: req.id,
+                                      requestId: er.id,
+                                      reviewNotes: reviewNotes[er.id] ?? '',
+                                    },
+                                  })
+                                }
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </Card>
+              )}
+            </div>
+          )
+        })()}
 
       {/* ── Panel 1: draft ────────────────────────────────────────────────── */}
       {req.status === 'draft' && (
