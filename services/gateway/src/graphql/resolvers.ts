@@ -6958,10 +6958,43 @@ export const resolvers = {
       if (!ctx.auth) return []
       if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
         return []
-      const result = await getAttachments(
-        args.entityType as Parameters<typeof getAttachments>[0],
-        args.entityId,
-      )
+      // A G1 child PO's own receipts were never attached at
+      // entity_type='purchase_order' — they were attached per vendor
+      // purchase during the requisition's Items Bought stage
+      // (recordLinePurchase, entity_type='po_line_purchase'). A plain
+      // getAttachments('purchase_order', poId) lookup — what this resolver
+      // used to always do — finds nothing for those, so the read-only
+      // "Buyer's Receipt" panel on the receipt-confirmation page (Store
+      // In) showed "No signed documents uploaded yet" even when the buyer
+      // had genuinely attached a receipt photo while recording the
+      // purchase. Union in po_line_purchases-sourced attachments for this
+      // PO's own lines; a no-op for a legacy PO, which never has any
+      // po_line_purchases rows at all.
+      const result =
+        args.entityType === 'purchase_order'
+          ? await query(
+              `SELECT da.id, da.label, da.is_primary, da.created_at,
+                      f.id AS file_id, f.original_filename, f.mime_type,
+                      f.size_bytes, f.category, f.uploaded_at,
+                      u.email AS uploaded_by_email
+               FROM document_attachments da
+               JOIN files f ON f.id = da.file_id
+               JOIN users u ON u.id = da.uploaded_by
+               WHERE f.status != 'deleted' AND (
+                 (da.entity_type = 'purchase_order' AND da.entity_id = $1)
+                 OR (da.entity_type = 'po_line_purchase' AND da.entity_id IN (
+                       SELECT plp.id FROM po_line_purchases plp
+                       JOIN po_lines pl ON pl.id = plp.po_line_id
+                       WHERE pl.po_id = $1
+                     ))
+               )
+               ORDER BY da.is_primary DESC, da.created_at ASC`,
+              [args.entityId],
+            )
+          : await getAttachments(
+              args.entityType as Parameters<typeof getAttachments>[0],
+              args.entityId,
+            )
       return result.rows.map((r: Record<string, unknown>) => ({
         id: r.id,
         file: {

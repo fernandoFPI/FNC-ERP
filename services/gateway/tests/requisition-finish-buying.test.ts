@@ -327,6 +327,30 @@ describe('finishBuyingRequisition', () => {
     expect(child.rows[0]!.vendor_id).toBe(vendorAId)
   })
 
+  // Regression: the receipt attached to a purchase during Items Bought
+  // lives at entity_type='po_line_purchase' — never at entity_type=
+  // 'purchase_order' against the forked child PO's own id. The Store In
+  // "Buyer's Receipt" panel queries entityAttachments('purchase_order',
+  // childPoId), so before this fix it always came back empty for a G1
+  // child PO even when a receipt genuinely was attached — found via
+  // manual click-through (Record Receipt on a Cash Purchase child PO).
+  it('entityAttachments(purchase_order, childPoId) surfaces the receipt recorded at Items Bought', async () => {
+    const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 8, marketPrice: 15 })
+    await recordPurchase(lineId, vendorAId, 8, 15)
+    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+
+    const line = await pool.query<{ po_id: string | null }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
+    const childPoId = line.rows[0]!.po_id!
+
+    const attachments = await resolvers.Query.entityAttachments(
+      null,
+      { entityType: 'purchase_order', entityId: childPoId },
+      ctx as never,
+    )
+    expect((attachments as { file: { originalFilename: string } }[]).length).toBe(1)
+    expect((attachments as { file: { originalFilename: string } }[])[0]!.file.originalFilename).toBe('receipt.jpg')
+  })
+
   it('mixed case: partly from stock, rest from one vendor — original row keeps the stock portion, a new row carries the purchase', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 10, marketPrice: 15, qtyFromStock: 4 })
     await recordPurchase(lineId, vendorAId, 6, 15)
