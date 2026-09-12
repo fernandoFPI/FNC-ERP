@@ -58,7 +58,6 @@ interface Purchase {
 
 interface ReqLine {
   id: string
-  line_number?: number
   description?: string | null
   product_id?: string | null
   product_name?: string | null
