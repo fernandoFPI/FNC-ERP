@@ -22,6 +22,7 @@ import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
 import { usePagePadding } from '../../../hooks/usePagePadding'
+import { useBreakpoint } from '../../../hooks/useBreakpoint'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Card } from '../../../components/ui/Card'
@@ -203,6 +204,7 @@ export default function RequisitionDetail() {
   const currentUserId = useAuthStore((s) => s.user?.id)
   const addToast = useToastStore((s) => s.addToast)
   const padding = usePagePadding()
+  const { isPhone } = useBreakpoint()
 
   const { data, loading, refetch } = useQuery(REQUISITION_QUERY, {
     variables: { id },
@@ -302,7 +304,7 @@ export default function RequisitionDetail() {
 
   if (loading && !req) {
     return (
-      <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
         <div style={{ color: theme.textMuted, fontSize: '13px' }}>Loading requisition…</div>
       </div>
     )
@@ -310,7 +312,7 @@ export default function RequisitionDetail() {
 
   if (!req) {
     return (
-      <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
+      <div style={{ ...padding, maxWidth: '1800px', margin: '0 auto' }}>
         <div style={{ color: theme.textMuted, fontSize: '13px' }}>Requisition not found.</div>
       </div>
     )
@@ -489,7 +491,14 @@ export default function RequisitionDetail() {
   }
 
   return (
-    <div style={{ ...padding, maxWidth: '1100px', margin: '0 auto' }}>
+    <div
+      style={{
+        ...padding,
+        paddingBottom: isPhone ? 'calc(env(safe-area-inset-bottom, 0px) + 120px)' : padding.paddingBottom,
+        maxWidth: '1800px',
+        margin: '0 auto',
+      }}
+    >
       <PageHeader
         title={req.requisition_number}
         subtitle={req.purpose ? `Purpose: ${req.purpose}` : undefined}
@@ -603,6 +612,14 @@ export default function RequisitionDetail() {
         </div>
       </Card>
 
+      {/* Next Step (left) and Tabs/Lines (right) side by side instead of
+          stacked, matching PurchaseOrderDetail's own layout — both are tall
+          on their own and the page has plenty of unused horizontal room on
+          wide screens. CSS `order` puts the per-status panels column first
+          visually without moving that ~400-line block in the source; it
+          stays exactly where it was, right before the closing </div>. */}
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: '1 1 460px', minWidth: 0, order: 2 }}>
       {/* Tabs — Lines / Log / Edit requests (Receipts/Returns/Finance-Audit
           tabs from PurchaseOrderDetail don't apply: those are post-fork,
           PO-side concerns this page never reaches) */}
@@ -1065,7 +1082,9 @@ export default function RequisitionDetail() {
             </div>
           )
         })()}
+        </div>
 
+        <div style={{ flex: '1 1 460px', minWidth: 0, order: 1 }}>
       {/* ── Panel 1: draft ────────────────────────────────────────────────── */}
       {req.status === 'draft' && (
         <Card style={sectionCard}>
@@ -1524,6 +1543,8 @@ export default function RequisitionDetail() {
           </div>
         </Card>
       )}
+        </div>
+      </div>
     </div>
   )
 }
