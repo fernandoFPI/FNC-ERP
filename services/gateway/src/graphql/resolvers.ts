@@ -5060,15 +5060,15 @@ export const resolvers = {
     // breakdown), keyed on pol.requisition_id/req.company_id instead of
     // pol.po_id/po.company_id.
     //
-    // NOT branch-subtree scoped, despite the requisition having its own
-    // branch_id: stock_locations has no branch_id column and
-    // company_branches has no parent_id hierarchy, so there is no existing
-    // relationship to scope "this branch's stock" by — the main aggregate
-    // below is company-wide, exactly like poStockAvailability's. Narrowing
-    // it to a branch (or a branch + descendants) needs a schema decision
-    // (add stock_locations.branch_id? a company_branches hierarchy? scope
-    // by something else entirely) before it can be built — flagged rather
-    // than guessed at.
+    // Deliberately company-wide, not branch-subtree scoped: stock_locations
+    // has no branch_id column and company_branches has no parent_id
+    // hierarchy, so there is no existing relationship to scope "this
+    // branch's stock" by. Acceptable for now — the byLocation breakdown
+    // below already lets the store keeper pick the right location by hand.
+    // G10 (tracked as a follow-up, not started here): add
+    // stock_locations.branch_id (nullable), tag existing locations, then
+    // filter this query's main aggregate to the requisition's branch with
+    // a manual override to see the rest.
     requisitionStockAvailability: async (
       _: unknown,
       args: { requisitionId: string },
@@ -5129,7 +5129,7 @@ export const resolvers = {
              SELECT 1 FROM user_company_roles ucr
              WHERE ucr.user_id = $3 AND ucr.company_id = sl.company_id AND ucr.is_active = true
            ))
-         ORDER BY pol.id, "qtyOnHand" DESC`,
+         ORDER BY pol.id, "qtyAvailable" DESC`,
         [args.requisitionId, isSysAdmin, auth.userId],
       )
       const byLocationByLine = new Map<string, Record<string, unknown>[]>()

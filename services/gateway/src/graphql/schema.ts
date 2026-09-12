@@ -15,8 +15,10 @@
     # G1 Phase 3 Milestone A screen 2 — requisition equivalent of
     # poStockAvailability, same formula and same POLineAvailability shape,
     # keyed on requisition_id/company_id instead of po_id. Company-wide
-    # scoped exactly like poStockAvailability today, NOT narrowed to the
-    # requisition's branch — see this query's resolver comment for why.
+    # scoped exactly like poStockAvailability today — deliberately, per
+    # review, since the byLocation breakdown already lets a store keeper
+    # pick the right location by hand. Branch-subtree scoping is tracked
+    # as G10 — see this query's resolver comment.
     requisitionStockAvailability(requisitionId: ID!): [POLineAvailability!]!
     moMissingComponents(moId: ID!): [MOComponentStatus!]!
 
