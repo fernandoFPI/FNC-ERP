@@ -419,10 +419,10 @@ export default function PurchaseOrdersPage() {
               variant="primary"
               size="sm"
               onClick={() => {
-                navigate('/procurement/purchase-orders/new')
+                navigate('/procurement/requisitions/new')
               }}
             >
-              New PO
+              New Requisition
             </Button>
           </div>
         }
