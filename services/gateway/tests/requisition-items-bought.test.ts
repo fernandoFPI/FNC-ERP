@@ -412,3 +412,32 @@ describe('markRequisitionLineShort', () => {
     ).rejects.toThrow(/reason is required/i)
   })
 })
+
+// G1 Phase 3 Milestone A screen 3 — Query.requisition's callerHasBuyerPosition,
+// gating the Items Bought screen client-side. Mirrors the existing
+// callerHasStoreKeeperPosition/etc. tests' pattern (none exist yet for
+// those either — this is the first, using the same buyer-position fixture
+// recordLinePurchase/markRequisitionLineShort's own tests already rely on).
+describe('Query.requisition — callerHasBuyerPosition', () => {
+  it('is true for a real buyer-position holder and for admin, false for an unrelated user', async () => {
+    const { reqId } = await makeReqAtItemsBought({ qtyOrdered: 3, marketPrice: 8 })
+
+    const asBuyer = (await resolvers.Query.requisition(null, { id: reqId }, buyerCtx as never)) as {
+      callerHasBuyerPosition: boolean
+    }
+    expect(asBuyer.callerHasBuyerPosition).toBe(true)
+
+    const asAdmin = (await resolvers.Query.requisition(null, { id: reqId }, ctx as never)) as {
+      callerHasBuyerPosition: boolean
+    }
+    expect(asAdmin.callerHasBuyerPosition).toBe(true)
+
+    const strangerCtx = {
+      auth: { companyId: TEST_COMPANY_ID, userId: '00000000-0000-0000-0000-000000000099', role: 'user', module: 'all', sessionId: 'x' },
+    }
+    const asStranger = (await resolvers.Query.requisition(null, { id: reqId }, strangerCtx as never)) as {
+      callerHasBuyerPosition: boolean
+    }
+    expect(asStranger.callerHasBuyerPosition).toBe(false)
+  })
+})

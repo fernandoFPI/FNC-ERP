@@ -869,9 +869,14 @@ export default function RequisitionDetail() {
           <div style={sectionTitle}>
             {req.status === 'approved' ? 'Approved — buying starts next' : 'Items Bought in progress'}
           </div>
-          <div style={{ fontSize: '13px', color: theme.textMuted }}>
+          <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: req.status === 'items_bought' ? '10px' : 0 }}>
             Recording purchases per vendor happens on the Items Bought screen.
           </div>
+          {req.status === 'items_bought' && (
+            <Button variant="primary" size="sm" onClick={() => navigate(`/procurement/requisitions/${req.id}/items-bought`)}>
+              Go to Items Bought
+            </Button>
+          )}
         </Card>
       )}
 

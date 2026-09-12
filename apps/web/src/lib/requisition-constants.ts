@@ -68,3 +68,55 @@ export const REQUISITION_PRIORITY_LABELS: Record<string, string> = {
   high: 'High',
   emergency: 'Emergency',
 }
+
+// G1 Phase 3 Milestone A screen 5 — mirrors po-constants.ts's
+// PO_STATUS_ACTIONS exactly (same shape, same purpose: label a queue row
+// by the action waiting on it and who can take it), scoped to the
+// requisition's own pre-sourcing stages.
+export const REQUISITION_STATUS_ACTIONS: Record<
+  string,
+  {
+    label: string
+    description: string
+    requiredPosition?: string
+    requiredRole?: string
+    isOrganizer?: boolean
+  }
+> = {
+  draft: {
+    label: 'Submit for inventory check',
+    description: 'The organizer submits the requisition to verify stock availability',
+    isOrganizer: true,
+  },
+  inventory_check: {
+    label: 'Confirm inventory check',
+    description: 'The organizer or a Store Keeper confirms which items are available in stock',
+    isOrganizer: true,
+    requiredPosition: 'store_keeper',
+  },
+  store_pricing: {
+    label: 'Submit store pricing',
+    description: 'Store pricing adds internal prices for available items',
+    requiredPosition: 'store_pricing',
+  },
+  market_pricing: {
+    label: 'Submit market pricing',
+    description: 'Procurement officer adds checked vendor quotes',
+    requiredPosition: 'procurement_officer',
+  },
+  price_verification: {
+    label: 'Submit for approval',
+    description: '2nd procurement cross-checks market prices and submits directly for approval',
+    requiredPosition: 'procurement_2nd',
+  },
+  pending_approval: {
+    label: 'Approve',
+    description: 'Department head or admin approves the requisition',
+    requiredRole: 'dept_head_or_admin',
+  },
+  items_bought: {
+    label: 'Record purchases',
+    description: 'The assigned buyer records each purchase, per vendor, with its receipt',
+    requiredPosition: 'buyer',
+  },
+}

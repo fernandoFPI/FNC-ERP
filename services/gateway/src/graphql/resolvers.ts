@@ -8306,6 +8306,7 @@ export const resolvers = {
         callerHasStorePricingPosition,
         callerHasMarketPricingPosition,
         callerHasPriceVerificationPosition,
+        callerHasBuyerPosition,
         callerIsDeptHead,
         callerIsAssignedApprover,
         callerHasReqAdmin,
@@ -8316,6 +8317,10 @@ export const resolvers = {
           userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_officer'),
         isAdmin ||
           userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_2nd'),
+        // G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen,
+        // mirroring recordLinePurchase/markRequisitionLineShort/
+        // finishBuyingRequisition's own shared authorization exactly.
+        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'),
         userIsDeptHeadForRequisitionGW(ctx.auth.userId, args.id),
         userIsAssignedApproverForRequisitionGW(ctx.auth.userId, args.id),
         callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId),
@@ -8330,9 +8335,12 @@ export const resolvers = {
         callerHasStorePricingPosition,
         callerHasMarketPricingPosition,
         callerHasPriceVerificationPosition,
+        callerHasBuyerPosition,
         // Mirrors approveRequisition/rejectRequisitionApproval's own
         // authorization check exactly (admin OR dept head OR assigned
-        // approver OR po_admin position).
+        // approver OR po_admin position) — also reused as-is by screen 3
+        // to gate the over-tolerance override, since approveTolerancePurchase
+        // shares this exact same authorization set.
         callerCanApprove: isAdmin || callerIsDeptHead || callerIsAssignedApprover || callerHasReqAdmin,
       }
     },
@@ -10348,6 +10356,32 @@ export const resolvers = {
       )
       void publishEntityChanged(ctx.auth.companyId, 'vendor', r.rows[0].id as string, 'created')
       return r.rows[0]
+    },
+
+    // G1 Phase 3 Milestone A screen 3 — find-or-create, not create-only:
+    // called every time the Items Bought vendor picker's "Cash Purchase"
+    // option is chosen, so it must be idempotent. The partial unique index
+    // from migration 268 (company_id WHERE is_cash_purchase) makes the
+    // INSERT ON CONFLICT DO NOTHING + re-SELECT pattern below safe under
+    // concurrent first-use, rather than a plain check-then-insert race.
+    ensureCashPurchaseVendor: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const existing = await query(
+        `SELECT * FROM vendors WHERE company_id=$1 AND is_cash_purchase=true LIMIT 1`,
+        [ctx.auth.companyId],
+      )
+      if (existing.rows[0]) return existing.rows[0]
+      await query(
+        `INSERT INTO vendors (company_id, name, is_cash_purchase) VALUES ($1,'Cash Purchase',true)
+         ON CONFLICT (company_id) WHERE is_cash_purchase = true DO NOTHING`,
+        [ctx.auth.companyId],
+      )
+      const created = await query(
+        `SELECT * FROM vendors WHERE company_id=$1 AND is_cash_purchase=true LIMIT 1`,
+        [ctx.auth.companyId],
+      )
+      if (!created.rows[0]) throw new Error('Failed to set up the Cash Purchase vendor')
+      return created.rows[0]
     },
 
     updateVendor: async (

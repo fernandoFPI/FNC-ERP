@@ -767,6 +767,12 @@ export const NAV_SECTIONS: NavSection[] = [
         permKeys: ['procurement.po.view'],
       },
       {
+        label: 'My Requisition Queue',
+        icon: <Icon name="inbox" />,
+        path: '/procurement/requisitions/queue',
+        permKeys: ['procurement.po.view'],
+      },
+      {
         label: 'Approval Queue',
         icon: <Icon name="check-circle" />,
         path: '/procurement/purchase-orders/approval-queue',

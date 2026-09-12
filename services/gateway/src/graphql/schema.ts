@@ -1947,6 +1947,11 @@
     contact_phone: String
     withholding_tax_rate: String
     bank_name: String
+    # G1 Phase 3 Milestone A screen 3 — the one designated per-company
+    # vendor ensureCashPurchaseVendor finds-or-creates, for a genuine cash
+    # purchase with no real vendor to track. At most one true per company
+    # (migration 268's partial unique index).
+    is_cash_purchase: Boolean!
   }
 
   type POLine {
@@ -2260,9 +2265,12 @@
     callerHasStorePricingPosition: Boolean
     callerHasMarketPricingPosition: Boolean
     callerHasPriceVerificationPosition: Boolean
+    # G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen.
+    callerHasBuyerPosition: Boolean
     # Mirrors approveRequisition/rejectRequisitionApproval's own
     # authorization exactly (admin OR dept head OR assigned approver OR
-    # po_admin position) — gates the pending_approval panel.
+    # po_admin position) — gates the pending_approval panel, and (screen 3)
+    # the over-tolerance override.
     callerCanApprove: Boolean
   }
 
@@ -2432,6 +2440,10 @@
   extend type Mutation {
     createVendor(input: VendorInput!): Vendor!
     updateVendor(id: ID!, input: VendorInput!): Vendor!
+    # G1 Phase 3 Milestone A screen 3 — idempotent find-or-create of the
+    # caller's company's one cash-purchase vendor, for the Items Bought
+    # vendor picker's pinned "Cash Purchase" option.
+    ensureCashPurchaseVendor: Vendor!
     createPurchaseOrder(input: POInput!): PurchaseOrder!
     updatePurchaseOrder(id: ID!, input: POInput!): PurchaseOrder!
     recordReceipt(poId: ID!, input: ReceiptInput!): POReceipt!
