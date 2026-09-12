@@ -10833,12 +10833,24 @@ export const resolvers = {
           // 'purchase_order') rather than onto this specific receipt — so
           // check there too, not just the receipt-level attachment a store
           // keeper can still add themselves as a fallback (e.g. if the
-          // buyer never got around to it).
+          // buyer never got around to it). A G1 child PO's own buyer
+          // receipt was never attached at entity_type='purchase_order'
+          // though — recordLinePurchase attaches it per vendor purchase,
+          // at entity_type='po_line_purchase' (category 'attachment', not
+          // 'po_receipt_document') — so also check there, reachable via
+          // this PO's own po_lines. Mirrors entityAttachments's own union
+          // for the same gap (see that resolver's comment).
           if (!categories.has('po_receipt_document')) {
             const buyerReceiptCheck = await client.query(
               `SELECT 1 FROM document_attachments da JOIN files f ON f.id=da.file_id
-               WHERE da.entity_type='purchase_order' AND da.entity_id=$1
-                 AND f.category='po_receipt_document' AND f.status != 'deleted' LIMIT 1`,
+               WHERE f.status != 'deleted' AND (
+                 (da.entity_type='purchase_order' AND da.entity_id=$1 AND f.category='po_receipt_document')
+                 OR (da.entity_type='po_line_purchase' AND da.entity_id IN (
+                       SELECT plp.id FROM po_line_purchases plp
+                       JOIN po_lines pl ON pl.id = plp.po_line_id
+                       WHERE pl.po_id = $1
+                     ))
+               ) LIMIT 1`,
               [receipt.po_id],
             )
             if (!buyerReceiptCheck.rows[0]) {
