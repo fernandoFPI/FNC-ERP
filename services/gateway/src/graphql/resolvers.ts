@@ -30546,12 +30546,17 @@ const phase5MutationResolvers = {
     if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
       throw new Error('PO not found')
     // 'invoiced' (old vocab) / 'payment_pending' (G1 child) — same funding
-    // stage, see sendPOToAudit's comment for the pattern.
+    // stage, see sendPOToAudit's comment for the pattern. Both funding
+    // sources classify lines here now — employee_advance always needed
+    // it (nothing else fixes the GL account/cost center), and vendor_ap
+    // gained the same review so Finance can correct whatever
+    // createRequisition auto-defaulted before booking the vendor invoice,
+    // not just leave it unreviewed.
     if (
       !['invoiced', 'payment_pending'].includes(poRow.rows[0].status as string) ||
-      poRow.rows[0].funding_source !== 'employee_advance'
+      !['employee_advance', 'vendor_ap'].includes(poRow.rows[0].funding_source as string)
     )
-      throw new Error('PO must be invoiced and funded by an employee advance to classify lines')
+      throw new Error('PO must be invoiced and have a funding source decided to classify lines')
     const result = await query(
       `UPDATE po_lines
           SET account_id = $1, cost_center_id = $2
