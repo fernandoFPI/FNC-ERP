@@ -359,13 +359,71 @@ const interactiveTours: Record<string, InteractiveTour> = {
         description:
           'The department head, an assigned approver, or an admin makes the final call here.<br/><br/>' +
           '<strong>Approve</strong> moves it to <strong>Approved</strong> — buying starts next, per vendor, on the Items Bought screen. <strong>Reject</strong> requires a reason and sends it back to <strong>Draft</strong> for the organizer to revise and resubmit.<br/><br/>' +
-          '<strong style="color:#f59e0b">Tour mode:</strong> clicking either shows a toast but nothing is saved.',
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking either shows a toast but nothing is saved.<br/><br/>' +
+          "Press <strong>Next →</strong> and we'll jump ahead to a requisition that's already approved and partway through buying, so you can see what that looks like.",
         side: 'right',
+        nextRoute: `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}/items-bought`,
+        nextElement: '[data-tour="items-bought-line-demo-req-line-1"]',
+      },
+      {
+        element: '[data-tour="items-bought-line-demo-req-line-1"]',
+        title: 'Step 15 — Items Bought',
+        description:
+          'Once approved, buying happens per vendor on this screen — one purchase at a time, each against a specific line. Every purchase needs a vendor, a quantity, the actual price paid, and a receipt photo.<br/><br/>' +
+          "This line — Steel Angle Bar — is <strong>already fully bought</strong>: 20 came from stock (from the Inventory Check step), and the rest was purchased from a vendor. Once a line is fully covered, its record-purchase form disappears and a <strong>Fully bought</strong> badge shows instead.",
+        side: 'bottom',
+      },
+      {
+        element: '[data-tour="items-bought-approve-override-btn"]',
+        title: 'Step 16 — Over-tolerance approval',
+        description:
+          "The Cement Bags line was bought <strong>above the price tolerance</strong> allowed against its verified price — flagged in amber, with an <strong>Approve override</strong> button. A supervisor (never the same person who recorded the purchase) has to sign off before this line — and Finish Buying overall — can go through.<br/><br/>" +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+        side: 'top',
+      },
+      {
+        element: '[data-tour="items-bought-vendor-row"]',
+        title: 'Step 17 — Recording a purchase: vendor',
+        description:
+          "The Rebar Mesh line — the custom item from the requisition, still not in the catalog — hasn't been bought yet, so its form is still showing.<br/><br/>" +
+          'Search for a vendor, or click <strong>+ New</strong> to quick-create one on the spot without leaving this page — useful when you\'re buying from somewhere new. A <strong>💵 Cash Purchase</strong> option is also always available for small, informal buys with no vendor record.',
+        side: 'top',
+      },
+      {
+        element: '[data-tour="items-bought-qty-price-row"]',
+        title: 'Step 18 — Qty, actual price, and currency',
+        description:
+          "Enter how much was actually bought and at what price — this can differ from the requisition's estimate and verified price; that's exactly what the tolerance check on the previous step is watching for. Currency defaults to the line's own, but can be changed if the vendor quoted in something else.",
+        side: 'top',
+      },
+      {
+        element: '[data-tour="items-bought-attach-receipt-btn"]',
+        title: 'Step 19 — Receipt and Record purchase',
+        description:
+          "A receipt photo is <strong>required</strong> for every purchase — Finish Buying is blocked for any purchase missing one. Attach one, then click <strong>Record purchase</strong>.<br/><br/>" +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved — no file is actually uploaded either.',
+        side: 'top',
+      },
+      {
+        element: '[data-tour="items-bought-mark-short-btn"]',
+        title: 'Step 20 — Mark short',
+        description:
+          "If a vendor can't supply the remaining quantity at all, <strong>Mark short</strong> closes out the rest of that line with a required reason instead of leaving it stuck open forever.",
+        side: 'top',
+      },
+      {
+        element: '[data-tour="items-bought-finish-buying-btn"]',
+        title: 'Step 21 — Finish Buying',
+        description:
+          'This is enabled only once every line is either fully bought or marked short, every purchase has a receipt, and every over-tolerance purchase is approved — exactly the three checks you just saw.<br/><br/>' +
+          'Clicking it <strong>forks the requisition into one real Purchase Order per vendor</strong> — the requisition itself moves to <strong>Sourcing</strong>, and each vendor gets their own PO for Finance to process.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+        side: 'top',
       },
       {
         title: 'More to come',
         description:
-          "That covers requisition creation through approval. The next update to this tour continues on to <strong>Items Bought</strong> — recording purchases per vendor — and <strong>Finish Buying</strong>, where it forks into a real Purchase Order.<br/><br/>" +
+          "That covers buying through Finish Buying. The next update to this tour continues on the <strong>Purchase Order</strong> side — receiving, finance audit, and payment — picking up right where a fork lands.<br/><br/>" +
           'Click <strong>Done ✓</strong> to exit for now.',
       },
     ],

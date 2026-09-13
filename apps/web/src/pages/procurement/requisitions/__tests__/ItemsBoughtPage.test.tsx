@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import { TOUR_DEMO_REQUISITION_ID } from '../../../../components/help/tourDemoRequisition'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
@@ -30,14 +31,15 @@ vi.mock('../../../../store/authStore', () => ({
 }))
 
 const mockNavigate = vi.fn()
+let mockParamId = 'req-1'
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
-  return { ...actual, useNavigate: () => mockNavigate, useParams: () => ({ id: 'req-1' }) }
+  return { ...actual, useNavigate: () => mockNavigate, useParams: () => ({ id: mockParamId }) }
 })
 
-function wrap(ui: React.ReactNode) {
+function wrap(ui: React.ReactNode, path = '/procurement/requisitions/req-1/items-bought') {
   return render(
-    <MemoryRouter initialEntries={['/procurement/requisitions/req-1/items-bought']}>
+    <MemoryRouter initialEntries={[path]}>
       <ThemeProvider>{ui}</ThemeProvider>
     </MemoryRouter>,
   )
@@ -104,6 +106,7 @@ function mockReq(lines: Record<string, unknown>[], overrides: Record<string, unk
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockParamId = 'req-1'
   mockUseMutation.mockReturnValue([
     vi.fn().mockResolvedValue({ data: { ensureCashPurchaseVendor: { id: 'vendor-cash' } } }),
     { loading: false },
@@ -276,5 +279,21 @@ describe('ItemsBoughtPage', () => {
     const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
     wrap(<ItemsBoughtPage />)
     expect(screen.getByRole('button', { name: /needs a different approver/i })).toBeDisabled()
+  })
+
+  // Onboarding tour, Phase 3: navigating to the reserved demo id renders
+  // the synthetic items-bought requisition, not real query data — one
+  // line already fully bought, one over-tolerance and unapproved, one
+  // still open for a purchase to be recorded.
+  it('tour demo: renders the synthetic requisition, not real query data', async () => {
+    mockParamId = TOUR_DEMO_REQUISITION_ID
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />, `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}/items-bought`)
+    // Both the fully-resolved Steel Angle Bar line and the over-tolerance
+    // Cement Bags line (also fully bought, just not yet approved) show it.
+    expect(screen.getAllByText('Fully bought').length).toBe(2)
+    expect(screen.getByRole('button', { name: /approve override/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^record purchase$/i })).toBeInTheDocument()
+    expect(screen.queryByText('Cement bags')).not.toBeInTheDocument()
   })
 })
