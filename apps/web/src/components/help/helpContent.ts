@@ -336,53 +336,77 @@ const PAYMENT_TERMS: HelpTopic = {
 
 // ── Procurement ───────────────────────────────────────────────────────────────
 
-const PURCHASE_ORDERS: HelpTopic = {
-  key: 'purchase-orders',
-  title: 'Purchase Orders',
+// Requisitions are now where every purchase starts — see PURCHASE_ORDERS
+// below for what happens once Finish Buying forks it into a real,
+// per-vendor Purchase Order (that PO is what Finance actually pays).
+const REQUISITIONS: HelpTopic = {
+  key: 'requisitions',
+  title: 'Requisitions',
   emoji: '🛒',
   summary:
-    'The full procurement pipeline — from a rough estimate at creation to a vendor-priced, approved, bought, received, and audited purchase.',
+    'Every purchase starts here — a pre-vendor request that goes through inventory check, pricing, verification, and approval before Finish Buying forks it into a real Purchase Order per vendor.',
   steps: [
     {
-      title: 'Create the PO',
-      body: 'Click New PO. Pick a purpose — General Stock, Project Supply, or Manufacturing/BOM — it decides how the cost gets routed once the PO is priced. Vendor is optional here — leave it blank and set it later once you actually have a quote. For each line, pick a catalog product, or leave it as a free-text "Custom item" if it is not in the catalog yet.',
+      title: 'Create the requisition',
+      body: 'Click New Requisition. Pick a purpose — General Stock or Project Supply — it decides how cost gets routed once the requisition is priced. GL account and cost center are worked out automatically later; the requester doesn\'t set either. For each line, pick a catalog product, or leave it as a free-text "Custom item" if it is not in the catalog yet.',
     },
     {
       title: 'Inventory check',
-      body: 'The PO owner records how much of each line is already sitting in stock. A line fully covered from stock skips straight to Ready to Issue — it never goes through pricing or approval. Whatever is still needed continues on to pricing.',
+      body: 'The organizer or a Store Keeper records how much of each line is already sitting in stock. Whatever is left continues on to pricing.',
     },
     {
-      title: 'Pricing',
-      body: 'Store Pricing — valuing whatever portion is coming from existing stock — is automatic: the system fills it in from the last real vendor price recorded for that product, no one has to type it in. Market Pricing is where a real vendor and a real price and currency get attached to the portion actually being purchased, entered by whoever holds the Procurement Officer position.',
+      title: 'Pricing & verification',
+      body: 'Store Pricing values the from-stock portion; Market Pricing attaches a real vendor and price to whatever still needs buying. Price Verification is a second set of eyes on that number before it goes to approval. An Emergency-priority requisition skips straight from Draft to approval, bypassing inventory check and both pricing stages.',
     },
     {
-      title: 'Verification & approval',
-      body: "A second reviewer (Procurement 2nd) checks the market price before it goes to approval, and can send it back if something looks off. Approval then routes to the right person based on your company's thresholds and PO positions. An Emergency-priority PO skips straight from Draft to approval, bypassing inventory check and pricing entirely.",
+      title: 'Approval',
+      body: "Routes to the right approver based on your company's thresholds and positions. A rejection sends it back to Draft with a reason attached.",
     },
     {
-      title: 'Buying — the actual price',
-      body: 'Once approved, the PO moves straight into Items Bought. The buyer ticks each line as bought and enters the actual price paid there — that real number, not the original estimate, is what flows through to Finance.',
+      title: 'Items Bought — buying per vendor',
+      body: 'Once approved, buying happens on its own Items Bought screen, one purchase entry per vendor per line — including a built-in Cash Purchase vendor for anything paid without a real invoice. Attach a receipt photo per purchase; a price that comes in over tolerance needs a different person to approve the override than whoever recorded it. A line can be split across more than one vendor, or marked short if it can\'t be filled at all.',
     },
     {
-      title: 'Receiving',
-      body: 'For a normal purchase, open the PO and click Record Receipt — enter quantities received (partial receipts are fine) and attach a vendor-receipt photo plus a materials photo; it only counts once both are attached and confirmed. For a project PO marked "delivered to jobsite," the same screen becomes a simpler Mark Delivered step — it never touches warehouse stock, the cost posts straight to the project instead.',
-    },
-    {
-      title: 'New items get cataloged',
-      body: 'A line left as a free-text "Custom item" lands in Inventory → New Items to Catalog once it actually arrives. The store keeper either catalogs it as a real product — so it is searchable and reorderable next time — or links it to an existing product if it turns out to already be in the catalog under a different name.',
-    },
-    {
-      title: 'Finance audit & invoicing',
-      body: 'Finance reviews the actual price against the original estimate (flagged if it varies) before the PO can move to Invoiced. The funding source — vendor accounts payable or an employee advance — is decided at that point, and the vendor invoice is created against the PO.',
+      title: 'Finish Buying — forking into Purchase Orders',
+      body: "Once every line is resolved and every purchase has a receipt, Finish Buying forks the requisition into one real Purchase Order per vendor. That PO — not the requisition — is what goes through Receiving, Finance Audit, and Payment.",
     },
   ],
   tips: [
-    'Vendor and currency can both be left unset at creation — they only need to be locked in once Market Pricing happens.',
-    'Use My Queue to see POs waiting on you specifically, and Approval Queue for everything awaiting sign-off.',
-    'A rejected PO goes back to Draft with a reason attached — fix it and resubmit.',
+    'Use My Requisition Queue to see what\'s waiting on you specifically.',
+    'A line left as a free-text "Custom item" lands in Inventory → New Items to Catalog once it\'s actually bought.',
+    'Edit Requests let you propose a change to notes, priority, or a line after creation — it applies immediately before approval, or needs admin review after.',
+  ],
+  tourKey: 'requisition',
+}
+
+const PURCHASE_ORDERS: HelpTopic = {
+  key: 'purchase-orders',
+  title: 'Purchase Orders',
+  emoji: '📦',
+  summary:
+    "The vendor-side half of a purchase — what Finish Buying forks a requisition into, one per vendor. Covers receiving through payment; see Requisitions for how a purchase gets here in the first place.",
+  steps: [
+    {
+      title: 'Receiving',
+      body: 'Open the PO and click Record Receipt — enter quantities received (partial receipts are fine) and attach a vendor-receipt photo plus a materials photo; it only counts once both are attached and confirmed. For a project PO marked "delivered to jobsite," the same screen becomes a simpler Mark Delivered step — it never touches warehouse stock, the cost posts straight to the project instead.',
+    },
+    {
+      title: 'Finance audit',
+      body: 'Finance reviews each line — mark it OK or Flagged — before the PO can move on to Payment Pending.',
+    },
+    {
+      title: 'Payment Pending',
+      body: "Decide the funding source — vendor accounts payable, or an employee advance. Either way, GL account and cost center are reviewable per line here (pre-filled from what the requisition auto-defaulted) before Finance books it. Vendor AP routes to creating a vendor invoice; an employee advance queues the lines for settlement directly.",
+    },
+    {
+      title: 'Closed',
+      body: 'Once the vendor invoice is paid (or the employee-advance lines are classified), the PO closes out — and once every child PO from a requisition is closed, the requisition itself completes.',
+    },
+  ],
+  tips: [
+    'A standalone PO (not forked from a requisition) still exists for edge cases and still runs its own full pipeline — but every normal "create a PO" entry point in the app now creates a Requisition instead.',
     'Add internal notes and file attachments to any PO line at any stage.',
   ],
-  tourKey: 'purchase-order',
 }
 
 const VENDORS: HelpTopic = {
@@ -858,10 +882,11 @@ const routeMap: { pattern: string; topic: HelpTopic }[] = [
   { pattern: '/finance/payment-terms', topic: PAYMENT_TERMS },
   { pattern: '/finance/retention', topic: PAYMENT_TERMS },
   { pattern: '/finance', topic: JOURNALS },
+  { pattern: '/procurement/requisitions', topic: REQUISITIONS },
   { pattern: '/procurement/purchase-orders', topic: PURCHASE_ORDERS },
   { pattern: '/procurement/vendors', topic: VENDORS },
   { pattern: '/procurement/approval-queue', topic: APPROVAL_QUEUE },
-  { pattern: '/procurement', topic: PURCHASE_ORDERS },
+  { pattern: '/procurement', topic: REQUISITIONS },
   { pattern: '/inventory', topic: INVENTORY },
   { pattern: '/projects/contracts', topic: CONTRACTS },
   { pattern: '/projects', topic: PROJECTS },
@@ -902,6 +927,7 @@ export const allTopics: HelpTopic[] = [
   PETTY_CASH,
   PAYMENT_VOUCHERS,
   PAYMENT_TERMS,
+  REQUISITIONS,
   PURCHASE_ORDERS,
   VENDORS,
   APPROVAL_QUEUE,
@@ -937,7 +963,7 @@ export const helpGroups: HelpGroup[] = [
       PAYMENT_TERMS,
     ],
   },
-  { label: 'Procurement', topics: [PURCHASE_ORDERS, VENDORS, APPROVAL_QUEUE] },
+  { label: 'Procurement', topics: [REQUISITIONS, PURCHASE_ORDERS, VENDORS, APPROVAL_QUEUE] },
   { label: 'Inventory', topics: [INVENTORY] },
   { label: 'Projects', topics: [PROJECTS, CONTRACTS] },
   { label: 'HR', topics: [HR_EMPLOYEES, HR_ATTENDANCE, HR_OVERTIME, HR_LEAVE] },

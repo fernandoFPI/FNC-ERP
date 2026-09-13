@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import { useTourStore } from '../../../../store/tourStore'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
@@ -108,6 +109,27 @@ describe('RequisitionForm', () => {
     fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar' } })
     fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
     expect(createMock).not.toHaveBeenCalled()
+  })
+
+  // Onboarding tour: the walkthrough has no real project/branch/delivery
+  // destination to pick, so validation must be bypassed while tour mode
+  // is active — mirrors PurchaseOrderForm's own isTourMode handling.
+  it('bypasses Project Supply validation and submits when tour mode is active', async () => {
+    const createMock = vi.fn().mockResolvedValue({ data: { createRequisition: { id: 'req-new-1' } } })
+    mockUseMutation.mockReturnValue([createMock, { loading: false }])
+    useTourStore.getState().activate('requisition', 'Create a Requisition', 9)
+    try {
+      const RequisitionForm = (await import('../RequisitionForm')).default
+      const { container } = wrap(<RequisitionForm />)
+      fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+      fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar' } })
+      fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
+      await vi.waitFor(() => {
+        expect(createMock).toHaveBeenCalled()
+      })
+    } finally {
+      useTourStore.getState().deactivate()
+    }
   })
 
   it('submits a General Stock requisition and navigates to its detail page', async () => {

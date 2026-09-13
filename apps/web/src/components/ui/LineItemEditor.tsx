@@ -28,6 +28,11 @@ interface LineItemEditorProps<T extends object> {
   // Renders an "+ Add Line"-style button below the list when provided.
   onAddRow?: () => void
   addLabel?: string
+  // data-tour anchor for the Add Line button — this component renders its
+  // own button internally (phone + desktop variants both), so a caller
+  // wanting to point an onboarding tour at "click + Add Line" has no JSX
+  // of its own to attach the attribute to.
+  addButtonDataTour?: string
   emptyMessage?: string
   // Totals/summary row, keyed by field key — sparse, same convention as
   // Table's footerRow.
@@ -45,6 +50,7 @@ export function LineItemEditor<T extends object>({
   addLabel = '+ Add Line',
   emptyMessage = 'No lines yet',
   footerRow,
+  addButtonDataTour,
 }: LineItemEditorProps<T>) {
   const { theme } = useTheme()
   const { isPhone } = useBreakpoint()
@@ -158,6 +164,7 @@ export function LineItemEditor<T extends object>({
         {onAddRow && (
           <button
             type="button"
+            data-tour={addButtonDataTour}
             onClick={onAddRow}
             style={{
               minHeight: '44px',
@@ -282,6 +289,7 @@ export function LineItemEditor<T extends object>({
       {onAddRow && (
         <button
           type="button"
+          data-tour={addButtonDataTour}
           onClick={onAddRow}
           style={{
             alignSelf: 'flex-start',
