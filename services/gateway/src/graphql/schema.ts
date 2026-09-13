@@ -2233,6 +2233,8 @@
     branch_name: String
     project_id: ID
     projectName: String
+    linked_mo_id: ID
+    linkedMoNumber: String
     purpose: String
     delivery_destination: String
     priority: String
@@ -2313,6 +2315,11 @@
     priority: String
     branch_id: ID
     notes: String
+    # G1 Phase 3 — third call-site migration (Manufacturing Order); mirrors
+    # PurchaseOrder.linkedMoId, propagated onto the forked child PO by
+    # finishBuyingRequisition so the existing MO-consumption-on-receipt
+    # logic keeps working unchanged.
+    linked_mo_id: ID
     lines: [RequisitionLineInput!]!
   }
 

@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_REQUISITION } from '../../../graphql/requisitions'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
+import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
 import { ACCOUNTS_QUERY, COST_CENTERS_QUERY } from '../../../graphql/finance'
 import { useAuthStore } from '../../../store/authStore'
@@ -45,23 +46,44 @@ export default function RequisitionForm() {
   const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
   const [searchParams] = useSearchParams()
 
-  const [purpose, setPurpose] = useState<'stock' | 'project'>('stock')
+  const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
   const [projectId, setProjectId] = useState('')
   const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
+  const [linkedMoId, setLinkedMoId] = useState('')
   const [branchId, setBranchId] = useState('')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
   const formRef = useRef<HTMLFormElement>(null)
 
-  // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId= handling,
-  // for entry points (e.g. ProjectDetail's "+ New Requisition") that already
-  // know which project this is for.
+  // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId=/?moId=
+  // handling, for entry points that already know which project or
+  // manufacturing order this is for (ProjectDetail's "+ New Requisition",
+  // ManufacturingOrderDetail's "Create PO for missing items"). The MO side
+  // also carries specific line items via sessionStorage, written by
+  // ManufacturingOrderDetail right before it navigates here — its own key
+  // (req_prefill_lines), separate from PurchaseOrderForm's po_prefill_lines,
+  // since that form's own manufacturing path is still reachable manually
+  // and shouldn't share state with this one.
   useEffect(() => {
     const urlProjectId = searchParams.get('projectId')
-    if (urlProjectId) {
+    const urlMoId = searchParams.get('moId')
+    if (urlMoId) {
+      setPurpose('manufacturing')
+      setLinkedMoId(urlMoId)
+    } else if (urlProjectId) {
       setPurpose('project')
       setProjectId(urlProjectId)
+    }
+    const prefill = sessionStorage.getItem('req_prefill_lines')
+    if (prefill) {
+      try {
+        const parsed = JSON.parse(prefill) as ReqLineDraft[]
+        if (parsed.length > 0) setLines(parsed)
+      } catch {
+        /* ignore */
+      }
+      sessionStorage.removeItem('req_prefill_lines')
     }
   }, [searchParams])
 
@@ -69,6 +91,10 @@ export default function RequisitionForm() {
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: purpose !== 'project',
+  })
+  const { data: mosData } = useQuery(MANUFACTURING_ORDERS_QUERY, {
+    variables: {},
+    skip: purpose !== 'manufacturing',
   })
   const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
     variables: { companyId: currentCompanyId },
@@ -81,6 +107,8 @@ export default function RequisitionForm() {
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
     productsData?.products ?? []
   const projects: { id: string; code: string; name: string }[] = projectsData?.projects?.data ?? []
+  const mos: { id: string; mo_number: string; product_name?: string | null }[] =
+    mosData?.manufacturingOrders ?? []
   const branches: { id: string; name: string; isActive: boolean }[] = (
     branchesData?.companyBranches ?? []
   ).filter((b: { isActive: boolean }) => b.isActive)
@@ -221,6 +249,10 @@ export default function RequisitionForm() {
       addToast({ type: 'error', message: 'Please select a delivery destination' })
       return
     }
+    if (purpose === 'manufacturing' && !linkedMoId) {
+      addToast({ type: 'error', message: 'Please select a manufacturing order' })
+      return
+    }
     if (branches.length > 0 && !branchId) {
       addToast({ type: 'error', message: 'Please select a branch' })
       return
@@ -235,6 +267,7 @@ export default function RequisitionForm() {
         purpose,
         project_id: purpose === 'project' ? projectId || undefined : undefined,
         delivery_destination: purpose === 'project' ? deliveryDestination || undefined : undefined,
+        linked_mo_id: purpose === 'manufacturing' ? linkedMoId || undefined : undefined,
         priority,
         branch_id: branchId || undefined,
         notes: notes || undefined,
@@ -282,10 +315,11 @@ export default function RequisitionForm() {
               <Select
                 label="Purpose"
                 value={purpose}
-                onChange={(e) => setPurpose(e.target.value as 'stock' | 'project')}
+                onChange={(e) => setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing')}
               >
                 <option value="stock">General Stock</option>
                 <option value="project">Project Supply</option>
+                <option value="manufacturing">Manufacturing / BOM</option>
               </Select>
             </div>
             <div style={{ flex: '1 1 200px' }}>
@@ -330,6 +364,26 @@ export default function RequisitionForm() {
                   <option value="">Select destination…</option>
                   <option value="inventory">Delivered to inventory</option>
                   <option value="jobsite">Delivered directly to the jobsite</option>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {purpose === 'manufacturing' && (
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 240px' }}>
+                <Select
+                  label="Manufacturing Order *"
+                  value={linkedMoId}
+                  onChange={(e) => setLinkedMoId(e.target.value)}
+                >
+                  <option value="">Select MO…</option>
+                  {mos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.mo_number}
+                      {m.product_name ? ` — ${m.product_name}` : ''}
+                    </option>
+                  ))}
                 </Select>
               </div>
             </div>
