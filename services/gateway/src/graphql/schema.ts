@@ -1468,6 +1468,17 @@
     isPrimary: Boolean!
     createdAt: String!
     uploadedByEmail: String
+    # The entity_type this attachment is actually stored under — normally
+    # equal to the entityType you queried with, except for
+    # entityAttachments('purchase_order', ...), which also unions in a G1
+    # child PO's per-vendor receipts (stored at entity_type
+    # 'po_line_purchase', never 'purchase_order'). Callers that need to
+    # replicate confirmReceipt's own acceptance rule (a direct-PO
+    # attachment only counts if its category is 'po_receipt_document', but
+    # any po_line_purchase-sourced one counts regardless of category) need
+    # this field to tell the two apart — file.category alone can't, since
+    # both branches can carry the same category value.
+    sourceEntityType: String
   }
 
   type UploadUrlPayload {

@@ -6970,31 +6970,31 @@ export const resolvers = {
       // purchase. Union in po_line_purchases-sourced attachments for this
       // PO's own lines; a no-op for a legacy PO, which never has any
       // po_line_purchases rows at all.
-      const result =
-        args.entityType === 'purchase_order'
-          ? await query(
-              `SELECT da.id, da.label, da.is_primary, da.created_at,
-                      f.id AS file_id, f.original_filename, f.mime_type,
-                      f.size_bytes, f.category, f.uploaded_at,
-                      u.email AS uploaded_by_email
-               FROM document_attachments da
-               JOIN files f ON f.id = da.file_id
-               JOIN users u ON u.id = da.uploaded_by
-               WHERE f.status != 'deleted' AND (
-                 (da.entity_type = 'purchase_order' AND da.entity_id = $1)
-                 OR (da.entity_type = 'po_line_purchase' AND da.entity_id IN (
-                       SELECT plp.id FROM po_line_purchases plp
-                       JOIN po_lines pl ON pl.id = plp.po_line_id
-                       WHERE pl.po_id = $1
-                     ))
-               )
-               ORDER BY da.is_primary DESC, da.created_at ASC`,
-              [args.entityId],
-            )
-          : await getAttachments(
-              args.entityType as Parameters<typeof getAttachments>[0],
-              args.entityId,
-            )
+      const isPurchaseOrderUnion = args.entityType === 'purchase_order'
+      const result = isPurchaseOrderUnion
+        ? await query(
+            `SELECT da.id, da.label, da.is_primary, da.created_at, da.entity_type,
+                    f.id AS file_id, f.original_filename, f.mime_type,
+                    f.size_bytes, f.category, f.uploaded_at,
+                    u.email AS uploaded_by_email
+             FROM document_attachments da
+             JOIN files f ON f.id = da.file_id
+             JOIN users u ON u.id = da.uploaded_by
+             WHERE f.status != 'deleted' AND (
+               (da.entity_type = 'purchase_order' AND da.entity_id = $1)
+               OR (da.entity_type = 'po_line_purchase' AND da.entity_id IN (
+                     SELECT plp.id FROM po_line_purchases plp
+                     JOIN po_lines pl ON pl.id = plp.po_line_id
+                     WHERE pl.po_id = $1
+                   ))
+             )
+             ORDER BY da.is_primary DESC, da.created_at ASC`,
+            [args.entityId],
+          )
+        : await getAttachments(
+            args.entityType as Parameters<typeof getAttachments>[0],
+            args.entityId,
+          )
       return result.rows.map((r: Record<string, unknown>) => ({
         id: r.id,
         file: {
@@ -7010,6 +7010,11 @@ export const resolvers = {
         isPrimary: r.is_primary,
         createdAt: r.created_at,
         uploadedByEmail: r.uploaded_by_email,
+        // getAttachments' own query filters strictly on entity_type=$1, so
+        // every row it returns necessarily has that same entity_type —
+        // safe to use args.entityType directly without selecting the
+        // column there too.
+        sourceEntityType: isPurchaseOrderUnion ? r.entity_type : args.entityType,
       }))
     },
 
@@ -28001,14 +28006,15 @@ const phase5MutationResolvers = {
     // the schema, so it's always the one company-wide default.
     const [projectRow, branchRow, sysConfigRow] = await Promise.all([
       i.purpose === 'project' && i.project_id
-        ? query<{ cost_center_id: string | null }>(`SELECT cost_center_id FROM projects WHERE id=$1`, [
-            i.project_id,
-          ])
+        ? query<{ cost_center_id: string | null }>(
+            `SELECT cost_center_id FROM projects WHERE id=$1 AND company_id=$2`,
+            [i.project_id, ctx.auth.companyId],
+          )
         : Promise.resolve({ rows: [] as { cost_center_id: string | null }[] }),
       i.branch_id
         ? query<{ default_cost_center_id: string | null }>(
-            `SELECT default_cost_center_id FROM company_branches WHERE id=$1`,
-            [i.branch_id],
+            `SELECT default_cost_center_id FROM company_branches WHERE id=$1 AND company_id=$2`,
+            [i.branch_id, ctx.auth.companyId],
           )
         : Promise.resolve({ rows: [] as { default_cost_center_id: string | null }[] }),
       query<{ default_unallocated_purchase_account_id: string | null }>(
