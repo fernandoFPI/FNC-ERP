@@ -22,15 +22,16 @@ export type POStatus = (typeof PO_STATUSES)[number]['key'] | 'rejected' | 'cance
 export const PO_TERMINAL_STATUSES = ['completed', 'rejected', 'cancelled', 'deleted'] as const
 
 // G1 Phase 3 Milestone A — a per-vendor child PO (po.requisition_id set)
-// shares the pre-'bought' sequence above but diverges from 'bought'
-// onward: bought -> goods_received -> finance_review -> payment_pending ->
-// closed. 'goods_received' is intentionally the same key as in
-// PO_STATUSES (it's the same status in both vocabularies), so it's not
-// repeated with a different label here. Added alongside PO_STATUSES
+// is forked directly at 'bought' (finishBuyingRequisition) and never
+// itself occupies any pre-buying status — that whole progression (draft
+// .. items_bought) already happened on the requisition side, which has
+// its own StatusBar for it (REQUISITION_STATUSES in
+// requisition-constants.ts). So this list only covers what a child PO
+// actually goes through itself: bought -> goods_received ->
+// finance_review -> payment_pending -> closed. Kept alongside PO_STATUSES
 // rather than folding into it, since a single PO row is only ever in one
 // vocabulary at a time — see getStatusesForPO below for the pick.
 export const CHILD_PO_STATUSES = [
-  ...PO_STATUSES.filter((s) => s.sequence <= 8), // draft .. items_bought
   { key: 'bought', label: 'Bought', sequence: 8.5 },
   { key: 'goods_received', label: 'Goods received', sequence: 9 },
   { key: 'finance_review', label: 'Finance review', sequence: 10 },
