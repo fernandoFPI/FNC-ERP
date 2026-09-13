@@ -73,7 +73,8 @@ async function makeReqWithOneChildAtBought(
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0 }] },
     ctx as never,
   )
-  await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+  // confirmRequisitionInventoryCheck now auto-advances straight through
+  // store_pricing to market_pricing — no separate call needed.
   await resolvers.Mutation.submitRequisitionMarketPricing(
     null,
     { id: reqId, linePrices: [{ lineId, marketPrice: price, currencyCode: 'IQD' }] },
@@ -130,7 +131,8 @@ async function makeReqAtSourcing(qty: number): Promise<{ reqId: string; lineId: 
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: qty, sourceLocationId: warehouseId }] },
     ctx as never,
   )
-  await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+  // confirmRequisitionInventoryCheck now auto-advances straight through
+  // store_pricing to market_pricing — no separate call needed.
   await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
   await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
   const result = await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
@@ -573,6 +575,55 @@ describe('edit-request mutations widened for requisitionId', () => {
     expect(req.rows[0]!.priority).not.toBe('emergency')
   })
 
+  // po_line_purchases.po_line_id is ON DELETE CASCADE (migration 258) — a
+  // naive line removal on a line that's already been bought against would
+  // silently destroy that real purchase history. makeReqWithOneChildAtBought
+  // leaves the line both purchased-against AND forked (po_id set), so this
+  // covers the guard's has_purchases branch (and, since the same line is
+  // also forked, doubles as coverage for the forked branch too).
+  it('rejects removing a line that has already been bought against, before it ever reaches the review queue', async () => {
+    const { reqId, childLineId } = await makeReqWithOneChildAtBought(3, 10)
+
+    await expect(
+      resolvers.Mutation.submitPOEditRequest(
+        null,
+        { requisitionId: reqId, changes: JSON.stringify({ lines: { removed: [childLineId] } }) },
+        ctx as never,
+      ),
+    ).rejects.toThrow(/already bought against or forked/i)
+
+    const pending = await pool.query(
+      `SELECT id FROM po_edit_requests WHERE requisition_id=$1 AND status='pending'`,
+      [reqId],
+    )
+    expect(pending.rows).toHaveLength(0) // never queued, not just rejected on approval
+    const line = await pool.query(`SELECT id FROM po_lines WHERE id=$1`, [childLineId])
+    expect(line.rows).toHaveLength(1) // still there, untouched
+  })
+
+  it('rejects editing a line that has already been forked into a child PO', async () => {
+    const { reqId, childLineId } = await makeReqWithOneChildAtBought(3, 10)
+
+    await expect(
+      resolvers.Mutation.submitPOEditRequest(
+        null,
+        {
+          requisitionId: reqId,
+          changes: JSON.stringify({
+            lines: { edited: [{ id: childLineId, field: 'unit_price', from: 10, to: 999 }] },
+          }),
+        },
+        ctx as never,
+      ),
+    ).rejects.toThrow(/already bought against or forked/i)
+
+    const line = await pool.query<{ unit_price: string }>(
+      `SELECT unit_price FROM po_lines WHERE id=$1`,
+      [childLineId],
+    )
+    expect(parseFloat(line.rows[0]!.unit_price)).not.toBe(999)
+  })
+
   it('notifyPOOwnerForEditRequest accepts a requisitionId and returns true', async () => {
     const productId = await makeProduct('notify')
     const created = await resolvers.Mutation.createRequisition(
@@ -585,7 +636,8 @@ describe('edit-request mutations widened for requisitionId', () => {
     const lineId = lineRow.rows[0]!.id
     await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.confirmRequisitionInventoryCheck(null, { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0 }] }, ctx as never)
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    // confirmRequisitionInventoryCheck now auto-advances straight through
+    // store_pricing to market_pricing — no separate call needed.
     const marketResult = await resolvers.Mutation.submitRequisitionMarketPricing(
       null,
       { id: reqId, linePrices: [{ lineId, marketPrice: 8, currencyCode: 'IQD' }] },
