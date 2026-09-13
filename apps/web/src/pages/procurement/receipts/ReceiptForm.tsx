@@ -8,7 +8,11 @@ import {
   RECORD_RECEIPT,
   RECORD_DIRECT_DELIVERY,
 } from '../../../graphql/procurement'
-import { TOUR_DEMO_PO_ID, buildTourDemoReceiptPO } from '../../../components/help/tourDemoPO'
+import {
+  TOUR_DEMO_PO_ID,
+  TOUR_DEMO_CHILD_PO_ID,
+  buildTourDemoReceiptPO,
+} from '../../../components/help/tourDemoPO'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { EMPLOYEES_QUERY, ATTACH_FILE } from '../../../graphql/hr'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -192,9 +196,10 @@ function IconCamera({ size = 20 }: { size?: number }) {
 export default function ReceiptForm() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  // Interactive PO tour: same reserved id as PurchaseOrderDetail.tsx — see
-  // tourDemoPO.ts.
-  const isTourDemo = id === TOUR_DEMO_PO_ID
+  // Interactive PO tour: same two reserved ids as PurchaseOrderDetail.tsx —
+  // see tourDemoPO.ts. buildTourDemoReceiptPO() never reads requisition_id,
+  // so both ids share the one demo builder unchanged.
+  const isTourDemo = id === TOUR_DEMO_PO_ID || id === TOUR_DEMO_CHILD_PO_ID
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const currentUser = useAuthStore((s) => s.user)
