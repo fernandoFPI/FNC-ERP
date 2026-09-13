@@ -17,7 +17,6 @@ import {
   APPROVE_REQUISITION_EDIT_REQUEST,
   REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
-import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
@@ -279,14 +278,6 @@ export default function RequisitionDetail() {
   })
   const children: ChildPO[] = childData?.requisitionChildPurchaseOrders ?? []
 
-  const { data: locData } = useQuery(STOCK_LOCATIONS_QUERY, {
-    variables: { isActive: true },
-    skip: !req || req.status !== 'inventory_check' || isTourDemo,
-  })
-  const locations: { id: string; name: string }[] = isTourDemo
-    ? [{ id: 'demo-location-1', name: 'Main Warehouse' }]
-    : (locData?.stockLocations ?? [])
-
   const { data: availData } = useQuery(REQUISITION_STOCK_AVAILABILITY_QUERY, {
     variables: { requisitionId: id },
     skip: !id || !req || req.status !== 'inventory_check' || isTourDemo,
@@ -300,7 +291,7 @@ export default function RequisitionDetail() {
   )
 
   // ── Per-line form state (keyed by lineId) ───────────────────────────────
-  const [invQty, setInvQty] = useState<Record<string, string>>({})
+  const [invQty, setInvQty] = useState<Record<string, number>>({})
   const [invLoc, setInvLoc] = useState<Record<string, string>>({})
   const [storePrices, setStorePrices] = useState<Record<string, string>>({})
   const [marketPrices, setMarketPrices] = useState<Record<string, string>>({})
@@ -1136,79 +1127,199 @@ export default function RequisitionDetail() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {availabilityByLine.size === 0 && (
+                <div style={{ fontSize: '13px', color: theme.textMuted }}>Loading stock levels…</div>
+              )}
               {req.lines.map((l) => {
                 const avail = availabilityByLine.get(l.id)
-                const qtyReserved = avail ? avail.qtyOnHand - avail.qtyAvailable : null
+                if (!avail) return null
+                const fromStock = invQty[l.id] ?? 0
+                const qtyRequired = parseFloat(String(l.qty)) || 0
+                const toPurchase = Math.max(qtyRequired - fromStock, 0)
+                const selectedLoc = avail.byLocation.find((loc) => loc.locationId === invLoc[l.id])
+                const maxFromStock = selectedLoc
+                  ? Math.min(qtyRequired, selectedLoc.qtyAvailable)
+                  : qtyRequired
+                const statusColor = avail.isAvailable
+                  ? theme.success
+                  : avail.qtyOnHand > 0
+                    ? theme.warning
+                    : theme.danger
+                const statusLabel = avail.isAvailable
+                  ? 'In stock'
+                  : avail.qtyOnHand > 0
+                    ? 'Partial'
+                    : 'Out of stock'
                 return (
-                <div
-                  key={l.id}
-                  style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
-                >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
-                    {l.description || l.product_name} — needs {fmtN(l.qty)} {l.uom}
-                  </div>
-                  {avail ? (
+                  <div
+                    key={l.id}
+                    style={{ padding: '16px', borderRadius: '10px', border: `1px solid ${theme.border}` }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        marginBottom: '8px',
+                      }}
+                    >
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
+                        {l.description || l.product_name || '—'}
+                      </div>
+                      <span
+                        style={{
+                          padding: '2px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          flexShrink: 0,
+                          background: `${statusColor}18`,
+                          color: statusColor,
+                        }}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
                     <div
                       style={{
                         display: 'flex',
                         gap: '16px',
-                        flexWrap: 'wrap',
                         fontSize: '12px',
                         color: theme.textMuted,
-                        marginBottom: '10px',
+                        flexWrap: 'wrap',
+                        marginBottom: '12px',
                       }}
                     >
+                      <span>
+                        Required: <strong style={{ color: theme.textPrimary }}>{fmtN(qtyRequired)}</strong>
+                      </span>
                       <span>
                         On hand: <strong style={{ color: theme.textPrimary }}>{fmtN(avail.qtyOnHand)}</strong>
                       </span>
                       <span>
-                        Reserved: <strong style={{ color: theme.textPrimary }}>{fmtN(qtyReserved)}</strong>
+                        Available: <strong style={{ color: theme.textPrimary }}>{fmtN(avail.qtyAvailable)}</strong>
                       </span>
-                      <span>
-                        Available:{' '}
-                        <strong style={{ color: avail.isAvailable ? theme.success : theme.warning }}>
-                          {fmtN(avail.qtyAvailable)}
-                        </strong>
-                      </span>
-                      {avail.byLocation.length > 0 && (
-                        <span style={{ width: '100%' }}>
-                          {avail.byLocation.map((loc) => (
-                            <span key={loc.locationId} style={{ marginRight: '12px' }}>
-                              {loc.locationName}
-                              {loc.companyName ? ` (${loc.companyName})` : ''}: {fmtN(loc.qtyAvailable)} avail.
-                            </span>
-                          ))}
-                        </span>
-                      )}
                     </div>
-                  ) : (
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
-                      Loading stock levels…
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <div style={{ width: '140px' }}>
-                      <Input
-                        label="Qty from stock"
-                        type="number"
-                        min="0"
-                        max={l.qty}
-                        value={invQty[l.id] ?? ''}
-                        onChange={(e) => setInvQty((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div style={{ flex: 1, minWidth: '180px' }}>
-                      <Select
-                        label="Source location (if any from stock)"
-                        value={invLoc[l.id] ?? ''}
-                        onChange={(e) => setInvLoc((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        options={locations.map((loc) => ({ value: loc.id, label: loc.name }))}
-                        placeholder="Select location"
-                      />
+                    {avail.byLocation.length > 0 ? (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            color: theme.textSecondary,
+                            display: 'block',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          Source location
+                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {avail.byLocation.map((loc) => {
+                            const selected = invLoc[l.id] === loc.locationId
+                            return (
+                              <button
+                                key={loc.locationId}
+                                type="button"
+                                onClick={() => {
+                                  setInvLoc((prev) => ({ ...prev, [l.id]: loc.locationId }))
+                                  if (fromStock > loc.qtyAvailable) {
+                                    setInvQty((prev) => ({ ...prev, [l.id]: Math.max(0, loc.qtyAvailable) }))
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '12px',
+                                  padding: '10px 14px',
+                                  borderRadius: '8px',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  fontFamily: 'inherit',
+                                  border: `1px solid ${selected ? theme.accent : theme.border}`,
+                                  background: selected ? theme.accentBg : theme.bgCanvas,
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span
+                                    style={{
+                                      width: '14px',
+                                      height: '14px',
+                                      borderRadius: '50%',
+                                      border: `2px solid ${selected ? theme.accent : theme.border}`,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {selected && (
+                                      <span
+                                        style={{
+                                          width: '6px',
+                                          height: '6px',
+                                          borderRadius: '50%',
+                                          background: theme.accent,
+                                        }}
+                                      />
+                                    )}
+                                  </span>
+                                  <span>
+                                    <div
+                                      style={{
+                                        fontSize: '13px',
+                                        fontWeight: selected ? 600 : 500,
+                                        color: selected ? theme.accent : theme.textPrimary,
+                                      }}
+                                    >
+                                      {loc.locationName}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                      {loc.companyName}
+                                    </div>
+                                  </span>
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: selected ? theme.accent : theme.textSecondary,
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {fmtN(loc.qtyAvailable)} avail.
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: '12px', fontSize: '12px', color: theme.textMuted }}>
+                        No stock available at any location for this item.
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      <div style={{ width: '140px' }}>
+                        <Input
+                          label="From stock"
+                          type="number"
+                          min="0"
+                          max={String(maxFromStock)}
+                          value={String(fromStock)}
+                          onChange={(e) => {
+                            const v = Math.max(0, Math.min(maxFromStock, parseFloat(e.target.value) || 0))
+                            setInvQty((prev) => ({ ...prev, [l.id]: v }))
+                          }}
+                        />
+                      </div>
+                      <div style={{ width: '140px' }}>
+                        <Input label="To purchase" value={String(toPurchase)} disabled readOnly />
+                      </div>
                     </div>
                   </div>
-                </div>
                 )
               })}
               <Button
@@ -1221,7 +1332,7 @@ export default function RequisitionDetail() {
                       id: req.id,
                       lineStockQtys: req.lines.map((l) => ({
                         lineId: l.id,
-                        qtyFromStock: parseFloat(invQty[l.id] ?? '0') || 0,
+                        qtyFromStock: invQty[l.id] ?? 0,
                         sourceLocationId: invLoc[l.id] || undefined,
                       })),
                     },

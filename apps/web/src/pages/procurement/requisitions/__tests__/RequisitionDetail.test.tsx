@@ -163,7 +163,11 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText(/only the organizer, a store keeper/i)).toBeInTheDocument()
   })
 
-  it('inventory_check: shows on-hand/reserved/available and a per-location breakdown from requisitionStockAvailability', async () => {
+  // Regression coverage for matching PurchaseOrderDetail's own Stock
+  // Availability panel: a status badge (In stock/Partial/Out of stock),
+  // a Required/On hand/Available stat row, and per-location stock shown
+  // as selectable rows (not a plain inline list) — mirrors po-inventory-check.
+  it('inventory_check: shows a status badge, stock stats, and a selectable per-location breakdown', async () => {
     mockReq(
       { status: 'inventory_check', callerHasStoreKeeperPosition: true },
       [
@@ -180,12 +184,46 @@ describe('RequisitionDetail', () => {
       ],
     )
     const RequisitionDetail = (await import('../RequisitionDetail')).default
-    wrap(<RequisitionDetail />)
+    const { container } = wrap(<RequisitionDetail />)
+    expect(screen.getByText('Partial')).toBeInTheDocument()
     expect(screen.getByText('8')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
-    // qtyReserved is derived client-side as qtyOnHand - qtyAvailable = 5.
-    expect(screen.getByText('5')).toBeInTheDocument()
     expect(screen.getByText(/main warehouse/i)).toBeInTheDocument()
+    expect(screen.getByText(/main co/i)).toBeInTheDocument()
+    expect(screen.getByText('3 avail.')).toBeInTheDocument()
+
+    // Clicking the location row selects it and clamps "From stock" to what's
+    // available there — mirrors PurchaseOrderDetail's own click handler.
+    // "From stock" is the only type="number" input in this panel ("To
+    // purchase" is a disabled, unlabeled-for-a11y text input) — same
+    // no-htmlFor/id gap on this shared Input component the RequisitionForm
+    // suite already works around for Select.
+    fireEvent.click(screen.getByText(/main warehouse/i))
+    const fromStockInput = container.querySelector('input[type="number"]') as HTMLInputElement
+    fireEvent.change(fromStockInput, { target: { value: '10' } })
+    expect(fromStockInput.value).toBe('3')
+    // "To purchase" reacts to the clamped from-stock value: 5 - 3 = 2.
+    expect(screen.getByDisplayValue('2')).toBeInTheDocument()
+  })
+
+  it('inventory_check: shows "No stock available" when a line has no byLocation entries', async () => {
+    mockReq(
+      { status: 'inventory_check', callerHasStoreKeeperPosition: true },
+      [
+        {
+          lineId: 'line-1',
+          qtyRequired: 5,
+          qtyOnHand: 0,
+          qtyAvailable: 0,
+          isAvailable: false,
+          byLocation: [],
+        },
+      ],
+    )
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('Out of stock')).toBeInTheDocument()
+    expect(screen.getByText(/no stock available at any location/i)).toBeInTheDocument()
   })
 
   it('store_pricing: shows the submit button when caller has the position', async () => {
