@@ -119,7 +119,8 @@ async function makeReqAtPendingApproval(opts: {
     },
     ctx as never,
   )
-  await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+  // confirmRequisitionInventoryCheck now auto-advances straight through
+  // store_pricing to market_pricing — no separate call needed.
   await resolvers.Mutation.submitRequisitionMarketPricing(
     null,
     { id: reqId, linePrices: [{ lineId, marketPrice: opts.marketPrice, currencyCode: opts.currencyCode ?? 'IQD' }] },
@@ -257,7 +258,8 @@ describe('approveRequisition', () => {
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    // confirmRequisitionInventoryCheck now auto-advances straight through
+    // store_pricing to market_pricing — no separate call needed.
     await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
 
@@ -329,7 +331,8 @@ describe('approveRequisition', () => {
       },
       ctx as never,
     )
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    // confirmRequisitionInventoryCheck now auto-advances straight through
+    // store_pricing to market_pricing — no separate call needed.
     await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)

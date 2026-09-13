@@ -5339,10 +5339,10 @@ export default function ProjectDetail() {
                               variant="primary"
                               size="sm"
                               onClick={() =>
-                                navigate(`/procurement/purchase-orders/new?projectId=${id}`)
+                                navigate(`/procurement/requisitions/new?projectId=${id}`)
                               }
                             >
-                              + Create PO
+                              + New Requisition
                             </Button>
                           )}
                         </div>

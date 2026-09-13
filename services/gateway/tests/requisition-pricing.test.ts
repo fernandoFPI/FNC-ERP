@@ -38,10 +38,13 @@ async function cleanup(): Promise<void> {
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [TEST_COMPANY_ID, `${SKU_PREFIX}%`])
 }
 
-// Drives a fresh requisition through store_pricing (skipping the actual
-// inventory-check reservation math — irrelevant to pricing — by moving
-// straight past it with 0 from-stock on every line).
-async function makeReqAtStorePricing(qtyOrdered: number, unitPrice = 10) {
+// Drives a fresh requisition through inventory check (skipping the actual
+// reservation math — irrelevant to pricing — by moving straight past it
+// with 0 from-stock on every line). confirmRequisitionInventoryCheck now
+// auto-fills store pricing and advances straight through to
+// market_pricing in one transaction (mirrors confirmPOInventoryCheck) —
+// store_pricing is no longer a stage this lands on in the normal flow.
+async function makeReqAtMarketPricing(qtyOrdered: number, unitPrice = 10) {
   const productId = await makeProduct('pricing')
   const created = await resolvers.Mutation.createRequisition(
     null,
@@ -57,6 +60,19 @@ async function makeReqAtStorePricing(qtyOrdered: number, unitPrice = 10) {
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0 }] },
     ctx as never,
   )
+  return { reqId, lineId, productId }
+}
+
+// submitRequisitionStorePricing itself is no longer reachable via the
+// normal flow (confirmRequisitionInventoryCheck auto-advances past
+// 'store_pricing' entirely) — it still exists for the rare fallback case
+// a requisition is moved back there by some other path (e.g. a future
+// reject-to-store-pricing mutation, or a manual data correction), and the
+// manual Store Pricing panel still renders for it. Force the status back
+// to test the mutation's own behavior directly.
+async function makeReqAtStorePricing(qtyOrdered: number, unitPrice = 10) {
+  const { reqId, lineId, productId } = await makeReqAtMarketPricing(qtyOrdered, unitPrice)
+  await pool.query(`UPDATE requisitions SET status='store_pricing' WHERE id=$1`, [reqId])
   return { reqId, lineId, productId }
 }
 
@@ -99,8 +115,7 @@ describe('submitRequisitionStorePricing', () => {
 
 describe('submitRequisitionMarketPricing', () => {
   it('sets the real total, the line currency, caches last_market_price — with no vendor and no fx_rate_to_base stamped', async () => {
-    const { reqId, lineId, productId } = await makeReqAtStorePricing(5, 1)
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    const { reqId, lineId, productId } = await makeReqAtMarketPricing(5, 1)
 
     const result = await resolvers.Mutation.submitRequisitionMarketPricing(
       null,
@@ -148,8 +163,7 @@ describe('submitRequisitionMarketPricing', () => {
 
 describe('verifyRequisitionPrices', () => {
   it('sets verified_price + unit_price + total from the line\'s own currency, transitions to pending_approval', async () => {
-    const { reqId, lineId } = await makeReqAtStorePricing(3, 1)
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    const { reqId, lineId } = await makeReqAtMarketPricing(3, 1)
     await resolvers.Mutation.submitRequisitionMarketPricing(
       null,
       { id: reqId, linePrices: [{ lineId, marketPrice: 20, currencyCode: 'IQD' }] },
@@ -219,7 +233,6 @@ describe('getRequisitionCurrencyTotals (via the requisition query resolver)', ()
       },
       ctx as never,
     )
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.submitRequisitionMarketPricing(
       null,
       {

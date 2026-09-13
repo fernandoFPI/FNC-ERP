@@ -114,16 +114,25 @@ export default function StoreInDetail() {
     skip: !receipt?.po_id,
     fetchPolicy: 'cache-and-network',
   })
-  // Any attachment entityAttachments('purchase_order', poId) returns is a
-  // buyer-side receipt — either the legacy items_bought upload (category
-  // 'po_receipt_document', attached directly to the PO) or a G1 child PO's
-  // per-vendor purchase receipt (category 'attachment', attached during
-  // the requisition's Items Bought stage and surfaced here via a union in
-  // the entityAttachments resolver). Filtering to 'po_receipt_document'
-  // only — the old check — meant the "Buyer's Receipt" panel could show
-  // an attachment while this flag stayed false, so Confirm kept demanding
-  // a redundant Vendor Receipt upload even with one plainly already there.
-  const hasBuyerReceipt = ((buyerReceiptData?.entityAttachments as unknown[] | undefined)?.length ?? 0) > 0
+  // Mirrors confirmReceipt's own acceptance rule exactly (gateway
+  // resolvers.ts) — NOT just "any attachment exists". A plain
+  // entityAttachments('purchase_order', poId) union also includes this
+  // page's unrelated "Delivery Photos" uploader (PurchaseOrderDetail.tsx,
+  // category 'attachment', no status gating), which used to make this
+  // flag true — and Confirm enabled — even with no real vendor receipt
+  // anywhere, so the backend rejected it right after. A direct-PO
+  // attachment (sourceEntityType 'purchase_order') only counts with
+  // category 'po_receipt_document'; a G1 child PO's per-vendor purchase
+  // receipt (sourceEntityType 'po_line_purchase', attached during the
+  // requisition's Items Bought stage) counts regardless of category,
+  // since that flow never writes 'po_receipt_document' at all.
+  const hasBuyerReceipt = (
+    (buyerReceiptData?.entityAttachments as
+      | { sourceEntityType?: string; file?: { category?: string } }[]
+      | undefined) ?? []
+  ).some(
+    (a) => a.sourceEntityType === 'po_line_purchase' || a.file?.category === 'po_receipt_document',
+  )
 
   const [attachReceiptPhoto] = useMutation(ATTACH_RECEIPT_PHOTO)
   const [detachFile, { loading: detaching }] = useMutation(DETACH_FILE)

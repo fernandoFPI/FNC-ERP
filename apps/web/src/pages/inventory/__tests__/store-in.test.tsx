@@ -73,7 +73,10 @@ const baseReceipt = {
 
 // A G1 child PO's Buyer's Receipt entry — surfaced by entityAttachments via
 // the po_line_purchases union, category 'attachment' (not the legacy
-// 'po_receipt_document').
+// 'po_receipt_document'). sourceEntityType is how the frontend tells this
+// apart from an unrelated attachment sitting directly on the PO (see
+// unrelatedPurchaseOrderAttachment below) — both can carry the same
+// 'attachment' category, so category alone can't distinguish them.
 const buyerReceiptAttachment = {
   id: 'att-1',
   file: {
@@ -88,6 +91,31 @@ const buyerReceiptAttachment = {
   isPrimary: false,
   createdAt: '2026-09-12T00:00:00.000Z',
   uploadedByEmail: 'admin@fnc.com',
+  sourceEntityType: 'po_line_purchase',
+}
+
+// An unrelated attachment sitting directly on the PO — e.g. one uploaded
+// via PurchaseOrderDetail's own "Delivery Photos" panel (entityType
+// 'purchase_order', default category 'attachment', no status gating, no
+// relation to any actual vendor receipt). Same shape and category as a
+// real G1 buyer receipt except for sourceEntityType — must NOT satisfy
+// the gate, or Confirm Receipt shows enabled while confirmReceipt (which
+// requires category 'po_receipt_document' on this branch) still rejects.
+const unrelatedPurchaseOrderAttachment = {
+  id: 'att-2',
+  file: {
+    id: 'file-3',
+    originalFilename: 'delivery-photo.jpg',
+    mimeType: 'image/jpeg',
+    sizeBytes: 2048,
+    category: 'attachment',
+    uploadedAt: '2026-09-12T00:00:00.000Z',
+  },
+  label: null,
+  isPrimary: false,
+  createdAt: '2026-09-12T00:00:00.000Z',
+  uploadedByEmail: 'admin@fnc.com',
+  sourceEntityType: 'purchase_order',
 }
 
 function mockQueries(entityAttachments: unknown[]) {
@@ -111,16 +139,31 @@ describe('StoreInDetail — hasBuyerReceipt detection', () => {
   // Regression: a G1 child PO's receipt is surfaced by entityAttachments
   // with category 'attachment' (it was recorded during the requisition's
   // Items Bought stage), not the legacy 'po_receipt_document' category
-  // hasBuyerReceipt used to filter on exclusively. Before this fix, the
-  // "Buyer's Receipt" panel visibly showed the file while Confirm Receipt
-  // stayed disabled demanding a redundant Vendor Receipt upload — found via
-  // manual click-through on PO-2026-0028's draft receipt.
-  it('enables Confirm Receipt once a buyer receipt attachment exists, regardless of its category', async () => {
+  // hasBuyerReceipt used to filter on exclusively at first. Before that
+  // fix, the "Buyer's Receipt" panel visibly showed the file while Confirm
+  // Receipt stayed disabled demanding a redundant Vendor Receipt upload —
+  // found via manual click-through on PO-2026-0028's draft receipt.
+  it('enables Confirm Receipt for a G1 child PO buyer receipt (sourceEntityType po_line_purchase)', async () => {
     mockQueries([buyerReceiptAttachment])
     const StoreInDetail = (await import('../store-in/StoreInDetail')).default
     wrap(<StoreInDetail />)
     expect(screen.getByRole('button', { name: /confirm receipt/i })).not.toBeDisabled()
     expect(screen.queryByText(/attach a vendor receipt before confirming/i)).not.toBeInTheDocument()
+  })
+
+  // Regression (the opposite direction): dropping the category filter
+  // entirely — "any attachment on the PO counts" — went too far. It made
+  // this flag true, and Confirm Receipt enabled, for a PO that only had an
+  // unrelated "Delivery Photos" upload and no real vendor receipt at all —
+  // confirmReceipt still requires category 'po_receipt_document' on a
+  // direct-PO attachment, so clicking Confirm hit a confusing server
+  // error right after the gate said it was fine.
+  it('keeps Confirm Receipt disabled for an unrelated attachment sitting directly on the PO', async () => {
+    mockQueries([unrelatedPurchaseOrderAttachment])
+    const StoreInDetail = (await import('../store-in/StoreInDetail')).default
+    wrap(<StoreInDetail />)
+    expect(screen.getByRole('button', { name: /confirm receipt/i })).toBeDisabled()
+    expect(screen.getByText(/attach a vendor receipt before confirming/i)).toBeInTheDocument()
   })
 
   it('still requires a vendor receipt when none has been attached', async () => {
