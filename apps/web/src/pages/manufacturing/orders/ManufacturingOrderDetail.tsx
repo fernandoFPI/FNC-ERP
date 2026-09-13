@@ -470,14 +470,14 @@ export default function ManufacturingOrderDetail() {
                             qty: String(c.qtyShortfall),
                             unit_price: '0',
                             uom: c.uom ?? 'pc',
+                            account_id: '',
+                            cost_center_id: '',
                           }))
-                        sessionStorage.setItem('po_prefill_lines', JSON.stringify(lines))
-                        navigate(
-                          `/procurement/purchase-orders/new?moId=${mo.id}&purpose=manufacturing`,
-                        )
+                        sessionStorage.setItem('req_prefill_lines', JSON.stringify(lines))
+                        navigate(`/procurement/requisitions/new?moId=${mo.id}`)
                       }}
                     >
-                      Create PO for missing items
+                      Create Requisition for missing items
                     </Button>
                   </StickyActionBar>
                 )}
