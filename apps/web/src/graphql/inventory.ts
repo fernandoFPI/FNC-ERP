@@ -12,6 +12,7 @@ export const PRODUCTS_QUERY = gql`
       uom
       valuation_method
       average_cost
+      cost_currency
       is_active
       reorder_point
       qty_on_hand
@@ -32,6 +33,7 @@ export const PRODUCT_QUERY = gql`
       uom
       valuation_method
       standard_cost
+      cost_currency
       average_cost
       is_active
       reorder_point

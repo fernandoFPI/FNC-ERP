@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_REQUISITION } from '../../../graphql/requisitions'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
@@ -49,6 +49,7 @@ export default function RequisitionForm() {
   // picker disabled below — mirrors PurchaseOrderForm's own isTourMode
   // handling exactly.
   const isTourMode = useTourStore((s) => s.isActive)
+  const [searchParams] = useSearchParams()
 
   const [purpose, setPurpose] = useState<'stock' | 'project'>('stock')
   const [projectId, setProjectId] = useState('')
@@ -58,6 +59,17 @@ export default function RequisitionForm() {
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
   const formRef = useRef<HTMLFormElement>(null)
+
+  // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId= handling,
+  // for entry points (e.g. ProjectDetail's "+ New Requisition") that already
+  // know which project this is for.
+  useEffect(() => {
+    const urlProjectId = searchParams.get('projectId')
+    if (urlProjectId) {
+      setPurpose('project')
+      setProjectId(urlProjectId)
+    }
+  }, [searchParams])
 
   const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: {} })
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
