@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import { TOUR_DEMO_CHILD_PO_ID } from '../../../components/help/tourDemoPO'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
@@ -23,9 +24,17 @@ vi.mock('../../../store/toastStore', () => ({
 }))
 
 const mockNavigate = vi.fn()
+// Left undefined by default so every existing test's useParams() keeps
+// returning {} exactly as before (none of these tests route through a
+// real <Route path=":id">) — only the tour-demo test below sets this.
+let mockParamId: string | undefined
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
-  return { ...actual, useNavigate: () => mockNavigate }
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+    useParams: () => (mockParamId !== undefined ? { id: mockParamId } : {}),
+  }
 })
 
 function wrap(ui: React.ReactNode, initialPath = '/') {
@@ -38,6 +47,7 @@ function wrap(ui: React.ReactNode, initialPath = '/') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockParamId = undefined
   mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({}), { loading: false }])
   mockUseQuery.mockReturnValue({ data: undefined, loading: false, refetch: vi.fn() })
 })
@@ -198,6 +208,22 @@ describe('PurchaseOrderDetail', () => {
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
     expect(screen.getAllByText(/^bought$/i).length).toBeGreaterThan(0)
+  })
+
+  // Onboarding tour, Phase 4: navigating to the reserved child-PO demo id
+  // renders the synthetic child PO for the given tourStatus, not real
+  // query data — the hand-off point from the requisition tour's own
+  // Finish Buying step.
+  it('tour demo: renders the synthetic child PO for the given tourStatus, not real query data', async () => {
+    mockParamId = TOUR_DEMO_CHILD_PO_ID
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    const { container } = wrap(
+      <PurchaseOrderDetail />,
+      `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}?tourStatus=finance_review`,
+    )
+    expect(screen.getByText('PO-TOUR-DEMO-CHILD')).toBeInTheDocument()
+    expect(container.querySelector('[data-tour="po-finance-audit"]')).toBeInTheDocument()
+    expect(screen.queryByText('Acme Supplies')).not.toBeInTheDocument()
   })
 })
 
