@@ -2,7 +2,9 @@ import type { DriveStep } from 'driver.js'
 import { useTourStore } from '../../store/tourStore'
 import type { ThemeTokens } from '../../theme/tokens'
 import { injectTourStyles, removeTourStyles } from './tourStyles'
-import { TOUR_DEMO_PO_ID } from './tourDemoPO'
+// TOUR_DEMO_PO_ID (and a requisition-side equivalent) come back once the
+// 'requisition' tour is extended past requisition creation — see the
+// phased plan for this rewrite (Phases 2-4 add the demo-record hand-off).
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -218,177 +220,92 @@ const interactiveTours: Record<string, InteractiveTour> = {
   },
 
   // ── Purchase Order — full procure-to-pay workflow ──────────────────────────
-  'purchase-order': {
-    title: 'Create a Purchase Order',
-    startRoute: '/procurement/purchase-orders',
-    startElement: '[data-tour="new-po-btn"]',
+  'requisition': {
+    title: 'Create a Requisition',
+    startRoute: '/procurement/requisitions',
+    startElement: '[data-tour="new-requisition-btn"]',
     steps: [
       {
-        title: '🛒 Purchase Order — Interactive Tour',
+        title: '🛒 Requisition — Interactive Tour',
         description:
-          'This tour covers the <strong>full procurement pipeline</strong> — not just filling in the form: creating a PO, the internal pricing and verification stages, approval, buying, receiving, and the finance audit that closes it out.<br/><br/>' +
-          '<strong style="color:#f59e0b">Tour mode is active</strong> — you interact with the real form, but <strong>nothing is saved</strong>.<br/><br/>' +
+          'This tour covers the <strong>full procure-to-pay pipeline</strong> — not just filling in the form: raising a requisition, the internal pricing and verification stages, approval, buying per vendor, and how it forks into a real purchase order once buying is done.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode is active</strong> — you interact with the real forms, but <strong>nothing is saved</strong>.<br/><br/>' +
           'Press <strong>Next →</strong> to begin.',
       },
       {
-        element: '[data-tour="new-po-btn"]',
-        title: 'Step 1 — The PO pipeline',
+        element: '[data-tour="new-requisition-btn"]',
+        title: 'Step 1 — Requisitions, then Purchase Orders',
         description:
-          'The Purchase Orders list shows every PO with its current status. The full lifecycle is:<br/><br/>' +
-          '<strong>Draft → Inventory Check → Store Pricing → Market Pricing → Price Verification → Pending Approval → Approved → Items Bought → Goods Received → Finance Audit → Invoiced → Completed</strong><br/><br/>' +
-          "That looks long, but most of it happens without anyone doing anything — you'll see which steps are automatic as we go. Every status change is timestamped and shows who actioned it. Press <strong>Next →</strong> to create a new PO.",
+          'Every purchase starts life as a <strong>Requisition</strong> — a pre-vendor request that goes through:<br/><br/>' +
+          '<strong>Draft → Inventory Check → Store Pricing → Market Pricing → Price Verification → Pending Approval → Approved → Items Bought → Sourcing → Completed</strong><br/><br/>' +
+          "Once approved and bought, <strong>Finish Buying</strong> forks it into one real Purchase Order per vendor — that PO is what Finance actually processes for payment. You'll see both halves in this tour. Press <strong>Next →</strong> to create a new requisition.",
         side: 'bottom',
-        nextRoute: '/procurement/purchase-orders/new',
-        nextElement: '[data-tour="po-purpose-row"]',
+        nextRoute: '/procurement/requisitions/new',
+        nextElement: '[data-tour="req-details-card"]',
       },
       {
-        element: '[data-tour="po-purpose-row"]',
-        title: 'Step 2 — Purchase purpose',
+        element: '[data-tour="req-purpose-row"]',
+        title: 'Step 2 — Purpose, branch & priority',
         description:
           'Select what the purchase is for — this controls <strong>cost routing</strong>:<br/><br/>' +
-          '• <strong>General Stock</strong> — items go into your warehouse inventory.<br/>' +
-          "• <strong>Project Supply</strong> — items are for a specific project. Cost posts to that project's budget, and you can mark it for direct-to-jobsite delivery so it skips warehouse stock entirely.<br/>" +
-          '• <strong>Manufacturing / BOM</strong> — materials for a production order.<br/><br/>' +
-          'Priority also matters here: an <strong>Emergency</strong> PO skips Inventory Check and both pricing stages entirely, going straight from Draft to approval.<br/><br/>' +
-          '<strong>For this walkthrough, click Project Supply</strong> — the rest of the tour is built around it, since it is also the purpose that unlocks direct-to-jobsite delivery, which you will see later. The <strong>Project</strong> field that appears is disabled during the tour on purpose — picking a real one isn\'t needed here, so just leave it and move on.',
+          '• <strong>General Stock</strong> — items go into warehouse inventory.<br/>' +
+          "• <strong>Project Supply</strong> — items are for a specific project. Cost posts to that project's budget, and you can mark it for direct-to-jobsite delivery so it skips warehouse stock entirely.<br/><br/>" +
+          'Priority matters too: an <strong>Emergency</strong> requisition skips Inventory Check and both pricing stages entirely, going straight from Draft to approval.<br/><br/>' +
+          '<strong>For this walkthrough, click Project Supply</strong> — the rest of the tour is built around it, since it also unlocks direct-to-jobsite delivery, which you will see later.',
         side: 'bottom',
       },
       {
-        element: '[data-tour="po-vendor-row"]',
-        title: 'Step 3 — Vendor and currency (both optional right now)',
+        element: '[data-tour="req-project-row"]',
+        title: 'Step 3 — Project & delivery destination',
         description:
-          "<strong>Vendor</strong>: often unknown this early — leave it blank. It genuinely doesn't need to be set until Market Pricing, once you actually have a quote in hand.<br/><br/>" +
-          '<strong>Currency</strong>: set a header currency and estimated FX rate if you already know it will be a foreign-currency purchase — but the number that actually matters is set for real at Market Pricing, per line, from a vendor quote.<br/><br/>' +
-          "Don't worry about getting either exactly right at this stage — that's the whole point of deferring them.",
+          'The <strong>Project</strong> field is disabled during this walkthrough on purpose — picking a real one isn\'t needed here, so just leave it and move on.<br/><br/>' +
+          '<strong>Delivery Destination</strong> decides where a from-stock portion physically goes: <strong>inventory</strong> (normal warehouse flow) or <strong>jobsite</strong> (skips the warehouse — cost posts straight to the project instead, which you will see later at Receiving).',
         side: 'bottom',
       },
       {
-        element: '[data-tour="po-delivery-row"]',
-        title: 'Step 4 — Delivery date, analytic account & FX rate',
-        description:
-          '<strong>Analytic Account</strong>: links cost to a cost centre. Auto-fills when you select a project above.<br/><br/>' +
-          '<strong>Expected Delivery</strong>: used to flag the PO as overdue if it passes with nothing received yet.<br/><br/>' +
-          '<strong>FX Rate</strong>: only relevant if you picked a non-base header currency above — it is a starting estimate, not the number that gets posted.',
+        element: '[data-tour="req-notes"]',
+        title: 'Step 4 — Notes',
+        description: 'Anything the buyer or approver should know — optional, but shows up everywhere this requisition does.',
         side: 'bottom',
       },
       {
-        element: '[data-tour="po-lines-card"]',
-        title: 'Step 5 — Order lines',
+        element: '[data-tour="req-lines-card"]',
+        title: 'Step 5 — Lines',
         description:
-          'Add every item you are ordering. Each line has:<br/><br/>' +
-          '• <strong>Product</strong> — search your product catalogue, or leave it as <strong>Custom item</strong> and just type a description if it is not catalogued yet<br/>' +
-          '• <strong>UOM</strong>, <strong>Qty</strong>, and a <strong>unit price</strong> — treat this price as a rough estimate; the real one gets set later at Market Pricing and again at Buying<br/><br/>' +
-          'A Custom item line is not lost once it arrives — see the New Items step later in this tour.',
+          'Add every item you need. Each line has:<br/><br/>' +
+          '• <strong>Product</strong> — search the catalogue, or leave it as <strong>Custom item</strong> and just type a description if it is not catalogued yet<br/>' +
+          '• <strong>UOM</strong>, <strong>Qty</strong>, and an <strong>estimated unit price</strong> — the real price gets set later, per vendor, at Buying<br/><br/>' +
+          "Notice there's no GL account or cost center to pick here — the requester doesn't need to know either; both are worked out automatically once the requisition is approved.<br/><br/>" +
+          'A Custom item line is not lost once bought — see the New Items step later in this tour.',
         side: 'top',
       },
       {
-        element: '[data-tour="po-add-line"]',
+        element: '[data-tour="req-add-line-btn"]',
         title: 'Step 6 — Add more lines',
         description:
-          'Click <strong>+ Add Line</strong> to order multiple items on the same PO. Grouping related items on one PO simplifies the vendor relationship and approval process.<br/><br/>' +
-          'Try clicking + Add Line to see a new row appear.',
+          'Click <strong>+ Add Line</strong> to request multiple items on the same requisition. Try it to see a new row appear.',
         side: 'top',
       },
       {
-        element: '[data-tour="submit-po-btn"]',
-        title: 'Step 7 — Create the PO',
+        element: '[data-tour="req-summary-sidebar"]',
+        title: 'Step 7 — Summary',
         description:
-          'Click <strong>Create Purchase Order</strong> to submit it into <strong>Inventory Check</strong> — the first stage of the pipeline, not approval yet.<br/><br/>' +
-          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved. Press <strong>Next →</strong> and we\'ll continue on a walkthrough PO — no data is real from here on either, but every screen is.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}?tourStatus=inventory_check`,
-        nextElement: '[data-tour="po-inventory-check"]',
+          'A running total as you fill in the form — line count, total quantity, an estimated total (no currency yet; that comes later, per vendor, at Buying), and the priority you picked.',
+        side: 'left',
       },
       {
-        element: '[data-tour="po-inventory-check"]',
-        title: '📦 Inventory check',
+        element: '[data-tour="submit-req-btn"]',
+        title: 'Step 8 — Create the requisition',
         description:
-          "The PO owner records how much of each line is already sitting in stock — try changing a value below.<br/><br/>" +
-          '• A line <strong>fully</strong> covered from stock skips straight to <strong>Ready to Issue</strong> — no pricing, no approval, nothing more to buy.<br/>' +
-          '• Whatever is still needed continues on to pricing.<br/><br/>' +
-          'This is also where the value of the from-stock portion gets set — automatically, no one has to type it in (see the next step). Press <strong>Next →</strong> to continue.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}?tourStatus=market_pricing`,
-        nextElement: '[data-tour="po-market-pricing"]',
-      },
-      {
-        element: '[data-tour="po-market-pricing"]',
-        title: '💲 Store Pricing (skipped) & Market Pricing',
-        description:
-          '<strong>Store Pricing</strong> — valuing the from-stock portion — is fully automatic: the system fills it in from the last real vendor price recorded for that product, and moves straight on. No one sees a manual step for this anymore, which is why this tour skipped straight past it.<br/><br/>' +
-          '<strong>Market Pricing</strong>, below, is where a real vendor and a real price and currency get attached to the portion actually being purchased — done by whoever holds the <strong>Procurement Officer</strong> position, based on an actual quote. Try entering a price on a line.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}?tourStatus=price_verification`,
-        nextElement: '[data-tour="po-price-verification"]',
-      },
-      {
-        element: '[data-tour="po-price-verification"]',
-        title: '🔍 Price verification',
-        description:
-          'A second reviewer (<strong>Procurement 2nd</strong>) checks the market price before it goes any further, and can bounce it back to Market Pricing if something looks wrong.<br/><br/>' +
-          'This is a deliberate second set of eyes on the number that is about to become the PO total — press <strong>Next →</strong> once you have had a look.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}?tourStatus=pending_approval`,
-        nextElement: '[data-tour="po-approve-btn"]',
-      },
-      {
-        element: '[data-tour="po-approve-btn"]',
-        title: '✅ Approval',
-        description:
-          "Approval routes to the right approver based on your company's thresholds and PO positions, from the <strong>Approval Queue</strong>. A rejection sends the PO back to Draft with a reason — fix it and resubmit.<br/><br/>" +
-          "Once approved, the PO doesn't sit and wait — it chains straight into <strong>Items Bought</strong> automatically, which is where we're headed next.<br/><br/>" +
-          '<strong style="color:#f59e0b">Tour mode:</strong> clicking Approve PO shows a toast but nothing is saved.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}?tourStatus=items_bought`,
-        nextElement: '[data-tour="po-actual-price-input"]',
-      },
-      {
-        element: '[data-tour="po-actual-price-input"]',
-        title: '🛍️ Buying — the actual price',
-        description:
-          'The buyer works through the Items Bought checklist, ticking each line as bought with the checkbox on the left.<br/><br/>' +
-          'For each line, they enter the <strong>actual price paid</strong> here — the real number from the receipt or vendor invoice, not the original estimate. This is the figure that flows through to Finance, so it matters more than anything entered earlier in the PO. Try it on a line, then press <strong>Next →</strong>.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}/receive`,
-        nextElement: '[data-tour="po-jobsite-photos"]',
-      },
-      {
-        element: '[data-tour="po-jobsite-photos"]',
-        title: '📥 Receiving — direct to jobsite',
-        description:
-          "Because this PO is Project Supply and delivered straight to the jobsite (not the warehouse), the normal Record Receipt screen simplifies down to this: attach a vendor-receipt photo and a materials photo, then click <strong>Mark Delivered</strong> in the top right.<br/><br/>" +
-          "It never touches warehouse stock — the cost posts straight to the project instead.<br/><br/>" +
-          '<em>A regular (warehouse) PO would show the full Record Receipt form here instead — enter quantities received per line, with partial receipts supported, and the same two required photos before it counts.</em><br/><br/>' +
-          'Press <strong>Next →</strong> to continue — nothing here is saved either.',
-        side: 'right',
-        nextRoute: '/inventory/pending-catalog',
-        nextElement: '[data-tour="pending-catalog-page"]',
-      },
-      {
-        element: '[data-tour="pending-catalog-page"]',
-        title: '🆕 New items get cataloged',
-        description:
-          'Remember the free-text <strong>Custom item</strong> line from Step 5? It is not lost once it arrives — it lands right here, in <strong>Inventory → New Items to Catalog</strong>, a real worklist the store keeper works through at their own pace (this is the actual page — whatever is listed below is real, not part of the demo).<br/><br/>' +
-          'From there it either becomes a real, reorderable catalog product, or gets linked to an existing one if it turns out to already exist under a different name or in a different language.',
-        side: 'top',
-        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_PO_ID}?tourStatus=finance_audit`,
-        nextElement: '[data-tour="po-finance-audit"]',
-      },
-      {
-        element: '[data-tour="po-finance-audit"]',
-        title: '✅ Finance audit & invoicing',
-        description:
-          'Before the PO can be marked <strong>Invoiced</strong>, Finance reviews the actual price entered during Buying against the original estimate — mark each line OK or Flagged.<br/><br/>' +
-          'The funding source (vendor accounts payable, or an employee advance) is decided at Invoiced, and the vendor invoice gets created and matched against this PO. Press <strong>Next →</strong> to finish.',
+          'Click <strong>Create Requisition</strong> to submit it into <strong>Inventory Check</strong> — the first stage, not approval yet.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
         side: 'top',
       },
       {
-        title: '✅ Purchase Order — Tour Complete',
+        title: 'More to come',
         description:
-          'The full pipeline you just walked through:<br/><br/>' +
-          '<strong>Draft → Inventory Check → Store Pricing (auto) → Market Pricing → Price Verification → Pending Approval → Approved → Items Bought → Goods Received → Finance Audit → Invoiced → Completed</strong><br/><br/>' +
-          'Every stage is fully auditable — who created it, who priced it, who approved it, when it was received, and what it actually cost are all recorded with timestamps.<br/><br/>' +
-          'Click <strong>Done ✓</strong> to exit the tour.',
+          "That's the requisition-creation half of the pipeline. The next update to this tour continues on through Inventory Check, pricing, verification, and approval.<br/><br/>" +
+          'Click <strong>Done ✓</strong> to exit for now.',
       },
     ],
   },
