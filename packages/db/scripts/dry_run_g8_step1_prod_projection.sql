@@ -15,10 +15,10 @@
 --
 -- Note: cost tier is now labeled last_cost, not average_cost —
 -- stock_balances.average_cost is populated by the trigger with the last
--- recorded move cost (migration 203), not a true weighted average. See
--- migration 255's header for the full G8 follow-up list (true weighted-
--- average costing, landed cost, and a cost-only revaluation move for the
--- zero-cost rows this backfill flags).
+-- recorded move cost (migration 203), which migration 257 made the
+-- product's one and only permanent valuation method. See migration 255's
+-- header for the full G8 follow-up list (landed cost, and a cost-only
+-- revaluation move for the zero-cost rows this backfill flags).
 --
 -- Lock note: like the real migrations, this script's DISABLE TRIGGER
 -- takes an ACCESS EXCLUSIVE lock on stock_moves for the life of the
