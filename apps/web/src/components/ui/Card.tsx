@@ -10,6 +10,12 @@ interface CardProps {
   style?: React.CSSProperties
   onClick?: () => void
   fullWidthOnMobile?: boolean
+  // Onboarding-tour anchor — TypeScript allows any data-* prop on a JSX
+  // element regardless of its declared props (bypasses excess-property
+  // checking), which silently masked that this was never actually
+  // forwarded to the rendered <div>: every existing `<Card data-tour="…">`
+  // call site (this form's own PO tour included) was a no-op until now.
+  'data-tour'?: string
 }
 
 export function Card({
@@ -20,6 +26,7 @@ export function Card({
   style,
   onClick,
   fullWidthOnMobile = false,
+  'data-tour': dataTour,
 }: CardProps) {
   const { theme } = useTheme()
   const { isPhone, isTablet } = useBreakpoint()
@@ -46,6 +53,7 @@ export function Card({
     <div
       className={className}
       onClick={onClick}
+      data-tour={dataTour}
       style={{
         position: 'relative',
         background: theme.bgSurface,

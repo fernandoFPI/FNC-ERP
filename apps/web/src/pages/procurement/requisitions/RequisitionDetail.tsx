@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
   REQUISITION_QUERY,
@@ -43,6 +43,11 @@ import {
 } from '../../../lib/requisition-constants'
 import { getPOStatusVariant, getPOStatusLabel } from '../../../lib/po-constants'
 import { useToastStore } from '../../../store/toastStore'
+import {
+  TOUR_DEMO_REQUISITION_ID,
+  buildTourDemoRequisition,
+  buildTourDemoRequisitionStockAvailability,
+} from '../../../components/help/tourDemoRequisition'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 
@@ -62,7 +67,7 @@ interface Purchase {
   over_tolerance: boolean
 }
 
-interface ReqLine {
+export interface ReqLine {
   id: string
   description?: string | null
   product_id?: string | null
@@ -139,7 +144,7 @@ interface EditDraft {
 }
 type Tab = 'lines' | 'log' | 'changes'
 
-interface Requisition {
+export interface Requisition {
   id: string
   requisition_number: string
   status: string
@@ -179,7 +184,7 @@ interface ChildPO {
   created_at: string
 }
 
-interface LineLocationAvailability {
+export interface LineLocationAvailability {
   companyId: string
   companyName: string
   locationId: string
@@ -188,7 +193,7 @@ interface LineLocationAvailability {
   qtyAvailable: number
 }
 
-interface LineAvailability {
+export interface LineAvailability {
   lineId: string
   qtyRequired: number
   qtyOnHand: number
@@ -203,6 +208,7 @@ const fmtN = (n: string | number | null | undefined) =>
 export default function RequisitionDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { theme } = useTheme()
   const { isSystemLevel } = usePermission()
   const currentUserId = useAuthStore((s) => s.user?.id)
@@ -210,13 +216,16 @@ export default function RequisitionDetail() {
   const padding = usePagePadding()
   const { isPhone } = useBreakpoint()
 
+  const isTourDemo = id === TOUR_DEMO_REQUISITION_ID
+  const tourStatus = searchParams.get('tourStatus') ?? 'inventory_check'
+
   const { data, loading, refetch } = useQuery(REQUISITION_QUERY, {
     variables: { id },
-    skip: !id,
+    skip: !id || isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('requisition', () => void refetch())
-  const req: Requisition | undefined = data?.requisition
+  const req: Requisition | undefined = isTourDemo ? buildTourDemoRequisition(tourStatus) : data?.requisition
 
   const onErr = (e: Error) => addToast({ type: 'error', message: e.message })
   const mutOpts = {
@@ -269,24 +278,29 @@ export default function RequisitionDetail() {
   const showChildren = !!req && CHILD_PO_VISIBLE_STATUSES.includes(req.status)
   const { data: childData } = useQuery(REQUISITION_CHILD_POS_QUERY, {
     variables: { requisitionId: id },
-    skip: !id || !showChildren,
+    skip: !id || !showChildren || isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   const children: ChildPO[] = childData?.requisitionChildPurchaseOrders ?? []
 
   const { data: locData } = useQuery(STOCK_LOCATIONS_QUERY, {
     variables: { isActive: true },
-    skip: !req || req.status !== 'inventory_check',
+    skip: !req || req.status !== 'inventory_check' || isTourDemo,
   })
-  const locations: { id: string; name: string }[] = locData?.stockLocations ?? []
+  const locations: { id: string; name: string }[] = isTourDemo
+    ? [{ id: 'demo-location-1', name: 'Main Warehouse' }]
+    : (locData?.stockLocations ?? [])
 
   const { data: availData } = useQuery(REQUISITION_STOCK_AVAILABILITY_QUERY, {
     variables: { requisitionId: id },
-    skip: !id || !req || req.status !== 'inventory_check',
+    skip: !id || !req || req.status !== 'inventory_check' || isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   const availabilityByLine = new Map<string, LineAvailability>(
-    (availData?.requisitionStockAvailability ?? []).map((a: LineAvailability) => [a.lineId, a]),
+    (isTourDemo && req
+      ? buildTourDemoRequisitionStockAvailability(req)
+      : (availData?.requisitionStockAvailability ?? [])
+    ).map((a: LineAvailability) => [a.lineId, a]),
   )
 
   // ── Per-line form state (keyed by lineId) ───────────────────────────────
@@ -575,7 +589,7 @@ export default function RequisitionDetail() {
       </div>
 
       {/* Summary — colored stat-card grid, matching PurchaseOrderDetail's own "PO Summary" */}
-      <Card style={{ padding: '24px', marginBottom: '16px' }}>
+      <Card data-tour="req-detail-summary" style={{ padding: '24px', marginBottom: '16px' }}>
         <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
           Summary
         </div>
@@ -649,7 +663,7 @@ export default function RequisitionDetail() {
       {/* Tabs — Lines / Log / Edit requests (Receipts/Returns/Finance-Audit
           tabs from PurchaseOrderDetail don't apply: those are post-fork,
           PO-side concerns this page never reaches) */}
-      <div style={{ marginBottom: '16px' }}>
+      <div data-tour="req-detail-tabs" style={{ marginBottom: '16px' }}>
         <TabBar
           tabs={[
             { key: 'lines', label: 'Lines' },
@@ -1137,7 +1151,7 @@ export default function RequisitionDetail() {
         <div style={{ flex: '1 1 460px', minWidth: 0, order: 1 }}>
       {/* ── Panel 1: draft ────────────────────────────────────────────────── */}
       {req.status === 'draft' && (
-        <Card style={sectionCard}>
+        <Card data-tour="req-panel-draft" style={sectionCard}>
           <div style={sectionTitle}>Next step: submit for inventory check</div>
           <div style={sectionHint}>
             Once submitted, the organizer or a Store Keeper confirms how much of each line can be
@@ -1161,7 +1175,7 @@ export default function RequisitionDetail() {
 
       {/* ── Panel 2: inventory_check ─────────────────────────────────────── */}
       {req.status === 'inventory_check' && (
-        <Card style={sectionCard}>
+        <Card data-tour="req-panel-inventory-check" style={sectionCard}>
           <div style={sectionTitle}>Next step: confirm stock availability</div>
           <div style={sectionHint}>
             Enter the quantity to take from stock for each line — the rest will be purchased.
@@ -1273,7 +1287,7 @@ export default function RequisitionDetail() {
 
       {/* ── Panel 3: store_pricing ───────────────────────────────────────── */}
       {req.status === 'store_pricing' && (
-        <Card style={sectionCard}>
+        <Card data-tour="req-panel-store-pricing" style={sectionCard}>
           <div style={sectionTitle}>Next step: store pricing</div>
           <div style={sectionHint}>
             Record what this would cost from internal stock, for reference — it doesn't set the
@@ -1361,7 +1375,7 @@ export default function RequisitionDetail() {
 
       {/* ── Panel 4: market_pricing ──────────────────────────────────────── */}
       {req.status === 'market_pricing' && (
-        <Card style={sectionCard}>
+        <Card data-tour="req-panel-market-pricing" style={sectionCard}>
           <div style={sectionTitle}>Next step: market pricing</div>
           <div style={sectionHint}>
             Enter the checked vendor quote per line — this becomes the line's real price and
@@ -1439,7 +1453,7 @@ export default function RequisitionDetail() {
 
       {/* ── Panel 5: price_verification ──────────────────────────────────── */}
       {req.status === 'price_verification' && (
-        <Card style={sectionCard}>
+        <Card data-tour="req-panel-price-verification" style={sectionCard}>
           <div style={sectionTitle}>Next step: verify prices</div>
           <div style={sectionHint}>
             Cross-check each market price and adjust if needed, then submit directly for approval.
@@ -1495,7 +1509,7 @@ export default function RequisitionDetail() {
 
       {/* ── Panel 6: pending_approval ─────────────────────────────────────── */}
       {req.status === 'pending_approval' && (
-        <Card style={sectionCard}>
+        <Card data-tour="req-panel-pending-approval" style={sectionCard}>
           <div style={sectionTitle}>Next step: approve or reject</div>
           <div style={sectionHint}>Rejecting sends this requisition back to draft for revision.</div>
           {!canApprove ? (

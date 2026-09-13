@@ -2,9 +2,10 @@ import type { DriveStep } from 'driver.js'
 import { useTourStore } from '../../store/tourStore'
 import type { ThemeTokens } from '../../theme/tokens'
 import { injectTourStyles, removeTourStyles } from './tourStyles'
-// TOUR_DEMO_PO_ID (and a requisition-side equivalent) come back once the
-// 'requisition' tour is extended past requisition creation — see the
-// phased plan for this rewrite (Phases 2-4 add the demo-record hand-off).
+import { TOUR_DEMO_REQUISITION_ID } from './tourDemoRequisition'
+// TOUR_DEMO_PO_ID comes back once the 'requisition' tour hands off to a
+// child Purchase Order — see the phased plan for this rewrite (Phase 4
+// adds that hand-off).
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -298,13 +299,73 @@ const interactiveTours: Record<string, InteractiveTour> = {
         title: 'Step 8 — Create the requisition',
         description:
           'Click <strong>Create Requisition</strong> to submit it into <strong>Inventory Check</strong> — the first stage, not approval yet.<br/><br/>' +
-          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.<br/><br/>' +
+          'Press <strong>Next →</strong> and we\'ll pick up on a requisition that\'s already been submitted, so you can see the stages that follow.',
         side: 'top',
+        nextRoute: `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}?tourStatus=inventory_check`,
+        nextElement: '[data-tour="req-detail-summary"]',
+      },
+      {
+        element: '[data-tour="req-detail-summary"]',
+        title: 'Step 9 — The requisition detail page',
+        description:
+          'This is what every requisition looks like once created — a <strong>Summary</strong> card, a status bar tracking its stage, a <strong>Lines / Log / Edit requests</strong> tab group, and (on the left) whatever action the current stage needs.<br/><br/>' +
+          "This one is a demo, already sitting at <strong>Inventory Check</strong> — as if you'd just clicked Create.",
+        side: 'bottom',
+      },
+      {
+        element: '[data-tour="req-panel-inventory-check"]',
+        title: 'Step 10 — Inventory check',
+        description:
+          'The organizer or a Store Keeper checks what can be covered from existing stock, per line — on hand, reserved, and available are shown for each.<br/><br/>' +
+          'Enter a <strong>Qty from stock</strong> for a line (try the Steel Angle Bar — 30 are on hand) and optionally its source location, then click <strong>Confirm inventory check</strong>. Whatever is left over is what actually gets purchased.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved — press <strong>Next →</strong> to continue to Store Pricing regardless.',
+        side: 'right',
+        nextRoute: `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}?tourStatus=store_pricing`,
+        nextElement: '[data-tour="req-panel-store-pricing"]',
+      },
+      {
+        element: '[data-tour="req-panel-store-pricing"]',
+        title: 'Step 11 — Store pricing',
+        description:
+          "Whoever holds the <strong>Store Pricing</strong> position records what each line would cost from internal stock — for reference only, so approvers and buyers can sanity-check the market quote later. It doesn't change the line's total by itself.<br/><br/>" +
+          'Enter a price for a line, then <strong>Submit to market pricing</strong>.',
+        side: 'right',
+        nextRoute: `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}?tourStatus=market_pricing`,
+        nextElement: '[data-tour="req-panel-market-pricing"]',
+      },
+      {
+        element: '[data-tour="req-panel-market-pricing"]',
+        title: 'Step 12 — Market pricing',
+        description:
+          'A Procurement Officer enters the <strong>actual checked vendor quote</strong> per line — currency included. This becomes the line\'s real price, replacing the requester\'s rough estimate from creation.<br/><br/>' +
+          'A vendor quote reference is optional, but useful if Finance ever needs to trace the number back to a quote document.',
+        side: 'right',
+        nextRoute: `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}?tourStatus=price_verification`,
+        nextElement: '[data-tour="req-panel-price-verification"]',
+      },
+      {
+        element: '[data-tour="req-panel-price-verification"]',
+        title: 'Step 13 — Price verification',
+        description:
+          '2nd Procurement cross-checks the market price for each line — adjusting it if something looks off — then submits <strong>directly for approval</strong>. There is no separate "resubmit to market pricing" loop; verification is the last checkpoint before it reaches an approver.',
+        side: 'right',
+        nextRoute: `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}?tourStatus=pending_approval`,
+        nextElement: '[data-tour="req-panel-pending-approval"]',
+      },
+      {
+        element: '[data-tour="req-panel-pending-approval"]',
+        title: 'Step 14 — Approve or reject',
+        description:
+          'The department head, an assigned approver, or an admin makes the final call here.<br/><br/>' +
+          '<strong>Approve</strong> moves it to <strong>Approved</strong> — buying starts next, per vendor, on the Items Bought screen. <strong>Reject</strong> requires a reason and sends it back to <strong>Draft</strong> for the organizer to revise and resubmit.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking either shows a toast but nothing is saved.',
+        side: 'right',
       },
       {
         title: 'More to come',
         description:
-          "That's the requisition-creation half of the pipeline. The next update to this tour continues on through Inventory Check, pricing, verification, and approval.<br/><br/>" +
+          "That covers requisition creation through approval. The next update to this tour continues on to <strong>Items Bought</strong> — recording purchases per vendor — and <strong>Finish Buying</strong>, where it forks into a real Purchase Order.<br/><br/>" +
           'Click <strong>Done ✓</strong> to exit for now.',
       },
     ],
