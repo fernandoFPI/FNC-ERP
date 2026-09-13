@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import { TOUR_DEMO_REQUISITION_ID } from '../../../../components/help/tourDemoRequisition'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
@@ -29,18 +30,19 @@ vi.mock('../../../../store/authStore', () => ({
 }))
 
 const mockNavigate = vi.fn()
+let mockParamId = 'req-1'
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useParams: () => ({ id: 'req-1' }),
+    useParams: () => ({ id: mockParamId }),
   }
 })
 
-function wrap(ui: React.ReactNode) {
+function wrap(ui: React.ReactNode, path = '/procurement/requisitions/req-1') {
   return render(
-    <MemoryRouter initialEntries={['/procurement/requisitions/req-1']}>
+    <MemoryRouter initialEntries={[path]}>
       <ThemeProvider>{ui}</ThemeProvider>
     </MemoryRouter>,
   )
@@ -117,6 +119,7 @@ function mockReq(
 beforeEach(() => {
   vi.clearAllMocks()
   mockAuthUser = { id: 'user-organizer', role: 'system_admin' }
+  mockParamId = 'req-1'
   mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({}), { loading: false }])
   mockReq()
 })
@@ -355,5 +358,21 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText('buyer@fnc.com')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^reject$/i })).toBeInTheDocument()
+  })
+
+  // Onboarding tour, Phase 2: navigating to the reserved demo id renders
+  // the synthetic requisition built client-side for whatever ?tourStatus=
+  // is in the URL — real queries are skipped, and the mock's own (skip-
+  // blind) return value must not leak through.
+  it('tour demo: renders the synthetic requisition for the given tourStatus, not real query data', async () => {
+    mockParamId = TOUR_DEMO_REQUISITION_ID
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />, `/procurement/requisitions/${TOUR_DEMO_REQUISITION_ID}?tourStatus=market_pricing`)
+    expect(screen.getByText('REQ-TOUR-DEMO')).toBeInTheDocument()
+    // Appears twice — once in the Lines tab table, once in the
+    // market_pricing action panel's own per-line list.
+    expect(screen.getAllByText('Steel Angle Bar 50mm').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: /submit to price verification/i })).toBeInTheDocument()
+    expect(screen.queryByText('Cement bags')).not.toBeInTheDocument()
   })
 })
