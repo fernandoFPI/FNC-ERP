@@ -32,9 +32,9 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
-function wrap(ui: React.ReactNode) {
+function wrap(ui: React.ReactNode, initialPath = '/procurement/requisitions/new') {
   return render(
-    <MemoryRouter initialEntries={['/procurement/requisitions/new']}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>{ui}</ThemeProvider>
     </MemoryRouter>,
   )
@@ -75,6 +75,24 @@ describe('RequisitionForm', () => {
     fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
     expect(screen.getByText(/project \*/i)).toBeInTheDocument()
     expect(screen.getByText(/delivery destination \*/i)).toBeInTheDocument()
+  })
+
+  // Regression coverage for ProjectDetail's "+ New Requisition" button,
+  // which now links here instead of straight to PO creation — mirrors
+  // PurchaseOrderForm's own ?projectId= pre-fill.
+  it('pre-selects Project Supply and the project when opened with ?projectId=', async () => {
+    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = doc?.definitions?.[0]?.name?.value
+      if (opName === 'Projects') {
+        return { data: { projects: { data: [{ id: 'proj-1', code: 'PRJ-001', name: 'Erbil Tower' }] } }, loading: false }
+      }
+      return { data: undefined, loading: false }
+    })
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />, '/procurement/requisitions/new?projectId=proj-1')
+    expect(screen.getByText(/project \*/i)).toBeInTheDocument()
+    expect(screen.getByText(/delivery destination \*/i)).toBeInTheDocument()
+    expect(screen.getByText('PRJ-001 — Erbil Tower')).toBeInTheDocument()
   })
 
   it('starts with one line and can add another', async () => {
