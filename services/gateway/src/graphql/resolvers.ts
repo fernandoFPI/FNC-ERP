@@ -8296,10 +8296,12 @@ export const resolvers = {
       const [req, lines, approvals, currencyTotals, editRequests] = await Promise.all([
         query(
           `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
+                  mo.mo_number AS "linkedMoNumber",
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
            FROM requisitions req
            LEFT JOIN company_branches cb ON cb.id = req.branch_id
            LEFT JOIN projects p ON p.id = req.project_id
+           LEFT JOIN manufacturing_orders mo ON mo.id = req.linked_mo_id
            LEFT JOIN users u ON u.id = req.organizer_id
            WHERE req.id=$1 AND req.company_id=$2`,
           [args.id, ctx.auth.companyId],
@@ -28044,6 +28046,7 @@ const phase5MutationResolvers = {
         priority?: string
         branch_id?: string
         notes?: string
+        linked_mo_id?: string
         lines: {
           product_id?: string
           description?: string
@@ -28098,8 +28101,8 @@ const phase5MutationResolvers = {
           ? i.priority
           : 'low'
         const req = await client.query(
-          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, notes, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft') RETURNING *`,
+          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, notes, linked_mo_id, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'draft') RETURNING *`,
           [
             ctx.auth!.companyId,
             i.branch_id ?? null,
@@ -28110,6 +28113,7 @@ const phase5MutationResolvers = {
             priority,
             ctx.auth!.userId,
             i.notes ?? null,
+            i.purpose === 'manufacturing' ? (i.linked_mo_id ?? null) : null,
           ],
         )
         const reqRow = req.rows[0] as Record<string, unknown>
@@ -29074,8 +29078,9 @@ const phase5MutationResolvers = {
       purpose: string | null
       delivery_destination: string | null
       priority: string | null
+      linked_mo_id: string | null
     }>(
-      `SELECT status, company_id, project_id, branch_id, organizer_id, purpose, delivery_destination, priority
+      `SELECT status, company_id, project_id, branch_id, organizer_id, purpose, delivery_destination, priority, linked_mo_id
        FROM requisitions WHERE id=$1`,
       [args.id],
     )
@@ -29175,8 +29180,8 @@ const phase5MutationResolvers = {
           const poRes = await client.query<{ id: string }>(
             `INSERT INTO purchase_orders
                (company_id, po_number, vendor_id, currency_code, status, purpose, project_id,
-                created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination)
-             VALUES ($1,$2,$3,$4,'bought',$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination, linked_mo_id)
+             VALUES ($1,$2,$3,$4,'bought',$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
             [
               auth.companyId,
               poNumber,
@@ -29190,6 +29195,7 @@ const phase5MutationResolvers = {
               req.organizer_id,
               args.id,
               req.delivery_destination,
+              req.linked_mo_id,
             ],
           )
           childByVendor.set(vendorId, poRes.rows[0]!.id)
