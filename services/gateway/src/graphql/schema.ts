@@ -12,6 +12,14 @@
     products(category: String, companyId: ID): [Product]
     stockBalances(product_id: ID, location_id: ID): [StockBalance]
     poStockAvailability(poId: ID!): [POLineAvailability!]!
+    # G1 Phase 3 Milestone A screen 2 — requisition equivalent of
+    # poStockAvailability, same formula and same POLineAvailability shape,
+    # keyed on requisition_id/company_id instead of po_id. Company-wide
+    # scoped exactly like poStockAvailability today — deliberately, per
+    # review, since the byLocation breakdown already lets a store keeper
+    # pick the right location by hand. Branch-subtree scoping is tracked
+    # as G10 — see this query's resolver comment.
+    requisitionStockAvailability(requisitionId: ID!): [POLineAvailability!]!
     moMissingComponents(moId: ID!): [MOComponentStatus!]!
 
     # Procurement
@@ -1939,6 +1947,11 @@
     contact_phone: String
     withholding_tax_rate: String
     bank_name: String
+    # G1 Phase 3 Milestone A screen 3 — the one designated per-company
+    # vendor ensureCashPurchaseVendor finds-or-creates, for a genuine cash
+    # purchase with no real vendor to track. At most one true per company
+    # (migration 268's partial unique index).
+    is_cash_purchase: Boolean!
   }
 
   type POLine {
@@ -2135,7 +2148,11 @@
 
   type POEditRequest {
     id: ID!
-    po_id: ID!
+    # G1 Phase 3 Milestone A — po_id/requisition_id mutually exclusive,
+    # mirroring po_edit_requests' own XOR constraint; po_id widened from
+    # ID! to ID here since a requisition-scoped row has it NULL.
+    po_id: ID
+    requisition_id: ID
     requested_by_email: String
     status: String!
     changes: String!
@@ -2233,6 +2250,28 @@
     # PurchaseOrder — that's deliberate, see getRequisitionCurrencyTotals).
     # This is what the approval screen (PR 2) shows per currency.
     currencyTotals: [RequisitionCurrencyTotal!]!
+    # G1 Phase 3 Milestone A screen 2 — reuses PurchaseOrder's own
+    # POEditRequest type (po_edit_requests rows work for both parents, see
+    # the widened submitPOEditRequest/approvePOEditRequest/
+    # rejectPOEditRequest from PR #15). Only populated by requisition(id) —
+    # requisitions (the list query) doesn't fetch it, same as PurchaseOrder's.
+    edit_requests: [POEditRequest!]
+    # G1 Phase 3 Milestone A screen 2 — per-status action panel gating,
+    # only populated by requisition(id), mirroring PurchaseOrder's
+    # callerHasStorePricingPosition/callerHasMarketPricingPosition/
+    # callerHasStoreKeeperPosition (computed the same way, via
+    # userHasPositionForRequisitionGW instead of userHasPositionGW).
+    callerHasStoreKeeperPosition: Boolean
+    callerHasStorePricingPosition: Boolean
+    callerHasMarketPricingPosition: Boolean
+    callerHasPriceVerificationPosition: Boolean
+    # G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen.
+    callerHasBuyerPosition: Boolean
+    # Mirrors approveRequisition/rejectRequisitionApproval's own
+    # authorization exactly (admin OR dept head OR assigned approver OR
+    # po_admin position) — gates the pending_approval panel, and (screen 3)
+    # the over-tolerance override.
+    callerCanApprove: Boolean
   }
 
   type RequisitionCurrencyTotal {
@@ -2260,6 +2299,11 @@
     unit_price: Float!
     uom: String
     requested_currency_code: String
+    # G1 Phase 3 Milestone A screen 2 — optional; createRequisition fills
+    # in a default (project's cost center for Project Supply, else the
+    # branch's; system_configuration's default account) when omitted.
+    accountId: ID
+    costCenterId: ID
   }
 
   input RequisitionInput {
@@ -2396,6 +2440,10 @@
   extend type Mutation {
     createVendor(input: VendorInput!): Vendor!
     updateVendor(id: ID!, input: VendorInput!): Vendor!
+    # G1 Phase 3 Milestone A screen 3 — idempotent find-or-create of the
+    # caller's company's one cash-purchase vendor, for the Items Bought
+    # vendor picker's pinned "Cash Purchase" option.
+    ensureCashPurchaseVendor: Vendor!
     createPurchaseOrder(input: POInput!): PurchaseOrder!
     updatePurchaseOrder(id: ID!, input: POInput!): PurchaseOrder!
     recordReceipt(poId: ID!, input: ReceiptInput!): POReceipt!
@@ -4126,6 +4174,11 @@
     createdAt: String!
     defaultProcurementUserId: ID
     defaultProcurementUserEmail: String
+    # G1 Phase 3 Milestone A screen 2 — added by migration 258 (nullable,
+    # not backfilled per-branch — set via the Settings screen Phase 4/
+    # Milestone B adds), the requisition creation form's cost-center
+    # default for this branch.
+    defaultCostCenterId: ID
   }
 
   input CompanyBranchInput {

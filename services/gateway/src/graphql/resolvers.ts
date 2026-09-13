@@ -5054,6 +5054,110 @@ export const resolvers = {
       }))
     },
 
+    // G1 Phase 3 Milestone A screen 2 — requisition equivalent of
+    // poStockAvailability directly above (same two-query shape: a
+    // company-scoped aggregate per line, plus a cross-company byLocation
+    // breakdown), keyed on pol.requisition_id/req.company_id instead of
+    // pol.po_id/po.company_id.
+    //
+    // Deliberately company-wide, not branch-subtree scoped: stock_locations
+    // has no branch_id column and company_branches has no parent_id
+    // hierarchy, so there is no existing relationship to scope "this
+    // branch's stock" by. Acceptable for now — the byLocation breakdown
+    // below already lets the store keeper pick the right location by hand.
+    // G10 (tracked as a follow-up, not started here): add
+    // stock_locations.branch_id (nullable), tag existing locations, then
+    // filter this query's main aggregate to the requisition's branch with
+    // a manual override to see the rest.
+    requisitionStockAvailability: async (
+      _: unknown,
+      args: { requisitionId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      const auth = ctx.auth as GWAuth
+      // Same visibility gate as confirmRequisitionInventoryCheck's own
+      // authorization — this query is only ever fetched while a
+      // requisition is in inventory_check (see the frontend's skip
+      // condition).
+      const gateReqRow = await query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1 AND company_id=$2`,
+        [args.requisitionId, auth.companyId],
+      )
+      if (!gateReqRow.rows[0]) return []
+      const canViewStock =
+        isAdminGW(auth.role) ||
+        (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
+        (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
+      if (!canViewStock) return []
+      const result = await query(
+        `SELECT
+           pol.id                                              AS "lineId",
+           pol.product_id                                     AS "productId",
+           p.name                                             AS "productName",
+           pol.description                                    AS description,
+           pol.qty_ordered                                    AS "qtyRequired",
+           COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0)                  AS "qtyOnHand",
+           (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable",
+           (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0))
+             >= pol.qty_ordered                               AS "isAvailable"
+         FROM po_lines pol
+         JOIN requisitions req ON req.id = pol.requisition_id
+         LEFT JOIN products p ON p.id = pol.product_id
+         LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
+         LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.company_id = req.company_id AND sl.type NOT IN ('virtual_in','virtual_out')
+         WHERE pol.requisition_id = $1 AND req.company_id = $2
+         GROUP BY pol.id, pol.product_id, p.name, pol.description, pol.qty_ordered
+         ORDER BY pol.line_number`,
+        [args.requisitionId, auth.companyId],
+      )
+
+      const isSysAdmin = auth.role === 'system_admin'
+      const byLocationRes = await query(
+        `SELECT
+           pol.id AS "lineId", c.id AS "companyId", c.name AS "companyName",
+           sl.id AS "locationId", sl.name AS "locationName",
+           COALESCE(sb.qty_on_hand, 0) AS "qtyOnHand",
+           (COALESCE(sb.qty_on_hand, 0) - COALESCE(sb.qty_reserved, 0)) AS "qtyAvailable",
+           sb.average_cost AS "averageCost"
+         FROM po_lines pol
+         JOIN stock_balances sb ON sb.product_id = pol.product_id AND sb.qty_on_hand > 0
+         JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
+         JOIN companies c ON c.id = sl.company_id
+         WHERE pol.requisition_id = $1
+           AND ($2 OR EXISTS (
+             SELECT 1 FROM user_company_roles ucr
+             WHERE ucr.user_id = $3 AND ucr.company_id = sl.company_id AND ucr.is_active = true
+           ))
+         ORDER BY pol.id, "qtyAvailable" DESC`,
+        [args.requisitionId, isSysAdmin, auth.userId],
+      )
+      const byLocationByLine = new Map<string, Record<string, unknown>[]>()
+      for (const row of byLocationRes.rows as Record<string, unknown>[]) {
+        const lineId = String(row.lineId)
+        const list = byLocationByLine.get(lineId) ?? []
+        list.push({
+          companyId: row.companyId,
+          companyName: row.companyName,
+          locationId: row.locationId,
+          locationName: row.locationName,
+          qtyOnHand: parseFloat(String(row.qtyOnHand ?? 0)),
+          qtyAvailable: parseFloat(String(row.qtyAvailable ?? 0)),
+          averageCost: row.averageCost != null ? parseFloat(String(row.averageCost)) : null,
+        })
+        byLocationByLine.set(lineId, list)
+      }
+
+      return result.rows.map((r: Record<string, unknown>) => ({
+        ...r,
+        qtyRequired: parseFloat(String(r.qtyRequired ?? 0)),
+        qtyOnHand: parseFloat(String(r.qtyOnHand ?? 0)),
+        qtyAvailable: parseFloat(String(r.qtyAvailable ?? 0)),
+        isAvailable: Boolean(r.isAvailable),
+        byLocation: byLocationByLine.get(String(r.lineId)) ?? [],
+      }))
+    },
+
     moMissingComponents: async (_: unknown, args: { moId: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
       const result = await query(
@@ -6854,10 +6958,43 @@ export const resolvers = {
       if (!ctx.auth) return []
       if (!(await verifyAttachmentEntityOwnershipGW(args.entityType, args.entityId, ctx.auth.companyId)))
         return []
-      const result = await getAttachments(
-        args.entityType as Parameters<typeof getAttachments>[0],
-        args.entityId,
-      )
+      // A G1 child PO's own receipts were never attached at
+      // entity_type='purchase_order' — they were attached per vendor
+      // purchase during the requisition's Items Bought stage
+      // (recordLinePurchase, entity_type='po_line_purchase'). A plain
+      // getAttachments('purchase_order', poId) lookup — what this resolver
+      // used to always do — finds nothing for those, so the read-only
+      // "Buyer's Receipt" panel on the receipt-confirmation page (Store
+      // In) showed "No signed documents uploaded yet" even when the buyer
+      // had genuinely attached a receipt photo while recording the
+      // purchase. Union in po_line_purchases-sourced attachments for this
+      // PO's own lines; a no-op for a legacy PO, which never has any
+      // po_line_purchases rows at all.
+      const result =
+        args.entityType === 'purchase_order'
+          ? await query(
+              `SELECT da.id, da.label, da.is_primary, da.created_at,
+                      f.id AS file_id, f.original_filename, f.mime_type,
+                      f.size_bytes, f.category, f.uploaded_at,
+                      u.email AS uploaded_by_email
+               FROM document_attachments da
+               JOIN files f ON f.id = da.file_id
+               JOIN users u ON u.id = da.uploaded_by
+               WHERE f.status != 'deleted' AND (
+                 (da.entity_type = 'purchase_order' AND da.entity_id = $1)
+                 OR (da.entity_type = 'po_line_purchase' AND da.entity_id IN (
+                       SELECT plp.id FROM po_line_purchases plp
+                       JOIN po_lines pl ON pl.id = plp.po_line_id
+                       WHERE pl.po_id = $1
+                     ))
+               )
+               ORDER BY da.is_primary DESC, da.created_at ASC`,
+              [args.entityId],
+            )
+          : await getAttachments(
+              args.entityType as Parameters<typeof getAttachments>[0],
+              args.entityId,
+            )
       return result.rows.map((r: Record<string, unknown>) => ({
         id: r.id,
         file: {
@@ -8121,7 +8258,7 @@ export const resolvers = {
     // caller might not be authorized to see fields for.
     requisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      const [req, lines, approvals, currencyTotals] = await Promise.all([
+      const [req, lines, approvals, currencyTotals, editRequests] = await Promise.all([
         query(
           `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
@@ -8154,10 +8291,24 @@ export const resolvers = {
                      'vendor_name', v.name, 'currency_code', plp.currency_code, 'qty', plp.qty,
                      'actual_unit_price', plp.actual_unit_price,
                      'receipt_attachment_id', plp.receipt_attachment_id,
+                     -- G1 Phase 3 Milestone A screen 3 — resolved the same
+                     -- way getPOLinePurchaseForReturn does for a single
+                     -- purchase; this list version was never widened to
+                     -- match when ItemsBoughtPage started reading these,
+                     -- so every purchase silently rendered as if it had no
+                     -- receipt and no recorder/approver name.
+                     'receipt_file_id', rf.id, 'receipt_filename', rf.original_filename,
                      'bought_by', plp.bought_by, 'bought_at', plp.bought_at,
-                     'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by
+                     'bought_by_name', COALESCE(bu.first_name || ' ' || bu.last_name, bu.email),
+                     'over_tolerance', plp.over_tolerance, 'tolerance_approved_by', plp.tolerance_approved_by,
+                     'tolerance_approved_by_name', COALESCE(tu.first_name || ' ' || tu.last_name, tu.email)
                    ) ORDER BY plp.bought_at), '[]')
-                   FROM po_line_purchases plp LEFT JOIN vendors v ON v.id=plp.vendor_id
+                   FROM po_line_purchases plp
+                   LEFT JOIN vendors v ON v.id=plp.vendor_id
+                   LEFT JOIN document_attachments da ON da.id=plp.receipt_attachment_id
+                   LEFT JOIN files rf ON rf.id=da.file_id
+                   LEFT JOIN users bu ON bu.id=plp.bought_by
+                   LEFT JOIN users tu ON tu.id=plp.tolerance_approved_by
                    WHERE plp.po_line_id = pol.id) AS purchases
            FROM po_lines pol
            LEFT JOIN products p ON p.id=pol.product_id
@@ -8177,9 +8328,68 @@ export const resolvers = {
           [args.id],
         ),
         getRequisitionCurrencyTotals(args.id),
+        // G1 Phase 3 Milestone A screen 2 — mirrors purchaseOrder/
+        // purchaseOrderForAction's own edit_requests fetch exactly, scoped
+        // to requisition_id instead of po_id.
+        query(
+          `SELECT er.*, req.email AS requested_by_email, rev.email AS reviewed_by_email
+           FROM po_edit_requests er
+           JOIN users req ON req.id = er.requested_by
+           LEFT JOIN users rev ON rev.id = er.reviewed_by
+           WHERE er.requisition_id = $1 ORDER BY er.created_at DESC`,
+          [args.id],
+        ),
       ])
       if (!req.rows[0]) return null
-      return { ...req.rows[0], lines: lines.rows, approval_log: approvals.rows, currencyTotals }
+      // G1 Phase 3 Milestone A screen 2 — lets the detail page gate each
+      // per-status action panel client-side, mirroring PurchaseOrder's own
+      // callerHasXPosition fields (computed the same way there, via
+      // userHasPositionGW instead of userHasPositionForRequisitionGW).
+      // isAdmin bypasses every one of these, same as the mutations they
+      // mirror the authorization of.
+      const isAdmin = isAdminGW(ctx.auth.role)
+      const [
+        callerHasStoreKeeperPosition,
+        callerHasStorePricingPosition,
+        callerHasMarketPricingPosition,
+        callerHasPriceVerificationPosition,
+        callerHasBuyerPosition,
+        callerIsDeptHead,
+        callerIsAssignedApprover,
+        callerHasReqAdmin,
+      ] = await Promise.all([
+        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_keeper'),
+        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'),
+        isAdmin ||
+          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_officer'),
+        isAdmin ||
+          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_2nd'),
+        // G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen,
+        // mirroring recordLinePurchase/markRequisitionLineShort/
+        // finishBuyingRequisition's own shared authorization exactly.
+        isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'buyer'),
+        userIsDeptHeadForRequisitionGW(ctx.auth.userId, args.id),
+        userIsAssignedApproverForRequisitionGW(ctx.auth.userId, args.id),
+        callerHasPOAdmin(ctx.auth.userId, ctx.auth.companyId),
+      ])
+      return {
+        ...req.rows[0],
+        lines: lines.rows,
+        approval_log: approvals.rows,
+        currencyTotals,
+        edit_requests: editRequests.rows.map((r) => ({ ...r, changes: JSON.stringify(r.changes) })),
+        callerHasStoreKeeperPosition,
+        callerHasStorePricingPosition,
+        callerHasMarketPricingPosition,
+        callerHasPriceVerificationPosition,
+        callerHasBuyerPosition,
+        // Mirrors approveRequisition/rejectRequisitionApproval's own
+        // authorization check exactly (admin OR dept head OR assigned
+        // approver OR po_admin position) — also reused as-is by screen 3
+        // to gate the over-tolerance override, since approveTolerancePurchase
+        // shares this exact same authorization set.
+        callerCanApprove: isAdmin || callerIsDeptHead || callerIsAssignedApprover || callerHasReqAdmin,
+      }
     },
 
     // G1 Phase 3 Milestone A — list view for RequisitionsPage, mirrors
@@ -10195,6 +10405,32 @@ export const resolvers = {
       return r.rows[0]
     },
 
+    // G1 Phase 3 Milestone A screen 3 — find-or-create, not create-only:
+    // called every time the Items Bought vendor picker's "Cash Purchase"
+    // option is chosen, so it must be idempotent. The partial unique index
+    // from migration 268 (company_id WHERE is_cash_purchase) makes the
+    // INSERT ON CONFLICT DO NOTHING + re-SELECT pattern below safe under
+    // concurrent first-use, rather than a plain check-then-insert race.
+    ensureCashPurchaseVendor: async (_: unknown, __: unknown, ctx: GQLContext) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      const existing = await query(
+        `SELECT * FROM vendors WHERE company_id=$1 AND is_cash_purchase=true LIMIT 1`,
+        [ctx.auth.companyId],
+      )
+      if (existing.rows[0]) return existing.rows[0]
+      await query(
+        `INSERT INTO vendors (company_id, name, is_cash_purchase) VALUES ($1,'Cash Purchase',true)
+         ON CONFLICT (company_id) WHERE is_cash_purchase = true DO NOTHING`,
+        [ctx.auth.companyId],
+      )
+      const created = await query(
+        `SELECT * FROM vendors WHERE company_id=$1 AND is_cash_purchase=true LIMIT 1`,
+        [ctx.auth.companyId],
+      )
+      if (!created.rows[0]) throw new Error('Failed to set up the Cash Purchase vendor')
+      return created.rows[0]
+    },
+
     updateVendor: async (
       _: unknown,
       args: { id: string; input: Record<string, unknown> },
@@ -10597,12 +10833,24 @@ export const resolvers = {
           // 'purchase_order') rather than onto this specific receipt — so
           // check there too, not just the receipt-level attachment a store
           // keeper can still add themselves as a fallback (e.g. if the
-          // buyer never got around to it).
+          // buyer never got around to it). A G1 child PO's own buyer
+          // receipt was never attached at entity_type='purchase_order'
+          // though — recordLinePurchase attaches it per vendor purchase,
+          // at entity_type='po_line_purchase' (category 'attachment', not
+          // 'po_receipt_document') — so also check there, reachable via
+          // this PO's own po_lines. Mirrors entityAttachments's own union
+          // for the same gap (see that resolver's comment).
           if (!categories.has('po_receipt_document')) {
             const buyerReceiptCheck = await client.query(
               `SELECT 1 FROM document_attachments da JOIN files f ON f.id=da.file_id
-               WHERE da.entity_type='purchase_order' AND da.entity_id=$1
-                 AND f.category='po_receipt_document' AND f.status != 'deleted' LIMIT 1`,
+               WHERE f.status != 'deleted' AND (
+                 (da.entity_type='purchase_order' AND da.entity_id=$1 AND f.category='po_receipt_document')
+                 OR (da.entity_type='po_line_purchase' AND da.entity_id IN (
+                       SELECT plp.id FROM po_line_purchases plp
+                       JOIN po_lines pl ON pl.id = plp.po_line_id
+                       WHERE pl.po_id = $1
+                     ))
+               ) LIMIT 1`,
               [receipt.po_id],
             )
             if (!buyerReceiptCheck.rows[0]) {
@@ -27733,6 +27981,8 @@ const phase5MutationResolvers = {
           unit_price: number
           uom?: string
           requested_currency_code?: string
+          accountId?: string
+          costCenterId?: string
         }[]
       }
     },
@@ -27743,6 +27993,32 @@ const phase5MutationResolvers = {
     const i = args.input
     if (!i.lines || i.lines.length === 0)
       throw new Error('A requisition needs at least one line')
+    // G1 Phase 3 Milestone A screen 2 — every line gets an account/cost
+    // center tag even if the creation form's own defaulting left one
+    // blank, per migration 258's original intent (§3's comment). Cost
+    // center prefers the project's own (Project Supply only) over the
+    // branch's default; account has no purpose/branch-specific mapping in
+    // the schema, so it's always the one company-wide default.
+    const [projectRow, branchRow, sysConfigRow] = await Promise.all([
+      i.purpose === 'project' && i.project_id
+        ? query<{ cost_center_id: string | null }>(`SELECT cost_center_id FROM projects WHERE id=$1`, [
+            i.project_id,
+          ])
+        : Promise.resolve({ rows: [] as { cost_center_id: string | null }[] }),
+      i.branch_id
+        ? query<{ default_cost_center_id: string | null }>(
+            `SELECT default_cost_center_id FROM company_branches WHERE id=$1`,
+            [i.branch_id],
+          )
+        : Promise.resolve({ rows: [] as { default_cost_center_id: string | null }[] }),
+      query<{ default_unallocated_purchase_account_id: string | null }>(
+        `SELECT default_unallocated_purchase_account_id FROM system_configuration WHERE company_id=$1`,
+        [ctx.auth.companyId],
+      ),
+    ])
+    const defaultCostCenterId =
+      projectRow.rows[0]?.cost_center_id ?? branchRow.rows[0]?.default_cost_center_id ?? null
+    const defaultAccountId = sysConfigRow.rows[0]?.default_unallocated_purchase_account_id ?? null
     const createdReq = await withTransaction(
       { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
       async (client) => {
@@ -27769,8 +28045,8 @@ const phase5MutationResolvers = {
         for (let idx = 0; idx < i.lines.length; idx++) {
           const l = i.lines[idx]
           await client.query(
-            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id)
-             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9)`,
+            `INSERT INTO po_lines (requisition_id, description, line_number, qty_ordered, unit_price, initial_unit_price, total_price, uom, requested_currency_code, product_id, account_id, cost_center_id)
+             VALUES ($1,$2,$3,$4,$5,$5,$6,$7,$8,$9,$10,$11)`,
             [
               reqRow.id,
               l.description ?? '',
@@ -27781,6 +28057,8 @@ const phase5MutationResolvers = {
               l.uom ?? 'unit',
               l.requested_currency_code ?? null,
               l.product_id ?? null,
+              l.accountId ?? defaultAccountId,
+              l.costCenterId ?? defaultCostCenterId,
             ],
           )
         }
@@ -28799,9 +29077,19 @@ const phase5MutationResolvers = {
             const totalPrice = qty * price
 
             if (mutateOriginal && i === 0) {
+              // actual_unit_price mirrors unit_price here — the buyer's
+              // recorded purchase price *is* this line's real price, there
+              // being no separate pre-purchase "PO price" preserved once a
+              // line's forked. Left unset, the Finance Audit panel's own
+              // "Actual Price (entered by buyer)" box — which reads
+              // po_lines.actual_unit_price specifically, a column the
+              // legacy items_bought checklist populates but this fork path
+              // never did — falsely claimed "buyer hasn't recorded a
+              // price" even though the purchase total right next to it was
+              // computed off that exact price. Found live on PO-2026-0028.
               await client.query(
                 `UPDATE po_lines
-                 SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4,
+                 SET po_id=$1, line_number=$2, qty_ordered=$3, unit_price=$4, actual_unit_price=$4,
                      initial_unit_price=COALESCE(initial_unit_price,$4), currency_code=$5, total_price=$6
                  WHERE id=$7`,
                 [childId, nextLineNumber, qty, price, entry.currency_code, totalPrice, line.id],
@@ -28810,9 +29098,9 @@ const phase5MutationResolvers = {
               await client.query(
                 `INSERT INTO po_lines
                    (po_id, requisition_id, line_number, description, product_id, qty_ordered, unit_price,
-                    initial_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
+                    initial_unit_price, actual_unit_price, currency_code, uom, total_price, account_id, cost_center_id,
                     approved_unit_price, qty_from_stock, in_stock, origin_line_id)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$7,$8,$9,$10,$11,$12,$13,0,false,$14)`,
                 [
                   childId,
                   args.id,
@@ -30258,12 +30546,17 @@ const phase5MutationResolvers = {
     if (!poRow.rows[0] || poRow.rows[0].company_id !== auth.companyId)
       throw new Error('PO not found')
     // 'invoiced' (old vocab) / 'payment_pending' (G1 child) — same funding
-    // stage, see sendPOToAudit's comment for the pattern.
+    // stage, see sendPOToAudit's comment for the pattern. Both funding
+    // sources classify lines here now — employee_advance always needed
+    // it (nothing else fixes the GL account/cost center), and vendor_ap
+    // gained the same review so Finance can correct whatever
+    // createRequisition auto-defaulted before booking the vendor invoice,
+    // not just leave it unreviewed.
     if (
       !['invoiced', 'payment_pending'].includes(poRow.rows[0].status as string) ||
-      poRow.rows[0].funding_source !== 'employee_advance'
+      !['employee_advance', 'vendor_ap'].includes(poRow.rows[0].funding_source as string)
     )
-      throw new Error('PO must be invoiced and funded by an employee advance to classify lines')
+      throw new Error('PO must be invoiced and have a funding source decided to classify lines')
     const result = await query(
       `UPDATE po_lines
           SET account_id = $1, cost_center_id = $2
@@ -32234,6 +32527,9 @@ function branchRow(r: Record<string, unknown>) {
     createdAt: r.created_at,
     defaultProcurementUserId: r.default_procurement_user_id ?? null,
     defaultProcurementUserEmail: r.default_procurement_user_email ?? null,
+    // G1 Phase 3 Milestone A screen 2 — added by migration 258, unused
+    // until now; the requisition creation form's cost-center default.
+    defaultCostCenterId: r.default_cost_center_id ?? null,
   }
 }
 

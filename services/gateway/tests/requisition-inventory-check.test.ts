@@ -70,6 +70,11 @@ async function cleanup(): Promise<void> {
     [TEST_COMPANY_ID, `${SKU_PREFIX}%`],
   )
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [TEST_COMPANY_ID, `${SKU_PREFIX}%`])
+  // Extra location the byLocation-sort-order test creates.
+  await pool.query(`DELETE FROM stock_locations WHERE company_id=$1 AND name=$2`, [
+    TEST_COMPANY_ID,
+    `${SKU_PREFIX}SecondWH`,
+  ])
 }
 
 beforeAll(async () => {
@@ -305,5 +310,114 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
         ctx as never,
       ),
     ).rejects.toThrow(/insufficient available stock/i)
+  })
+})
+
+// G1 Phase 3 Milestone A screen 2 — requisitionStockAvailability, the
+// requisition equivalent of poStockAvailability (same formula, same
+// POLineAvailability shape). Backs the inventory-check panel's on-hand/
+// reserved/available display.
+describe('requisitionStockAvailability', () => {
+  async function makeReqAtInventoryCheck(productId: string, qtyOrdered: number) {
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: qtyOrdered, unit_price: 10 }] } },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+    await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+    const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
+    return { reqId, lineId: lineRow.rows[0]!.id }
+  }
+
+  it('reports on-hand/available/isAvailable and a byLocation breakdown for a fully-covered line', async () => {
+    const productId = await makeProduct('avail-full')
+    await receive(productId, warehouseId, 20)
+    const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
+
+    const rows = (await resolvers.Query.requisitionStockAvailability(
+      null,
+      { requisitionId: reqId },
+      ctx as never,
+    )) as { lineId: string; qtyRequired: number; qtyOnHand: number; qtyAvailable: number; isAvailable: boolean; byLocation: { locationId: string; qtyOnHand: number }[] }[]
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.lineId).toBe(lineId)
+    expect(rows[0]!.qtyRequired).toBe(5)
+    expect(rows[0]!.qtyOnHand).toBe(20)
+    expect(rows[0]!.qtyAvailable).toBe(20)
+    expect(rows[0]!.isAvailable).toBe(true)
+    expect(rows[0]!.byLocation.some((l) => l.locationId === warehouseId)).toBe(true)
+  })
+
+  it('reports isAvailable false and a lower qtyAvailable once some of the line is reserved by another requisition', async () => {
+    const productId = await makeProduct('avail-partial')
+    await receive(productId, warehouseId, 6)
+    // Reserve 4 via a separate requisition's confirmed inventory check.
+    const reserver = await makeReqAtInventoryCheck(productId, 4)
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reserver.reqId, lineStockQtys: [{ lineId: reserver.lineId, qtyFromStock: 4, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+
+    const { reqId } = await makeReqAtInventoryCheck(productId, 5)
+    const rows = (await resolvers.Query.requisitionStockAvailability(
+      null,
+      { requisitionId: reqId },
+      ctx as never,
+    )) as { qtyOnHand: number; qtyAvailable: number; isAvailable: boolean }[]
+
+    expect(rows[0]!.qtyOnHand).toBe(6)
+    expect(rows[0]!.qtyAvailable).toBe(2)
+    expect(rows[0]!.isAvailable).toBe(false)
+  })
+
+  it('returns nothing for a caller with no organizer/store_keeper/admin relationship to the requisition', async () => {
+    const productId = await makeProduct('avail-restricted')
+    const { reqId } = await makeReqAtInventoryCheck(productId, 1)
+    const strangerCtx = {
+      auth: { companyId: TEST_COMPANY_ID, userId: '00000000-0000-0000-0000-000000000099', role: 'user', module: 'all', sessionId: 'x' },
+    }
+    const rows = await resolvers.Query.requisitionStockAvailability(null, { requisitionId: reqId }, strangerCtx as never)
+    expect(rows).toEqual([])
+  })
+
+  it('sorts byLocation by largest available first, not by on-hand', async () => {
+    const secondWh = await pool.query<{ id: string }>(
+      `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,$2,'warehouse',true) RETURNING id`,
+      [TEST_COMPANY_ID, `${SKU_PREFIX}SecondWH`],
+    )
+    const secondWhId = secondWh.rows[0]!.id
+
+    const productId = await makeProduct('avail-sort')
+    // Main warehouse: more on hand (30) but heavily reserved elsewhere,
+    // leaving less available (5) than the second warehouse (20 on hand,
+    // nothing reserved, so 20 available) — on-hand-only order would put
+    // the main warehouse first; available-first order must not.
+    await receive(productId, warehouseId, 30)
+    const reserver = await makeReqAtInventoryCheck(productId, 25)
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reserver.reqId, lineStockQtys: [{ lineId: reserver.lineId, qtyFromStock: 25, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    await receive(productId, secondWhId, 20)
+
+    const { reqId } = await makeReqAtInventoryCheck(productId, 1)
+    const rows = (await resolvers.Query.requisitionStockAvailability(
+      null,
+      { requisitionId: reqId },
+      ctx as never,
+    )) as { byLocation: { locationId: string; qtyOnHand: number; qtyAvailable: number }[] }[]
+
+    const locs = rows[0]!.byLocation
+    expect(locs).toHaveLength(2)
+    expect(locs[0]!.locationId).toBe(secondWhId)
+    expect(locs[0]!.qtyAvailable).toBe(20)
+    expect(locs[1]!.locationId).toBe(warehouseId)
+    expect(locs[1]!.qtyAvailable).toBe(5)
+    // Confirms on-hand alone would have ordered these the other way.
+    expect(locs[1]!.qtyOnHand).toBeGreaterThan(locs[0]!.qtyOnHand)
   })
 })

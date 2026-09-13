@@ -1182,13 +1182,16 @@ export default function PurchaseOrderDetail() {
     return codes.map((c) => ({ value: c, label: c }))
   })()
 
-  // Only needed once Finance has actually confirmed "employee advance" as
-  // the funding source (see the invoiced-status panel below) — before
-  // that, or for vendor-AP POs, per-line classification never renders.
+  // Needed once Finance has confirmed a funding source (see the invoiced-
+  // status panel below) — before that, per-line classification never
+  // renders. Applies to both employee_advance and vendor_ap: Finance
+  // reviews/sets GL account and cost center per line either way, it just
+  // additionally gates completion for employee_advance (no separate AP
+  // invoice exists there to hang that gate off of instead).
   const needsLineAccountingOptions =
     (po?.status === 'invoiced' || po?.status === 'payment_pending') &&
     !!po?.funding_decided &&
-    po?.funding_source === 'employee_advance'
+    (po?.funding_source === 'employee_advance' || po?.funding_source === 'vendor_ap')
   const { data: accountsData } = useQuery(ACCOUNTS_QUERY, {
     variables: { isActive: true },
     fetchPolicy: 'cache-first',
@@ -1210,6 +1213,95 @@ export default function PurchaseOrderDetail() {
     value: c.id,
     label: `${c.code} — ${c.name}`,
   }))
+
+  // Shared between the employee_advance and vendor_ap payment-pending
+  // panels below — same per-line GL Account/Cost Center review either
+  // way, just with a funding-source-specific intro line and a different
+  // completion mechanism sitting alongside it (a direct "Mark as
+  // Completed" for employee_advance; the existing AP invoice flow for
+  // vendor_ap).
+  function renderGlClassificationPanel(introText: string) {
+    if (!po) return null
+    return (
+      <>
+        <div
+          style={{
+            padding: '10px 14px',
+            borderRadius: '8px',
+            background: theme.accentBg,
+            border: `1px solid ${theme.accent}`,
+            fontSize: '12px',
+            color: theme.accent,
+          }}
+        >
+          {introText}
+        </div>
+        <div
+          style={{
+            border: `1px solid ${theme.border}`,
+            borderRadius: '10px',
+            overflow: 'hidden',
+          }}
+        >
+          {po.lines.map((line, idx) => (
+            <div
+              key={line.id}
+              style={{
+                padding: '10px 12px',
+                borderBottom: idx < po.lines.length - 1 ? `1px solid ${theme.border}` : 'none',
+              }}
+            >
+              <div style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '6px' }}>
+                {line.description || line.product_name || '—'}
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '8px',
+                }}
+              >
+                <SearchableSelect
+                  label="GL Account"
+                  required
+                  value={line.account_id ?? ''}
+                  onChange={(v) =>
+                    void setLineAccounting({
+                      variables: {
+                        poId: po.id,
+                        lineId: line.id,
+                        glAccountId: v || null,
+                        costCenterId: line.cost_center_id ?? null,
+                      },
+                    })
+                  }
+                  options={glAccountOptions}
+                  placeholder="Search GL accounts…"
+                />
+                <SearchableSelect
+                  label="Cost Center"
+                  required
+                  value={line.cost_center_id ?? ''}
+                  onChange={(v) =>
+                    void setLineAccounting({
+                      variables: {
+                        poId: po.id,
+                        lineId: line.id,
+                        glAccountId: line.account_id ?? null,
+                        costCenterId: v || null,
+                      },
+                    })
+                  }
+                  options={costCenterOptions}
+                  placeholder="Search cost centers…"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </>
+    )
+  }
 
   const anyLoading = l1 || l2 || l3 || l4 || l5 || l8 || l9 || lIssue || lAudit || lPass
 
@@ -3563,7 +3655,7 @@ export default function PurchaseOrderDetail() {
                   )
                 })()}
 
-              {po.status === 'approved' && (
+              {(po.status === 'approved' || po.status === 'bought') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div
                     style={{
@@ -3575,7 +3667,14 @@ export default function PurchaseOrderDetail() {
                       color: '#166534',
                     }}
                   >
-                    PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.
+                    {po.status === 'bought'
+                      ? // G1 child PO: buying already happened at the requisition's
+                        // Items Bought stage (recordLinePurchase, per vendor) — this
+                        // PO's own lines were never ticked one-by-one, so there's
+                        // nothing to check off here. Record the goods receipt to
+                        // advance it to Goods Received.
+                        'Items for this purchase order were already bought at the requisition stage. Record a goods receipt to advance it.'
+                      : 'PO is approved. Record a goods receipt to advance to the P2P fulfillment phase.'}
                   </div>
                   <DraftReceiptsNotice po={po} navigate={navigate} theme={theme} />
                   <Button
@@ -3592,7 +3691,7 @@ export default function PurchaseOrderDetail() {
                 </div>
               )}
 
-              {(po.status === 'items_bought' || po.status === 'bought') &&
+              {po.status === 'items_bought' &&
                 (() => {
                   const isBuyer = !!po.callerIsBuyer
                   const canMarkBought = isSystemLevel || isBuyer
@@ -4853,92 +4952,9 @@ export default function PurchaseOrderDetail() {
                       ).length
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <div
-                            style={{
-                              padding: '10px 14px',
-                              borderRadius: '8px',
-                              background: theme.accentBg,
-                              border: `1px solid ${theme.accent}`,
-                              fontSize: '12px',
-                              color: theme.accent,
-                            }}
-                          >
-                            Funded by employee advance — no vendor invoice needed. Assign a GL
-                            account and cost center to each line, then once completed, this PO's
-                            lines will queue for settlement against the advance.
-                          </div>
-                          <div
-                            style={{
-                              border: `1px solid ${theme.border}`,
-                              borderRadius: '10px',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {po.lines.map((line, idx) => (
-                              <div
-                                key={line.id}
-                                style={{
-                                  padding: '10px 12px',
-                                  borderBottom:
-                                    idx < po.lines.length - 1
-                                      ? `1px solid ${theme.border}`
-                                      : 'none',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    color: theme.textPrimary,
-                                    marginBottom: '6px',
-                                  }}
-                                >
-                                  {line.description || line.product_name || '—'}
-                                </div>
-                                <div
-                                  style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                                    gap: '8px',
-                                  }}
-                                >
-                                  <SearchableSelect
-                                    label="GL Account"
-                                    required
-                                    value={line.account_id ?? ''}
-                                    onChange={(v) =>
-                                      void setLineAccounting({
-                                        variables: {
-                                          poId: po.id,
-                                          lineId: line.id,
-                                          glAccountId: v || null,
-                                          costCenterId: line.cost_center_id ?? null,
-                                        },
-                                      })
-                                    }
-                                    options={glAccountOptions}
-                                    placeholder="Search GL accounts…"
-                                  />
-                                  <SearchableSelect
-                                    label="Cost Center"
-                                    required
-                                    value={line.cost_center_id ?? ''}
-                                    onChange={(v) =>
-                                      void setLineAccounting({
-                                        variables: {
-                                          poId: po.id,
-                                          lineId: line.id,
-                                          glAccountId: line.account_id ?? null,
-                                          costCenterId: v || null,
-                                        },
-                                      })
-                                    }
-                                    options={costCenterOptions}
-                                    placeholder="Search cost centers…"
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          {renderGlClassificationPanel(
+                            "Funded by employee advance — no vendor invoice needed. Assign a GL account and cost center to each line, then once completed, this PO's lines will queue for settlement against the advance.",
+                          )}
                           <Button
                             variant="primary"
                             style={PRIMARY_CTA_STYLE}
@@ -4973,6 +4989,10 @@ export default function PurchaseOrderDetail() {
                   )
                 ) : can('finance.ap.view') ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {can('finance.ap.approve', 'approve') &&
+                      renderGlClassificationPanel(
+                        'Assign a GL account and cost center to each line — Finance uses these to book the vendor invoice correctly.',
+                      )}
                     {apInvoice ? (
                       <div
                         style={{

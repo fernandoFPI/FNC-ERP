@@ -114,9 +114,16 @@ export default function StoreInDetail() {
     skip: !receipt?.po_id,
     fetchPolicy: 'cache-and-network',
   })
-  const hasBuyerReceipt = (
-    buyerReceiptData?.entityAttachments as { file: { category: string } }[] | undefined
-  )?.some((a) => a.file.category === 'po_receipt_document') ?? false
+  // Any attachment entityAttachments('purchase_order', poId) returns is a
+  // buyer-side receipt — either the legacy items_bought upload (category
+  // 'po_receipt_document', attached directly to the PO) or a G1 child PO's
+  // per-vendor purchase receipt (category 'attachment', attached during
+  // the requisition's Items Bought stage and surfaced here via a union in
+  // the entityAttachments resolver). Filtering to 'po_receipt_document'
+  // only — the old check — meant the "Buyer's Receipt" panel could show
+  // an attachment while this flag stayed false, so Confirm kept demanding
+  // a redundant Vendor Receipt upload even with one plainly already there.
+  const hasBuyerReceipt = ((buyerReceiptData?.entityAttachments as unknown[] | undefined)?.length ?? 0) > 0
 
   const [attachReceiptPhoto] = useMutation(ATTACH_RECEIPT_PHOTO)
   const [detachFile, { loading: detaching }] = useMutation(DETACH_FILE)

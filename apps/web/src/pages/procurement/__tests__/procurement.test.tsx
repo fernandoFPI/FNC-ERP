@@ -94,7 +94,7 @@ describe('PurchaseOrderForm', () => {
 
 // ── PurchaseOrderDetail ──────────────────────────────────────────────────────
 describe('PurchaseOrderDetail', () => {
-  function mockPO(status: string) {
+  function mockPO(status: string, overrides: Record<string, unknown> = {}) {
     const po = {
       id: 'po-1',
       po_number: 'PO-FNC-2026-001',
@@ -110,6 +110,7 @@ describe('PurchaseOrderDetail', () => {
       lines: [],
       receipts: [],
       approval_log: [],
+      ...overrides,
     }
     mockUseQuery.mockReturnValue({ data: { purchaseOrder: po }, loading: false })
   }
@@ -174,6 +175,29 @@ describe('PurchaseOrderDetail', () => {
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
     expect(screen.queryByRole('button', { name: /^reject$/i })).not.toBeInTheDocument()
+  })
+
+  // Regression: a G1 child PO (requisition_id set) lands in 'bought' status
+  // straight out of finishBuyingRequisition's per-vendor fork — buying
+  // already happened at the requisition's Items Bought stage, so its own
+  // lines were never ticked one-by-one there's nothing to check off here.
+  // Before this fix, the page showed the legacy items_bought checklist
+  // (mark-line-bought checkboxes + Finish Buying), whose mutations reject
+  // any PO not literally in status 'items_bought' — a real dead end found
+  // via manual click-through on a live requisition.
+  it('shows Record Receipt (not the items-bought checklist) for a bought child PO', async () => {
+    mockPO('bought', { requisition_id: 'req-1' })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    expect(screen.getByRole('button', { name: /record receipt/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /finish buying/i })).not.toBeInTheDocument()
+  })
+
+  it("renders the child PO's own vocabulary step (Bought) in the StatusBar", async () => {
+    mockPO('bought', { requisition_id: 'req-1' })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    expect(screen.getAllByText(/^bought$/i).length).toBeGreaterThan(0)
   })
 })
 
