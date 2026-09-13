@@ -5,7 +5,6 @@ import { CREATE_REQUISITION } from '../../../graphql/requisitions'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
-import { ACCOUNTS_QUERY, COST_CENTERS_QUERY } from '../../../graphql/finance'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -18,14 +17,17 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
 
+// No GL account / cost center fields here — a requisition's requester has
+// no reason to know either, and both already default automatically
+// server-side (createRequisition: project's cost center for Project
+// Supply, else the branch's; system_configuration's default account) when
+// left unset. That's the only path now — nothing here can override it.
 interface ReqLineDraft {
   product_id: string
   description: string
   qty: string
   unit_price: string
   uom: string
-  account_id: string
-  cost_center_id: string
 }
 
 const emptyLine = (): ReqLineDraft => ({
@@ -34,8 +36,6 @@ const emptyLine = (): ReqLineDraft => ({
   qty: '1',
   unit_price: '0',
   uom: 'pc',
-  account_id: '',
-  cost_center_id: '',
 })
 
 export default function RequisitionForm() {
@@ -62,8 +62,6 @@ export default function RequisitionForm() {
     variables: { companyId: currentCompanyId },
     skip: !currentCompanyId,
   })
-  const { data: accountsData } = useQuery(ACCOUNTS_QUERY, { variables: { isActive: true } })
-  const { data: costCentersData } = useQuery(COST_CENTERS_QUERY)
   const [createRequisition, { loading }] = useMutation(CREATE_REQUISITION)
 
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
@@ -72,8 +70,6 @@ export default function RequisitionForm() {
   const branches: { id: string; name: string; isActive: boolean }[] = (
     branchesData?.companyBranches ?? []
   ).filter((b: { isActive: boolean }) => b.isActive)
-  const accounts: { id: string; code: string; name: string }[] = accountsData?.accounts ?? []
-  const costCenters: { id: string; code: string; name: string }[] = costCentersData?.costCenters ?? []
 
   const productOptions = [
     { value: '', label: 'Custom item' },
@@ -158,36 +154,6 @@ export default function RequisitionForm() {
       ),
     },
     {
-      key: 'account_id',
-      label: 'GL Account',
-      width: '160px',
-      render: (line, i) => (
-        <Select
-          value={line.account_id}
-          onChange={(e) => updateLine(i, 'account_id', e.target.value)}
-          options={[
-            { value: '', label: 'Auto (default)' },
-            ...accounts.map((a) => ({ value: a.id, label: `${a.code} — ${a.name}` })),
-          ]}
-        />
-      ),
-    },
-    {
-      key: 'cost_center_id',
-      label: 'Cost Center',
-      width: '160px',
-      render: (line, i) => (
-        <Select
-          value={line.cost_center_id}
-          onChange={(e) => updateLine(i, 'cost_center_id', e.target.value)}
-          options={[
-            { value: '', label: 'Auto (default)' },
-            ...costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` })),
-          ]}
-        />
-      ),
-    },
-    {
       key: 'total',
       label: 'Total',
       width: '90px',
@@ -232,8 +198,6 @@ export default function RequisitionForm() {
           qty: parseFloat(l.qty) || 0,
           unit_price: parseFloat(l.unit_price) || 0,
           uom: l.uom,
-          accountId: l.account_id || undefined,
-          costCenterId: l.cost_center_id || undefined,
         })),
       }
       const result = await createRequisition({ variables: { input } })
@@ -408,8 +372,8 @@ export default function RequisitionForm() {
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Lines</div>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-              Add each item — GL account and cost center default from the branch (and, for Project
-              Supply, the project) when left on Auto.
+              Add each item you need — GL account and cost center are worked out automatically later
+              and aren't something you need to set here.
             </div>
           </div>
           <div style={{ padding: '16px 20px' }}>

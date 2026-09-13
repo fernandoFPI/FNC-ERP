@@ -86,10 +86,17 @@ describe('RequisitionForm', () => {
     expect(descriptionsAfter).toBeGreaterThan(descriptionsBefore)
   })
 
-  it('shows Auto (default) as the GL account and cost center placeholder per line', async () => {
+  // Regression: GL Account/Cost Center used to be per-line columns here,
+  // with an "Auto (default)" placeholder — removed because a requester
+  // has no reason to know either; both still default automatically
+  // server-side (createRequisition), just with nothing to show or set
+  // for it on this form anymore.
+  it('does not show GL Account or Cost Center columns', async () => {
     const RequisitionForm = (await import('../RequisitionForm')).default
     wrap(<RequisitionForm />)
-    expect(screen.getAllByText('Auto (default)').length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('GL Account')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cost Center')).not.toBeInTheDocument()
+    expect(screen.queryByText('Auto (default)')).not.toBeInTheDocument()
   })
 
   it('rejects submit for Project Supply with no project selected', async () => {
