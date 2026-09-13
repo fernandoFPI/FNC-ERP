@@ -245,8 +245,20 @@ export default function RequisitionForm() {
     }
   }
 
+  // Summary sidebar stats — mirrors PurchaseOrderForm's own Order Summary
+  // computation (realLines/totalQty), just without a per-line currency
+  // breakdown since the creation form never collects one (Requisition
+  // lines only pick up a currency later, at market pricing).
+  const realLines = lines.filter((l) => l.description || l.product_id)
+  const totalQty = realLines.reduce((s, l) => s + (parseFloat(l.qty || '0') || 0), 0)
+  const estTotal = realLines.reduce(
+    (s, l) => s + (parseFloat(l.qty || '0') || 0) * (parseFloat(l.unit_price || '0') || 0),
+    0,
+  )
+  const selectedProject = projects.find((p) => p.id === projectId)
+
   return (
-    <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
+    <div style={{ padding: '24px' }}>
       <PageHeader
         title="New Requisition"
         subtitle="Request items to be sourced from stock or purchased"
@@ -264,7 +276,11 @@ export default function RequisitionForm() {
       />
 
       <form ref={formRef} onSubmit={(e) => void handleSubmit(e)}>
-        <Card style={{ padding: '24px', marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
+          {/* Left column ~70%: Requisition Details — mirrors PurchaseOrderForm's own "Order Details" card */}
+          <div style={{ flex: '2 1 560px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <Card style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Requisition Details</div>
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 200px' }}>
               <Select
@@ -325,6 +341,68 @@ export default function RequisitionForm() {
 
           <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
         </Card>
+          </div>
+
+          {/* Right column ~30%: Summary — mirrors PurchaseOrderForm's own sticky Order Summary sidebar */}
+          <div style={{ flex: '1 1 280px', display: 'flex' }}>
+            <Card style={{ padding: '24px', position: 'sticky', top: '20px', width: '100%' }}>
+              <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
+                Summary
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                {[
+                  { label: 'Line Items', value: String(realLines.length) },
+                  { label: 'Total Qty', value: totalQty.toLocaleString() },
+                  { label: 'Est. Total', value: estTotal.toLocaleString() },
+                  {
+                    label: 'Priority',
+                    value: priority.charAt(0).toUpperCase() + priority.slice(1),
+                  },
+                ].map((kpi) => (
+                  <div
+                    key={kpi.label}
+                    style={{
+                      padding: '14px',
+                      borderRadius: '10px',
+                      background: theme.bgCanvas,
+                      border: `1px solid ${theme.border}`,
+                      minWidth: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, marginBottom: '6px' }}>
+                      {kpi.label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '20px',
+                        fontWeight: 700,
+                        color: theme.textPrimary,
+                        lineHeight: 1.2,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {kpi.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: '12px', color: theme.textMuted }}>
+                {purpose === 'project' ? (
+                  <>
+                    For project{' '}
+                    <strong style={{ color: theme.textPrimary }}>
+                      {selectedProject?.code ?? '— not selected —'}
+                    </strong>
+                  </>
+                ) : (
+                  'General stock requisition — not linked to a project'
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
 
         <Card style={{ marginTop: '20px' }}>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>

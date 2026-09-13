@@ -121,4 +121,38 @@ describe('RequisitionForm', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/procurement/requisitions/req-new-1')
     })
   })
+
+  // Regression coverage for matching PurchaseOrderForm's own layout: an
+  // unbounded-width page with a two-column Details/Summary split instead
+  // of a single centered ~1100px column.
+  it('shows a Summary sidebar that updates with the draft lines', async () => {
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />)
+    expect(screen.getByText('Summary')).toBeInTheDocument()
+    expect(screen.getByText('Line Items')).toBeInTheDocument()
+    expect(screen.getByText('Total Qty')).toBeInTheDocument()
+    expect(screen.getByText('Est. Total')).toBeInTheDocument()
+    // One empty starter line has no description/product yet, so it isn't
+    // counted as a "real" line — matches PurchaseOrderForm's own realLines
+    // filter (description || product_id). Line Items/Total Qty/Est. Total
+    // all read 0, plus the Lines table's own per-row Total column (also 0
+    // for that starter line) — 4 "0"s in total.
+    expect(screen.getAllByText('0').length).toBe(4)
+
+    fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Cement bags' } })
+    // Line Items and Total Qty both become 1 (qty defaults to 1); Est.
+    // Total and the Lines table's row Total both stay 0 (unit_price
+    // defaults to 0) — so "1" appears twice and "0" still appears twice.
+    expect(screen.getAllByText('1').length).toBe(2)
+  })
+
+  it('Summary sidebar reflects the project-vs-stock context line', async () => {
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    const { container } = wrap(<RequisitionForm />)
+    expect(screen.getByText(/not linked to a project/i)).toBeInTheDocument()
+    fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+    // "for Project" also appears in the Lines section's own hint text, so
+    // match on "not selected" — unique to the Summary sidebar's context line.
+    expect(screen.getByText(/not selected/i)).toBeInTheDocument()
+  })
 })
