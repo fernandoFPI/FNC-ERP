@@ -413,4 +413,78 @@ describe('RequisitionDetail', () => {
     expect(screen.getByRole('button', { name: /submit to price verification/i })).toBeInTheDocument()
     expect(screen.queryByText('Cement bags')).not.toBeInTheDocument()
   })
+
+  // Regression: "Start editing" used to be shown to anyone who could view
+  // the requisition at all, with no client-side check matching the
+  // backend's own organizer-or-project-member-or-admin gate — a stranger
+  // could fill out a whole draft only to have submit fail. Now hidden
+  // (not just disabled) for a caller who is neither the organizer nor an
+  // admin.
+  it('Edit requests tab: hides Start editing for a caller who is neither the organizer nor an admin', async () => {
+    mockAuthUser = { id: 'user-stranger', role: 'user' }
+    mockReq({ organizer_id: 'someone-else' })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+    expect(screen.queryByRole('button', { name: /start editing/i })).not.toBeInTheDocument()
+    // "Only the organizer or an admin" also matches the unrelated Draft
+    // panel's own submit-permission message (visible alongside this one,
+    // since the default mocked status is 'draft') — scope to the phrase
+    // unique to the edit-request panel.
+    expect(screen.getByText(/only the organizer or an admin can request an edit/i)).toBeInTheDocument()
+  })
+
+  // The shared Select component's <label> isn't associated to its
+  // <select> via htmlFor/id (see getPurposeSelect's own comment
+  // elsewhere in this suite for the same gotcha) — Priority is always
+  // the first <select> the edit form renders, Delivery Destination
+  // (when shown) the second; the Lines tab's own content is unmounted
+  // while on the Edit requests tab, so no other <select> can appear.
+  function getEditDeliveryDestinationSelect(container: HTMLElement): HTMLSelectElement {
+    return container.querySelectorAll('select')[1] as HTMLSelectElement
+  }
+
+  it('Edit requests tab: shows Delivery Destination for a Project Supply requisition and includes it in the submitted diff', async () => {
+    const submitMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([submitMock, { loading: false }])
+    mockReq({ purpose: 'project', delivery_destination: 'inventory' })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    const { container } = wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+    fireEvent.click(screen.getByRole('button', { name: /start editing/i }))
+
+    expect(screen.getByText('Delivery Destination')).toBeInTheDocument()
+    const destinationSelect = getEditDeliveryDestinationSelect(container)
+    expect(destinationSelect).not.toBeDisabled()
+    fireEvent.change(destinationSelect, { target: { value: 'jobsite' } })
+    fireEvent.click(screen.getByRole('button', { name: /submit edit request/i }))
+
+    expect(submitMock).toHaveBeenCalledTimes(1)
+    const changes = JSON.parse(submitMock.mock.calls[0][0].variables.changes)
+    expect(changes.header.delivery_destination).toEqual({ from: 'inventory', to: 'jobsite' })
+  })
+
+  it('Edit requests tab: omits Delivery Destination for a General Stock requisition', async () => {
+    mockReq({ purpose: 'stock' })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+    fireEvent.click(screen.getByRole('button', { name: /start editing/i }))
+    expect(screen.queryByText('Delivery Destination')).not.toBeInTheDocument()
+  })
+
+  // Once Finish Buying has run for every line (status 'sourcing'), each
+  // child PO already has its own frozen copy of delivery_destination from
+  // fork time — editing the requisition's own value here would silently
+  // do nothing, so it's shown disabled with an explanation instead of
+  // quietly accepting an edit that goes nowhere.
+  it('Edit requests tab: disables Delivery Destination once the requisition has reached sourcing', async () => {
+    mockReq({ purpose: 'project', delivery_destination: 'jobsite', status: 'sourcing' })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    const { container } = wrap(<RequisitionDetail />)
+    fireEvent.click(screen.getByRole('button', { name: /edit requests/i }))
+    fireEvent.click(screen.getByRole('button', { name: /start editing/i }))
+    expect(getEditDeliveryDestinationSelect(container)).toBeDisabled()
+    expect(screen.getByText(/already forked this into one or more purchase orders/i)).toBeInTheDocument()
+  })
 })

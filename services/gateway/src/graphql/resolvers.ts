@@ -518,6 +518,36 @@ async function applyRequisitionEditChanges(
     }
   }
   const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+
+  // Guard: refuse to edit or remove a line that's already been bought
+  // against (po_line_purchases) or forked into a child PO (po_id set).
+  // Without this, a post-approval edit request approved here could
+  // silently CASCADE-DELETE real purchase history — po_line_purchases.
+  // po_line_id is ON DELETE CASCADE (migration 258) — or desync a line a
+  // child PO already owns. Pre-approval this is always a no-op (neither
+  // can exist yet, since Items Bought/Finish Buying only happen after
+  // approval); it only ever matters for a post-approval edit request.
+  const touchedLineIds = [
+    ...new Set([
+      ...(changes.lines?.edited ?? []).map((e) => e.id),
+      ...(changes.lines?.removed ?? []),
+    ]),
+  ]
+  if (touchedLineIds.length > 0) {
+    const committed = await client.query<{ id: string; has_purchases: boolean; forked: boolean }>(
+      `SELECT pl.id,
+              EXISTS (SELECT 1 FROM po_line_purchases plp WHERE plp.po_line_id = pl.id) AS has_purchases,
+              (pl.po_id IS NOT NULL) AS forked
+       FROM po_lines pl WHERE pl.id = ANY($1) AND pl.requisition_id = $2`,
+      [touchedLineIds, reqId],
+    )
+    const blocked = committed.rows.filter((r) => r.has_purchases || r.forked)
+    if (blocked.length > 0)
+      throw new Error(
+        `Line(s) already bought against or forked into a Purchase Order can't be edited or removed: ${blocked.map((r) => r.id).join(', ')}`,
+      )
+  }
+
   const priceAffectedLineIds = new Set<string>()
   for (const e of changes.lines?.edited ?? []) {
     if (!lineAllowed.includes(e.field)) continue
@@ -6970,31 +7000,31 @@ export const resolvers = {
       // purchase. Union in po_line_purchases-sourced attachments for this
       // PO's own lines; a no-op for a legacy PO, which never has any
       // po_line_purchases rows at all.
-      const result =
-        args.entityType === 'purchase_order'
-          ? await query(
-              `SELECT da.id, da.label, da.is_primary, da.created_at,
-                      f.id AS file_id, f.original_filename, f.mime_type,
-                      f.size_bytes, f.category, f.uploaded_at,
-                      u.email AS uploaded_by_email
-               FROM document_attachments da
-               JOIN files f ON f.id = da.file_id
-               JOIN users u ON u.id = da.uploaded_by
-               WHERE f.status != 'deleted' AND (
-                 (da.entity_type = 'purchase_order' AND da.entity_id = $1)
-                 OR (da.entity_type = 'po_line_purchase' AND da.entity_id IN (
-                       SELECT plp.id FROM po_line_purchases plp
-                       JOIN po_lines pl ON pl.id = plp.po_line_id
-                       WHERE pl.po_id = $1
-                     ))
-               )
-               ORDER BY da.is_primary DESC, da.created_at ASC`,
-              [args.entityId],
-            )
-          : await getAttachments(
-              args.entityType as Parameters<typeof getAttachments>[0],
-              args.entityId,
-            )
+      const isPurchaseOrderUnion = args.entityType === 'purchase_order'
+      const result = isPurchaseOrderUnion
+        ? await query(
+            `SELECT da.id, da.label, da.is_primary, da.created_at, da.entity_type,
+                    f.id AS file_id, f.original_filename, f.mime_type,
+                    f.size_bytes, f.category, f.uploaded_at,
+                    u.email AS uploaded_by_email
+             FROM document_attachments da
+             JOIN files f ON f.id = da.file_id
+             JOIN users u ON u.id = da.uploaded_by
+             WHERE f.status != 'deleted' AND (
+               (da.entity_type = 'purchase_order' AND da.entity_id = $1)
+               OR (da.entity_type = 'po_line_purchase' AND da.entity_id IN (
+                     SELECT plp.id FROM po_line_purchases plp
+                     JOIN po_lines pl ON pl.id = plp.po_line_id
+                     WHERE pl.po_id = $1
+                   ))
+             )
+             ORDER BY da.is_primary DESC, da.created_at ASC`,
+            [args.entityId],
+          )
+        : await getAttachments(
+            args.entityType as Parameters<typeof getAttachments>[0],
+            args.entityId,
+          )
       return result.rows.map((r: Record<string, unknown>) => ({
         id: r.id,
         file: {
@@ -7010,6 +7040,11 @@ export const resolvers = {
         isPrimary: r.is_primary,
         createdAt: r.created_at,
         uploadedByEmail: r.uploaded_by_email,
+        // getAttachments' own query filters strictly on entity_type=$1, so
+        // every row it returns necessarily has that same entity_type —
+        // safe to use args.entityType directly without selecting the
+        // column there too.
+        sourceEntityType: isPurchaseOrderUnion ? r.entity_type : args.entityType,
       }))
     },
 
@@ -11257,8 +11292,8 @@ export const resolvers = {
           ? await nextDocumentNumber(ctx.auth.companyId, `product_${generated.slug}`, generated.prefix)
           : await nextDocumentNumber(ctx.auth.companyId, 'product', 'PRD'))
       const r = await query(
-        `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,reorder_point,reorder_qty,is_active)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+        `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,standard_cost,cost_currency,reorder_point,reorder_qty,is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
         [
           ctx.auth.companyId,
           sku,
@@ -11270,6 +11305,7 @@ export const resolvers = {
           i.uom,
           i.valuation_method ?? 'last_cost',
           i.standard_cost ?? 0,
+          i.cost_currency ?? null,
           i.reorder_point ?? null,
           i.reorder_qty ?? null,
           i.is_active ?? true,
@@ -11289,8 +11325,9 @@ export const resolvers = {
       const r = await query(
         `UPDATE products SET name=COALESCE($3,name), name_ar=COALESCE($4,name_ar), description=COALESCE($5,description), category=COALESCE($6,category),
            sub_category=COALESCE($7,sub_category), uom=COALESCE($8,uom), standard_cost=COALESCE($9,standard_cost),
-           reorder_point=COALESCE($10,reorder_point), reorder_qty=COALESCE($11,reorder_qty),
-           is_active=COALESCE($12,is_active), updated_at=NOW()
+           cost_currency=COALESCE($10,cost_currency),
+           reorder_point=COALESCE($11,reorder_point), reorder_qty=COALESCE($12,reorder_qty),
+           is_active=COALESCE($13,is_active), updated_at=NOW()
          WHERE id=$1 AND company_id=$2 RETURNING *`,
         [
           args.id,
@@ -11302,6 +11339,7 @@ export const resolvers = {
           i.sub_category ?? null,
           i.uom ?? null,
           i.standard_cost ?? null,
+          i.cost_currency ?? null,
           i.reorder_point ?? null,
           i.reorder_qty ?? null,
           i.is_active ?? null,
@@ -11367,8 +11405,8 @@ export const resolvers = {
           const hasPrice = pending.unit_price != null
           const productRes = await client.query(
             `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,is_active,
-               last_market_price,last_market_price_currency,last_market_price_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'last_cost',true,$9,$10,${hasPrice ? 'NOW()' : 'NULL'}) RETURNING *`,
+               last_market_price,last_market_price_currency,last_market_price_at,cost_currency)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'last_cost',true,$9,$10,${hasPrice ? 'NOW()' : 'NULL'},$11) RETURNING *`,
             [
               targetCompanyId,
               sku,
@@ -11379,6 +11417,12 @@ export const resolvers = {
               i.sub_category ?? null,
               (i.uom as string | undefined) ?? pending.uom ?? 'unit',
               pending.unit_price ?? null,
+              pending.currency_code ?? null,
+              // Known from day one, straight from this item's own real
+              // purchase — the same value seeding last_market_price_currency
+              // above, kept here too as the more durable "this product's
+              // cost is in X" fact once the market-price cache eventually
+              // goes stale (see cost_currency's own migration comment).
               pending.currency_code ?? null,
             ],
           )
@@ -27657,6 +27701,32 @@ const phase5MutationResolvers = {
         }
       }
 
+      // Fail fast rather than letting an admin discover this only when
+      // they try to approve it later — same guard applyRequisitionEditChanges
+      // enforces at apply time (see its own comment), checked here too so
+      // a doomed request never even reaches the review queue.
+      const changesForGuard = changesObj as EditChanges
+      const touchedForGuard = [
+        ...new Set([
+          ...(changesForGuard.lines?.edited ?? []).map((e) => e.id),
+          ...(changesForGuard.lines?.removed ?? []),
+        ]),
+      ]
+      if (touchedForGuard.length > 0) {
+        const committed = await query<{ id: string; has_purchases: boolean; forked: boolean }>(
+          `SELECT pl.id,
+                  EXISTS (SELECT 1 FROM po_line_purchases plp WHERE plp.po_line_id = pl.id) AS has_purchases,
+                  (pl.po_id IS NOT NULL) AS forked
+           FROM po_lines pl WHERE pl.id = ANY($1) AND pl.requisition_id = $2`,
+          [touchedForGuard, reqId],
+        )
+        const blocked = committed.rows.filter((r) => r.has_purchases || r.forked)
+        if (blocked.length > 0)
+          throw new Error(
+            `Line(s) already bought against or forked into a Purchase Order can't be edited or removed: ${blocked.map((r) => r.id).join(', ')}`,
+          )
+      }
+
       const r = await query(
         `INSERT INTO po_edit_requests (requisition_id, requested_by, changes, request_notes)
          VALUES ($1,$2,$3,$4) RETURNING *`,
@@ -27957,12 +28027,12 @@ const phase5MutationResolvers = {
   },
 
   // ── G1 requisition lifecycle mutations (PR 1: create + inventory check) ───
-  // Scope note: store_pricing/market_pricing/price_verification entry
-  // mutations are NOT part of this PR — confirmRequisitionInventoryCheck
-  // below always transitions to 'store_pricing' (per reqStateMachine) but
-  // does not populate any store-price values, since that's a distinct
-  // concern not yet scoped to a specific PR in the agreed 5-PR breakdown.
-  // Flagging this explicitly rather than silently building or skipping it.
+  // confirmRequisitionInventoryCheck below auto-fills store pricing and
+  // advances straight through 'store_pricing' to 'market_pricing' in one
+  // transaction — mirrors confirmPOInventoryCheck's own auto-fill exactly
+  // (see that resolver's comment). Store Pricing is not a human step in
+  // the normal flow; the panel still renders for the rare edge case a
+  // requisition is later moved back to 'store_pricing' by some other path.
 
   createRequisition: async (
     _: unknown,
@@ -28001,14 +28071,15 @@ const phase5MutationResolvers = {
     // the schema, so it's always the one company-wide default.
     const [projectRow, branchRow, sysConfigRow] = await Promise.all([
       i.purpose === 'project' && i.project_id
-        ? query<{ cost_center_id: string | null }>(`SELECT cost_center_id FROM projects WHERE id=$1`, [
-            i.project_id,
-          ])
+        ? query<{ cost_center_id: string | null }>(
+            `SELECT cost_center_id FROM projects WHERE id=$1 AND company_id=$2`,
+            [i.project_id, ctx.auth.companyId],
+          )
         : Promise.resolve({ rows: [] as { cost_center_id: string | null }[] }),
       i.branch_id
         ? query<{ default_cost_center_id: string | null }>(
-            `SELECT default_cost_center_id FROM company_branches WHERE id=$1`,
-            [i.branch_id],
+            `SELECT default_cost_center_id FROM company_branches WHERE id=$1 AND company_id=$2`,
+            [i.branch_id, ctx.auth.companyId],
           )
         : Promise.resolve({ rows: [] as { default_cost_center_id: string | null }[] }),
       query<{ default_unallocated_purchase_account_id: string | null }>(
@@ -28233,6 +28304,85 @@ const phase5MutationResolvers = {
         auth,
         args.notes,
       )
+
+      // Store Pricing is no longer a human step here either — mirrors
+      // confirmPOInventoryCheck's own auto-fill-and-advance exactly (see
+      // that resolver's comment for the full rationale). Unlike POs,
+      // requisitions have no 'ready_to_issue' bypass for a 100%-from-stock
+      // case, so this always advances straight through regardless of
+      // whether any line actually needs purchasing.
+      const baseCcyRes = await client.query<{ default_currency: string }>(
+        `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
+        [auth.companyId],
+      )
+      const baseCurrencyCode = baseCcyRes.rows[0]?.default_currency ?? 'IQD'
+
+      const stockLinesRes = await client.query<{
+        id: string
+        product_id: string | null
+        sku: string | null
+        last_market_price: string | null
+        last_market_price_currency: string | null
+        cost_currency: string | null
+        fallback_avg_cost: string | null
+      }>(
+        `SELECT pol.id, pol.product_id, p.sku,
+                p.last_market_price, p.last_market_price_currency, p.cost_currency,
+                sb.average_cost AS fallback_avg_cost
+         FROM po_lines pol
+         LEFT JOIN products p ON p.id = pol.product_id
+         LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
+           AND sb.location_id = pol.source_location_id AND sb.lot_id IS NULL
+         WHERE pol.requisition_id=$1 AND pol.qty_from_stock > 0`,
+        [args.id],
+      )
+
+      const autoFilledLines: Record<string, unknown>[] = []
+      for (const line of stockLinesRes.rows) {
+        const cachedPrice =
+          line.last_market_price != null ? parseFloat(line.last_market_price) : null
+        const usingCache = cachedPrice != null && cachedPrice > 0
+        const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
+        // Same three-tier currency fallback as confirmPOInventoryCheck: a
+        // real historical vendor-quote currency first, then the product's
+        // own declared cost_currency, then the company's default currency
+        // as a last-resort guess.
+        const storeCurrency = usingCache
+          ? (line.last_market_price_currency ?? line.cost_currency ?? baseCurrencyCode)
+          : (line.cost_currency ?? baseCurrencyCode)
+        await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
+          storePrice,
+          storeCurrency,
+          line.id,
+        ])
+        autoFilledLines.push({
+          lineId: line.id,
+          productId: line.product_id,
+          sku: line.sku,
+          storePrice,
+          storeCurrency,
+          source: usingCache ? 'cached_market_price' : 'average_cost_fallback',
+        })
+      }
+
+      await reqTransition(
+        client,
+        args.id,
+        'store_pricing',
+        'market_pricing',
+        'submit_to_market_pricing',
+        auth,
+        'Store pricing auto-filled from cached market price',
+      )
+      await logAudit({
+        userId: auth.userId,
+        companyId: auth.companyId,
+        action: 'AUTO_STORE_PRICING',
+        tableName: 'po_lines',
+        recordId: args.id,
+        newValues: { lines: autoFilledLines },
+        client,
+      })
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -28352,9 +28502,8 @@ const phase5MutationResolvers = {
           [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
         )
         // Same product-level cache as submitPOMarketPricing — read back by
-        // confirmRequisitionInventoryCheck's future store-pricing auto-fill
-        // (not yet built — see PR 1's scope note) for the next
-        // requisition/PO needing this product.
+        // confirmRequisitionInventoryCheck's own store-pricing auto-fill
+        // for the next requisition/PO needing this product.
         const productId = updated.rows[0]?.product_id
         if (productId && lp.marketPrice > 0) {
           await client.query(
@@ -29536,10 +29685,11 @@ const phase5MutationResolvers = {
           sku: string | null
           last_market_price: string | null
           last_market_price_currency: string | null
+          cost_currency: string | null
           fallback_avg_cost: string | null
         }>(
           `SELECT pol.id, pol.product_id, p.sku,
-                  p.last_market_price, p.last_market_price_currency,
+                  p.last_market_price, p.last_market_price_currency, p.cost_currency,
                   sb.average_cost AS fallback_avg_cost
            FROM po_lines pol
            LEFT JOIN products p ON p.id = pol.product_id
@@ -29555,9 +29705,15 @@ const phase5MutationResolvers = {
             line.last_market_price != null ? parseFloat(line.last_market_price) : null
           const usingCache = cachedPrice != null && cachedPrice > 0
           const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
+          // Currency fallback chain: a real historical vendor-quote currency
+          // (cached the last time this product was market-priced) first,
+          // then the product's own declared cost_currency (set explicitly
+          // on the product, or seeded at catalog creation from its first
+          // real purchase), and only then the company/PO's base currency —
+          // a guess of last resort, not a fact about this specific product.
           const storeCurrency = usingCache
-            ? (line.last_market_price_currency ?? baseCurrencyCode)
-            : baseCurrencyCode
+            ? (line.last_market_price_currency ?? line.cost_currency ?? baseCurrencyCode)
+            : (line.cost_currency ?? baseCurrencyCode)
           await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
             storePrice,
             storeCurrency,

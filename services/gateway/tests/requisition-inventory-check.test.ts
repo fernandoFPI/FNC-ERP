@@ -14,6 +14,7 @@ const SKU_PREFIX = 'G1TEST-'
 let userId: string
 let warehouseId: string
 let virtualInId: string
+let baseCurrency: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 
 async function makeProduct(suffix: string): Promise<string> {
@@ -99,6 +100,12 @@ beforeAll(async () => {
   )
   if (!viR.rows[0]) throw new Error('No virtual_in location seeded for test company — run seeds first')
   virtualInId = viR.rows[0].id
+
+  const companyR = await pool.query<{ default_currency: string }>(
+    `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
+    [TEST_COMPANY_ID],
+  )
+  baseCurrency = companyR.rows[0]?.default_currency ?? 'IQD'
 
   await cleanup()
 })
@@ -194,9 +201,9 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
     return { reqId, lineId: lineRow.rows[0]!.id }
   }
 
-  it('reserves stock, zeroes the line total when fully covered, and moves to store_pricing', async () => {
+  it('reserves stock, zeroes the line total when fully covered, auto-fills store pricing, and advances straight to market_pricing', async () => {
     const productId = await makeProduct('reserve')
-    await receive(productId, warehouseId, 20)
+    await receive(productId, warehouseId, 20, 10) // unit_cost 10 -> average_cost becomes 10
     const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
 
     const result = await resolvers.Mutation.confirmRequisitionInventoryCheck(
@@ -204,24 +211,37 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    expect((result as { status: string }).status).toBe('store_pricing')
+    // No 'ready_to_issue' equivalent for requisitions (unlike confirmPOInventoryCheck) —
+    // always lands on market_pricing, mirroring the PO fast path's own store-pricing skip.
+    expect((result as { status: string }).status).toBe('market_pricing')
 
     const bal = await getBalance(productId, warehouseId)
     expect(bal.reserved).toBe(5)
     expect(bal.onHand).toBe(20) // reservation never touches on_hand
 
-    const line = await pool.query<{ total_price: string; in_stock: boolean; qty_from_stock: string }>(
-      `SELECT total_price, in_stock, qty_from_stock FROM po_lines WHERE id=$1`,
+    const line = await pool.query<{
+      total_price: string
+      in_stock: boolean
+      qty_from_stock: string
+      store_price: string
+      store_price_currency: string
+    }>(
+      `SELECT total_price, in_stock, qty_from_stock, store_price, store_price_currency FROM po_lines WHERE id=$1`,
       [lineId],
     )
     expect(line.rows[0]!.in_stock).toBe(true)
     expect(parseFloat(line.rows[0]!.total_price)).toBe(0)
     expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(5)
+    // No cached last_market_price yet and no product.cost_currency set —
+    // falls all the way back to average_cost (10) + the company's own
+    // default currency, not a hardcoded 'IQD'.
+    expect(parseFloat(line.rows[0]!.store_price)).toBe(10)
+    expect(line.rows[0]!.store_price_currency).toBe(baseCurrency)
   })
 
-  it('reaches store_pricing even when nothing is stock-covered (partial reservation, rest still needs buying)', async () => {
+  it('reaches market_pricing even when only partially stock-covered, still auto-filling store price for the covered portion', async () => {
     const productId = await makeProduct('partial')
-    await receive(productId, warehouseId, 3)
+    await receive(productId, warehouseId, 3, 7)
     const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 10)
 
     const result = await resolvers.Mutation.confirmRequisitionInventoryCheck(
@@ -229,16 +249,65 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 3, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    expect((result as { status: string }).status).toBe('store_pricing')
+    expect((result as { status: string }).status).toBe('market_pricing')
 
-    const line = await pool.query<{ total_price: string; in_stock: boolean }>(
-      `SELECT total_price, in_stock FROM po_lines WHERE id=$1`,
-      [lineId],
-    )
+    const line = await pool.query<{
+      total_price: string
+      in_stock: boolean
+      store_price: string
+      store_price_currency: string
+    }>(`SELECT total_price, in_stock, store_price, store_price_currency FROM po_lines WHERE id=$1`, [lineId])
     // Only 3 of 10 covered — NOT fully in_stock, total_price is untouched
     // (still needs a real price once this line reaches market pricing).
     expect(line.rows[0]!.in_stock).toBe(false)
     expect(parseFloat(line.rows[0]!.total_price)).toBe(100) // 10 qty * 10 unit_price, unchanged
+    // Store price still gets auto-filled for the from-stock portion —
+    // qty_from_stock > 0 is the only gate, not full coverage.
+    expect(parseFloat(line.rows[0]!.store_price)).toBe(7)
+    expect(line.rows[0]!.store_price_currency).toBe(baseCurrency)
+  })
+
+  it('prefers a cached last-market-price and its real currency over the average-cost/base-currency fallback', async () => {
+    const productId = await makeProduct('cached')
+    await receive(productId, warehouseId, 20, 10) // average_cost 10, in base currency
+    await pool.query(
+      `UPDATE products SET last_market_price=25, last_market_price_currency='USD', last_market_price_at=NOW() WHERE id=$1`,
+      [productId],
+    )
+    const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
+
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+
+    const line = await pool.query<{ store_price: string; store_price_currency: string }>(
+      `SELECT store_price, store_price_currency FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(line.rows[0]!.store_price)).toBe(25)
+    expect(line.rows[0]!.store_price_currency).toBe('USD')
+  })
+
+  it("uses the product's own declared cost_currency ahead of the company base currency when there's no cached market price", async () => {
+    const productId = await makeProduct('costcurrency')
+    await receive(productId, warehouseId, 20, 15)
+    await pool.query(`UPDATE products SET cost_currency='USD' WHERE id=$1`, [productId])
+    const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
+
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+
+    const line = await pool.query<{ store_price: string; store_price_currency: string }>(
+      `SELECT store_price, store_price_currency FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(line.rows[0]!.store_price)).toBe(15)
+    expect(line.rows[0]!.store_price_currency).toBe('USD')
   })
 
   it('rejects a from-stock line with no chosen source location, reserving nothing', async () => {
