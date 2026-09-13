@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../../theme/ThemeContext'
+import { useTourStore } from '../../../../store/tourStore'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
@@ -32,9 +33,9 @@ vi.mock('react-router-dom', async (importOriginal) => {
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
-function wrap(ui: React.ReactNode) {
+function wrap(ui: React.ReactNode, initialPath = '/procurement/requisitions/new') {
   return render(
-    <MemoryRouter initialEntries={['/procurement/requisitions/new']}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <ThemeProvider>{ui}</ThemeProvider>
     </MemoryRouter>,
   )
@@ -77,6 +78,75 @@ describe('RequisitionForm', () => {
     expect(screen.getByText(/delivery destination \*/i)).toBeInTheDocument()
   })
 
+  // Regression coverage for ProjectDetail's "+ New Requisition" button,
+  // which now links here instead of straight to PO creation — mirrors
+  // PurchaseOrderForm's own ?projectId= pre-fill.
+  it('pre-selects Project Supply and the project when opened with ?projectId=', async () => {
+    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = doc?.definitions?.[0]?.name?.value
+      if (opName === 'Projects') {
+        return { data: { projects: { data: [{ id: 'proj-1', code: 'PRJ-001', name: 'Erbil Tower' }] } }, loading: false }
+      }
+      return { data: undefined, loading: false }
+    })
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />, '/procurement/requisitions/new?projectId=proj-1')
+    expect(screen.getByText(/project \*/i)).toBeInTheDocument()
+    expect(screen.getByText(/delivery destination \*/i)).toBeInTheDocument()
+    expect(screen.getByText('PRJ-001 — Erbil Tower')).toBeInTheDocument()
+  })
+
+  // Third of three call sites migrated onto requisitions (Project and
+  // Vendor already done) — ManufacturingOrderDetail's "Create Requisition
+  // for missing items" now links here with ?moId=, and pre-fills specific
+  // line items via sessionStorage instead of a URL param (mirrors
+  // PurchaseOrderForm's own ?moId=/po_prefill_lines handling, under its
+  // own req_prefill_lines key so the two forms' prefill state never
+  // collides).
+  it('pre-selects Manufacturing / BOM and the MO, and consumes req_prefill_lines, when opened with ?moId=', async () => {
+    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = doc?.definitions?.[0]?.name?.value
+      if (opName === 'ManufacturingOrders') {
+        return { data: { manufacturingOrders: [{ id: 'mo-1', mo_number: 'MO-2026-0001', product_name: 'Steel Frame' }] }, loading: false }
+      }
+      return { data: undefined, loading: false }
+    })
+    sessionStorage.setItem(
+      'req_prefill_lines',
+      JSON.stringify([
+        { product_id: 'p1', description: 'Rebar 12mm', qty: '20', unit_price: '0', uom: 'pc', account_id: '', cost_center_id: '' },
+      ]),
+    )
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />, '/procurement/requisitions/new?moId=mo-1')
+    expect(screen.getByText(/manufacturing order \*/i)).toBeInTheDocument()
+    expect(screen.getByText('MO-2026-0001 — Steel Frame')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Rebar 12mm')).toBeInTheDocument()
+    expect(sessionStorage.getItem('req_prefill_lines')).toBeNull()
+  })
+
+  it('submits a Manufacturing / BOM requisition with linked_mo_id set', async () => {
+    mockUseQuery.mockImplementation((doc: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = doc?.definitions?.[0]?.name?.value
+      if (opName === 'ManufacturingOrders') {
+        return { data: { manufacturingOrders: [{ id: 'mo-1', mo_number: 'MO-2026-0001' }] }, loading: false }
+      }
+      return { data: undefined, loading: false }
+    })
+    const createMock = vi.fn().mockResolvedValue({ data: { createRequisition: { id: 'req-new-1' } } })
+    mockUseMutation.mockReturnValue([createMock, { loading: false }])
+    const RequisitionForm = (await import('../RequisitionForm')).default
+    wrap(<RequisitionForm />, '/procurement/requisitions/new?moId=mo-1')
+    fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar 12mm' } })
+    fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
+    await vi.waitFor(() => {
+      expect(createMock).toHaveBeenCalled()
+    })
+    const callArgs = createMock.mock.calls[0][0]
+    expect(callArgs.variables.input.purpose).toBe('manufacturing')
+    expect(callArgs.variables.input.linked_mo_id).toBe('mo-1')
+  })
+
   it('starts with one line and can add another', async () => {
     const RequisitionForm = (await import('../RequisitionForm')).default
     wrap(<RequisitionForm />)
@@ -108,6 +178,27 @@ describe('RequisitionForm', () => {
     fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar' } })
     fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
     expect(createMock).not.toHaveBeenCalled()
+  })
+
+  // Onboarding tour: the walkthrough has no real project/branch/delivery
+  // destination to pick, so validation must be bypassed while tour mode
+  // is active — mirrors PurchaseOrderForm's own isTourMode handling.
+  it('bypasses Project Supply validation and submits when tour mode is active', async () => {
+    const createMock = vi.fn().mockResolvedValue({ data: { createRequisition: { id: 'req-new-1' } } })
+    mockUseMutation.mockReturnValue([createMock, { loading: false }])
+    useTourStore.getState().activate('requisition', 'Create a Requisition', 9)
+    try {
+      const RequisitionForm = (await import('../RequisitionForm')).default
+      const { container } = wrap(<RequisitionForm />)
+      fireEvent.change(getPurposeSelect(container), { target: { value: 'project' } })
+      fireEvent.change(screen.getByPlaceholderText('Description'), { target: { value: 'Rebar' } })
+      fireEvent.click(screen.getByRole('button', { name: /create requisition/i }))
+      await vi.waitFor(() => {
+        expect(createMock).toHaveBeenCalled()
+      })
+    } finally {
+      useTourStore.getState().deactivate()
+    }
   })
 
   it('submits a General Stock requisition and navigates to its detail page', async () => {

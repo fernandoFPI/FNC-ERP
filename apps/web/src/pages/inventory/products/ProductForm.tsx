@@ -18,6 +18,8 @@ import { Checkbox } from '../../../components/ui/Checkbox'
 import { useToastStore } from '../../../store/toastStore'
 import { useProductStoreCategories } from '../../../hooks/useProductStoreCategories'
 
+const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
+
 export default function ProductForm() {
   const { id } = useParams<{ id: string }>()
   const isEdit = !!id
@@ -39,6 +41,9 @@ export default function ProductForm() {
     uom: 'pc',
     valuation_method: 'last_cost',
     standard_cost: '0',
+    // Nullable at the DB level (no default) — '' here means "not yet
+    // specified," distinct from a deliberate choice of any listed currency.
+    cost_currency: '',
     reorder_point: '',
     reorder_qty: '',
     is_active: true,
@@ -63,6 +68,7 @@ export default function ProductForm() {
       uom: p.uom ?? 'pc',
       valuation_method: p.valuation_method ?? 'last_cost',
       standard_cost: String(p.standard_cost ?? '0'),
+      cost_currency: p.cost_currency ?? '',
       reorder_point: p.reorder_point ? String(p.reorder_point) : '',
       reorder_qty: p.reorder_qty ? String(p.reorder_qty) : '',
       is_active: p.is_active ?? true,
@@ -91,6 +97,7 @@ export default function ProductForm() {
         uom: form.uom,
         valuation_method: form.valuation_method,
         standard_cost: parseFloat(form.standard_cost),
+        cost_currency: form.cost_currency || undefined,
         reorder_point: form.reorder_point ? parseFloat(form.reorder_point) : undefined,
         reorder_qty: form.reorder_qty ? parseFloat(form.reorder_qty) : undefined,
         is_active: form.is_active,
@@ -216,6 +223,18 @@ export default function ProductForm() {
               value={form.standard_cost}
               onChange={field('standard_cost')}
             />
+            <Select
+              label="Cost Currency"
+              value={form.cost_currency}
+              onChange={field('cost_currency')}
+            >
+              <option value="">— Not set —</option>
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
             <Input
               label="Reorder Point"
               type="number"

@@ -216,6 +216,7 @@ export default function RequisitionsPage() {
               Export CSV
             </Button>
             <Button
+              data-tour="new-requisition-btn"
               variant="primary"
               size="sm"
               onClick={() => {

@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@apollo/client'
 import { CREATE_REQUISITION } from '../../../graphql/requisitions'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
+import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -16,6 +17,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import { useTourStore } from '../../../store/tourStore'
 
 // No GL account / cost center fields here — a requisition's requester has
 // no reason to know either, and both already default automatically
@@ -43,20 +45,62 @@ export default function RequisitionForm() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
+  // Onboarding tour: the synthetic walkthrough has no real project/branch
+  // to pick, so required-field validation is bypassed and the Project
+  // picker disabled below — mirrors PurchaseOrderForm's own isTourMode
+  // handling exactly.
+  const isTourMode = useTourStore((s) => s.isActive)
+  const [searchParams] = useSearchParams()
 
-  const [purpose, setPurpose] = useState<'stock' | 'project'>('stock')
+  const [purpose, setPurpose] = useState<'stock' | 'project' | 'manufacturing'>('stock')
   const [projectId, setProjectId] = useState('')
   const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
+  const [linkedMoId, setLinkedMoId] = useState('')
   const [branchId, setBranchId] = useState('')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
   const formRef = useRef<HTMLFormElement>(null)
 
+  // Pre-fill from URL — mirrors PurchaseOrderForm's own ?projectId=/?moId=
+  // handling, for entry points that already know which project or
+  // manufacturing order this is for (ProjectDetail's "+ New Requisition",
+  // ManufacturingOrderDetail's "Create PO for missing items"). The MO side
+  // also carries specific line items via sessionStorage, written by
+  // ManufacturingOrderDetail right before it navigates here — its own key
+  // (req_prefill_lines), separate from PurchaseOrderForm's po_prefill_lines,
+  // since that form's own manufacturing path is still reachable manually
+  // and shouldn't share state with this one.
+  useEffect(() => {
+    const urlProjectId = searchParams.get('projectId')
+    const urlMoId = searchParams.get('moId')
+    if (urlMoId) {
+      setPurpose('manufacturing')
+      setLinkedMoId(urlMoId)
+    } else if (urlProjectId) {
+      setPurpose('project')
+      setProjectId(urlProjectId)
+    }
+    const prefill = sessionStorage.getItem('req_prefill_lines')
+    if (prefill) {
+      try {
+        const parsed = JSON.parse(prefill) as ReqLineDraft[]
+        if (parsed.length > 0) setLines(parsed)
+      } catch {
+        /* ignore */
+      }
+      sessionStorage.removeItem('req_prefill_lines')
+    }
+  }, [searchParams])
+
   const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: {} })
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: purpose !== 'project',
+  })
+  const { data: mosData } = useQuery(MANUFACTURING_ORDERS_QUERY, {
+    variables: {},
+    skip: purpose !== 'manufacturing',
   })
   const { data: branchesData } = useQuery(COMPANY_BRANCHES_QUERY, {
     variables: { companyId: currentCompanyId },
@@ -67,6 +111,8 @@ export default function RequisitionForm() {
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
     productsData?.products ?? []
   const projects: { id: string; code: string; name: string }[] = projectsData?.projects?.data ?? []
+  const mos: { id: string; mo_number: string; product_name?: string | null }[] =
+    mosData?.manufacturingOrders ?? []
   const branches: { id: string; name: string; isActive: boolean }[] = (
     branchesData?.companyBranches ?? []
   ).filter((b: { isActive: boolean }) => b.isActive)
@@ -167,17 +213,23 @@ export default function RequisitionForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (purpose === 'project' && !projectId) {
-      addToast({ type: 'error', message: 'Please select a project' })
-      return
-    }
-    if (purpose === 'project' && !deliveryDestination) {
-      addToast({ type: 'error', message: 'Please select a delivery destination' })
-      return
-    }
-    if (branches.length > 0 && !branchId) {
-      addToast({ type: 'error', message: 'Please select a branch' })
-      return
+    if (!isTourMode) {
+      if (purpose === 'project' && !projectId) {
+        addToast({ type: 'error', message: 'Please select a project' })
+        return
+      }
+      if (purpose === 'project' && !deliveryDestination) {
+        addToast({ type: 'error', message: 'Please select a delivery destination' })
+        return
+      }
+      if (purpose === 'manufacturing' && !linkedMoId) {
+        addToast({ type: 'error', message: 'Please select a manufacturing order' })
+        return
+      }
+      if (branches.length > 0 && !branchId) {
+        addToast({ type: 'error', message: 'Please select a branch' })
+        return
+      }
     }
     const realLines = lines.filter((l) => l.description || l.product_id)
     if (realLines.length === 0) {
@@ -189,6 +241,7 @@ export default function RequisitionForm() {
         purpose,
         project_id: purpose === 'project' ? projectId || undefined : undefined,
         delivery_destination: purpose === 'project' ? deliveryDestination || undefined : undefined,
+        linked_mo_id: purpose === 'manufacturing' ? linkedMoId || undefined : undefined,
         priority,
         branch_id: branchId || undefined,
         notes: notes || undefined,
@@ -229,6 +282,7 @@ export default function RequisitionForm() {
         backPath="/procurement/requisitions"
         actions={
           <Button
+            data-tour="submit-req-btn"
             type="button"
             variant="primary"
             loading={loading}
@@ -243,17 +297,24 @@ export default function RequisitionForm() {
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
           {/* Left column ~70%: Requisition Details — mirrors PurchaseOrderForm's own "Order Details" card */}
           <div style={{ flex: '2 1 560px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <Card style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <Card
+          data-tour="req-details-card"
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}
+        >
           <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Requisition Details</div>
-          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div
+            data-tour="req-purpose-row"
+            style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}
+          >
             <div style={{ flex: '1 1 200px' }}>
               <Select
                 label="Purpose"
                 value={purpose}
-                onChange={(e) => setPurpose(e.target.value as 'stock' | 'project')}
+                onChange={(e) => setPurpose(e.target.value as 'stock' | 'project' | 'manufacturing')}
               >
                 <option value="stock">General Stock</option>
                 <option value="project">Project Supply</option>
+                <option value="manufacturing">Manufacturing / BOM</option>
               </Select>
             </div>
             <div style={{ flex: '1 1 200px' }}>
@@ -278,15 +339,16 @@ export default function RequisitionForm() {
           </div>
 
           {purpose === 'project' && (
-            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+            <div data-tour="req-project-row" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 240px' }}>
                 <SearchableSelect
                   label="Project *"
                   value={projectId}
                   onChange={setProjectId}
                   options={projectOptions}
-                  placeholder="Search project…"
+                  placeholder={isTourMode ? 'Not needed for this walkthrough' : 'Search project…'}
                   minDropdownWidth={360}
+                  disabled={isTourMode}
                 />
               </div>
               <div style={{ flex: '1 1 200px' }}>
@@ -303,13 +365,38 @@ export default function RequisitionForm() {
             </div>
           )}
 
-          <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          {purpose === 'manufacturing' && (
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 240px' }}>
+                <Select
+                  label="Manufacturing Order *"
+                  value={linkedMoId}
+                  onChange={(e) => setLinkedMoId(e.target.value)}
+                >
+                  <option value="">Select MO…</option>
+                  {mos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.mo_number}
+                      {m.product_name ? ` — ${m.product_name}` : ''}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <div data-tour="req-notes">
+            <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
         </Card>
           </div>
 
           {/* Right column ~30%: Summary — mirrors PurchaseOrderForm's own sticky Order Summary sidebar */}
           <div style={{ flex: '1 1 280px', display: 'flex' }}>
-            <Card style={{ padding: '24px', position: 'sticky', top: '20px', width: '100%' }}>
+            <Card
+              data-tour="req-summary-sidebar"
+              style={{ padding: '24px', position: 'sticky', top: '20px', width: '100%' }}
+            >
               <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
                 Summary
               </div>
@@ -368,7 +455,7 @@ export default function RequisitionForm() {
           </div>
         </div>
 
-        <Card style={{ marginTop: '20px' }}>
+        <Card data-tour="req-lines-card" style={{ marginTop: '20px' }}>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Lines</div>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
@@ -383,6 +470,7 @@ export default function RequisitionForm() {
               onRemoveRow={(idx) => setLines((p) => p.filter((_, i) => i !== idx))}
               removeDisabled={() => lines.length <= 1}
               onAddRow={() => setLines((p) => [...p, emptyLine()])}
+              addButtonDataTour="req-add-line-btn"
             />
           </div>
         </Card>

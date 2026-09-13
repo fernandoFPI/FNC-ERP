@@ -76,6 +76,7 @@ interface ReqLine {
   qty_from_stock?: string | null
   source_location_id?: string | null
   source_location_name?: string | null
+  source_average_cost?: string | null
   store_price?: string | null
   store_price_currency?: string | null
   market_price?: string | null
@@ -117,10 +118,10 @@ interface EditRequest {
 }
 
 // Fields kept in step with applyRequisitionEditChanges' own whitelist
-// (resolvers.ts) — header notes/priority, line description/qty_ordered/
-// unit_price/uom. delivery_destination/branch_id and line product_id are
-// also backend-allowed but left out of this form to keep it to the fields
-// someone would realistically want to correct mid-flight.
+// (resolvers.ts) — header notes/priority/delivery_destination, line
+// description/qty_ordered/unit_price/uom. branch_id and line product_id
+// are also backend-allowed but left out of this form to keep it to the
+// fields someone would realistically want to correct mid-flight.
 interface EditLineDraft {
   id: string
   description: string
@@ -131,6 +132,7 @@ interface EditLineDraft {
 }
 interface EditDraft {
   notes: string
+  delivery_destination: string
   priority: string
   lines: EditLineDraft[]
   linesAdded: { description: string; qty: number; unit_price: number; uom: string }[]
@@ -146,6 +148,8 @@ interface Requisition {
   delivery_destination?: string | null
   project_id?: string | null
   projectName?: string | null
+  linked_mo_id?: string | null
+  linkedMoNumber?: string | null
   branch_id?: string | null
   branch_name?: string | null
   organizer_id?: string | null
@@ -329,6 +333,21 @@ export default function RequisitionDetail() {
     isSystemLevel || isOrganizer || !!req.callerCanApprove
       ? !['completed', 'cancelled', 'rejected', 'deleted'].includes(req.status)
       : false
+  // Mirrors who the backend actually lets submit an edit request
+  // (organizer, or admin — a project-member-but-not-organizer teammate
+  // can also submit server-side, but there's no cheap client-side signal
+  // for that here, so this stays a bit narrower than the backend on
+  // purpose: it only ever hides the button, never grants a capability
+  // the backend wouldn't also allow).
+  const canRequestEdit = isSystemLevel || isOrganizer
+  // Delivery Destination stops doing anything once Finish Buying has run
+  // for every line (status 'sourcing'/'completed') — by then each child
+  // PO already has its own frozen copy from fork time (finishBuyingRequisition),
+  // and the Approval-time Store Out decision it also drives has already
+  // happened too. Editing it after that point is a silent no-op, not a
+  // correction — surfaced as disabled-with-explanation rather than left
+  // to quietly do nothing.
+  const deliveryDestinationEditable = !['sourcing', 'completed'].includes(req.status)
 
   const sectionCard: React.CSSProperties = {
     padding: '20px',
@@ -454,6 +473,7 @@ export default function RequisitionDetail() {
   const initEditDraft = (): EditDraft => ({
     notes: req.notes ?? '',
     priority: req.priority ?? 'low',
+    delivery_destination: req.delivery_destination ?? '',
     lines: req.lines.map((l) => ({
       id: l.id,
       description: l.description ?? '',
@@ -469,6 +489,11 @@ export default function RequisitionDetail() {
     if (draft.notes !== (req.notes ?? '')) header.notes = { from: req.notes ?? '', to: draft.notes }
     if (draft.priority !== (req.priority ?? 'low'))
       header.priority = { from: req.priority ?? 'low', to: draft.priority }
+    if (req.purpose === 'project' && draft.delivery_destination !== (req.delivery_destination ?? ''))
+      header.delivery_destination = {
+        from: req.delivery_destination ?? '',
+        to: draft.delivery_destination,
+      }
 
     const edited: { id: string; field: string; from: unknown; to: unknown }[] = []
     const removed: string[] = []
@@ -579,6 +604,7 @@ export default function RequisitionDetail() {
             },
             { label: 'Priority', value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—' },
             { label: 'Project', value: req.projectName ?? '—' },
+            ...(req.linkedMoNumber ? [{ label: 'Manufacturing Order', value: req.linkedMoNumber }] : []),
             { label: 'Branch', value: req.branch_name ?? '—' },
             { label: 'Organizer', value: req.organizerName ?? '—' },
             { label: 'Created', value: req.created_at.slice(0, 10) },
@@ -803,7 +829,7 @@ export default function RequisitionDetail() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                   <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Request an edit</div>
                   {hasPendingEdit && <Badge variant="warning">Pending review — submit locked</Badge>}
-                  {!editDraft && !hasPendingEdit && (
+                  {!editDraft && !hasPendingEdit && canRequestEdit && (
                     <Button size="sm" variant="secondary" onClick={() => setEditDraft(initEditDraft())}>
                       Start editing
                     </Button>
@@ -817,9 +843,11 @@ export default function RequisitionDetail() {
 
                 {!editDraft && (
                   <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                    {hasPendingEdit
-                      ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
-                      : 'Click "Start editing" to propose changes to the notes, priority, or lines. Once approved, the requisition is unaffected before approval is reached — a pre-approval edit applies immediately; a post-approval edit needs admin review first.'}
+                    {!canRequestEdit
+                      ? 'Only the organizer or an admin can request an edit here.'
+                      : hasPendingEdit
+                        ? 'There is already a pending edit request. An admin must approve or reject it before a new one can be submitted.'
+                        : 'Click "Start editing" to propose changes to the notes, priority, delivery destination, or lines. A pre-approval edit applies immediately; a post-approval edit needs admin review first.'}
                   </div>
                 )}
 
@@ -844,6 +872,28 @@ export default function RequisitionDetail() {
                           <option value="emergency">Emergency</option>
                         </Select>
                       </div>
+                      {req.purpose === 'project' && (
+                        <div style={{ flex: '1 1 220px' }}>
+                          <Select
+                            label="Delivery Destination"
+                            value={editDraft.delivery_destination}
+                            disabled={!deliveryDestinationEditable}
+                            onChange={(e) =>
+                              setEditDraft({ ...editDraft, delivery_destination: e.target.value })
+                            }
+                          >
+                            <option value="">— Not set —</option>
+                            <option value="inventory">Delivered to inventory</option>
+                            <option value="jobsite">Delivered directly to the jobsite</option>
+                          </Select>
+                          {!deliveryDestinationEditable && (
+                            <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '4px' }}>
+                              No longer editable — buying already forked this into one or more
+                              Purchase Orders, each with its own frozen copy of this value.
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <LineItemEditor
@@ -985,10 +1035,10 @@ export default function RequisitionDetail() {
                             <div key={field} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <span style={{ color: theme.textMuted, minWidth: '110px' }}>{field.replace(/_/g, ' ')}</span>
                               <span style={{ color: theme.danger, textDecoration: 'line-through' }}>
-                                {String(diff.from || '—')}
+                                {String(diff.from ?? '—') || '—'}
                               </span>
                               <span style={{ color: theme.textMuted }}>→</span>
-                              <span style={{ color: theme.accent }}>{String(diff.to || '—')}</span>
+                              <span style={{ color: theme.accent }}>{String(diff.to ?? '—') || '—'}</span>
                             </div>
                           ))}
                           {editedLines.map((e, i) => (
@@ -1234,46 +1284,77 @@ export default function RequisitionDetail() {
               Only someone holding the Store Pricing position (or an admin) can act here.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => (
-                <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
-                    {l.description || l.product_name}
-                  </div>
-                  <div style={{ width: '140px' }}>
-                    <Input
-                      label="Store price"
-                      type="number"
-                      min="0"
-                      value={storePrices[l.id] ?? ''}
-                      onChange={(e) => setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                      placeholder="0.00"
-                    />
-                  </div>
+            (() => {
+              // Store price only values the from-stock portion of a line —
+              // mirrors PurchaseOrderDetail's own stockLines filter. In the
+              // normal flow this panel is auto-filled and skipped entirely
+              // by confirmRequisitionInventoryCheck; it only renders at all
+              // for the rare case a requisition is moved back here by some
+              // other path, so pre-filling from each line's own source
+              // average cost still matters here too.
+              const stockLines = req.lines.filter(
+                (l) => (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0,
+              )
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {stockLines.length === 0 && (
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      No lines on this requisition are being fulfilled from stock — there's
+                      nothing to price here.
+                    </div>
+                  )}
+                  {stockLines.map((l) => {
+                    const defaultPrice = l.store_price ?? l.source_average_cost ?? ''
+                    return (
+                      <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
+                          {l.description || l.product_name}
+                          {l.source_location_name && (
+                            <span style={{ color: theme.textMuted }}>
+                              {' '}
+                              · from {l.source_location_name}
+                              {l.source_average_cost != null && ` (last cost ${l.source_average_cost})`}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ width: '140px' }}>
+                          <Input
+                            label="Store price"
+                            type="number"
+                            min="0"
+                            value={storePrices[l.id] ?? String(defaultPrice)}
+                            onChange={(e) => setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <Button
+                    variant="primary"
+                    loading={lStore}
+                    style={{ alignSelf: 'flex-start' }}
+                    onClick={() =>
+                      void submitStorePricing({
+                        variables: {
+                          id: req.id,
+                          linePrices: stockLines.map((l) => ({
+                            lineId: l.id,
+                            storePrice:
+                              parseFloat(
+                                storePrices[l.id] ?? String(l.store_price ?? l.source_average_cost ?? '0'),
+                              ) || 0,
+                            currencyCode: l.currency_code,
+                          })),
+                        },
+                      })
+                    }
+                  >
+                    Submit to market pricing
+                  </Button>
                 </div>
-              ))}
-              <Button
-                variant="primary"
-                loading={lStore}
-                style={{ alignSelf: 'flex-start' }}
-                onClick={() =>
-                  void submitStorePricing({
-                    variables: {
-                      id: req.id,
-                      linePrices: req.lines
-                        .filter((l) => storePrices[l.id])
-                        .map((l) => ({
-                          lineId: l.id,
-                          storePrice: parseFloat(storePrices[l.id]!) || 0,
-                          currencyCode: l.currency_code,
-                        })),
-                    },
-                  })
-                }
-              >
-                Submit to market pricing
-              </Button>
-            </div>
+              )
+            })()
           )}
         </Card>
       )}

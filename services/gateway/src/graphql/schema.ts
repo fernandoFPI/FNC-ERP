@@ -2244,6 +2244,8 @@
     branch_name: String
     project_id: ID
     projectName: String
+    linked_mo_id: ID
+    linkedMoNumber: String
     purpose: String
     delivery_destination: String
     priority: String
@@ -2324,6 +2326,11 @@
     priority: String
     branch_id: ID
     notes: String
+    # G1 Phase 3 — third call-site migration (Manufacturing Order); mirrors
+    # PurchaseOrder.linkedMoId, propagated onto the forked child PO by
+    # finishBuyingRequisition so the existing MO-consumption-on-receipt
+    # logic keeps working unchanged.
+    linked_mo_id: ID
     lines: [RequisitionLineInput!]!
   }
 
@@ -2472,6 +2479,7 @@
     category: String
     sub_category: String
     standard_cost: String
+    cost_currency: String
     reorder_point: String
     reorder_qty: String
     has_stock_moves: Boolean
@@ -2586,6 +2594,7 @@
     uom: String!
     valuation_method: String
     standard_cost: Float
+    cost_currency: String
     reorder_point: Float
     reorder_qty: Float
     is_active: Boolean

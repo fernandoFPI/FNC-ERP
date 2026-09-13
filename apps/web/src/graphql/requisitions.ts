@@ -52,6 +52,8 @@ export const REQUISITION_QUERY = gql`
       delivery_destination
       project_id
       projectName
+      linked_mo_id
+      linkedMoNumber
       branch_id
       branch_name
       organizer_id
@@ -85,6 +87,7 @@ export const REQUISITION_QUERY = gql`
         qty_from_stock
         source_location_id
         source_location_name
+        source_average_cost
         store_price
         store_price_currency
         market_price
