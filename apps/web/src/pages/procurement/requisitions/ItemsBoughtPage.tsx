@@ -25,6 +25,11 @@ import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Modal } from '../../../components/ui/Modal'
 import { useToastStore } from '../../../store/toastStore'
+import { useTourStore } from '../../../store/tourStore'
+import {
+  TOUR_DEMO_REQUISITION_ID,
+  buildTourDemoItemsBoughtRequisition,
+} from '../../../components/help/tourDemoRequisition'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 const CASH_VENDOR_VALUE = '__cash__'
@@ -32,7 +37,7 @@ const CASH_VENDOR_VALUE = '__cash__'
 const fmtN = (n: string | number | null | undefined) =>
   parseFloat(String(n ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 
-interface Purchase {
+export interface Purchase {
   id: string
   vendor_id: string
   vendor_name?: string | null
@@ -49,7 +54,7 @@ interface Purchase {
   receipt_filename?: string | null
 }
 
-interface ReqLine {
+export interface ReqLine {
   id: string
   description?: string | null
   product_id?: string | null
@@ -72,7 +77,7 @@ interface ReqLine {
   purchases: Purchase[]
 }
 
-interface Requisition {
+export interface Requisition {
   id: string
   requisition_number: string
   status: string
@@ -108,14 +113,16 @@ export default function ItemsBoughtPage() {
   const addToast = useToastStore((s) => s.addToast)
   const padding = usePagePadding()
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const isTourMode = useTourStore((s) => s.isActive)
+  const isTourDemo = id === TOUR_DEMO_REQUISITION_ID
 
   const { data, loading, refetch } = useQuery(REQUISITION_ITEMS_BOUGHT_QUERY, {
     variables: { id },
-    skip: !id,
+    skip: !id || isTourDemo,
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('requisition', () => void refetch())
-  const req: Requisition | undefined = data?.requisition
+  const req: Requisition | undefined = isTourDemo ? buildTourDemoItemsBoughtRequisition() : data?.requisition
 
   const { data: vendorsData } = useQuery(VENDORS_QUERY)
   const vendors: Vendor[] = (vendorsData?.vendors ?? []).filter((v: Vendor) => !v.is_cash_purchase)
@@ -237,29 +244,38 @@ export default function ItemsBoughtPage() {
 
     setUploadingLine(lineId)
     try {
-      const { data: urlData } = await requestUploadUrl({
-        variables: {
-          filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-          category: 'attachment',
-        },
-      })
-      const fileId = urlData?.requestUploadUrl?.fileId
-      if (!fileId) throw new Error('Could not prepare the upload')
+      // Tour mode: requestUploadUrl is an Apollo mutation, mocked fine by
+      // the global tourLink — but the raw fetch() below it is not an
+      // Apollo operation, so it isn't intercepted, and the mocked
+      // response has no real fileId to give it anyway. Skip straight to
+      // recordPurchase with a placeholder id, same as everywhere else in
+      // the tour where a real upload/attachment step is stood in for.
+      let fileId: string | null | undefined = 'tour-demo-receipt'
+      if (!isTourMode) {
+        const { data: urlData } = await requestUploadUrl({
+          variables: {
+            filename: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            sizeBytes: file.size,
+            category: 'attachment',
+          },
+        })
+        fileId = urlData?.requestUploadUrl?.fileId
+        if (!fileId) throw new Error('Could not prepare the upload')
 
-      const apiBase = import.meta.env.VITE_API_URL as string
-      const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
-        method: 'POST',
-        body: file,
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-      })
-      if (!proxyRes.ok) {
-        const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
-        throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+        const apiBase = import.meta.env.VITE_API_URL as string
+        const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
+          method: 'POST',
+          body: file,
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+        })
+        if (!proxyRes.ok) {
+          const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
+          throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+        }
       }
 
       await recordPurchase({
@@ -338,7 +354,11 @@ export default function ItemsBoughtPage() {
         const resolved = lineIsResolved(line)
         const remaining = remainingToBuy(line)
         return (
-          <Card key={line.id} style={{ padding: '20px', marginTop: '16px' }}>
+          <Card
+            key={line.id}
+            data-tour={isTourDemo ? `items-bought-line-${line.id}` : undefined}
+            style={{ padding: '20px', marginTop: '16px' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
@@ -412,6 +432,7 @@ export default function ItemsBoughtPage() {
                     )}
                     {p.over_tolerance && !p.tolerance_approved_by && (
                       <Button
+                        data-tour="items-bought-approve-override-btn"
                         variant="secondary"
                         size="sm"
                         loading={lApproving}
@@ -431,7 +452,7 @@ export default function ItemsBoughtPage() {
               <div style={{ marginTop: '14px', padding: '14px', borderRadius: '8px', border: `1px solid ${theme.border}` }}>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+                    <div data-tour="items-bought-vendor-row" style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
                       <div style={{ flex: 1 }}>
                         <SearchableSelect
                           label="Vendor"
@@ -443,6 +464,7 @@ export default function ItemsBoughtPage() {
                         />
                       </div>
                       <Button
+                        data-tour="items-bought-new-vendor-btn"
                         variant="ghost"
                         size="sm"
                         onClick={() => {
@@ -454,6 +476,7 @@ export default function ItemsBoughtPage() {
                       </Button>
                     </div>
                   </div>
+                  <div data-tour="items-bought-qty-price-row" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <div style={{ width: '110px' }}>
                     <Input
                       label="Qty"
@@ -481,6 +504,7 @@ export default function ItemsBoughtPage() {
                       options={CURRENCIES.map((c) => ({ value: c, label: c }))}
                     />
                   </div>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
                   <input
@@ -496,10 +520,16 @@ export default function ItemsBoughtPage() {
                       e.target.value = ''
                     }}
                   />
-                  <Button variant="secondary" size="sm" onClick={() => fileInputRefs.current[line.id]?.click()}>
+                  <Button
+                    data-tour="items-bought-attach-receipt-btn"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => fileInputRefs.current[line.id]?.click()}
+                  >
                     {pendingFile[line.id] ? `📎 ${pendingFile[line.id]!.name}` : 'Attach receipt photo *'}
                   </Button>
                   <Button
+                    data-tour="items-bought-record-btn"
                     variant="primary"
                     size="sm"
                     loading={lRecording || uploadingLine === line.id}
@@ -508,6 +538,7 @@ export default function ItemsBoughtPage() {
                     Record purchase
                   </Button>
                   <Button
+                    data-tour="items-bought-mark-short-btn"
                     variant="ghost"
                     size="sm"
                     onClick={() => setShortReasonFor(line.id)}
@@ -562,6 +593,7 @@ export default function ItemsBoughtPage() {
             </ul>
           )}
           <Button
+            data-tour="items-bought-finish-buying-btn"
             variant="primary"
             loading={lFinishing}
             disabled={!canFinishBuying}

@@ -4,6 +4,11 @@
 // is a distinct reserved UUID from TOUR_DEMO_PO_ID so both demo records can
 // coexist once the tour hands off from one to the other in a later phase.
 import type { Requisition, ReqLine, LineAvailability } from '../../pages/procurement/requisitions/RequisitionDetail'
+import type {
+  Requisition as ItemsBoughtRequisition,
+  ReqLine as ItemsBoughtReqLine,
+  Purchase as ItemsBoughtPurchase,
+} from '../../pages/procurement/requisitions/ItemsBoughtPage'
 
 export const TOUR_DEMO_REQUISITION_ID = '00000000-0000-0000-0000-0000000000f1'
 
@@ -223,4 +228,134 @@ export function buildTourDemoRequisitionStockAvailability(req: Requisition): Lin
           : [],
     }
   })
+}
+
+// A third, differently-shaped synthetic object for ItemsBoughtPage.tsx —
+// same "one id, multiple page-specific shapes" device tourDemoPO.ts uses
+// for buildTourDemoPO/buildTourDemoReceiptPO. Fixed at the items_bought
+// stage (this page has no other stage to show), with each of the three
+// demo lines already at a different point in buying so every action this
+// page offers has something to click:
+//   • line 1 (Steel Angle Bar) — fully bought already, receipt attached,
+//     no tolerance issue: shows the "Fully bought" read-only state.
+//   • line 2 (Cement Bags) — fully bought, but over tolerance and not yet
+//     approved: the only purchase with an "Approve override" button.
+//   • line 3 (Rebar Mesh, the custom item) — nothing bought yet: the only
+//     line with the record-a-purchase form + Mark short still showing.
+export function buildTourDemoItemsBoughtRequisition(): ItemsBoughtRequisition {
+  const now = new Date().toISOString()
+
+  const lines: ItemsBoughtReqLine[] = [
+    {
+      id: 'demo-req-line-1',
+      description: 'Steel Angle Bar 50mm',
+      product_id: 'demo-product-1',
+      product_name: 'Steel Angle Bar 50mm',
+      sku: null,
+      qty: '100',
+      uom: 'pc',
+      currency_code: 'IQD',
+      unit_price: '5000',
+      approved_unit_price: '5150',
+      qty_from_stock: '20',
+      short_reason: null,
+      short_marked_by: null,
+      short_marked_at: null,
+      account_id: 'demo-account-1',
+      account_code: '5100',
+      account_name: 'Inventory — Materials',
+      cost_center_id: 'demo-cc-1',
+      cost_center_name: 'Tour Demo — Al Karrada Renovation',
+      purchases: [
+        {
+          id: 'demo-purchase-1',
+          vendor_id: 'demo-vendor-1',
+          vendor_name: 'Al-Rasheed Building Materials Co.',
+          currency_code: 'IQD',
+          qty: '80',
+          actual_unit_price: '5180',
+          bought_by: 'demo-user-1',
+          bought_by_name: 'You (tour)',
+          bought_at: now,
+          over_tolerance: false,
+          tolerance_approved_by: null,
+          tolerance_approved_by_name: null,
+          receipt_file_id: 'demo-file-1',
+          receipt_filename: 'receipt-steel.jpg',
+        },
+      ],
+    },
+    {
+      id: 'demo-req-line-2',
+      description: 'Cement Bags 50kg',
+      product_id: 'demo-product-2',
+      product_name: 'Cement Bags 50kg',
+      sku: null,
+      qty: '200',
+      uom: 'bag',
+      currency_code: 'IQD',
+      unit_price: '12000',
+      approved_unit_price: '12300',
+      qty_from_stock: '0',
+      short_reason: null,
+      short_marked_by: null,
+      short_marked_at: null,
+      account_id: 'demo-account-1',
+      account_code: '5100',
+      account_name: 'Inventory — Materials',
+      cost_center_id: 'demo-cc-1',
+      cost_center_name: 'Tour Demo — Al Karrada Renovation',
+      purchases: [
+        {
+          id: 'demo-purchase-2',
+          vendor_id: 'demo-vendor-2',
+          vendor_name: 'Baghdad Trading Co.',
+          currency_code: 'IQD',
+          qty: '200',
+          actual_unit_price: '15000',
+          bought_by: 'demo-user-1',
+          bought_by_name: 'You (tour)',
+          bought_at: now,
+          over_tolerance: true,
+          tolerance_approved_by: null,
+          tolerance_approved_by_name: null,
+          receipt_file_id: 'demo-file-2',
+          receipt_filename: 'receipt-cement.jpg',
+        },
+      ],
+    },
+    {
+      id: 'demo-req-line-3',
+      description: 'Rebar Mesh 6mm (not yet in catalog)',
+      product_id: '',
+      product_name: '',
+      sku: null,
+      qty: '50',
+      uom: 'sheet',
+      currency_code: 'IQD',
+      unit_price: '8000',
+      approved_unit_price: '8100',
+      qty_from_stock: '0',
+      short_reason: null,
+      short_marked_by: null,
+      short_marked_at: null,
+      account_id: 'demo-account-1',
+      account_code: '5100',
+      account_name: 'Inventory — Materials',
+      cost_center_id: 'demo-cc-1',
+      cost_center_name: 'Tour Demo — Al Karrada Renovation',
+      purchases: [] as ItemsBoughtPurchase[],
+    },
+  ]
+
+  return {
+    id: TOUR_DEMO_REQUISITION_ID,
+    requisition_number: 'REQ-TOUR-DEMO',
+    status: 'items_bought',
+    // Both true regardless of who's actually running the tour — same
+    // reasoning as buildTourDemoRequisition's own caller-position flags.
+    callerHasBuyerPosition: true,
+    callerCanApprove: true,
+    lines,
+  }
 }
