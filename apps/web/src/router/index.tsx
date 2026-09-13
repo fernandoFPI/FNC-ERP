@@ -79,6 +79,11 @@ const ExpenseCategoriesPage = lazy(
 
 // Procurement
 const ProcurementLayout = lazy(() => import('../pages/procurement/ProcurementLayout'))
+const RequisitionsPage = lazy(() => import('../pages/procurement/requisitions/RequisitionsPage'))
+const RequisitionDetail = lazy(() => import('../pages/procurement/requisitions/RequisitionDetail'))
+const RequisitionForm = lazy(() => import('../pages/procurement/requisitions/RequisitionForm'))
+const ItemsBoughtPage = lazy(() => import('../pages/procurement/requisitions/ItemsBoughtPage'))
+const MyRequisitionQueue = lazy(() => import('../pages/procurement/requisitions/MyRequisitionQueue'))
 const VendorsPage = lazy(() => import('../pages/procurement/vendors/VendorsPage'))
 const VendorForm = lazy(() => import('../pages/procurement/vendors/VendorForm'))
 const VendorDetail = lazy(() => import('../pages/procurement/vendors/VendorDetail'))
@@ -517,6 +522,26 @@ export const router = createBrowserRouter([
         element: withPerm('procurement.po.view', <ProcurementLayout />),
         children: [
           { index: true, element: <Navigate to="/procurement/purchase-orders" replace /> },
+          {
+            path: 'requisitions',
+            element: withPerm('procurement.po.view', <RequisitionsPage />),
+          },
+          {
+            path: 'requisitions/new',
+            element: withPerm('procurement.po.edit', <RequisitionForm />, 'edit'),
+          },
+          {
+            path: 'requisitions/:id',
+            element: withPerm('procurement.po.view', <RequisitionDetail />),
+          },
+          {
+            path: 'requisitions/:id/items-bought',
+            element: withPerm('procurement.po.view', <ItemsBoughtPage />),
+          },
+          {
+            path: 'requisitions/queue',
+            element: withPerm('procurement.po.view', <MyRequisitionQueue />),
+          },
           {
             path: 'purchase-orders',
             element: withPerm('procurement.po.view', <PurchaseOrdersPage />),

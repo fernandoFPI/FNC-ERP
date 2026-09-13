@@ -307,13 +307,19 @@ describe('finishBuyingRequisition', () => {
     await recordPurchase(lineId, vendorAId, 8, 15)
     await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
 
-    const line = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string; currency_code: string }>(
-      `SELECT po_id, qty_ordered, unit_price, currency_code FROM po_lines WHERE id=$1`,
+    const line = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string; actual_unit_price: string | null; currency_code: string }>(
+      `SELECT po_id, qty_ordered, unit_price, actual_unit_price, currency_code FROM po_lines WHERE id=$1`,
       [lineId],
     )
     expect(line.rows[0]!.po_id).not.toBeNull()
     expect(parseFloat(line.rows[0]!.qty_ordered)).toBe(8)
     expect(parseFloat(line.rows[0]!.unit_price)).toBe(15)
+    // Regression: left null pre-fix — the Finance Audit panel's "Actual
+    // Price (entered by buyer)" box reads this column specifically and
+    // falsely claimed "buyer hasn't recorded a price" for every G1 forked
+    // line. Found live on PO-2026-0028.
+    expect(line.rows[0]!.actual_unit_price).not.toBeNull()
+    expect(parseFloat(line.rows[0]!.actual_unit_price!)).toBe(15)
 
     // Exactly one line total for this requisition — no fragmentation.
     const allLines = await pool.query(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
@@ -325,6 +331,30 @@ describe('finishBuyingRequisition', () => {
     )
     expect(child.rows[0]!.status).toBe('bought')
     expect(child.rows[0]!.vendor_id).toBe(vendorAId)
+  })
+
+  // Regression: the receipt attached to a purchase during Items Bought
+  // lives at entity_type='po_line_purchase' — never at entity_type=
+  // 'purchase_order' against the forked child PO's own id. The Store In
+  // "Buyer's Receipt" panel queries entityAttachments('purchase_order',
+  // childPoId), so before this fix it always came back empty for a G1
+  // child PO even when a receipt genuinely was attached — found via
+  // manual click-through (Record Receipt on a Cash Purchase child PO).
+  it('entityAttachments(purchase_order, childPoId) surfaces the receipt recorded at Items Bought', async () => {
+    const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 8, marketPrice: 15 })
+    await recordPurchase(lineId, vendorAId, 8, 15)
+    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+
+    const line = await pool.query<{ po_id: string | null }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
+    const childPoId = line.rows[0]!.po_id!
+
+    const attachments = await resolvers.Query.entityAttachments(
+      null,
+      { entityType: 'purchase_order', entityId: childPoId },
+      ctx as never,
+    )
+    expect((attachments as { file: { originalFilename: string } }[]).length).toBe(1)
+    expect((attachments as { file: { originalFilename: string } }[])[0]!.file.originalFilename).toBe('receipt.jpg')
   })
 
   it('mixed case: partly from stock, rest from one vendor — original row keeps the stock portion, a new row carries the purchase', async () => {
@@ -340,14 +370,18 @@ describe('finishBuyingRequisition', () => {
     expect(parseFloat(original.rows[0]!.qty_ordered)).toBe(4)
     expect(parseFloat(original.rows[0]!.qty_from_stock)).toBe(4)
 
-    const fragment = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string; origin_line_id: string | null }>(
-      `SELECT po_id, qty_ordered, unit_price, origin_line_id FROM po_lines WHERE requisition_id=$1 AND id != $2`,
+    const fragment = await pool.query<{ po_id: string | null; qty_ordered: string; unit_price: string; actual_unit_price: string | null; origin_line_id: string | null }>(
+      `SELECT po_id, qty_ordered, unit_price, actual_unit_price, origin_line_id FROM po_lines WHERE requisition_id=$1 AND id != $2`,
       [reqId, lineId],
     )
     expect(fragment.rows).toHaveLength(1)
     expect(fragment.rows[0]!.po_id).not.toBeNull()
     expect(parseFloat(fragment.rows[0]!.qty_ordered)).toBe(6)
     expect(parseFloat(fragment.rows[0]!.unit_price)).toBe(15)
+    // Same regression as the simple case above, for the new-row (INSERT)
+    // fork branch this scenario exercises.
+    expect(fragment.rows[0]!.actual_unit_price).not.toBeNull()
+    expect(parseFloat(fragment.rows[0]!.actual_unit_price!)).toBe(15)
     // Traces back to the requisition line it was forked from.
     expect(fragment.rows[0]!.origin_line_id).toBe(lineId)
   })
@@ -358,12 +392,16 @@ describe('finishBuyingRequisition', () => {
     await recordPurchase(lineId, vendorBId, 4, 20) // same price, stays within tolerance
     await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
 
-    const allLines = await pool.query<{ id: string; po_id: string; qty_ordered: string; origin_line_id: string | null }>(
-      `SELECT pl.id, pl.po_id, pl.qty_ordered, pl.origin_line_id FROM po_lines pl WHERE pl.requisition_id=$1`,
+    const allLines = await pool.query<{ id: string; po_id: string; qty_ordered: string; actual_unit_price: string | null; origin_line_id: string | null }>(
+      `SELECT pl.id, pl.po_id, pl.qty_ordered, pl.actual_unit_price, pl.origin_line_id FROM po_lines pl WHERE pl.requisition_id=$1`,
       [reqId],
     )
     expect(allLines.rows).toHaveLength(2)
     expect(allLines.rows.every((l) => l.po_id !== null)).toBe(true)
+    // Both the mutated-in-place row and the new-row fork carry a real
+    // actual_unit_price — same regression as the simple/mixed cases above,
+    // covering both fork branches at once.
+    expect(allLines.rows.every((l) => l.actual_unit_price != null && parseFloat(l.actual_unit_price) === 20)).toBe(true)
     const totalQty = allLines.rows.reduce((s, l) => s + parseFloat(l.qty_ordered), 0)
     expect(totalQty).toBe(10)
 

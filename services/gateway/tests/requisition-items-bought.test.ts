@@ -39,6 +39,16 @@ async function makeProduct(suffix: string): Promise<string> {
   return r.rows[0]!.id
 }
 
+async function makeUploadedFile(): Promise<string> {
+  const key = `g1ib-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO files (company_id, uploaded_by, file_key, original_filename, mime_type, size_bytes, category, status)
+     VALUES ($1,$2,$3,'receipt.jpg','image/jpeg',1024,'attachment','uploaded') RETURNING id`,
+    [TEST_COMPANY_ID, userId, key],
+  )
+  return r.rows[0]!.id
+}
+
 // Drives a fresh requisition (one line, nothing from stock so the whole
 // qty needs purchasing) all the way to items_bought via approveRequisition.
 async function makeReqAtItemsBought(opts: {
@@ -118,6 +128,7 @@ async function cleanup(): Promise<void> {
   ])
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [TEST_COMPANY_ID, `${SKU_PREFIX}%`])
   await pool.query(`DELETE FROM vendors WHERE company_id=$1 AND name LIKE $2`, [TEST_COMPANY_ID, `${VENDOR_PREFIX}%`])
+  await pool.query(`DELETE FROM files WHERE company_id=$1 AND uploaded_by=$2`, [TEST_COMPANY_ID, userId])
 }
 
 beforeAll(async () => {
@@ -228,10 +239,11 @@ describe('recordLinePurchase', () => {
 
   it('records a single-vendor purchase and reflects it in the requisition query', async () => {
     const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 10, marketPrice: 100 })
+    const receiptFileId = await makeUploadedFile()
 
     const purchase = await resolvers.Mutation.recordLinePurchase(
       null,
-      { input: { lineId, vendorId: vendorAId, qty: 10, actualUnitPrice: 100, currencyCode: 'IQD' } },
+      { input: { lineId, vendorId: vendorAId, qty: 10, actualUnitPrice: 100, currencyCode: 'IQD', receiptFileId } },
       ctx as never,
     )
     const p = purchase as { id: string; po_line_id: string; vendor_id: string; qty: string; actual_unit_price: string; over_tolerance: boolean }
@@ -242,9 +254,20 @@ describe('recordLinePurchase', () => {
     expect(p.over_tolerance).toBe(false)
 
     const fetched = await resolvers.Query.requisition(null, { id: reqId }, ctx as never)
-    const line = (fetched as { lines: { id: string; purchases: { id: string }[] }[] }).lines.find((l) => l.id === lineId)
+    const line = (fetched as {
+      lines: { id: string; purchases: { id: string; receipt_file_id: string | null; bought_by_name: string | null }[] }[]
+    }).lines.find((l) => l.id === lineId)
     expect(line!.purchases).toHaveLength(1)
     expect(line!.purchases[0]!.id).toBe(p.id)
+    // Regression coverage for a real bug found during manual click-through:
+    // the lines.purchases JSON subquery in Query.requisition returned
+    // receipt_attachment_id (a raw FK) and bare bought_by/tolerance_approved_by
+    // ids with no resolved name — ItemsBoughtPage reads receipt_file_id/
+    // bought_by_name/tolerance_approved_by_name, which the subquery never
+    // populated, so every purchase silently rendered as if it had no
+    // receipt at all. This is the query mocked-component tests can't catch.
+    expect(line!.purchases[0]!.receipt_file_id).toBe(receiptFileId)
+    expect(line!.purchases[0]!.bought_by_name).toBeTruthy()
   })
 
   it('splits a line across two vendors and rejects buying past what remains', async () => {
@@ -410,5 +433,34 @@ describe('markRequisitionLineShort', () => {
     await expect(
       resolvers.Mutation.markRequisitionLineShort(null, { lineId, reason: '  ' }, ctx as never),
     ).rejects.toThrow(/reason is required/i)
+  })
+})
+
+// G1 Phase 3 Milestone A screen 3 — Query.requisition's callerHasBuyerPosition,
+// gating the Items Bought screen client-side. Mirrors the existing
+// callerHasStoreKeeperPosition/etc. tests' pattern (none exist yet for
+// those either — this is the first, using the same buyer-position fixture
+// recordLinePurchase/markRequisitionLineShort's own tests already rely on).
+describe('Query.requisition — callerHasBuyerPosition', () => {
+  it('is true for a real buyer-position holder and for admin, false for an unrelated user', async () => {
+    const { reqId } = await makeReqAtItemsBought({ qtyOrdered: 3, marketPrice: 8 })
+
+    const asBuyer = (await resolvers.Query.requisition(null, { id: reqId }, buyerCtx as never)) as {
+      callerHasBuyerPosition: boolean
+    }
+    expect(asBuyer.callerHasBuyerPosition).toBe(true)
+
+    const asAdmin = (await resolvers.Query.requisition(null, { id: reqId }, ctx as never)) as {
+      callerHasBuyerPosition: boolean
+    }
+    expect(asAdmin.callerHasBuyerPosition).toBe(true)
+
+    const strangerCtx = {
+      auth: { companyId: TEST_COMPANY_ID, userId: '00000000-0000-0000-0000-000000000099', role: 'user', module: 'all', sessionId: 'x' },
+    }
+    const asStranger = (await resolvers.Query.requisition(null, { id: reqId }, strangerCtx as never)) as {
+      callerHasBuyerPosition: boolean
+    }
+    expect(asStranger.callerHasBuyerPosition).toBe(false)
   })
 })

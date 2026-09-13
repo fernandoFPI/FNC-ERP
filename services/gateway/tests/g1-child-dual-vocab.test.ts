@@ -212,6 +212,10 @@ async function cleanup(): Promise<void> {
   )
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [TEST_COMPANY_ID, `${SKU_PREFIX}%`])
   await pool.query(`DELETE FROM vendors WHERE company_id=$1 AND name LIKE $2`, [TEST_COMPANY_ID, `${VENDOR_PREFIX}%`])
+  // po_lines (deleted above) is the only thing that could still reference
+  // these — safe to remove after.
+  await pool.query(`DELETE FROM chart_of_accounts WHERE company_id=$1 AND code='9093'`, [TEST_COMPANY_ID])
+  await pool.query(`DELETE FROM cost_centers WHERE company_id=$1 AND code='G1DVTEST-CC'`, [TEST_COMPANY_ID])
 }
 
 beforeAll(async () => {
@@ -296,12 +300,68 @@ describe('G1 child dual-vocabulary lifecycle', () => {
     )
     expect(afterFunding.rows[0]!.funding_decided).toBe(true)
 
+    // Regression: setPOLineAccounting used to throw "PO must be invoiced
+    // and funded by an employee advance" for any vendor_ap PO — Finance's
+    // GL/cost-center review at payment_pending is no longer restricted to
+    // employee_advance (see PurchaseOrderDetail's Payment Pending panel).
+    const acct = await pool.query<{ id: string }>(
+      `INSERT INTO chart_of_accounts (company_id, code, name, account_type) VALUES ($1,'9093','G1DV Test Account','expense') RETURNING id`,
+      [TEST_COMPANY_ID],
+    )
+    const cc = await pool.query<{ id: string }>(
+      `INSERT INTO cost_centers (company_id, code, name, type) VALUES ($1,'G1DVTEST-CC','G1DV Test CC','department') RETURNING id`,
+      [TEST_COMPANY_ID],
+    )
+    const classified = await resolvers.Mutation.setPOLineAccounting(
+      null,
+      { poId: childId, lineId: childLineId, glAccountId: acct.rows[0]!.id, costCenterId: cc.rows[0]!.id },
+      ctx as never,
+    )
+    expect((classified as { account_code: string }).account_code).toBe('9093')
+    expect((classified as { cost_center_name: string }).cost_center_name).toBe('G1DV Test CC')
+
     await resolvers.Mutation.completePO(null, { id: childId }, ctx as never)
     const afterComplete = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
     expect(afterComplete.rows[0]!.status).toBe('closed')
 
     const reqAfter = await pool.query<{ status: string }>(`SELECT status FROM requisitions WHERE id=$1`, [reqId])
     expect(reqAfter.rows[0]!.status).toBe('completed')
+  })
+
+  // Regression: found via manual click-through — a buyer records a
+  // purchase with a receipt photo at Items Bought (recordLinePurchase,
+  // entity_type='po_line_purchase') and never separately re-uploads a
+  // 'po_receipt_document' straight onto the forked child PO (there's no UI
+  // for that on a G1 child PO — see PurchaseOrderDetail's 'bought' branch).
+  // Before this fix, confirmReceipt's vendor-receipt gate only recognized
+  // the legacy entity_type='purchase_order' attachment, so it kept
+  // rejecting with "Attach the vendor receipt..." even with the requisition
+  // -stage receipt right there — a dead end confirmed live on
+  // PO-2026-0028's own draft receipt.
+  it('confirmReceipt accepts the buyer receipt attached during Items Bought, with no separate PO-level upload', async () => {
+    const { childId, childLineId } = await makeReqWithOneChildAtBought(3, 20)
+    const receipt = await resolvers.Mutation.recordReceipt(
+      null,
+      {
+        poId: childId,
+        input: {
+          receipt_date: new Date().toISOString().slice(0, 10),
+          location_id: warehouseId,
+          lines: [{ po_line_id: childLineId, qty_received: 3, actual_unit_price: 20 }],
+        },
+      },
+      ctx as never,
+    )
+    const receiptId = (receipt as { id: string }).id
+
+    await attachFile('po_receipt', receiptId, 'po_receipt_photo')
+    // Deliberately no attachFile('purchase_order', childId, 'po_receipt_document') —
+    // the whole point of this test.
+
+    const confirmed = await resolvers.Mutation.confirmReceipt(null, { id: receiptId }, ctx as never)
+    expect(confirmed).toBeTruthy()
+    const afterConfirm = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [childId])
+    expect(afterConfirm.rows[0]!.status).toBe('goods_received')
   })
 
   it('failPOAudit sends a finance_review child back to goods_received', async () => {
