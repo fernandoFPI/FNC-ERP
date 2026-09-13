@@ -48,7 +48,7 @@ describe('Products', () => {
     const res = await request(app)
       .post('/inventory/products')
       .set('Authorization', `Bearer ${token}`)
-      .send({ sku: 'TEST-PROD-001', name: 'Test Product', uom: 'unit', valuation_method: 'avco' })
+      .send({ sku: 'TEST-PROD-001', name: 'Test Product', uom: 'unit', valuation_method: 'last_cost' })
     expect(res.status).toBe(201)
     expect(res.body.data.sku).toBe('TEST-PROD-001')
   })

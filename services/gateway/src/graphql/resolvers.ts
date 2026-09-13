@@ -11020,7 +11020,7 @@ export const resolvers = {
           i.category ?? null,
           i.sub_category ?? null,
           i.uom,
-          i.valuation_method ?? 'last_cost',
+          'last_cost',
           i.standard_cost ?? 0,
           i.reorder_point ?? null,
           i.reorder_qty ?? null,
