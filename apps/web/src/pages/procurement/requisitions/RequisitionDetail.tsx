@@ -152,6 +152,8 @@ export interface Requisition {
   delivery_destination?: string | null
   project_id?: string | null
   projectName?: string | null
+  linked_mo_id?: string | null
+  linkedMoNumber?: string | null
   branch_id?: string | null
   branch_name?: string | null
   organizer_id?: string | null
@@ -607,6 +609,7 @@ export default function RequisitionDetail() {
             },
             { label: 'Priority', value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—' },
             { label: 'Project', value: req.projectName ?? '—' },
+            ...(req.linkedMoNumber ? [{ label: 'Manufacturing Order', value: req.linkedMoNumber }] : []),
             { label: 'Branch', value: req.branch_name ?? '—' },
             { label: 'Organizer', value: req.organizerName ?? '—' },
             { label: 'Created', value: req.created_at.slice(0, 10) },
