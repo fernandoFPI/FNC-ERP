@@ -76,7 +76,13 @@ export async function nextDocumentNumber(
     // DB unavailable or table missing — fall through to timestamp fallback
   }
   const pfx = fallbackPrefix ?? docType.toUpperCase().slice(0, 3)
-  return `${pfx}-${Date.now()}`
+  // A random suffix alongside the millisecond timestamp — not just cosmetic.
+  // A caller creating several documents of the same type back-to-back in one
+  // call (e.g. finishBuyingRequisition forking one child PO per vendor) can
+  // easily call this twice within the same millisecond, and Date.now() alone
+  // would then return an identical value both times, colliding on the
+  // document table's own unique document-number constraint.
+  return `${pfx}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 export interface DocumentSequence {
