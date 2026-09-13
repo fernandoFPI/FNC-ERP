@@ -3,9 +3,7 @@ import { useTourStore } from '../../store/tourStore'
 import type { ThemeTokens } from '../../theme/tokens'
 import { injectTourStyles, removeTourStyles } from './tourStyles'
 import { TOUR_DEMO_REQUISITION_ID } from './tourDemoRequisition'
-// TOUR_DEMO_PO_ID comes back once the 'requisition' tour hands off to a
-// child Purchase Order — see the phased plan for this rewrite (Phase 4
-// adds that hand-off).
+import { TOUR_DEMO_CHILD_PO_ID } from './tourDemoPO'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -417,14 +415,92 @@ const interactiveTours: Record<string, InteractiveTour> = {
         description:
           'This is enabled only once every line is either fully bought or marked short, every purchase has a receipt, and every over-tolerance purchase is approved — exactly the three checks you just saw.<br/><br/>' +
           'Clicking it <strong>forks the requisition into one real Purchase Order per vendor</strong> — the requisition itself moves to <strong>Sourcing</strong>, and each vendor gets their own PO for Finance to process.<br/><br/>' +
-          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.<br/><br/>' +
+          "Press <strong>Next →</strong> and we'll jump ahead to the Purchase Order that fork would have created for this vendor.",
         side: 'top',
+        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}?tourStatus=bought`,
+        nextElement: '[data-tour="po-record-receipt-btn"]',
       },
       {
-        title: 'More to come',
+        element: '[data-tour="po-record-receipt-btn"]',
+        title: 'Step 22 — The Purchase Order side',
         description:
-          "That covers buying through Finish Buying. The next update to this tour continues on the <strong>Purchase Order</strong> side — receiving, finance audit, and payment — picking up right where a fork lands.<br/><br/>" +
-          'Click <strong>Done ✓</strong> to exit for now.',
+          "This is the same <strong>Purchase Order</strong> screen a standalone PO uses — but a child PO forked from a requisition skips straight from <strong>Bought</strong> to here, since buying already happened per line back on Items Bought. There's no separate items_bought stage to repeat on this side.<br/><br/>" +
+          'Click <strong>Record Receipt</strong> to log what actually arrived.',
+        side: 'right',
+        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}/receive`,
+        nextElement: '[data-tour="po-mark-delivered-btn"]',
+      },
+      {
+        element: '[data-tour="po-mark-delivered-btn"]',
+        title: 'Step 23 — Receiving',
+        description:
+          'This requisition was Project Supply with <strong>direct-to-jobsite</strong> delivery (picked all the way back at creation) — so receiving skips the warehouse entirely. Instead of a Store In with per-line quantities, it\'s a single <strong>Mark Delivered</strong> with a required jobsite photo as proof, and cost posts straight to the project.<br/><br/>' +
+          "A warehouse delivery would show a fuller form here — per-line quantities, a receiving location, and <strong>Save Draft</strong> instead.<br/><br/>" +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+        side: 'bottom',
+        nextRoute: '/inventory/pending-catalog',
+        nextElement: '[data-tour="pending-catalog-page"]',
+      },
+      {
+        element: '[data-tour="pending-catalog-page"]',
+        title: 'Step 24 — New items to catalog',
+        description:
+          'Remember the <strong>Custom item</strong> line from the very first Lines step — the one with no catalog product? Once it\'s bought, it lands here, on a company-wide queue of items bought without a catalog match. Someone formally adds it as a real product from this screen, so next time it can be picked from search instead of typed in free-hand.<br/><br/>' +
+          "This page isn't specific to any one PO — it's real and shows whatever your company has pending right now.",
+        side: 'bottom',
+        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}?tourStatus=goods_received`,
+        nextElement: '[data-tour="po-send-to-audit-btn"]',
+      },
+      {
+        element: '[data-tour="po-send-to-audit-btn"]',
+        title: 'Step 25 — Send to Finance Audit',
+        description:
+          'Once at least one confirmed receipt exists, <strong>Send to Finance Audit</strong> becomes available — it doesn\'t require every line to be fully received first; you can send what\'s arrived and record the rest later.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+        side: 'top',
+        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}?tourStatus=finance_review`,
+        nextElement: '[data-tour="po-finance-audit"]',
+      },
+      {
+        element: '[data-tour="po-finance-audit"]',
+        title: 'Step 26 — Finance audit',
+        description:
+          'Finance does a three-way match per line — ordered vs. received vs. price paid — marking each <strong>✓ OK</strong> or <strong>⚑ Flag</strong> (flagging requires a note). The Cement Bags and Rebar Mesh lines are still pending here; try marking one OK.<br/><br/>' +
+          '<strong>Pass Audit</strong> is disabled until every line is OK — no flags, nothing left pending. <strong>Return for Correction</strong> sends it back to Goods Received at any point.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking either shows a toast but nothing is saved — press <strong>Next →</strong> to continue regardless.',
+        side: 'right',
+        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}?tourStatus=payment_pending`,
+        nextElement: '[data-tour="po-funding-picker"]',
+      },
+      {
+        element: '[data-tour="po-funding-picker"]',
+        title: 'Step 27 — Funding source',
+        description:
+          'Finance decides how this PO was actually paid: <strong>Vendor (Accounts Payable)</strong> — the normal path, which creates a vendor invoice in AP — or <strong>Employee Advance</strong>, settling it against an employee\'s existing advance instead.<br/><br/>' +
+          'Pick <strong>Vendor (Accounts Payable)</strong> and confirm — the rest of this walkthrough follows that path.<br/><br/>' +
+          '<strong style="color:#f59e0b">Tour mode:</strong> clicking this shows a toast but nothing is saved.',
+        side: 'right',
+        nextRoute: `/procurement/purchase-orders/${TOUR_DEMO_CHILD_PO_ID}?tourStatus=payment_pending_funded`,
+        nextElement: '[data-tour="po-gl-classification"]',
+      },
+      {
+        element: '[data-tour="po-gl-classification"]',
+        title: 'Step 28 — GL classification',
+        description:
+          'Once a funding source is picked, every line needs a <strong>GL Account</strong> and <strong>Cost Center</strong> — this is what used to be asked of the requester at creation; now it\'s Finance\'s call, made with full pricing and vendor information in hand instead of a guess made up front.<br/><br/>' +
+          'Below this, Finance creates the actual vendor invoice in AP (a real, separate screen — not part of this walkthrough) and, once it\'s fully paid, <strong>Mark as Completed</strong> closes this PO out for good — the very last step of the whole pipeline you\'ve just walked, from a Requisition all the way to a paid, closed Purchase Order.',
+        side: 'right',
+      },
+      {
+        title: '✅ Requisition → Purchase Order — Tour Complete',
+        description:
+          "You've now seen the full pipeline: <strong>Requisition</strong> (creation → inventory check → pricing → verification → approval) → <strong>Items Bought</strong> (buying per vendor, tolerance approval, Finish Buying) → <strong>Purchase Order</strong> (receiving, finance audit, funding, GL classification, completion).<br/><br/>" +
+          'A few things worth remembering:<br/>' +
+          '• An <strong>Emergency</strong> priority requisition skips straight from Draft to approval — no inventory check or pricing stages.<br/>' +
+          '• Every stage that shows a position requirement (Store Pricing, Procurement Officer, 2nd Procurement, Buyer, Finance) is assignable per branch or company-wide in Admin → PO Positions.<br/>' +
+          '• Nothing you clicked in this tour was saved — open the real Requisitions or Purchase Orders list to start for real.<br/><br/>' +
+          'Click <strong>Done ✓</strong> to exit.',
       },
     ],
   },

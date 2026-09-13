@@ -75,7 +75,9 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { buildPurchaseOrderHTML } from '../../../lib/poHtml'
 import {
   TOUR_DEMO_PO_ID,
+  TOUR_DEMO_CHILD_PO_ID,
   buildTourDemoPO,
+  buildTourDemoChildPO,
   buildTourDemoStockAvailability,
 } from '../../../components/help/tourDemoPO'
 
@@ -517,9 +519,13 @@ export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   // Interactive PO tour: a reserved id renders a synthetic, client-only demo
-  // PO instead of querying the real backend — see tourDemoPO.ts.
+  // PO instead of querying the real backend — see tourDemoPO.ts. Two
+  // reserved ids exist: TOUR_DEMO_PO_ID (a standalone/legacy PO, walked by
+  // the old PO tour) and TOUR_DEMO_CHILD_PO_ID (a G1 per-vendor child PO,
+  // the hand-off point from the requisition tour's own Finish Buying step).
   const [searchParams] = useSearchParams()
-  const isTourDemo = id === TOUR_DEMO_PO_ID
+  const isTourDemoChild = id === TOUR_DEMO_CHILD_PO_ID
+  const isTourDemo = id === TOUR_DEMO_PO_ID || isTourDemoChild
   const tourStatus = searchParams.get('tourStatus') ?? 'inventory_check'
   const { theme } = useTheme()
   const lock = useRecordLock('purchase_order', id)
@@ -846,7 +852,11 @@ export default function PurchaseOrderDetail() {
     fetchPolicy: 'cache-and-network',
   })
   useEntityChanged('purchase_order', () => void refetch())
-  const po: PO | undefined = isTourDemo ? buildTourDemoPO(tourStatus) : data?.purchaseOrder
+  const po: PO | undefined = isTourDemoChild
+    ? buildTourDemoChildPO(tourStatus)
+    : isTourDemo
+      ? buildTourDemoPO(tourStatus)
+      : data?.purchaseOrder
   const showAdminCorrectionTab =
     currentUserRole === 'system_admin' && !!po && ADMIN_CORRECTION_PO_STATUSES.includes(po.status)
 
@@ -1223,7 +1233,7 @@ export default function PurchaseOrderDetail() {
   function renderGlClassificationPanel(introText: string) {
     if (!po) return null
     return (
-      <>
+      <div data-tour="po-gl-classification" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <div
           style={{
             padding: '10px 14px',
@@ -1299,7 +1309,7 @@ export default function PurchaseOrderDetail() {
             </div>
           ))}
         </div>
-      </>
+      </div>
     )
   }
 
@@ -4191,6 +4201,7 @@ export default function PurchaseOrderDetail() {
                     })}
                   </div>
                   <Button
+                    data-tour="po-send-to-audit-btn"
                     variant="primary"
                     style={PRIMARY_CTA_STYLE}
                     loading={lAudit}
@@ -4800,7 +4811,7 @@ export default function PurchaseOrderDetail() {
                 (isSystemLevel || po.callerIsFinanceTeam) &&
                 (!po.funding_decided ? (
                   can('finance.ap.approve', 'approve') ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div data-tour="po-funding-picker" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       <div
                         style={{
                           padding: '10px 14px',
@@ -4956,6 +4967,7 @@ export default function PurchaseOrderDetail() {
                             "Funded by employee advance — no vendor invoice needed. Assign a GL account and cost center to each line, then once completed, this PO's lines will queue for settlement against the advance.",
                           )}
                           <Button
+                            data-tour="po-complete-btn"
                             variant="primary"
                             style={PRIMARY_CTA_STYLE}
                             loading={anyLoading}
@@ -5088,6 +5100,7 @@ export default function PurchaseOrderDetail() {
                     {can('finance.ap.approve', 'approve') && (
                       <>
                         <Button
+                          data-tour="po-complete-btn"
                           variant={apInvoice?.status === 'paid' ? 'primary' : 'secondary'}
                           loading={anyLoading}
                           disabled={apInvoice?.status !== 'paid' && apInvoice !== null}
