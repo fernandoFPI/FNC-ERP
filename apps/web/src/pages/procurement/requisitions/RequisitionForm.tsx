@@ -16,6 +16,7 @@ import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { Textarea } from '../../../components/ui/Textarea'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import { useToastStore } from '../../../store/toastStore'
+import { useTourStore } from '../../../store/tourStore'
 
 // No GL account / cost center fields here — a requisition's requester has
 // no reason to know either, and both already default automatically
@@ -43,6 +44,11 @@ export default function RequisitionForm() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
   const currentCompanyId = useAuthStore((s) => s.user?.companyId ?? '')
+  // Onboarding tour: the synthetic walkthrough has no real project/branch
+  // to pick, so required-field validation is bypassed and the Project
+  // picker disabled below — mirrors PurchaseOrderForm's own isTourMode
+  // handling exactly.
+  const isTourMode = useTourStore((s) => s.isActive)
 
   const [purpose, setPurpose] = useState<'stock' | 'project'>('stock')
   const [projectId, setProjectId] = useState('')
@@ -167,17 +173,19 @@ export default function RequisitionForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (purpose === 'project' && !projectId) {
-      addToast({ type: 'error', message: 'Please select a project' })
-      return
-    }
-    if (purpose === 'project' && !deliveryDestination) {
-      addToast({ type: 'error', message: 'Please select a delivery destination' })
-      return
-    }
-    if (branches.length > 0 && !branchId) {
-      addToast({ type: 'error', message: 'Please select a branch' })
-      return
+    if (!isTourMode) {
+      if (purpose === 'project' && !projectId) {
+        addToast({ type: 'error', message: 'Please select a project' })
+        return
+      }
+      if (purpose === 'project' && !deliveryDestination) {
+        addToast({ type: 'error', message: 'Please select a delivery destination' })
+        return
+      }
+      if (branches.length > 0 && !branchId) {
+        addToast({ type: 'error', message: 'Please select a branch' })
+        return
+      }
     }
     const realLines = lines.filter((l) => l.description || l.product_id)
     if (realLines.length === 0) {
@@ -229,6 +237,7 @@ export default function RequisitionForm() {
         backPath="/procurement/requisitions"
         actions={
           <Button
+            data-tour="submit-req-btn"
             type="button"
             variant="primary"
             loading={loading}
@@ -243,9 +252,15 @@ export default function RequisitionForm() {
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'stretch' }}>
           {/* Left column ~70%: Requisition Details — mirrors PurchaseOrderForm's own "Order Details" card */}
           <div style={{ flex: '2 1 560px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <Card style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <Card
+          data-tour="req-details-card"
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}
+        >
           <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Requisition Details</div>
-          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div
+            data-tour="req-purpose-row"
+            style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}
+          >
             <div style={{ flex: '1 1 200px' }}>
               <Select
                 label="Purpose"
@@ -278,15 +293,16 @@ export default function RequisitionForm() {
           </div>
 
           {purpose === 'project' && (
-            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+            <div data-tour="req-project-row" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
               <div style={{ flex: '1 1 240px' }}>
                 <SearchableSelect
                   label="Project *"
                   value={projectId}
                   onChange={setProjectId}
                   options={projectOptions}
-                  placeholder="Search project…"
+                  placeholder={isTourMode ? 'Not needed for this walkthrough' : 'Search project…'}
                   minDropdownWidth={360}
+                  disabled={isTourMode}
                 />
               </div>
               <div style={{ flex: '1 1 200px' }}>
@@ -303,13 +319,18 @@ export default function RequisitionForm() {
             </div>
           )}
 
-          <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          <div data-tour="req-notes">
+            <Textarea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
         </Card>
           </div>
 
           {/* Right column ~30%: Summary — mirrors PurchaseOrderForm's own sticky Order Summary sidebar */}
           <div style={{ flex: '1 1 280px', display: 'flex' }}>
-            <Card style={{ padding: '24px', position: 'sticky', top: '20px', width: '100%' }}>
+            <Card
+              data-tour="req-summary-sidebar"
+              style={{ padding: '24px', position: 'sticky', top: '20px', width: '100%' }}
+            >
               <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary, marginBottom: '16px' }}>
                 Summary
               </div>
@@ -368,7 +389,7 @@ export default function RequisitionForm() {
           </div>
         </div>
 
-        <Card style={{ marginTop: '20px' }}>
+        <Card data-tour="req-lines-card" style={{ marginTop: '20px' }}>
           <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.border}` }}>
             <div style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>Lines</div>
             <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
@@ -383,6 +404,7 @@ export default function RequisitionForm() {
               onRemoveRow={(idx) => setLines((p) => p.filter((_, i) => i !== idx))}
               removeDisabled={() => lines.length <= 1}
               onAddRow={() => setLines((p) => [...p, emptyLine()])}
+              addButtonDataTour="req-add-line-btn"
             />
           </div>
         </Card>
