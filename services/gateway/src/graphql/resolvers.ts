@@ -518,6 +518,36 @@ async function applyRequisitionEditChanges(
     }
   }
   const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+
+  // Guard: refuse to edit or remove a line that's already been bought
+  // against (po_line_purchases) or forked into a child PO (po_id set).
+  // Without this, a post-approval edit request approved here could
+  // silently CASCADE-DELETE real purchase history — po_line_purchases.
+  // po_line_id is ON DELETE CASCADE (migration 258) — or desync a line a
+  // child PO already owns. Pre-approval this is always a no-op (neither
+  // can exist yet, since Items Bought/Finish Buying only happen after
+  // approval); it only ever matters for a post-approval edit request.
+  const touchedLineIds = [
+    ...new Set([
+      ...(changes.lines?.edited ?? []).map((e) => e.id),
+      ...(changes.lines?.removed ?? []),
+    ]),
+  ]
+  if (touchedLineIds.length > 0) {
+    const committed = await client.query<{ id: string; has_purchases: boolean; forked: boolean }>(
+      `SELECT pl.id,
+              EXISTS (SELECT 1 FROM po_line_purchases plp WHERE plp.po_line_id = pl.id) AS has_purchases,
+              (pl.po_id IS NOT NULL) AS forked
+       FROM po_lines pl WHERE pl.id = ANY($1) AND pl.requisition_id = $2`,
+      [touchedLineIds, reqId],
+    )
+    const blocked = committed.rows.filter((r) => r.has_purchases || r.forked)
+    if (blocked.length > 0)
+      throw new Error(
+        `Line(s) already bought against or forked into a Purchase Order can't be edited or removed: ${blocked.map((r) => r.id).join(', ')}`,
+      )
+  }
+
   const priceAffectedLineIds = new Set<string>()
   for (const e of changes.lines?.edited ?? []) {
     if (!lineAllowed.includes(e.field)) continue
@@ -27655,6 +27685,32 @@ const phase5MutationResolvers = {
           requested_by_email: usr.rows[0]?.email ?? null,
           reviewed_by_email: usr.rows[0]?.email ?? null,
         }
+      }
+
+      // Fail fast rather than letting an admin discover this only when
+      // they try to approve it later — same guard applyRequisitionEditChanges
+      // enforces at apply time (see its own comment), checked here too so
+      // a doomed request never even reaches the review queue.
+      const changesForGuard = changesObj as EditChanges
+      const touchedForGuard = [
+        ...new Set([
+          ...(changesForGuard.lines?.edited ?? []).map((e) => e.id),
+          ...(changesForGuard.lines?.removed ?? []),
+        ]),
+      ]
+      if (touchedForGuard.length > 0) {
+        const committed = await query<{ id: string; has_purchases: boolean; forked: boolean }>(
+          `SELECT pl.id,
+                  EXISTS (SELECT 1 FROM po_line_purchases plp WHERE plp.po_line_id = pl.id) AS has_purchases,
+                  (pl.po_id IS NOT NULL) AS forked
+           FROM po_lines pl WHERE pl.id = ANY($1) AND pl.requisition_id = $2`,
+          [touchedForGuard, reqId],
+        )
+        const blocked = committed.rows.filter((r) => r.has_purchases || r.forked)
+        if (blocked.length > 0)
+          throw new Error(
+            `Line(s) already bought against or forked into a Purchase Order can't be edited or removed: ${blocked.map((r) => r.id).join(', ')}`,
+          )
       }
 
       const r = await query(
