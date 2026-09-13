@@ -76,6 +76,7 @@ interface ReqLine {
   qty_from_stock?: string | null
   source_location_id?: string | null
   source_location_name?: string | null
+  source_average_cost?: string | null
   store_price?: string | null
   store_price_currency?: string | null
   market_price?: string | null
@@ -1234,46 +1235,77 @@ export default function RequisitionDetail() {
               Only someone holding the Store Pricing position (or an admin) can act here.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => (
-                <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
-                    {l.description || l.product_name}
-                  </div>
-                  <div style={{ width: '140px' }}>
-                    <Input
-                      label="Store price"
-                      type="number"
-                      min="0"
-                      value={storePrices[l.id] ?? ''}
-                      onChange={(e) => setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                      placeholder="0.00"
-                    />
-                  </div>
+            (() => {
+              // Store price only values the from-stock portion of a line —
+              // mirrors PurchaseOrderDetail's own stockLines filter. In the
+              // normal flow this panel is auto-filled and skipped entirely
+              // by confirmRequisitionInventoryCheck; it only renders at all
+              // for the rare case a requisition is moved back here by some
+              // other path, so pre-filling from each line's own source
+              // average cost still matters here too.
+              const stockLines = req.lines.filter(
+                (l) => (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0,
+              )
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {stockLines.length === 0 && (
+                    <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                      No lines on this requisition are being fulfilled from stock — there's
+                      nothing to price here.
+                    </div>
+                  )}
+                  {stockLines.map((l) => {
+                    const defaultPrice = l.store_price ?? l.source_average_cost ?? ''
+                    return (
+                      <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
+                          {l.description || l.product_name}
+                          {l.source_location_name && (
+                            <span style={{ color: theme.textMuted }}>
+                              {' '}
+                              · from {l.source_location_name}
+                              {l.source_average_cost != null && ` (last cost ${l.source_average_cost})`}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ width: '140px' }}>
+                          <Input
+                            label="Store price"
+                            type="number"
+                            min="0"
+                            value={storePrices[l.id] ?? String(defaultPrice)}
+                            onChange={(e) => setStorePrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <Button
+                    variant="primary"
+                    loading={lStore}
+                    style={{ alignSelf: 'flex-start' }}
+                    onClick={() =>
+                      void submitStorePricing({
+                        variables: {
+                          id: req.id,
+                          linePrices: stockLines.map((l) => ({
+                            lineId: l.id,
+                            storePrice:
+                              parseFloat(
+                                storePrices[l.id] ?? String(l.store_price ?? l.source_average_cost ?? '0'),
+                              ) || 0,
+                            currencyCode: l.currency_code,
+                          })),
+                        },
+                      })
+                    }
+                  >
+                    Submit to market pricing
+                  </Button>
                 </div>
-              ))}
-              <Button
-                variant="primary"
-                loading={lStore}
-                style={{ alignSelf: 'flex-start' }}
-                onClick={() =>
-                  void submitStorePricing({
-                    variables: {
-                      id: req.id,
-                      linePrices: req.lines
-                        .filter((l) => storePrices[l.id])
-                        .map((l) => ({
-                          lineId: l.id,
-                          storePrice: parseFloat(storePrices[l.id]!) || 0,
-                          currencyCode: l.currency_code,
-                        })),
-                    },
-                  })
-                }
-              >
-                Submit to market pricing
-              </Button>
-            </div>
+              )
+            })()
           )}
         </Card>
       )}

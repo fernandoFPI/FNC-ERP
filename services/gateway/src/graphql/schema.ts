@@ -2461,6 +2461,7 @@
     category: String
     sub_category: String
     standard_cost: String
+    cost_currency: String
     reorder_point: String
     reorder_qty: String
     has_stock_moves: Boolean
@@ -2575,6 +2576,7 @@
     uom: String!
     valuation_method: String
     standard_cost: Float
+    cost_currency: String
     reorder_point: Float
     reorder_qty: Float
     is_active: Boolean

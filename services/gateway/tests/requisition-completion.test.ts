@@ -71,7 +71,8 @@ async function makeStockOnlyReqAtSourcing(qty: number): Promise<{ reqId: string;
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: qty, sourceLocationId: warehouseId }] },
     ctx as never,
   )
-  await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+  // confirmRequisitionInventoryCheck now auto-advances straight through
+  // store_pricing to market_pricing — no separate call needed.
   await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
   await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
   const result = await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
@@ -101,7 +102,8 @@ async function makeReqWithOneChildAtSourcing(
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0 }] },
     ctx as never,
   )
-  await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+  // confirmRequisitionInventoryCheck now auto-advances straight through
+  // store_pricing to market_pricing — no separate call needed.
   await resolvers.Mutation.submitRequisitionMarketPricing(
     null,
     { id: reqId, linePrices: [{ lineId, marketPrice: price, currencyCode: 'IQD' }] },
@@ -251,7 +253,8 @@ describe('completion evaluator — Store Out confirm', () => {
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 6, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    // confirmRequisitionInventoryCheck now auto-advances straight through
+    // store_pricing to market_pricing — no separate call needed.
     await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
@@ -402,7 +405,8 @@ describe('cancelRequisition', () => {
       },
       ctx as never,
     )
-    await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+    // confirmRequisitionInventoryCheck now auto-advances straight through
+    // store_pricing to market_pricing — no separate call needed.
     await resolvers.Mutation.submitRequisitionMarketPricing(
       null,
       { id: reqId, linePrices: [{ lineId: buyLineId, marketPrice: 10, currencyCode: 'IQD' }] },
