@@ -87,7 +87,8 @@ async function makeReqAtItemsBought(opts: {
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock, sourceLocationId: qtyFromStock > 0 ? warehouseId : undefined }] },
     ctx as never,
   )
-  await resolvers.Mutation.submitRequisitionStorePricing(null, { id: reqId }, ctx as never)
+  // confirmRequisitionInventoryCheck now auto-advances straight through
+  // store_pricing to market_pricing — no separate call needed.
   await resolvers.Mutation.submitRequisitionMarketPricing(
     null,
     { id: reqId, linePrices: [{ lineId, marketPrice: opts.marketPrice, currencyCode: 'IQD' }] },

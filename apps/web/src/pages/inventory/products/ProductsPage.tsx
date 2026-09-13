@@ -34,6 +34,7 @@ interface Product {
   uom: string
   valuation_method: string
   average_cost: string
+  cost_currency?: string | null
   is_active: boolean
   reorder_point?: string
   qty_on_hand?: string
@@ -173,9 +174,16 @@ export default function ProductsPage() {
       key: 'average_cost',
       header: 'Last Cost',
       render: (p) => (
-        <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
-          {parseFloat(p.average_cost).toLocaleString()}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ fontFamily: 'monospace', color: theme.textSecondary }}>
+            {parseFloat(p.average_cost).toLocaleString()}
+          </span>
+          {p.cost_currency ? (
+            <span style={{ fontSize: '11px', color: theme.textMuted }}>{p.cost_currency}</span>
+          ) : (
+            <Badge variant="warning">Currency not set</Badge>
+          )}
+        </div>
       ),
     },
     {
