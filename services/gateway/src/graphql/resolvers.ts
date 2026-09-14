@@ -29635,17 +29635,18 @@ const phase5MutationResolvers = {
         )
       }
 
-      // Update qty_from_stock (+ chosen source location, if any) per line. A
-      // line fully covered from stock is never bought from a vendor — it
-      // never reaches market pricing at all (skipped there, and the whole
-      // PO short-circuits straight to ready_to_issue if every line is fully
-      // covered) — so its contribution to the PO total is zeroed here, the
-      // one place both paths pass through. Its real cost is still recognized
-      // separately, in issueStockForPOLines' stock-issuance cost booking.
+      // Update qty_from_stock (+ chosen source location, if any) per line.
+      // total_price is no longer zeroed here — the store-price auto-fill
+      // below (now unconditional, not just on the needs-more-purchasing
+      // path) sets a fully-covered line's total_price to its real stock
+      // value instead, so the PO's own Total reflects what was actually
+      // issued rather than just what's owed to a vendor. issueStockForPOLines'
+      // separate stock-issuance cost booking reads store_price/average_cost
+      // directly from stock_balances, not this column, so there's no
+      // double-count between the two.
       for (const lsq of args.lineStockQtys) {
         await client.query(
-          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4,
-             total_price = CASE WHEN $1>=qty_ordered THEN 0 ELSE total_price END
+          `UPDATE po_lines SET qty_from_stock=$1, in_stock=($1>=qty_ordered), source_location_id=$4
            WHERE id=$2 AND po_id=$3`,
           [lsq.qtyFromStock, lsq.lineId, args.id, lsq.sourceLocationId ?? null],
         )
@@ -29658,6 +29659,120 @@ const phase5MutationResolvers = {
       )
       needsPurchase = parseInt(String(check.rows[0]?.needs_purchase ?? '1')) > 0
 
+      // Auto-fill store_price for every from-stock line, whether or not the
+      // PO also needs further vendor purchasing for its other lines — same
+      // cached-market-price / cost_currency / average-cost fallback chain
+      // either way. A line fully covered from stock additionally gets its
+      // unit_price/currency_code/total_price/fx_rate_to_base set from this,
+      // so recalcPO below folds it into the PO's own Total; a partially
+      // covered line's total_price is left for the market-pricing step to
+      // set for its (non-stock) remainder, unchanged from today.
+      const baseCcyRes = await client.query<{ base_currency_code: string }>(
+        `SELECT base_currency_code FROM purchase_orders WHERE id=$1`,
+        [args.id],
+      )
+      const baseCurrencyCode = baseCcyRes.rows[0]?.base_currency_code ?? 'IQD'
+
+      const stockLinesRes = await client.query<{
+        id: string
+        product_id: string | null
+        sku: string | null
+        qty_ordered: string
+        qty_from_stock: string
+        last_market_price: string | null
+        last_market_price_currency: string | null
+        cost_currency: string | null
+        fallback_avg_cost: string | null
+      }>(
+        `SELECT pol.id, pol.product_id, p.sku, pol.qty_ordered, pol.qty_from_stock,
+                p.last_market_price, p.last_market_price_currency, p.cost_currency,
+                sb.average_cost AS fallback_avg_cost
+         FROM po_lines pol
+         LEFT JOIN products p ON p.id = pol.product_id
+         LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
+           AND sb.location_id = pol.source_location_id AND sb.lot_id IS NULL
+         WHERE pol.po_id=$1 AND pol.qty_from_stock > 0`,
+        [args.id],
+      )
+
+      const autoFilledLines: Record<string, unknown>[] = []
+      for (const line of stockLinesRes.rows) {
+        const cachedPrice =
+          line.last_market_price != null ? parseFloat(line.last_market_price) : null
+        const usingCache = cachedPrice != null && cachedPrice > 0
+        const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
+        // Currency fallback chain: a real historical vendor-quote currency
+        // (cached the last time this product was market-priced) first,
+        // then the product's own declared cost_currency (set explicitly
+        // on the product, or seeded at catalog creation from its first
+        // real purchase), and only then the company/PO's base currency —
+        // a guess of last resort, not a fact about this specific product.
+        const storeCurrency = usingCache
+          ? (line.last_market_price_currency ?? line.cost_currency ?? baseCurrencyCode)
+          : (line.cost_currency ?? baseCurrencyCode)
+
+        const qtyOrdered = parseFloat(line.qty_ordered)
+        const qtyFromStock = parseFloat(line.qty_from_stock)
+        const isFullyCovered = qtyFromStock >= qtyOrdered
+
+        if (isFullyCovered) {
+          // Skip (not throw) when this currency has no configured PO FX
+          // rate to base — confirming an inventory check must never fail
+          // over missing FX config; the line just keeps whatever total_price
+          // it already had (its original PO-creation estimate) rather than
+          // getting a fresh, possibly wrongly-converted one.
+          let fxRateToBase: number | undefined
+          try {
+            fxRateToBase = await resolveFxRateToBase(client, auth.companyId, storeCurrency, baseCurrencyCode)
+          } catch {
+            fxRateToBase = undefined
+          }
+          if (fxRateToBase != null) {
+            await client.query(
+              `UPDATE po_lines
+               SET store_price=$1, store_price_currency=$2, unit_price=$1, currency_code=$2,
+                   total_price=$3, fx_rate_to_base=$4
+               WHERE id=$5`,
+              [storePrice, storeCurrency, qtyFromStock * storePrice, fxRateToBase, line.id],
+            )
+          } else {
+            await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
+              storePrice,
+              storeCurrency,
+              line.id,
+            ])
+          }
+        } else {
+          await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
+            storePrice,
+            storeCurrency,
+            line.id,
+          ])
+        }
+        autoFilledLines.push({
+          lineId: line.id,
+          productId: line.product_id,
+          sku: line.sku,
+          storePrice,
+          storeCurrency,
+          isFullyCovered,
+          source: usingCache ? 'cached_market_price' : 'average_cost_fallback',
+        })
+      }
+
+      await recalcPO(client, args.id)
+      if (autoFilledLines.length > 0) {
+        await logAudit({
+          userId: auth.userId,
+          companyId: auth.companyId,
+          action: 'AUTO_STORE_PRICING',
+          tableName: 'po_lines',
+          recordId: args.id,
+          newValues: { lines: autoFilledLines },
+          client,
+        })
+      }
+
       if (needsPurchase) {
         await poTransition(
           client,
@@ -29668,74 +29783,13 @@ const phase5MutationResolvers = {
           auth,
           args.notes,
         )
-
-        // Store Pricing is no longer a human step: auto-fill every from-stock
-        // line's value from the product's cached last real market price (set
-        // by submitPOMarketPricing), falling back to the stock's own
-        // average_cost at the chosen source location for a product that's
-        // never been market-priced before — the same fallback the old manual
-        // "Skip" button used. Then advance straight through to market_pricing
-        // in the same transaction, so no PO is ever observably left waiting
-        // at 'store_pricing'. (rejectPOVerificationToStorePricing is left
-        // alone — that's a deliberate "someone flagged this, look again" path,
-        // not the routine forward flow, so it still needs a human.)
-        const baseCcyRes = await client.query<{ base_currency_code: string }>(
-          `SELECT base_currency_code FROM purchase_orders WHERE id=$1`,
-          [args.id],
-        )
-        const baseCurrencyCode = baseCcyRes.rows[0]?.base_currency_code ?? 'IQD'
-
-        const stockLinesRes = await client.query<{
-          id: string
-          product_id: string | null
-          sku: string | null
-          last_market_price: string | null
-          last_market_price_currency: string | null
-          cost_currency: string | null
-          fallback_avg_cost: string | null
-        }>(
-          `SELECT pol.id, pol.product_id, p.sku,
-                  p.last_market_price, p.last_market_price_currency, p.cost_currency,
-                  sb.average_cost AS fallback_avg_cost
-           FROM po_lines pol
-           LEFT JOIN products p ON p.id = pol.product_id
-           LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
-             AND sb.location_id = pol.source_location_id AND sb.lot_id IS NULL
-           WHERE pol.po_id=$1 AND pol.qty_from_stock > 0`,
-          [args.id],
-        )
-
-        const autoFilledLines: Record<string, unknown>[] = []
-        for (const line of stockLinesRes.rows) {
-          const cachedPrice =
-            line.last_market_price != null ? parseFloat(line.last_market_price) : null
-          const usingCache = cachedPrice != null && cachedPrice > 0
-          const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
-          // Currency fallback chain: a real historical vendor-quote currency
-          // (cached the last time this product was market-priced) first,
-          // then the product's own declared cost_currency (set explicitly
-          // on the product, or seeded at catalog creation from its first
-          // real purchase), and only then the company/PO's base currency —
-          // a guess of last resort, not a fact about this specific product.
-          const storeCurrency = usingCache
-            ? (line.last_market_price_currency ?? line.cost_currency ?? baseCurrencyCode)
-            : (line.cost_currency ?? baseCurrencyCode)
-          await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
-            storePrice,
-            storeCurrency,
-            line.id,
-          ])
-          autoFilledLines.push({
-            lineId: line.id,
-            productId: line.product_id,
-            sku: line.sku,
-            storePrice,
-            storeCurrency,
-            source: usingCache ? 'cached_market_price' : 'average_cost_fallback',
-          })
-        }
-
-        await recalcPO(client, args.id)
+        // Store Pricing is no longer a human step for the from-stock lines
+        // (auto-filled above, whole-PO-unconditionally) — advance straight
+        // through to market_pricing in the same transaction, so no PO is
+        // ever observably left waiting at 'store_pricing' for those.
+        // (rejectPOVerificationToStorePricing is left alone — that's a
+        // deliberate "someone flagged this, look again" path, not the
+        // routine forward flow, so it still needs a human.)
         await poTransition(
           client,
           args.id,
@@ -29745,15 +29799,6 @@ const phase5MutationResolvers = {
           auth,
           'Store pricing auto-filled from cached market price',
         )
-        await logAudit({
-          userId: auth.userId,
-          companyId: auth.companyId,
-          action: 'AUTO_STORE_PRICING',
-          tableName: 'po_lines',
-          recordId: args.id,
-          newValues: { lines: autoFilledLines },
-          client,
-        })
       } else {
         await poTransition(
           client,

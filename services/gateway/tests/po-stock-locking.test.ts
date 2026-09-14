@@ -172,9 +172,26 @@ describe('confirmPOInventoryCheck reservation (Site 1)', () => {
     expect(afterConfirm.reserved).toBe(5)
     expect(afterConfirm.onHand).toBe(20) // reservation doesn't touch on_hand
 
-    const poStatus = await pool.query<{ status: string }>(`SELECT status FROM purchase_orders WHERE id=$1`, [poId])
+    const poStatus = await pool.query<{ status: string; total_amount: string }>(
+      `SELECT status, total_amount FROM purchase_orders WHERE id=$1`,
+      [poId],
+    )
     // qtyFromStock(5) >= qty_ordered(5) — fully covered, fast path to ready_to_issue.
     expect(poStatus.rows[0]!.status).toBe('ready_to_issue')
+    // Regression: total_price/total_amount used to be zeroed for a fully
+    // stock-covered line ("nothing owed to a vendor"), which also zeroed
+    // out the PO's own displayed Total for a request that genuinely issued
+    // real, valued inventory. Now auto-filled from the same store-price
+    // fallback chain (here: no cached market price or cost_currency set,
+    // so it falls to the stock's own average_cost — 10, from receive()'s
+    // default unitCost — the same value a real store keeper would see).
+    const line = await pool.query<{ total_price: string; store_price: string }>(
+      `SELECT total_price, store_price FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(line.rows[0]!.total_price)).toBe(50) // 5 * average_cost(10)
+    expect(parseFloat(line.rows[0]!.store_price)).toBe(10)
+    expect(parseFloat(poStatus.rows[0]!.total_amount)).toBe(50)
 
     await resolvers.Mutation.cancelPO(null, { id: poId, reason: 'test cleanup' }, ctx as never)
 
