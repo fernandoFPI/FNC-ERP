@@ -4656,6 +4656,68 @@ export const CANCEL_MATERIAL_ISSUE = gql`
   }
 `
 
+// ── Material Return — unused, already-issued material coming back into
+// real inventory. Not to be confused with a vendor PO Return (finance/AP,
+// see procurement.ts's own POReturn types) — this is the opposite
+// direction and has no vendor/credit-note involvement at all.
+const MR_LINE_FIELDS = `
+  id
+  issueLineId
+  productId
+  productName
+  sku
+  toLocationId
+  toLocationName
+  qtyReturned
+  unitCost
+  totalCost
+`
+const MR_FIELDS = `
+  id
+  returnNumber
+  returnDate
+  projectId
+  projectCode
+  projectName
+  notes
+  createdByName
+  createdAt
+  lines { ${MR_LINE_FIELDS} }
+`
+
+export const MATERIAL_RETURNS_QUERY = gql`
+  query MaterialReturns($projectId: ID) {
+    materialReturns(projectId: $projectId) { ${MR_FIELDS} }
+  }
+`
+
+export const RETURNABLE_MATERIAL_ISSUE_LINES_QUERY = gql`
+  query ReturnableMaterialIssueLines($projectId: ID!) {
+    returnableMaterialIssueLines(projectId: $projectId) {
+      issueLineId
+      issueId
+      issueNumber
+      issueDate
+      productId
+      productName
+      sku
+      uom
+      qtyIssued
+      qtyReturnedSoFar
+      qtyReturnable
+      unitCost
+      fromLocationId
+      fromLocationName
+    }
+  }
+`
+
+export const CREATE_MATERIAL_RETURN = gql`
+  mutation CreateMaterialReturn($input: MaterialReturnInput!) {
+    createMaterialReturn(input: $input) { ${MR_FIELDS} }
+  }
+`
+
 // ── Phase 3: Technical Queries ───────────────────────────────────────────────
 
 const TQ_FIELDS = `

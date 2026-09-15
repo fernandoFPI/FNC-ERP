@@ -271,6 +271,7 @@ const StoreOutPage = lazy(() => import('../pages/inventory/store-out/StoreOutPag
 const StoreOutDetail = lazy(() => import('../pages/inventory/store-out/StoreOutDetail'))
 const StoreInPage = lazy(() => import('../pages/inventory/store-in/StoreInPage'))
 const StoreInDetail = lazy(() => import('../pages/inventory/store-in/StoreInDetail'))
+const MaterialReturnsPage = lazy(() => import('../pages/inventory/material-returns/MaterialReturnsPage'))
 const StockBalancesPage = lazy(() => import('../pages/inventory/balances/StockBalancesPage'))
 const ProductsPage = lazy(() => import('../pages/inventory/products/ProductsPage'))
 const ProductDetail = lazy(() => import('../pages/inventory/products/ProductDetail'))
@@ -628,6 +629,10 @@ export const router = createBrowserRouter([
             element: withPerm('inventory.stock_moves.view', <StoreOutDetail />),
           },
           { path: 'store-in', element: withPerm('inventory.stock_moves.view', <StoreInPage />) },
+          {
+            path: 'material-returns',
+            element: withPerm('inventory.stock_moves.view', <MaterialReturnsPage />),
+          },
           {
             path: 'store-in/:id',
             element: withPerm('inventory.stock_moves.view', <StoreInDetail />),

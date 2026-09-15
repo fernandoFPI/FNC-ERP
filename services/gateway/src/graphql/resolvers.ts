@@ -7775,6 +7775,104 @@ export const resolvers = {
       }))
     },
 
+    materialReturns: async (_: unknown, args: { projectId?: string }, ctx: GQLContext) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const conditions: string[] = ['pmr.company_id=$1']
+      const params: unknown[] = [ctx.auth.companyId]
+      if (args.projectId) {
+        conditions.push(`pmr.project_id=$2`)
+        params.push(args.projectId)
+      }
+      const result = await query(
+        `SELECT pmr.*,
+           p_proj.code AS project_code, p_proj.name AS project_name,
+           COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
+           COALESCE(
+             JSON_AGG(JSON_BUILD_OBJECT(
+               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'productId', pmrl.product_id,
+               'productName', prod.name, 'sku', prod.sku,
+               'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
+               'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
+             ) ORDER BY pmrl.created_at) FILTER (WHERE pmrl.id IS NOT NULL),
+             '[]'
+           ) AS lines
+         FROM project_material_returns pmr
+         LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
+         LEFT JOIN users u ON u.id = pmr.created_by
+         LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
+         LEFT JOIN products prod ON prod.id = pmrl.product_id
+         LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id
+         WHERE ${conditions.join(' AND ')}
+         GROUP BY pmr.id, p_proj.code, p_proj.name, u.first_name, u.last_name, u.email
+         ORDER BY pmr.created_at DESC`,
+        params,
+      )
+      return result.rows.map((r: Record<string, unknown>) => ({
+        id: r.id,
+        returnNumber: r.return_number,
+        returnDate: r.return_date,
+        projectId: r.project_id,
+        projectCode: r.project_code ?? null,
+        projectName: r.project_name ?? null,
+        notes: r.notes ?? null,
+        createdByName: r.created_by_name ?? null,
+        createdAt: r.created_at,
+        lines: (r.lines as unknown[] | null) ?? [],
+      }))
+    },
+
+    // Every Store Out line belonging to an 'issued' project_material_issues
+    // row for this project, alongside how much of it has already been
+    // returned via prior MaterialReturns — qtyReturnable is what's left.
+    // Zero-returnable lines are filtered out; there's nothing left to bring
+    // back.
+    returnableMaterialIssueLines: async (
+      _: unknown,
+      args: { projectId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const result = await query(
+        `SELECT pmil.id AS issue_line_id, pmi.id AS issue_id, pmi.issue_number, pmi.issue_date,
+                pmil.product_id, prod.name AS product_name, prod.sku, prod.uom,
+                pmil.qty_issued, pmil.unit_cost,
+                COALESCE(ret.qty_returned_so_far, 0) AS qty_returned_so_far,
+                pmil.qty_issued - COALESCE(ret.qty_returned_so_far, 0) AS qty_returnable,
+                pmil.to_location_id AS from_location_id, loc.name AS from_location_name
+         FROM project_material_issue_lines pmil
+         JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+         LEFT JOIN products prod ON prod.id = pmil.product_id
+         LEFT JOIN stock_locations loc ON loc.id = pmil.to_location_id
+         LEFT JOIN (
+           SELECT issue_line_id, SUM(qty_returned) AS qty_returned_so_far
+           FROM project_material_return_lines
+           GROUP BY issue_line_id
+         ) ret ON ret.issue_line_id = pmil.id
+         WHERE pmi.project_id=$1 AND pmi.company_id=$2 AND pmi.status='issued'
+           AND pmil.qty_issued - COALESCE(ret.qty_returned_so_far, 0) > 0.0001
+         ORDER BY pmi.issue_date DESC, pmil.created_at`,
+        [args.projectId, ctx.auth.companyId],
+      )
+      return result.rows.map((r: Record<string, unknown>) => ({
+        issueLineId: r.issue_line_id,
+        issueId: r.issue_id,
+        issueNumber: r.issue_number,
+        issueDate: r.issue_date,
+        productId: r.product_id,
+        productName: r.product_name ?? null,
+        sku: r.sku ?? null,
+        uom: r.uom ?? null,
+        qtyIssued: parseFloat(String(r.qty_issued)),
+        qtyReturnedSoFar: parseFloat(String(r.qty_returned_so_far)),
+        qtyReturnable: parseFloat(String(r.qty_returnable)),
+        unitCost: parseFloat(String(r.unit_cost)),
+        fromLocationId: r.from_location_id ?? null,
+        fromLocationName: r.from_location_name ?? null,
+      }))
+    },
+
     availableInvoiceCosts: async (
       _: unknown,
       args: { invoiceId: string; sourceType?: string },
@@ -21069,6 +21167,198 @@ export const resolvers = {
         issuedByName: null,
         createdAt: row.created_at,
         lines: [],
+      }
+    },
+
+    // Reverses part or all of one or more Store Out lines back into real
+    // inventory — the physical opposite of issueMaterialIssue. Deliberately
+    // single-step (create + post in one call, no draft/confirm lifecycle
+    // like Store Out has): a return is one physical event — someone
+    // handing material back to a warehouse — not a multi-stage document
+    // that needs review before it's real. Same-company only for now; the
+    // cross-company dual-move dance issueMaterialIssue does for a
+    // cross-company Store Out isn't mirrored here yet.
+    createMaterialReturn: async (
+      _: unknown,
+      args: { input: { projectId: string; returnDate?: string; notes?: string; lines: { issueLineId: string; toLocationId: string; qtyReturned: number }[] } },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      await requirePermGW(ctx.auth, 'projects.execution.edit', 'edit')
+      const { input } = args
+      if (!input.lines || input.lines.length === 0)
+        throw new Error('A material return needs at least one line')
+
+      const projRow = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
+        input.projectId,
+        ctx.auth.companyId,
+      ])
+      if (!projRow.rows[0]) throw new Error('Project not found')
+
+      const client = await pool.connect()
+      let returnId: string
+      try {
+        await client.query('BEGIN')
+        const returnNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_return', 'MRET')
+        const headerRes = await client.query<{ id: string }>(
+          `INSERT INTO project_material_returns (company_id, project_id, return_number, return_date, notes, created_by)
+           VALUES ($1,$2,$3,COALESCE($4::date,CURRENT_DATE),$5,$6) RETURNING id`,
+          [ctx.auth.companyId, input.projectId, returnNumber, input.returnDate ?? null, input.notes ?? null, ctx.auth.userId],
+        )
+        returnId = headerRes.rows[0]!.id
+        let totalReturnCost = 0
+
+        // Sorted by issue_line_id so two concurrent returns touching the
+        // same line acquire their locks in the same order.
+        const sortedLines = [...input.lines].sort((a, b) => (a.issueLineId < b.issueLineId ? -1 : 1))
+        for (const line of sortedLines) {
+          const qty = Number(line.qtyReturned) || 0
+          if (qty <= 0) throw new Error('qtyReturned must be greater than 0')
+
+          const issueLineRes = await client.query<{
+            product_id: string
+            qty_issued: string
+            unit_cost: string
+            to_location_id: string | null
+            issue_status: string
+            issue_project_id: string
+            issue_company_id: string
+            sku: string | null
+            product_name: string | null
+          }>(
+            `SELECT pmil.product_id, pmil.qty_issued, pmil.unit_cost, pmil.to_location_id,
+                    pmi.status AS issue_status, pmi.project_id AS issue_project_id, pmi.company_id AS issue_company_id,
+                    p.sku, p.name AS product_name
+             FROM project_material_issue_lines pmil
+             JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+             LEFT JOIN products p ON p.id = pmil.product_id
+             WHERE pmil.id=$1
+             FOR UPDATE OF pmil`,
+            [line.issueLineId],
+          )
+          const issueLine = issueLineRes.rows[0]
+          if (!issueLine) throw new Error(`Store Out line ${line.issueLineId} not found`)
+          if (issueLine.issue_company_id !== ctx.auth.companyId)
+            throw new Error(`Store Out line ${line.issueLineId} not found`)
+          if (issueLine.issue_project_id !== input.projectId)
+            throw new Error(`Store Out line ${line.issueLineId} does not belong to this project`)
+          if (issueLine.issue_status !== 'issued')
+            throw new Error(`Store Out line ${line.issueLineId} was never issued — nothing to return`)
+          if (!issueLine.to_location_id)
+            throw new Error(`Store Out line ${line.issueLineId} has no recorded consumption location to return from`)
+
+          const productLabel = issueLine.sku
+            ? `${issueLine.sku} (${issueLine.product_name ?? issueLine.product_id})`
+            : (issueLine.product_name ?? issueLine.product_id)
+
+          const alreadyReturnedRes = await client.query<{ qty: string | null }>(
+            `SELECT SUM(qty_returned) AS qty FROM project_material_return_lines WHERE issue_line_id=$1`,
+            [line.issueLineId],
+          )
+          const alreadyReturned = parseFloat(String(alreadyReturnedRes.rows[0]?.qty ?? 0))
+          const qtyIssued = parseFloat(issueLine.qty_issued)
+          const returnable = qtyIssued - alreadyReturned
+          if (qty > returnable + 0.0001)
+            throw new Error(
+              `Cannot return ${qty} of ${productLabel} — only ${returnable} still returnable (${qtyIssued} issued, ${alreadyReturned} already returned)`,
+            )
+
+          const destRes = await client.query<{ company_id: string; type: string }>(
+            `SELECT company_id, type FROM stock_locations WHERE id=$1 AND is_active=true`,
+            [line.toLocationId],
+          )
+          const dest = destRes.rows[0]
+          if (!dest) throw new Error('Destination stock location not found')
+          if (dest.company_id !== ctx.auth.companyId)
+            throw new Error('Returning to a different company\'s location is not supported yet')
+          if (['virtual_in', 'virtual_out'].includes(dest.type))
+            throw new Error('Choose a real warehouse or site location to return material to')
+
+          const unitCost = parseFloat(issueLine.unit_cost)
+          const totalCost = qty * unitCost
+          totalReturnCost += totalCost
+
+          const moveRes = await client.query<{ id: string }>(
+            `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+             VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
+            [
+              ctx.auth.companyId,
+              issueLine.product_id,
+              issueLine.to_location_id,
+              line.toLocationId,
+              qty,
+              unitCost,
+              totalCost,
+              returnId,
+              `Material return ${returnNumber}`,
+              ctx.auth.userId,
+            ],
+          )
+
+          await client.query(
+            `INSERT INTO project_material_return_lines
+               (return_id, issue_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [returnId, line.issueLineId, issueLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0]!.id],
+          )
+        }
+
+        // Offsetting entry against the project's materials actuals — the
+        // original stock_issue entry is left untouched (append-only, same
+        // as stock_moves), this just nets it down to reflect what's
+        // actually still on site.
+        if (totalReturnCost > 0) {
+          await client.query(
+            `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
+             VALUES ($1,'material_return',$2,'materials',$3,'IQD',NOW()::date)`,
+            [input.projectId, returnId, -totalReturnCost],
+          )
+        }
+
+        await client.query('COMMIT')
+      } catch (e) {
+        await client.query('ROLLBACK')
+        throw e
+      } finally {
+        client.release()
+      }
+
+      const result = await query(
+        `SELECT pmr.*,
+           p_proj.code AS project_code, p_proj.name AS project_name,
+           COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
+           COALESCE(
+             JSON_AGG(JSON_BUILD_OBJECT(
+               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'productId', pmrl.product_id,
+               'productName', prod.name, 'sku', prod.sku,
+               'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
+               'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
+             ) ORDER BY pmrl.created_at) FILTER (WHERE pmrl.id IS NOT NULL),
+             '[]'
+           ) AS lines
+         FROM project_material_returns pmr
+         LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
+         LEFT JOIN users u ON u.id = pmr.created_by
+         LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
+         LEFT JOIN products prod ON prod.id = pmrl.product_id
+         LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id
+         WHERE pmr.id=$1
+         GROUP BY pmr.id, p_proj.code, p_proj.name, u.first_name, u.last_name, u.email`,
+        [returnId],
+      )
+      const row = result.rows[0] as Record<string, unknown>
+      void publishEntityChanged(ctx.auth.companyId, 'project', input.projectId, 'updated')
+      return {
+        id: row.id,
+        returnNumber: row.return_number,
+        returnDate: row.return_date,
+        projectId: row.project_id,
+        projectCode: row.project_code ?? null,
+        projectName: row.project_name ?? null,
+        notes: row.notes ?? null,
+        createdByName: row.created_by_name ?? null,
+        createdAt: row.created_at,
+        lines: (row.lines as unknown[] | null) ?? [],
       }
     },
 

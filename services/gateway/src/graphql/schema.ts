@@ -119,6 +119,8 @@
     projectInvoice(id: ID!): ProjectInvoice
     materialIssues(projectId: ID, status: String): [MaterialIssue!]!
     materialIssue(id: ID!): MaterialIssue
+    materialReturns(projectId: ID): [MaterialReturn!]!
+    returnableMaterialIssueLines(projectId: ID!): [ReturnableIssueLine!]!
     availableInvoiceCosts(invoiceId: ID!, sourceType: String): AvailableCosts!
 
     # Interco stock transfers
@@ -1370,6 +1372,69 @@
     unitCost: Float!
     totalCost: Float!
     isInvoiced: Boolean!
+  }
+
+  # Material Return — unused, already-issued project material coming back
+  # into real inventory. Not to be confused with POReturn (vendor/finance,
+  # no stock interaction) — see migration 271's own header comment.
+  type MaterialReturn {
+    id: ID!
+    returnNumber: String!
+    returnDate: String!
+    projectId: ID!
+    projectCode: String
+    projectName: String
+    notes: String
+    createdByName: String
+    createdAt: String!
+    lines: [MaterialReturnLine!]!
+  }
+
+  type MaterialReturnLine {
+    id: ID!
+    issueLineId: ID!
+    productId: ID!
+    productName: String
+    sku: String
+    toLocationId: ID!
+    toLocationName: String
+    qtyReturned: Float!
+    unitCost: Float!
+    totalCost: Float!
+  }
+
+  # One still-returnable line from a past Store Out — qtyReturnable is
+  # qtyIssued minus whatever's already been returned against it via prior
+  # MaterialReturns. Only ever computed for issue_id rows whose parent
+  # Store Out is 'issued' (nothing to return from a draft or cancelled one).
+  type ReturnableIssueLine {
+    issueLineId: ID!
+    issueId: ID!
+    issueNumber: String!
+    issueDate: String!
+    productId: ID!
+    productName: String
+    sku: String
+    uom: String
+    qtyIssued: Float!
+    qtyReturnedSoFar: Float!
+    qtyReturnable: Float!
+    unitCost: Float!
+    fromLocationId: ID
+    fromLocationName: String
+  }
+
+  input MaterialReturnLineInput {
+    issueLineId: ID!
+    toLocationId: ID!
+    qtyReturned: Float!
+  }
+
+  input MaterialReturnInput {
+    projectId: ID!
+    returnDate: String
+    notes: String
+    lines: [MaterialReturnLineInput!]!
   }
 
   type AvailableCosts {
@@ -3206,6 +3271,7 @@
     deleteMaterialIssueLine(id: ID!, issueId: ID!): Boolean!
     issueMaterialIssue(id: ID!): MaterialIssue!
     cancelMaterialIssue(id: ID!): MaterialIssue!
+    createMaterialReturn(input: MaterialReturnInput!): MaterialReturn!
     createProjectStage(projectId: ID!, input: StageInput!): ProjectStage!
     updateProjectStage(projectId: ID!, stageId: ID!, input: UpdateStageInput!): ProjectStage!
     addProjectMember(projectId: ID!, input: MemberInput!): ProjectMember!

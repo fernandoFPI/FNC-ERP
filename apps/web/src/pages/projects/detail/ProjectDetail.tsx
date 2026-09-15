@@ -5716,13 +5716,22 @@ export default function ProjectDetail() {
                             {storeOuts.length} store-out{storeOuts.length !== 1 ? 's' : ''} linked
                             to this project
                           </span>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => navigate(`/inventory/store-out?projectId=${id}`)}
-                          >
-                            Manage in Store Out module →
-                          </Button>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => navigate('/inventory/material-returns')}
+                            >
+                              Return unused material →
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => navigate(`/inventory/store-out?projectId=${id}`)}
+                            >
+                              Manage in Store Out module →
+                            </Button>
+                          </div>
                         </div>
                         {storeOuts.length === 0 && (
                           <div

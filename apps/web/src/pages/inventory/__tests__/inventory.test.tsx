@@ -363,3 +363,94 @@ describe('LotTraceability', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/inventory/lots')
   })
 })
+
+// ── MaterialReturnsPage ──────────────────────────────────────────────────────
+describe('MaterialReturnsPage', () => {
+  const projects = [{ id: 'proj1', code: 'PRJ-001', name: 'Test Project' }]
+  const returnableLines = [
+    {
+      issueLineId: 'il1',
+      issueId: 'i1',
+      issueNumber: 'SO-2026-0001',
+      issueDate: '2026-01-10',
+      productId: 'p1',
+      productName: 'Black Ink',
+      sku: 'INK-001',
+      uom: 'litre',
+      qtyIssued: 10,
+      qtyReturnedSoFar: 2,
+      qtyReturnable: 8,
+      unitCost: 15,
+      fromLocationId: 'loc1',
+      fromLocationName: 'Site A',
+    },
+  ]
+  const locations = [
+    { id: 'loc1', name: 'Main Warehouse', code: 'WH-001', type: 'warehouse', is_active: true },
+    { id: 'loc2', name: 'Virtual Consumption', code: null, type: 'virtual_out', is_active: true },
+  ]
+  const returns = [
+    {
+      id: 'r1',
+      returnNumber: 'MRET-2026-0001',
+      returnDate: '2026-01-15',
+      projectId: 'proj1',
+      projectCode: 'PRJ-001',
+      projectName: 'Test Project',
+      notes: null,
+      createdByName: 'Jane Doe',
+      createdAt: '2026-01-15T10:00:00Z',
+      lines: [
+        {
+          id: 'rl1',
+          issueLineId: 'il1',
+          productId: 'p1',
+          productName: 'Black Ink',
+          sku: 'INK-001',
+          toLocationId: 'loc1',
+          toLocationName: 'Main Warehouse',
+          qtyReturned: 2,
+          unitCost: 15,
+          totalCost: 30,
+        },
+      ],
+    },
+  ]
+
+  beforeEach(() => {
+    // String(query) on a gql DocumentNode is just "[object Object]" — the
+    // operation name lives on the AST itself, not the stringified form.
+    mockUseQuery.mockImplementation((query: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = query?.definitions?.[0]?.name?.value ?? ''
+      if (opName === 'MaterialReturns')
+        return { data: { materialReturns: returns }, loading: false, refetch: vi.fn() }
+      if (opName === 'ReturnableMaterialIssueLines')
+        return { data: { returnableMaterialIssueLines: returnableLines }, loading: false }
+      if (opName === 'Projects') return { data: { projects: { data: projects } }, loading: false }
+      if (opName === 'StockLocations') return { data: { stockLocations: locations }, loading: false }
+      return { data: undefined, loading: false }
+    })
+  })
+
+  it('renders the page header and existing returns', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    expect(screen.getByText('Material Returns')).toBeInTheDocument()
+    expect(screen.getByText('MRET-2026-0001')).toBeInTheDocument()
+  })
+
+  it('opens the New Material Return modal and lists returnable items after picking a project', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
+    expect(screen.getByText(/pick the project/i)).toBeInTheDocument()
+  })
+
+  it('excludes virtual locations from the return-to destination options', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    // "Virtual Consumption" must never appear as a return destination —
+    // material can't be returned into a virtual consumption location.
+    expect(screen.queryByText('Virtual Consumption')).not.toBeInTheDocument()
+  })
+})

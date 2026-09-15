@@ -347,6 +347,19 @@ function Icon({ name }: { name: string }) {
         <line x1="21" y1="12" x2="9" y2="12" />
       </svg>
     ),
+    'corner-up-left': (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      >
+        <polyline points="9 14 4 9 9 4" />
+        <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+      </svg>
+    ),
     activity: (
       <svg
         width="16"
@@ -830,6 +843,12 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Store In',
         icon: <Icon name="inbox" />,
         path: '/inventory/store-in',
+        permKeys: ['inventory.stock_moves.view'],
+      },
+      {
+        label: 'Material Returns',
+        icon: <Icon name="corner-up-left" />,
+        path: '/inventory/material-returns',
         permKeys: ['inventory.stock_moves.view'],
       },
       {
