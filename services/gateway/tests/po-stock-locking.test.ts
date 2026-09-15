@@ -396,6 +396,134 @@ describe('applyPOEditChanges qty_from_stock delta (Site 1, edit-request path)', 
   })
 })
 
+// Regression coverage for the same reservation-orphaning bug class in
+// adminCorrectPO's product_id/source_location_id branches — those only
+// ever reversed *confirmed* Store Out stock_moves, never the
+// still-outstanding (unissued) portion of qty_from_stock that exists
+// purely as a stock_balances.qty_reserved claim with no stock_moves row.
+describe('applyAdminPOCorrection reservation handling', () => {
+  it('moves the still-outstanding reservation to the new product on a product_id correction', async () => {
+    const productId = await makeProduct('admin-swap-old')
+    const otherProductId = await makeProduct('admin-swap-new')
+    await receive(productId, warehouseId, 20)
+    await receive(otherProductId, warehouseId, 20)
+
+    const poId = await makePO('inventory_check')
+    const lineId = await makePOLine(poId, productId, 10)
+    await resolvers.Mutation.confirmPOInventoryCheck(
+      null,
+      { id: poId, lineStockQtys: [{ lineId, qtyFromStock: 4, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    // adminCorrectPO is only available once a PO reaches ADMIN_CORRECTION_PO_STATUSES —
+    // jumping straight to 'approved' here (skipping the real approval chain) is
+    // fine for this test, which only cares about status gating the correction,
+    // not how the PO actually got there.
+    await pool.query(`UPDATE purchase_orders SET status='approved' WHERE id=$1`, [poId])
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    await resolvers.Mutation.adminCorrectPO(
+      null,
+      {
+        id: poId,
+        reason: 'wrong product recorded',
+        changes: JSON.stringify({
+          lines: { edited: [{ id: lineId, field: 'product_id', from: productId, to: otherProductId }] },
+        }),
+      },
+      ctx as never,
+    )
+
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+    expect((await getBalance(otherProductId, warehouseId)).reserved).toBe(4)
+    const line = await pool.query<{ product_id: string; qty_from_stock: string }>(
+      `SELECT product_id, qty_from_stock FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(line.rows[0]!.product_id).toBe(otherProductId)
+    expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(4)
+  })
+
+  it('releases the reservation and zeroes qty_from_stock when a line is corrected to no product', async () => {
+    const productId = await makeProduct('admin-drop-product')
+    await receive(productId, warehouseId, 20)
+
+    const poId = await makePO('inventory_check')
+    const lineId = await makePOLine(poId, productId, 10)
+    await resolvers.Mutation.confirmPOInventoryCheck(
+      null,
+      { id: poId, lineStockQtys: [{ lineId, qtyFromStock: 4, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    await pool.query(`UPDATE purchase_orders SET status='approved' WHERE id=$1`, [poId])
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    await resolvers.Mutation.adminCorrectPO(
+      null,
+      {
+        id: poId,
+        reason: 'converting to a custom line item',
+        changes: JSON.stringify({
+          lines: { edited: [{ id: lineId, field: 'product_id', from: productId, to: null }] },
+        }),
+      },
+      ctx as never,
+    )
+
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+    const line = await pool.query<{ product_id: string | null; qty_from_stock: string; in_stock: boolean }>(
+      `SELECT product_id, qty_from_stock, in_stock FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(line.rows[0]!.product_id).toBeNull()
+    expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(0)
+    expect(line.rows[0]!.in_stock).toBe(false)
+  })
+
+  it('moves the still-outstanding reservation to the new location on a source_location_id correction', async () => {
+    const productId = await makeProduct('admin-swap-location')
+    const secondWh = await pool.query<{ id: string }>(
+      `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,$2,'warehouse',true) RETURNING id`,
+      [TEST_COMPANY_ID, `G9TEST-SecondWH-${Date.now()}`],
+    )
+    const secondWhId = secondWh.rows[0]!.id
+    await receive(productId, warehouseId, 20)
+    await receive(productId, secondWhId, 20)
+
+    const poId = await makePO('inventory_check')
+    const lineId = await makePOLine(poId, productId, 10)
+    await resolvers.Mutation.confirmPOInventoryCheck(
+      null,
+      { id: poId, lineStockQtys: [{ lineId, qtyFromStock: 4, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    await pool.query(`UPDATE purchase_orders SET status='approved' WHERE id=$1`, [poId])
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    try {
+      await resolvers.Mutation.adminCorrectPO(
+        null,
+        {
+          id: poId,
+          reason: 'wrong warehouse recorded',
+          changes: JSON.stringify({
+            lines: { edited: [{ id: lineId, field: 'source_location_id', from: warehouseId, to: secondWhId }] },
+          }),
+        },
+        ctx as never,
+      )
+
+      expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+      expect((await getBalance(productId, secondWhId)).reserved).toBe(4)
+    } finally {
+      await pool.query(`UPDATE po_lines SET source_location_id=NULL WHERE id=$1`, [lineId])
+      await pool.query(`DELETE FROM stock_balances WHERE location_id=$1`, [secondWhId])
+      await pool.query(`DELETE FROM stock_moves WHERE from_location_id=$1 OR to_location_id=$1`, [secondWhId])
+      await pool.query(`DELETE FROM stock_locations WHERE id=$1`, [secondWhId])
+    }
+  })
+})
+
 describe('cancelPO interim G7 guard', () => {
   it('refuses to cancel a PO once it has reached goods_received', async () => {
     const poId = await makePO('goods_received')

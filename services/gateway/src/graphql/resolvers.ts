@@ -313,6 +313,71 @@ async function capLineReservationToQtyOrdered(
   ])
 }
 
+async function getConfirmedIssuedQtyForLine(client: PoolClient, lineId: string): Promise<number> {
+  const issuedRes = await client.query<{ qty_issued_confirmed: string | null }>(
+    `SELECT SUM(pmil.qty_issued) AS qty_issued_confirmed
+     FROM project_material_issue_lines pmil
+     JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+     WHERE pmil.po_line_id=$1 AND pmi.status != 'draft'`,
+    [lineId],
+  )
+  return parseFloat(String(issuedRes.rows[0]?.qty_issued_confirmed ?? 0))
+}
+
+// Called by applyAdminPOCorrection's product_id/source_location_id
+// branches — moves whatever's still outstanding (unissued) of a line's
+// from-stock reservation from its old (product, location) pair to its
+// new one, checking availability at the destination first. Those two
+// branches already reverse-and-repost every *confirmed* Store Out's real
+// stock_moves for the line, but that only covers qty already physically
+// issued — the remainder (oldQtyFromStock minus whatever's confirmed-
+// issued) exists only as a stock_balances.qty_reserved claim with no
+// stock_moves row at all, so it was never touched: correcting a line's
+// product or location left the OLD product/location's reservation
+// permanently stranded while the NEW one showed a qty_from_stock it
+// never actually reserved. newProductId=null (converting to a custom/
+// non-catalog item) just releases the old claim — there's no product
+// left to reserve against; the caller is responsible for zeroing the
+// line's own qty_from_stock in that case.
+async function moveLineStockReservation(
+  client: PoolClient,
+  opts: {
+    oldProductId: string | null
+    newProductId: string | null
+    oldLocationId: string
+    newLocationId: string
+    qty: number
+    contextLabel: string
+  },
+): Promise<void> {
+  if (opts.qty <= 0) return
+  if (opts.oldProductId) {
+    await client.query(
+      `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
+       WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+      [opts.qty, opts.oldProductId, opts.oldLocationId],
+    )
+  }
+  if (!opts.newProductId) return
+  const balRes = await client.query<{ qty_on_hand: string; qty_reserved: string }>(
+    `SELECT qty_on_hand, qty_reserved FROM stock_balances
+     WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
+    [opts.newProductId, opts.newLocationId],
+  )
+  const onHand = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
+  const reserved = parseFloat(String(balRes.rows[0]?.qty_reserved ?? 0))
+  const available = onHand - reserved
+  if (available < opts.qty)
+    throw new Error(
+      `Cannot move the from-stock reservation (${opts.contextLabel}) — only ${available} available at the destination, ${opts.qty} required`,
+    )
+  await client.query(
+    `UPDATE stock_balances SET qty_reserved = qty_reserved + $1, updated_at = NOW()
+     WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+    [opts.qty, opts.newProductId, opts.newLocationId],
+  )
+}
+
 async function applyPOEditChanges(
   client: PoolClient,
   poId: string,
@@ -1024,8 +1089,9 @@ async function applyAdminPOCorrection(
       qty_from_stock: string
       unit_price: string
       fx_rate_to_base: string | null
+      source_location_id: string | null
     }>(
-      `SELECT product_id, qty_ordered, qty_received, qty_from_stock, unit_price, fx_rate_to_base
+      `SELECT product_id, qty_ordered, qty_received, qty_from_stock, unit_price, fx_rate_to_base, source_location_id
        FROM po_lines WHERE id=$1 AND po_id=$2`,
       [e.id, poId],
     )
@@ -1165,6 +1231,29 @@ async function applyAdminPOCorrection(
           }
         }
       }
+      // The issueLines loop above only reverses stock_moves for issuance
+      // that's actually been confirmed — the still-outstanding remainder
+      // (oldQtyFromStock minus whatever's confirmed-issued) has no
+      // stock_moves row at all, only a stock_balances.qty_reserved claim
+      // under the OLD product. Move that claim to the new product too, or
+      // release it outright if the line is losing its product entirely.
+      if (oldQtyFromStock > 0 && line.source_location_id && newProductId !== oldProductId) {
+        const confirmed = await getConfirmedIssuedQtyForLine(client, e.id)
+        const stillReserved = Math.max(oldQtyFromStock - confirmed, 0)
+        if (stillReserved > 0) {
+          await moveLineStockReservation(client, {
+            oldProductId,
+            newProductId,
+            oldLocationId: line.source_location_id,
+            newLocationId: line.source_location_id,
+            qty: stillReserved,
+            contextLabel: `product change on line ${e.id}`,
+          })
+        }
+        if (!newProductId) {
+          await client.query(`UPDATE po_lines SET qty_from_stock=0, in_stock=false WHERE id=$1`, [e.id])
+        }
+      }
       await client.query(`UPDATE po_lines SET product_id=$1 WHERE id=$2`, [newProductId, e.id])
       priceAffectedLineIds.add(e.id)
     } else if (e.field === 'source_location_id') {
@@ -1209,6 +1298,24 @@ async function applyAdminPOCorrection(
               )
             }
           }
+        }
+      }
+      // Same gap as the product_id branch above — the still-outstanding
+      // (unissued) portion of the reservation has no stock_moves row to
+      // correct, only a stock_balances.qty_reserved claim at the OLD
+      // location. Move it to the new location too.
+      if (oldQtyFromStock > 0 && line.source_location_id && newLocationId !== line.source_location_id) {
+        const confirmed = await getConfirmedIssuedQtyForLine(client, e.id)
+        const stillReserved = Math.max(oldQtyFromStock - confirmed, 0)
+        if (stillReserved > 0) {
+          await moveLineStockReservation(client, {
+            oldProductId,
+            newProductId: oldProductId,
+            oldLocationId: line.source_location_id,
+            newLocationId,
+            qty: stillReserved,
+            contextLabel: `source location change on line ${e.id}`,
+          })
         }
       }
       await client.query(`UPDATE po_lines SET source_location_id=$1 WHERE id=$2`, [
