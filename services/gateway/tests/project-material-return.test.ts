@@ -646,11 +646,10 @@ describe('createMaterialReturn — direct-delivery (jobsite) lines', () => {
     const projectId = await makeProject('dd-no-product')
     const poId = await makeDirectDeliveryPO(projectId)
     const poLineId = await makePOLine(poId, null, 10, 10)
-    // recordDirectDelivery still marks it received even with no product_id
-    // (queues it in pending_product_catalog_items instead) — qty_received
-    // still needs bumping directly since we can't route it through
-    // deliverDirect's cost-actuals math without a product.
-    await pool.query(`UPDATE po_lines SET qty_received=10 WHERE id=$1`, [poLineId])
+    // recordDirectDelivery's cost math doesn't touch product_id at all — a
+    // product-less line still gets qty_received bumped and cost posted
+    // normally, just queued into pending_product_catalog_items instead.
+    await deliverDirect(poId, poLineId, 10, 10)
 
     await expect(
       resolvers.Mutation.createMaterialReturn(

@@ -2200,6 +2200,100 @@ async function completeStockIssuanceLineForResolvedProduct(
   await insertStockIssuanceLine(client, issueId, line, defaultFromLocationId, ownDestLocationId)
 }
 
+// Counterpart for a 'store_in'-sourced pending catalog item: confirmReceipt
+// skips the stock_moves insert entirely for a receipt line with no catalog
+// product_id yet (queuing it here instead of crashing or guessing an
+// identity) — so once resolved, the quantity that po_receipts/po_lines
+// already say arrived still needs to actually land in stock_balances, the
+// same way completeStockIssuanceLineForResolvedProduct finishes its own
+// deferred action. Walks every po_receipt_lines row for this po_line (a
+// line can be received across more than one partial receipt) that doesn't
+// already have a matching stock_moves row, so it's safe to call even if a
+// stock move already exists for an earlier receipt on the same line.
+async function completeStoreInLineForResolvedProduct(
+  client: PoolClient,
+  poLineId: string,
+  companyId: string,
+  userId: string,
+): Promise<void> {
+  const lineRes = await client.query(
+    `SELECT product_id, unit_price, fx_rate_to_base FROM po_lines WHERE id=$1`,
+    [poLineId],
+  )
+  const line = lineRes.rows[0] as Record<string, unknown> | undefined
+  if (!line || !line.product_id) return
+
+  const missingRes = await client.query<{
+    id: string
+    receipt_id: string
+    qty_received: string
+    warehouse_location_id: string | null
+    received_date: string
+    notes: string | null
+  }>(
+    `SELECT prl.id, por.id AS receipt_id, prl.qty_received, por.warehouse_location_id, por.received_date, por.notes
+     FROM po_receipt_lines prl
+     JOIN po_receipts por ON por.id = prl.receipt_id
+     WHERE prl.po_line_id=$1 AND por.status='confirmed'
+       AND NOT EXISTS (SELECT 1 FROM stock_moves sm WHERE sm.po_receipt_line_id = prl.id)`,
+    [poLineId],
+  )
+  if (missingRes.rows.length === 0) return
+
+  const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
+  const unitCost = parseFloat(String(line.unit_price ?? 0)) * fxRate
+
+  let virtualInId: string | undefined
+  for (const rl of missingRes.rows) {
+    const qty = parseFloat(rl.qty_received)
+    if (qty <= 0) continue
+
+    let toLocationId = rl.warehouse_location_id ?? undefined
+    if (!toLocationId) {
+      const warehouseRes = await client.query(
+        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+        [companyId],
+      )
+      toLocationId = warehouseRes.rows[0]?.id as string | undefined
+      if (!toLocationId) continue
+    }
+    if (!virtualInId) {
+      const virtInRes = await client.query(
+        `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+        [companyId],
+      )
+      virtualInId =
+        (virtInRes.rows[0]?.id as string | undefined) ??
+        ((
+          await client.query(
+            `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
+            [companyId],
+          )
+        ).rows[0].id as string)
+    }
+
+    await client.query(
+      `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by,po_line_id,po_receipt_line_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'po_receipt',$9,$10,$11,$12,$13)`,
+      [
+        companyId,
+        line.product_id,
+        virtualInId,
+        toLocationId,
+        rl.received_date,
+        qty,
+        unitCost,
+        unitCost * qty,
+        rl.receipt_id,
+        rl.notes ? `${rl.notes} (backfilled after cataloging)` : 'Backfilled after cataloging',
+        userId,
+        poLineId,
+        rl.id,
+      ],
+    )
+  }
+}
+
 async function issueStockForPOLines(
   client: PoolClient,
   po: Record<string, unknown>,
@@ -11970,6 +12064,14 @@ export const resolvers = {
               ctx.auth!.companyId,
             )
           }
+          if (pending.source === 'store_in') {
+            await completeStoreInLineForResolvedProduct(
+              client,
+              pending.po_line_id as string,
+              ctx.auth!.companyId,
+              ctx.auth!.userId,
+            )
+          }
           await logAudit({
             userId: ctx.auth!.userId,
             companyId: targetCompanyId,
@@ -12039,6 +12141,14 @@ export const resolvers = {
               client,
               pending.po_line_id as string,
               ctx.auth!.companyId,
+            )
+          }
+          if (pending.source === 'store_in') {
+            await completeStoreInLineForResolvedProduct(
+              client,
+              pending.po_line_id as string,
+              ctx.auth!.companyId,
+              ctx.auth!.userId,
             )
           }
           await logAudit({
