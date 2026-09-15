@@ -384,6 +384,113 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
       ),
     ).rejects.toThrow(/insufficient available stock/i)
   })
+
+  // Reselect-item, at the one point in the lifecycle safe to swap a
+  // line's product directly (no reservation exists yet for any line).
+  it('reselects the item, reserves against the new product, and logs who/when', async () => {
+    const wrongProductId = await makeProduct('reselect-wrong')
+    const rightProductId = await makeProduct('reselect-right')
+    await receive(wrongProductId, warehouseId, 20)
+    await receive(rightProductId, warehouseId, 20)
+    const { reqId, lineId } = await makeReqAtInventoryCheck(wrongProductId, 5)
+
+    const result = await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      {
+        id: reqId,
+        lineStockQtys: [
+          { lineId, qtyFromStock: 5, sourceLocationId: warehouseId, productId: rightProductId },
+        ],
+      },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('market_pricing')
+
+    // Reserved against the NEW product, not the one the line started with.
+    expect((await getBalance(wrongProductId, warehouseId)).reserved).toBe(0)
+    expect((await getBalance(rightProductId, warehouseId)).reserved).toBe(5)
+
+    const line = await pool.query<{ product_id: string; description: string; uom: string }>(
+      `SELECT product_id, description, uom FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(line.rows[0]!.product_id).toBe(rightProductId)
+
+    const log = await pool.query<{ action: string; actor_id: string; notes: string; created_at: string }>(
+      `SELECT action, actor_id, notes, created_at FROM requisition_approval_log
+       WHERE requisition_id=$1 AND action='item_swapped'`,
+      [reqId],
+    )
+    expect(log.rows).toHaveLength(1)
+    expect(log.rows[0]!.actor_id).toBe(userId)
+    expect(log.rows[0]!.notes).toContain('reselected')
+    expect(log.rows[0]!.created_at).toBeTruthy()
+  })
+
+  it('leaves the reservation and line untouched when no productId override is given', async () => {
+    const productId = await makeProduct('reselect-untouched')
+    await receive(productId, warehouseId, 20)
+    const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
+
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+
+    const line = await pool.query<{ product_id: string }>(`SELECT product_id FROM po_lines WHERE id=$1`, [lineId])
+    expect(line.rows[0]!.product_id).toBe(productId)
+    const log = await pool.query(
+      `SELECT id FROM requisition_approval_log WHERE requisition_id=$1 AND action='item_swapped'`,
+      [reqId],
+    )
+    expect(log.rows).toHaveLength(0)
+  })
+})
+
+describe('requisitionLineProductAvailability (reselect-item preview)', () => {
+  async function makeReqAtInventoryCheck(productId: string, qtyOrdered: number) {
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: qtyOrdered, unit_price: 10 }] } },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+    await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+    const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
+    return { reqId, lineId: lineRow.rows[0]!.id }
+  }
+
+  it('reports on-hand/available for the override product, keyed by the requisition line', async () => {
+    const wrongProductId = await makeProduct('preview-wrong')
+    const rightProductId = await makeProduct('preview-right')
+    await receive(rightProductId, warehouseId, 12)
+    const { reqId, lineId } = await makeReqAtInventoryCheck(wrongProductId, 5)
+
+    const rows = (await resolvers.Query.requisitionLineProductAvailability(
+      null,
+      { requisitionId: reqId, overrides: [{ lineId, productId: rightProductId }] },
+      ctx as never,
+    )) as { lineId: string; productId: string; qtyRequired: number; qtyOnHand: number; qtyAvailable: number; isAvailable: boolean }[]
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.lineId).toBe(lineId)
+    expect(rows[0]!.productId).toBe(rightProductId)
+    expect(rows[0]!.qtyRequired).toBe(5)
+    expect(rows[0]!.qtyOnHand).toBe(12)
+    expect(rows[0]!.qtyAvailable).toBe(12)
+    expect(rows[0]!.isAvailable).toBe(true)
+  })
+
+  it('returns an empty list for no overrides', async () => {
+    const { reqId } = await makeReqAtInventoryCheck(await makeProduct('preview-empty'), 1)
+    const rows = await resolvers.Query.requisitionLineProductAvailability(
+      null,
+      { requisitionId: reqId, overrides: [] },
+      ctx as never,
+    )
+    expect(rows).toEqual([])
+  })
 })
 
 // Regression coverage for the same reservation-orphaning bug class found

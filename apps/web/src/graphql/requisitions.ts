@@ -37,6 +37,33 @@ export const REQUISITION_STOCK_AVAILABILITY_QUERY = gql`
   }
 `
 
+// Reselect-item flow on the inventory-check panel — live preview of
+// on-hand/available for whatever product the store keeper is considering
+// swapping a line to, before they commit via confirmRequisitionInventoryCheck's
+// own productId field. Batched (one call covers every line currently
+// being reselected) since React hooks can't vary in count across renders.
+export const REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY = gql`
+  query RequisitionLineProductAvailability($requisitionId: ID!, $overrides: [LineProductOverrideInput!]!) {
+    requisitionLineProductAvailability(requisitionId: $requisitionId, overrides: $overrides) {
+      lineId
+      productId
+      productName
+      qtyRequired
+      qtyOnHand
+      qtyAvailable
+      isAvailable
+      byLocation {
+        companyId
+        companyName
+        locationId
+        locationName
+        qtyOnHand
+        qtyAvailable
+      }
+    }
+  }
+`
+
 // G1 Phase 3 Milestone A screen 2 — RequisitionDetail. purchases is only
 // populated when a line is fetched via this query (see POLine.purchases'
 // schema comment) — it's the Items Bought record, read-only here (the

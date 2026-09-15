@@ -5422,6 +5422,95 @@ export const resolvers = {
       }))
     },
 
+    requisitionLineProductAvailability: async (
+      _: unknown,
+      args: { requisitionId: string; overrides: { lineId: string; productId: string }[] },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) throw new Error('Unauthorized')
+      if (args.overrides.length === 0) return []
+      const auth = ctx.auth as GWAuth
+      const gateReqRow = await query<{ status: string }>(
+        `SELECT status FROM requisitions WHERE id=$1::uuid AND company_id=$2::uuid`,
+        [args.requisitionId, auth.companyId],
+      )
+      if (!gateReqRow.rows[0]) throw new Error('Requisition not found')
+      const canViewStock =
+        isAdminGW(auth.role) ||
+        (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
+        (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
+      if (!canViewStock) throw new Error('Not authorized to view stock for this requisition')
+
+      const isSysAdmin = auth.role === 'system_admin'
+      return Promise.all(
+        args.overrides.map(async (ov) => {
+          const lineRow = await query<{ qty_ordered: string; description: string | null }>(
+            `SELECT qty_ordered, description FROM po_lines WHERE id=$1::uuid AND requisition_id=$2::uuid`,
+            [ov.lineId, args.requisitionId],
+          )
+          if (!lineRow.rows[0]) throw new Error(`Requisition line ${ov.lineId} not found`)
+
+          const productRow = await query<{ name: string }>(
+            `SELECT name FROM products WHERE id=$1::uuid AND company_id=$2::uuid`,
+            [ov.productId, auth.companyId],
+          )
+          if (!productRow.rows[0]) throw new Error(`Product ${ov.productId} not found`)
+
+          const [aggRes, byLocationRes] = await Promise.all([
+            query<{ qtyOnHand: string; qtyAvailable: string }>(
+              `SELECT
+                 COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) AS "qtyOnHand",
+                 (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable"
+               FROM stock_balances sb
+               LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.company_id = $2::uuid AND sl.type NOT IN ('virtual_in','virtual_out')
+               WHERE sb.product_id = $1::uuid`,
+              [ov.productId, auth.companyId],
+            ),
+            query(
+              `SELECT c.id AS "companyId", c.name AS "companyName",
+                      sl.id AS "locationId", sl.name AS "locationName",
+                      COALESCE(sb.qty_on_hand, 0) AS "qtyOnHand",
+                      (COALESCE(sb.qty_on_hand, 0) - COALESCE(sb.qty_reserved, 0)) AS "qtyAvailable",
+                      sb.average_cost AS "averageCost"
+               FROM stock_balances sb
+               JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
+               JOIN companies c ON c.id = sl.company_id
+               WHERE sb.product_id = $1::uuid AND sb.qty_on_hand > 0
+                 AND ($2::boolean OR EXISTS (
+                   SELECT 1 FROM user_company_roles ucr
+                   WHERE ucr.user_id = $3::uuid AND ucr.company_id = sl.company_id AND ucr.is_active = true
+                 ))
+               ORDER BY "qtyAvailable" DESC`,
+              [ov.productId, isSysAdmin, auth.userId],
+            ),
+          ])
+
+          const qtyRequired = parseFloat(lineRow.rows[0].qty_ordered)
+          const qtyOnHand = parseFloat(String(aggRes.rows[0]?.qtyOnHand ?? 0))
+          const qtyAvailable = parseFloat(String(aggRes.rows[0]?.qtyAvailable ?? 0))
+          return {
+            lineId: ov.lineId,
+            productId: ov.productId,
+            productName: productRow.rows[0].name,
+            description: lineRow.rows[0].description,
+            qtyRequired,
+            qtyOnHand,
+            qtyAvailable,
+            isAvailable: qtyAvailable >= qtyRequired,
+            byLocation: byLocationRes.rows.map((row: Record<string, unknown>) => ({
+              companyId: row.companyId,
+              companyName: row.companyName,
+              locationId: row.locationId,
+              locationName: row.locationName,
+              qtyOnHand: parseFloat(String(row.qtyOnHand ?? 0)),
+              qtyAvailable: parseFloat(String(row.qtyAvailable ?? 0)),
+              averageCost: row.averageCost != null ? parseFloat(String(row.averageCost)) : null,
+            })),
+          }
+        }),
+      )
+    },
+
     moMissingComponents: async (_: unknown, args: { moId: string }, ctx: GQLContext) => {
       if (!ctx.auth) return []
       const result = await query(
@@ -28425,7 +28514,12 @@ const phase5MutationResolvers = {
     _: unknown,
     args: {
       id: string
-      lineStockQtys: { lineId: string; qtyFromStock: number; sourceLocationId?: string }[]
+      lineStockQtys: {
+        lineId: string
+        qtyFromStock: number
+        sourceLocationId?: string
+        productId?: string
+      }[]
       notes?: string
     },
     ctx: GQLContext,
@@ -28485,6 +28579,57 @@ const phase5MutationResolvers = {
         [lineIds, args.id],
       )
       const lineInfoById = new Map(lineInfoRes.rows.map((r) => [r.id, r]))
+
+      // Reselecting the item: a store keeper/organizer/admin doing the
+      // inventory check is often the first person to actually notice a
+      // requisition line was created against the wrong product — this is
+      // the one safe place to let them fix it directly, since no
+      // stock_balances.qty_reserved claim exists yet for any line here
+      // (that's exactly what this mutation is about to create). Swapping
+      // product_id anywhere AFTER this point (an edit request, admin
+      // correction) has to reconcile an existing reservation instead —
+      // see releaseLineStockReservations/moveLineStockReservation.
+      const swapSummaries: string[] = []
+      for (const lsq of args.lineStockQtys) {
+        if (!lsq.productId) continue
+        const current = lineInfoById.get(lsq.lineId)
+        if (!current || lsq.productId === current.product_id) continue
+        const newProductRes = await client.query<{
+          name: string
+          sku: string | null
+          uom: string
+        }>(`SELECT name, sku, uom FROM products WHERE id=$1 AND company_id=$2`, [
+          lsq.productId,
+          auth.companyId,
+        ])
+        const newProduct = newProductRes.rows[0]
+        if (!newProduct) throw new Error(`Product ${lsq.productId} not found`)
+        await client.query(
+          `UPDATE po_lines SET product_id=$1, description=$2, uom=$3 WHERE id=$4 AND requisition_id=$5`,
+          [lsq.productId, newProduct.name, newProduct.uom, lsq.lineId, args.id],
+        )
+        const oldLabel = current.sku
+          ? `${current.sku} (${current.product_name ?? current.product_id ?? 'custom item'})`
+          : (current.product_name ?? current.product_id ?? 'custom item')
+        const newLabel = newProduct.sku ? `${newProduct.sku} (${newProduct.name})` : newProduct.name
+        swapSummaries.push(`${oldLabel} → ${newLabel}`)
+        // Keep lineInfoById in sync — the reservation loop right below
+        // reads product_id from here, and it must reserve against the
+        // NEW product, not the one this line was just corrected away from.
+        lineInfoById.set(lsq.lineId, {
+          id: lsq.lineId,
+          product_id: lsq.productId,
+          sku: newProduct.sku,
+          product_name: newProduct.name,
+        })
+      }
+      if (swapSummaries.length > 0) {
+        await client.query(
+          `INSERT INTO requisition_approval_log (requisition_id, from_status, to_status, action, actor_id, notes)
+           VALUES ($1,'inventory_check','inventory_check','item_swapped',$2,$3)`,
+          [args.id, auth.userId, `Item(s) reselected at inventory check: ${swapSummaries.join('; ')}`],
+        )
+      }
 
       // Sorted by (product_id, location_id) for the same deadlock-avoidance
       // reason as confirmPOInventoryCheck.

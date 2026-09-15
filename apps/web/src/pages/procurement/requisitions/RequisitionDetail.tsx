@@ -5,6 +5,7 @@ import {
   REQUISITION_QUERY,
   REQUISITION_CHILD_POS_QUERY,
   REQUISITION_STOCK_AVAILABILITY_QUERY,
+  REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY,
   SUBMIT_REQUISITION_TO_INVENTORY_CHECK,
   CONFIRM_REQUISITION_INVENTORY_CHECK,
   SUBMIT_REQUISITION_STORE_PRICING,
@@ -17,7 +18,7 @@ import {
   APPROVE_REQUISITION_EDIT_REQUEST,
   REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
-import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
+import { STOCK_LOCATIONS_QUERY, PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
@@ -34,6 +35,7 @@ import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Input } from '../../../components/ui/Input'
 import { Select } from '../../../components/ui/Select'
+import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
 import {
   REQUISITION_STATUSES,
@@ -193,6 +195,8 @@ interface LineLocationAvailability {
 
 interface LineAvailability {
   lineId: string
+  productId?: string
+  productName?: string
   qtyRequired: number
   qtyOnHand: number
   qtyAvailable: number
@@ -295,6 +299,40 @@ export default function RequisitionDetail() {
   // ── Per-line form state (keyed by lineId) ───────────────────────────────
   const [invQty, setInvQty] = useState<Record<string, string>>({})
   const [invLoc, setInvLoc] = useState<Record<string, string>>({})
+  // Reselect-item flow, inventory check only — the store keeper is often
+  // the first person to notice a line was created against the wrong
+  // product, and this is the one point in the whole lifecycle where no
+  // stock reservation exists yet for any line, so swapping it here is
+  // safe by construction (nothing to orphan) — see
+  // confirmRequisitionInventoryCheck's own comment for why every other
+  // path (edit request, admin correction) has to reconcile an existing
+  // reservation instead.
+  const [reselectOpenFor, setReselectOpenFor] = useState<string | null>(null)
+  const [productOverride, setProductOverride] = useState<Record<string, string>>({})
+  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+    variables: {},
+    skip: !req || req.status !== 'inventory_check',
+  })
+  const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
+    productsData?.products ?? []
+  const productOptions = products.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sublabel: p.sku,
+    keywords: p.name_ar ?? undefined,
+  }))
+  const overrideEntries = Object.entries(productOverride)
+  const { data: previewData } = useQuery(REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY, {
+    variables: {
+      requisitionId: id,
+      overrides: overrideEntries.map(([lineId, productId]) => ({ lineId, productId })),
+    },
+    skip: !id || overrideEntries.length === 0,
+    fetchPolicy: 'cache-and-network',
+  })
+  const previewByLine = new Map<string, LineAvailability>(
+    (previewData?.requisitionLineProductAvailability ?? []).map((a: LineAvailability) => [a.lineId, a]),
+  )
   const [storePrices, setStorePrices] = useState<Record<string, string>>({})
   const [marketPrices, setMarketPrices] = useState<Record<string, string>>({})
   const [marketCurrency, setMarketCurrency] = useState<Record<string, string>>({})
@@ -1182,16 +1220,69 @@ export default function RequisitionDetail() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {req.lines.map((l) => {
-                const avail = availabilityByLine.get(l.id)
+                const isOverridden = !!productOverride[l.id]
+                const avail = isOverridden ? previewByLine.get(l.id) : availabilityByLine.get(l.id)
                 const qtyReserved = avail ? avail.qtyOnHand - avail.qtyAvailable : null
                 return (
                 <div
                   key={l.id}
                   style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
-                    {l.description || l.product_name} — needs {fmtN(l.qty)} {l.uom}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      marginBottom: '8px',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                      {(isOverridden ? avail?.productName : null) ?? l.description ?? l.product_name} — needs{' '}
+                      {fmtN(l.qty)} {l.uom}
+                    </div>
+                    {canConfirmInventory && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReselectOpenFor((cur) => (cur === l.id ? null : l.id))
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          flexShrink: 0,
+                          fontSize: '11px',
+                          color: theme.accent,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {isOverridden ? 'Change selection' : 'Wrong item? Reselect'}
+                      </button>
+                    )}
                   </div>
+                  {reselectOpenFor === l.id && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <SearchableSelect
+                        label="Correct item"
+                        value={productOverride[l.id] ?? ''}
+                        onChange={(productId) => {
+                          setProductOverride((prev) => ({ ...prev, [l.id]: productId }))
+                          setInvQty((prev) => ({ ...prev, [l.id]: '' }))
+                          setInvLoc((prev) => {
+                            const next = { ...prev }
+                            delete next[l.id]
+                            return next
+                          })
+                          setReselectOpenFor(null)
+                        }}
+                        options={productOptions}
+                        placeholder="Search by name or SKU…"
+                        minDropdownWidth={360}
+                      />
+                    </div>
+                  )}
                   {avail ? (
                     <div
                       style={{
@@ -1228,7 +1319,7 @@ export default function RequisitionDetail() {
                     </div>
                   ) : (
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
-                      Loading stock levels…
+                      {isOverridden ? 'Checking stock for the newly selected item…' : 'Loading stock levels…'}
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -1268,6 +1359,7 @@ export default function RequisitionDetail() {
                         lineId: l.id,
                         qtyFromStock: parseFloat(invQty[l.id] ?? '0') || 0,
                         sourceLocationId: invLoc[l.id] || undefined,
+                        productId: productOverride[l.id] || undefined,
                       })),
                     },
                   })

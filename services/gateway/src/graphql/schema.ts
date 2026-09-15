@@ -20,6 +20,18 @@
     # pick the right location by hand. Branch-subtree scoping is tracked
     # as G10 — see this query's resolver comment.
     requisitionStockAvailability(requisitionId: ID!): [POLineAvailability!]!
+    # Live preview for the inventory-check reselect-item flow — same shape
+    # and formula as requisitionStockAvailability's own per-line entry, but
+    # computed against an arbitrary productId instead of the line's stored
+    # one, so the panel can show real numbers for a candidate replacement
+    # item before the store keeper commits to it via
+    # confirmRequisitionInventoryCheck's own productId field. Batched (one
+    # call for every line currently being reselected) rather than one query
+    # per line, since the frontend can't call a variable number of hooks.
+    requisitionLineProductAvailability(
+      requisitionId: ID!
+      overrides: [LineProductOverrideInput!]!
+    ): [POLineAvailability!]!
     moMissingComponents(moId: ID!): [MOComponentStatus!]!
 
     # Procurement
@@ -2366,6 +2378,16 @@
     lineId: ID!
     qtyFromStock: Float!
     sourceLocationId: ID
+    # Requisition-only: reselects the line's item right at inventory
+    # check, the one point where no stock reservation exists yet for any
+    # line — see confirmRequisitionInventoryCheck's own comment. Ignored
+    # by confirmPOInventoryCheck.
+    productId: ID
+  }
+
+  input LineProductOverrideInput {
+    lineId: ID!
+    productId: ID!
   }
 
   type MOComponentStatus {
