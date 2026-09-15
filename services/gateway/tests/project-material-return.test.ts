@@ -323,3 +323,83 @@ describe('createMaterialReturn', () => {
     ).rejects.toThrow(/real warehouse or site location/i)
   })
 })
+
+// Regression coverage for a real gap found reviewing this feature after
+// shipping it: cancelMaterialIssue deletes the issue's own 'stock_issue'
+// cost-actual entry but never reverses stock_moves, and — before this fix —
+// never checked whether a Material Return already existed against one of
+// its lines. That left the return's own negative offsetting entry stranded
+// with nothing left for it to offset, silently understating the project's
+// real material cost.
+describe('cancelMaterialIssue interaction with existing returns', () => {
+  it('refuses to cancel an issue once a Material Return exists against one of its lines', async () => {
+    const productId = await makeProduct('cancel-after-return')
+    await receive(productId, warehouseId, 10, 10)
+    const projectId = await makeProject('cancel-after-return')
+
+    const issue = (await resolvers.Mutation.createMaterialIssue(
+      null,
+      { projectId, issueDate: new Date().toISOString().slice(0, 10) },
+      ctx as never,
+    )) as { id: string }
+    await resolvers.Mutation.addMaterialIssueLine(
+      null,
+      { issueId: issue.id, productId, qtyIssued: 5, unitCost: 10, fromLocationId: warehouseId },
+      ctx as never,
+    )
+    await resolvers.Mutation.issueMaterialIssue(null, { id: issue.id }, ctx as never)
+    const lineRow = await pool.query<{ id: string }>(
+      `SELECT id FROM project_material_issue_lines WHERE issue_id=$1`,
+      [issue.id],
+    )
+    const issueLineId = lineRow.rows[0]!.id
+
+    await resolvers.Mutation.createMaterialReturn(
+      null,
+      { input: { projectId, lines: [{ issueLineId, toLocationId: warehouseId, qtyReturned: 2 }] } },
+      ctx as never,
+    )
+
+    await expect(
+      resolvers.Mutation.cancelMaterialIssue(null, { id: issue.id }, ctx as never),
+    ).rejects.toThrow(/Material Return recorded against it/i)
+
+    // Nothing was torn down by the refused cancel — the issue is still
+    // 'issued' and both cost-actual entries (the original + the offset)
+    // are still present and still net out correctly.
+    const status = await pool.query<{ status: string }>(
+      `SELECT status FROM project_material_issues WHERE id=$1`,
+      [issue.id],
+    )
+    expect(status.rows[0]!.status).toBe('issued')
+    const total = await pool.query<{ total: string }>(
+      `SELECT SUM(amount) AS total FROM project_cost_actuals WHERE project_id=$1`,
+      [projectId],
+    )
+    expect(parseFloat(total.rows[0]!.total)).toBe(30) // 50 issued - 20 returned
+  })
+
+  it('still allows cancelling an issue with no returns against it', async () => {
+    const productId = await makeProduct('cancel-no-return')
+    await receive(productId, warehouseId, 10, 10)
+    const projectId = await makeProject('cancel-no-return')
+    const issue = (await resolvers.Mutation.createMaterialIssue(
+      null,
+      { projectId, issueDate: new Date().toISOString().slice(0, 10) },
+      ctx as never,
+    )) as { id: string }
+    await resolvers.Mutation.addMaterialIssueLine(
+      null,
+      { issueId: issue.id, productId, qtyIssued: 5, unitCost: 10, fromLocationId: warehouseId },
+      ctx as never,
+    )
+    await resolvers.Mutation.issueMaterialIssue(null, { id: issue.id }, ctx as never)
+
+    await resolvers.Mutation.cancelMaterialIssue(null, { id: issue.id }, ctx as never)
+    const status = await pool.query<{ status: string }>(
+      `SELECT status FROM project_material_issues WHERE id=$1`,
+      [issue.id],
+    )
+    expect(status.rows[0]!.status).toBe('cancelled')
+  })
+})

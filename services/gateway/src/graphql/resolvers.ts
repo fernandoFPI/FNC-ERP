@@ -21114,6 +21114,25 @@ export const resolvers = {
         throw new Error('Material issue not found')
       if (!['draft', 'issued'].includes(String(issue.status)))
         throw new Error('Cannot cancel a cancelled issue')
+      // Cancelling deletes this issue's own 'stock_issue' cost-actual entry
+      // below but never reverses stock_moves (see this function's own
+      // comment further down) — if any line has already had a Material
+      // Return recorded against it, that return's own negative offsetting
+      // cost-actual entry would survive with nothing left for it to offset,
+      // permanently understating the project's real material cost. Cancel
+      // requires the return be accounted for first (there's no "un-return"
+      // action — the material is physically back, that's not reversible
+      // paperwork the way this cancel is).
+      const returnedRes = await query(
+        `SELECT 1 FROM project_material_return_lines pmrl
+         JOIN project_material_issue_lines pmil ON pmil.id = pmrl.issue_line_id
+         WHERE pmil.issue_id=$1 LIMIT 1`,
+        [args.id],
+      )
+      if (returnedRes.rows[0])
+        throw new Error(
+          'Cannot cancel — one or more lines already has a Material Return recorded against it',
+        )
       // Same store_keeper gate as issueMaterialIssue, for the same reason: a
       // PO-originated Store Out documents a physical stock deduction that
       // already happened at PO-approval time, so cancelling its paperwork
