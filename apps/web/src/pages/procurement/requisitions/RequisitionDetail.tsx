@@ -154,6 +154,8 @@ interface Requisition {
   branch_name?: string | null
   organizer_id?: string | null
   organizerName?: string | null
+  assigned_receiver_id?: string | null
+  assigned_receiver_name?: string | null
   notes?: string | null
   created_at: string
   updated_at: string
@@ -607,6 +609,7 @@ export default function RequisitionDetail() {
             ...(req.linkedMoNumber ? [{ label: 'Manufacturing Order', value: req.linkedMoNumber }] : []),
             { label: 'Branch', value: req.branch_name ?? '—' },
             { label: 'Organizer', value: req.organizerName ?? '—' },
+            { label: 'Received By', value: req.assigned_receiver_name ?? '—' },
             { label: 'Created', value: req.created_at.slice(0, 10) },
           ].map((f) => (
             <div

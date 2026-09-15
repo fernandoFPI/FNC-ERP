@@ -1396,11 +1396,13 @@ async function getRequisitionForReturn(reqId: string): Promise<Record<string, un
       `SELECT req.*,
               cb.name AS branch_name,
               p.name AS "projectName",
-              COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+              COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName",
+              COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name
        FROM requisitions req
        LEFT JOIN company_branches cb ON cb.id = req.branch_id
        LEFT JOIN projects p ON p.id = req.project_id
        LEFT JOIN users u ON u.id = req.organizer_id
+       LEFT JOIN employees re ON re.id = req.assigned_receiver_id
        WHERE req.id = $1`,
       [reqId],
     ),
@@ -28045,6 +28047,7 @@ const phase5MutationResolvers = {
         delivery_destination?: string
         priority?: string
         branch_id?: string
+        assigned_receiver_id?: string
         notes?: string
         linked_mo_id?: string
         lines: {
@@ -28066,6 +28069,13 @@ const phase5MutationResolvers = {
     const i = args.input
     if (!i.lines || i.lines.length === 0)
       throw new Error('A requisition needs at least one line')
+    if (i.assigned_receiver_id) {
+      const empCheck = await query(`SELECT id FROM employees WHERE id=$1 AND company_id=$2`, [
+        i.assigned_receiver_id,
+        ctx.auth.companyId,
+      ])
+      if (!empCheck.rows[0]) throw new Error('Employee not found')
+    }
     // G1 Phase 3 Milestone A screen 2 — every line gets an account/cost
     // center tag even if the creation form's own defaulting left one
     // blank, per migration 258's original intent (§3's comment). Cost
@@ -28101,8 +28111,8 @@ const phase5MutationResolvers = {
           ? i.priority
           : 'low'
         const req = await client.query(
-          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, notes, linked_mo_id, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'draft') RETURNING *`,
+          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, assigned_receiver_id, notes, linked_mo_id, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft') RETURNING *`,
           [
             ctx.auth!.companyId,
             i.branch_id ?? null,
@@ -28112,6 +28122,7 @@ const phase5MutationResolvers = {
             i.purpose === 'project' ? (i.delivery_destination ?? null) : null,
             priority,
             ctx.auth!.userId,
+            i.assigned_receiver_id ?? null,
             i.notes ?? null,
             i.purpose === 'manufacturing' ? (i.linked_mo_id ?? null) : null,
           ],
@@ -29079,8 +29090,9 @@ const phase5MutationResolvers = {
       delivery_destination: string | null
       priority: string | null
       linked_mo_id: string | null
+      assigned_receiver_id: string | null
     }>(
-      `SELECT status, company_id, project_id, branch_id, organizer_id, purpose, delivery_destination, priority, linked_mo_id
+      `SELECT status, company_id, project_id, branch_id, organizer_id, purpose, delivery_destination, priority, linked_mo_id, assigned_receiver_id
        FROM requisitions WHERE id=$1`,
       [args.id],
     )
@@ -29180,8 +29192,8 @@ const phase5MutationResolvers = {
           const poRes = await client.query<{ id: string }>(
             `INSERT INTO purchase_orders
                (company_id, po_number, vendor_id, currency_code, status, purpose, project_id,
-                created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination, linked_mo_id)
-             VALUES ($1,$2,$3,$4,'bought',$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+                created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination, linked_mo_id, assigned_receiver_id)
+             VALUES ($1,$2,$3,$4,'bought',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
             [
               auth.companyId,
               poNumber,
@@ -29196,6 +29208,7 @@ const phase5MutationResolvers = {
               args.id,
               req.delivery_destination,
               req.linked_mo_id,
+              req.assigned_receiver_id,
             ],
           )
           childByVendor.set(vendorId, poRes.rows[0]!.id)

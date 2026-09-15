@@ -59,6 +59,8 @@ export const REQUISITION_QUERY = gql`
       organizer_id
       organizerName
       assigned_approver_id
+      assigned_receiver_id
+      assigned_receiver_name
       notes
       created_at
       updated_at

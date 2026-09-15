@@ -2252,6 +2252,8 @@
     organizer_id: ID
     organizerName: String
     assigned_approver_id: ID
+    assigned_receiver_id: ID
+    assigned_receiver_name: String
     notes: String
     created_at: String!
     updated_at: String!
@@ -2325,6 +2327,7 @@
     delivery_destination: String
     priority: String
     branch_id: ID
+    assigned_receiver_id: ID
     notes: String
     # G1 Phase 3 — third call-site migration (Manufacturing Order); mirrors
     # PurchaseOrder.linkedMoId, propagated onto the forked child PO by

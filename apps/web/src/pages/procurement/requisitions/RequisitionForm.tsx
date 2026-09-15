@@ -6,6 +6,7 @@ import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PROJECTS_QUERY } from '../../../graphql/projects'
 import { MANUFACTURING_ORDERS_QUERY } from '../../../graphql/manufacturing'
 import { COMPANY_BRANCHES_QUERY } from '../../../graphql/admin'
+import { EMPLOYEES_QUERY } from '../../../graphql/hr'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -57,6 +58,7 @@ export default function RequisitionForm() {
   const [deliveryDestination, setDeliveryDestination] = useState<'' | 'inventory' | 'jobsite'>('')
   const [linkedMoId, setLinkedMoId] = useState('')
   const [branchId, setBranchId] = useState('')
+  const [assignedReceiverId, setAssignedReceiverId] = useState('')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
@@ -106,6 +108,7 @@ export default function RequisitionForm() {
     variables: { companyId: currentCompanyId },
     skip: !currentCompanyId,
   })
+  const { data: employeesData } = useQuery(EMPLOYEES_QUERY, { variables: { is_active: true } })
   const [createRequisition, { loading }] = useMutation(CREATE_REQUISITION)
 
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =
@@ -116,6 +119,8 @@ export default function RequisitionForm() {
   const branches: { id: string; name: string; isActive: boolean }[] = (
     branchesData?.companyBranches ?? []
   ).filter((b: { isActive: boolean }) => b.isActive)
+  const employees: { id: string; first_name: string; last_name: string; employee_number: string }[] =
+    employeesData?.employees ?? []
 
   const productOptions = [
     { value: '', label: 'Custom item' },
@@ -124,6 +129,14 @@ export default function RequisitionForm() {
   const projectOptions = [
     { value: '', label: 'Select project…' },
     ...projects.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` })),
+  ]
+  const employeeOptions = [
+    { value: '', label: 'None' },
+    ...employees.map((e) => ({
+      value: e.id,
+      label: `${e.first_name} ${e.last_name}`,
+      sublabel: e.employee_number,
+    })),
   ]
 
   const updateLine = (idx: number, field: keyof ReqLineDraft, value: string) => {
@@ -244,6 +257,7 @@ export default function RequisitionForm() {
         linked_mo_id: purpose === 'manufacturing' ? linkedMoId || undefined : undefined,
         priority,
         branch_id: branchId || undefined,
+        assigned_receiver_id: assignedReceiverId || undefined,
         notes: notes || undefined,
         lines: realLines.map((l) => ({
           product_id: l.product_id || undefined,
@@ -335,6 +349,19 @@ export default function RequisitionForm() {
                 <option value="high">High</option>
                 <option value="emergency">Emergency</option>
               </Select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div style={{ flex: '1 1 200px' }}>
+              <SearchableSelect
+                label="Received By"
+                value={assignedReceiverId}
+                onChange={setAssignedReceiverId}
+                options={employeeOptions}
+                placeholder="Search employee…"
+                minDropdownWidth={320}
+              />
             </div>
           </div>
 

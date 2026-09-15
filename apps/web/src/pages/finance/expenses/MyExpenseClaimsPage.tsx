@@ -339,6 +339,7 @@ export default function MyExpenseClaimsPage() {
           setForm(EMPTY_FORM)
           setLines([emptyLine()])
         }}
+        size="lg"
         title="New Expense Claim"
         description="A finance user will review this claim and approve it before reimbursement is booked."
         footer={
