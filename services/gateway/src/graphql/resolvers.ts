@@ -7775,22 +7775,31 @@ export const resolvers = {
       }))
     },
 
-    materialReturns: async (_: unknown, args: { projectId?: string }, ctx: GQLContext) => {
+    materialReturns: async (
+      _: unknown,
+      args: { projectId?: string; poId?: string },
+      ctx: GQLContext,
+    ) => {
       if (!ctx.auth) return []
       await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
       const conditions: string[] = ['pmr.company_id=$1']
       const params: unknown[] = [ctx.auth.companyId]
       if (args.projectId) {
-        conditions.push(`pmr.project_id=$2`)
+        conditions.push(`pmr.project_id=$${params.length + 1}`)
         params.push(args.projectId)
+      }
+      if (args.poId) {
+        conditions.push(`pmr.po_id=$${params.length + 1}`)
+        params.push(args.poId)
       }
       const result = await query(
         `SELECT pmr.*,
            p_proj.code AS project_code, p_proj.name AS project_name,
+           po.po_number,
            COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
-               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'productId', pmrl.product_id,
+               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'poLineId', pmrl.po_line_id, 'productId', pmrl.product_id,
                'productName', prod.name, 'sku', prod.sku,
                'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
                'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
@@ -7799,12 +7808,13 @@ export const resolvers = {
            ) AS lines
          FROM project_material_returns pmr
          LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
+         LEFT JOIN purchase_orders po ON po.id = pmr.po_id
          LEFT JOIN users u ON u.id = pmr.created_by
          LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
          LEFT JOIN products prod ON prod.id = pmrl.product_id
          LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id
          WHERE ${conditions.join(' AND ')}
-         GROUP BY pmr.id, p_proj.code, p_proj.name, u.first_name, u.last_name, u.email
+         GROUP BY pmr.id, p_proj.code, p_proj.name, po.po_number, u.first_name, u.last_name, u.email
          ORDER BY pmr.created_at DESC`,
         params,
       )
@@ -7812,7 +7822,9 @@ export const resolvers = {
         id: r.id,
         returnNumber: r.return_number,
         returnDate: r.return_date,
-        projectId: r.project_id,
+        poId: r.po_id,
+        poNumber: r.po_number ?? null,
+        projectId: r.project_id ?? null,
         projectCode: r.project_code ?? null,
         projectName: r.project_name ?? null,
         notes: r.notes ?? null,
@@ -7823,17 +7835,29 @@ export const resolvers = {
     },
 
     // Every Store Out line belonging to an 'issued' project_material_issues
-    // row for this project, alongside how much of it has already been
-    // returned via prior MaterialReturns — qtyReturnable is what's left.
-    // Zero-returnable lines are filtered out; there's nothing left to bring
-    // back.
+    // row for this PO (the primary, real-world filter — a project-wide
+    // variant stays available via projectId for any future use), alongside
+    // how much of it has already been returned via prior MaterialReturns —
+    // qtyReturnable is what's left. Zero-returnable lines are filtered
+    // out; there's nothing left to bring back.
     returnableMaterialIssueLines: async (
       _: unknown,
-      args: { projectId: string },
+      args: { projectId?: string; poId?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      if (!args.poId && !args.projectId) return []
       await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const conditions: string[] = ['pmi.company_id=$1', "pmi.status='issued'"]
+      const params: unknown[] = [ctx.auth.companyId]
+      if (args.poId) {
+        conditions.push(`pmi.po_id=$${params.length + 1}`)
+        params.push(args.poId)
+      }
+      if (args.projectId) {
+        conditions.push(`pmi.project_id=$${params.length + 1}`)
+        params.push(args.projectId)
+      }
       const result = await query(
         `SELECT pmil.id AS issue_line_id, pmi.id AS issue_id, pmi.issue_number, pmi.issue_date,
                 pmil.product_id, prod.name AS product_name, prod.sku, prod.uom,
@@ -7850,10 +7874,10 @@ export const resolvers = {
            FROM project_material_return_lines
            GROUP BY issue_line_id
          ) ret ON ret.issue_line_id = pmil.id
-         WHERE pmi.project_id=$1 AND pmi.company_id=$2 AND pmi.status='issued'
+         WHERE ${conditions.join(' AND ')}
            AND pmil.qty_issued - COALESCE(ret.qty_returned_so_far, 0) > 0.0001
          ORDER BY pmi.issue_date DESC, pmil.created_at`,
-        [args.projectId, ctx.auth.companyId],
+        params,
       )
       return result.rows.map((r: Record<string, unknown>) => ({
         issueLineId: r.issue_line_id,
@@ -7871,6 +7895,87 @@ export const resolvers = {
         fromLocationId: r.from_location_id ?? null,
         fromLocationName: r.from_location_name ?? null,
       }))
+    },
+
+    // Counterpart to returnableMaterialIssueLines for PO lines that skipped
+    // the warehouse entirely (recordDirectDelivery / migration 209) — surplus
+    // here has no issue line to reverse, only the po_line itself. Nets out
+    // both prior MaterialReturns and any vendor return (po_returns) already
+    // approved for the line, since neither reduces po_lines.qty_received.
+    returnableDirectDeliveryLines: async (
+      _: unknown,
+      args: { poId: string },
+      ctx: GQLContext,
+    ) => {
+      if (!ctx.auth) return []
+      await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
+      const poRes = await query<{ delivery_destination: string | null }>(
+        `SELECT delivery_destination FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+        [args.poId, ctx.auth.companyId],
+      )
+      if (!poRes.rows[0] || poRes.rows[0].delivery_destination !== 'jobsite') return []
+
+      const result = await query<{
+        po_line_id: string
+        product_id: string
+        product_name: string | null
+        sku: string | null
+        uom: string | null
+        qty_received: string | null
+        direct_cost: string | null
+        already_returned: string | null
+        vendor_returned: string | null
+      }>(
+        `SELECT pl.id AS po_line_id, pl.product_id, prod.name AS product_name, prod.sku, pl.uom,
+                pl.qty_received,
+                dd.direct_cost,
+                ret.qty_returned AS already_returned,
+                vr.qty_returned AS vendor_returned
+         FROM po_lines pl
+         JOIN products prod ON prod.id = pl.product_id
+         LEFT JOIN (
+           SELECT source_id AS po_line_id, SUM(amount) AS direct_cost
+           FROM project_cost_actuals WHERE source_type='po_direct_delivery'
+           GROUP BY source_id
+         ) dd ON dd.po_line_id = pl.id
+         LEFT JOIN (
+           SELECT po_line_id, SUM(qty_returned) AS qty_returned
+           FROM project_material_return_lines WHERE po_line_id IS NOT NULL
+           GROUP BY po_line_id
+         ) ret ON ret.po_line_id = pl.id
+         LEFT JOIN (
+           SELECT pri.po_line_id, SUM(pri.quantity_returned) AS qty_returned
+           FROM po_return_items pri
+           JOIN po_returns pr ON pr.id = pri.return_id
+           WHERE pr.status IN ('approved','credited')
+           GROUP BY pri.po_line_id
+         ) vr ON vr.po_line_id = pl.id
+         WHERE pl.po_id=$1 AND COALESCE(pl.qty_received,0) > 0`,
+        [args.poId],
+      )
+
+      return result.rows
+        .map((r) => {
+          const qtyReceived = parseFloat(r.qty_received ?? '0')
+          const qtyReturnedSoFar = parseFloat(r.already_returned ?? '0')
+          const qtyVendorReturned = parseFloat(r.vendor_returned ?? '0')
+          const qtyReturnable = qtyReceived - qtyReturnedSoFar - qtyVendorReturned
+          const directCost = parseFloat(r.direct_cost ?? '0')
+          const unitCost = qtyReceived > 0 ? directCost / qtyReceived : 0
+          return {
+            poLineId: r.po_line_id,
+            productId: r.product_id,
+            productName: r.product_name ?? null,
+            sku: r.sku ?? null,
+            uom: r.uom ?? null,
+            qtyReceived,
+            qtyReturnedSoFar,
+            qtyVendorReturned,
+            qtyReturnable,
+            unitCost,
+          }
+        })
+        .filter((r) => r.qtyReturnable > 0.0001)
     },
 
     availableInvoiceCosts: async (
@@ -21199,7 +21304,14 @@ export const resolvers = {
     // cross-company Store Out isn't mirrored here yet.
     createMaterialReturn: async (
       _: unknown,
-      args: { input: { projectId: string; returnDate?: string; notes?: string; lines: { issueLineId: string; toLocationId: string; qtyReturned: number }[] } },
+      args: {
+        input: {
+          poId: string
+          returnDate?: string
+          notes?: string
+          lines: { issueLineId?: string; poLineId?: string; toLocationId: string; qtyReturned: number }[]
+        }
+      },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
@@ -21207,12 +21319,27 @@ export const resolvers = {
       const { input } = args
       if (!input.lines || input.lines.length === 0)
         throw new Error('A material return needs at least one line')
+      for (const line of input.lines) {
+        if (!!line.issueLineId === !!line.poLineId)
+          throw new Error('Each return line needs exactly one of issueLineId or poLineId')
+      }
 
-      const projRow = await query(`SELECT id FROM projects WHERE id=$1 AND company_id=$2`, [
-        input.projectId,
-        ctx.auth.companyId,
-      ])
-      if (!projRow.rows[0]) throw new Error('Project not found')
+      // project_id is deliberately nullable here — the PO this return is
+      // scoped to may have no project at all (a general-stock PO, per
+      // issueMaterialIssue's own "Store-outs with no project" comment), in
+      // which case there's simply no project cost actuals to offset below.
+      // linked_project_id is the separate column recordDirectDelivery itself
+      // posts its original cost-actuals entry against (see that resolver) —
+      // kept distinct from project_id here so a direct-delivery return's
+      // offset always lands on the exact same project the forward entry
+      // used, regardless of whether the two columns happen to agree.
+      const poRow = await query<{ project_id: string | null; linked_project_id: string | null }>(
+        `SELECT project_id, linked_project_id FROM purchase_orders WHERE id=$1 AND company_id=$2`,
+        [input.poId, ctx.auth.companyId],
+      )
+      if (!poRow.rows[0]) throw new Error('Purchase order not found')
+      const projectId = poRow.rows[0].project_id
+      const linkedProjectId = poRow.rows[0].linked_project_id
 
       const client = await pool.connect()
       let returnId: string
@@ -21220,19 +21347,162 @@ export const resolvers = {
         await client.query('BEGIN')
         const returnNumber = await nextDocumentNumber(ctx.auth.companyId, 'material_return', 'MRET')
         const headerRes = await client.query<{ id: string }>(
-          `INSERT INTO project_material_returns (company_id, project_id, return_number, return_date, notes, created_by)
-           VALUES ($1,$2,$3,COALESCE($4::date,CURRENT_DATE),$5,$6) RETURNING id`,
-          [ctx.auth.companyId, input.projectId, returnNumber, input.returnDate ?? null, input.notes ?? null, ctx.auth.userId],
+          `INSERT INTO project_material_returns (company_id, project_id, po_id, return_number, return_date, notes, created_by)
+           VALUES ($1,$2,$3,$4,COALESCE($5::date,CURRENT_DATE),$6,$7) RETURNING id`,
+          [ctx.auth.companyId, projectId, input.poId, returnNumber, input.returnDate ?? null, input.notes ?? null, ctx.auth.userId],
         )
         returnId = headerRes.rows[0]!.id
         let totalReturnCost = 0
+        let totalDirectReturnCost = 0
+        // Lazily resolved on first direct-delivery line — the per-company
+        // "Virtual Receipts" bucket confirmReceipt itself uses as the source
+        // of material entering real inventory for the first time.
+        let virtualInId: string | undefined
 
-        // Sorted by issue_line_id so two concurrent returns touching the
-        // same line acquire their locks in the same order.
-        const sortedLines = [...input.lines].sort((a, b) => (a.issueLineId < b.issueLineId ? -1 : 1))
+        // Sorted by a shared key (whichever of the two ids is set) so two
+        // concurrent returns touching the same line — of either kind —
+        // acquire their locks in the same order.
+        const sortedLines = [...input.lines].sort((a, b) => {
+          const ka = a.issueLineId ?? a.poLineId ?? ''
+          const kb = b.issueLineId ?? b.poLineId ?? ''
+          return ka < kb ? -1 : ka > kb ? 1 : 0
+        })
         for (const line of sortedLines) {
           const qty = Number(line.qtyReturned) || 0
           if (qty <= 0) throw new Error('qtyReturned must be greater than 0')
+
+          if (line.poLineId) {
+            const polRes = await client.query<{
+              product_id: string | null
+              qty_received: string | null
+              po_id: string
+              po_company_id: string
+              delivery_destination: string | null
+              sku: string | null
+              product_name: string | null
+            }>(
+              `SELECT pl.product_id, pl.qty_received, pl.po_id, po.company_id AS po_company_id,
+                      po.delivery_destination, prod.sku, prod.name AS product_name
+               FROM po_lines pl
+               JOIN purchase_orders po ON po.id = pl.po_id
+               LEFT JOIN products prod ON prod.id = pl.product_id
+               WHERE pl.id=$1
+               FOR UPDATE OF pl`,
+              [line.poLineId],
+            )
+            const polLine = polRes.rows[0]
+            if (!polLine || polLine.po_company_id !== ctx.auth.companyId)
+              throw new Error(`PO line ${line.poLineId} not found`)
+            if (polLine.po_id !== input.poId)
+              throw new Error(`PO line ${line.poLineId} does not belong to this purchase order`)
+            if (polLine.delivery_destination !== 'jobsite')
+              throw new Error(`PO line ${line.poLineId} was not a direct-to-jobsite delivery — nothing to return this way`)
+            if (!polLine.product_id)
+              throw new Error(`PO line ${line.poLineId} has no catalog product — cannot return it to stock`)
+
+            const productLabel = polLine.sku
+              ? `${polLine.sku} (${polLine.product_name ?? polLine.product_id})`
+              : (polLine.product_name ?? polLine.product_id)
+
+            const qtyReceived = parseFloat(polLine.qty_received ?? '0')
+
+            const alreadyReturnedRes = await client.query<{ qty: string | null }>(
+              `SELECT SUM(qty_returned) AS qty FROM project_material_return_lines WHERE po_line_id=$1`,
+              [line.poLineId],
+            )
+            const alreadyReturned = parseFloat(String(alreadyReturnedRes.rows[0]?.qty ?? 0))
+
+            // Vendor returns (po_returns/po_return_items) send material back
+            // to the supplier, not into our own stock — never physically on
+            // site to bring back. Unlike Store Out returns, qty_received
+            // here isn't already net of this (recordDirectDelivery never
+            // touches po_returns), so it must be subtracted explicitly.
+            const vendorReturnedRes = await client.query<{ qty: string | null }>(
+              `SELECT SUM(pri.quantity_returned) AS qty FROM po_return_items pri
+                 JOIN po_returns pr ON pr.id = pri.return_id
+                WHERE pri.po_line_id=$1 AND pr.status IN ('approved','credited')`,
+              [line.poLineId],
+            )
+            const vendorReturned = parseFloat(String(vendorReturnedRes.rows[0]?.qty ?? 0))
+
+            const returnable = qtyReceived - alreadyReturned - vendorReturned
+            if (qty > returnable + 0.0001)
+              throw new Error(
+                `Cannot return ${qty} of ${productLabel} — only ${returnable} still returnable (${qtyReceived} received, ${alreadyReturned} already returned, ${vendorReturned} returned to vendor)`,
+              )
+
+            const destRes = await client.query<{ company_id: string; type: string }>(
+              `SELECT company_id, type FROM stock_locations WHERE id=$1 AND is_active=true`,
+              [line.toLocationId],
+            )
+            const dest = destRes.rows[0]
+            if (!dest) throw new Error('Destination stock location not found')
+            if (dest.company_id !== ctx.auth.companyId)
+              throw new Error('Returning to a different company\'s location is not supported yet')
+            if (['virtual_in', 'virtual_out'].includes(dest.type))
+              throw new Error('Choose a real warehouse or site location to return material to')
+
+            // Weighted-average cost — po_lines.actual_unit_price is
+            // last-write-wins across however many partial direct deliveries
+            // were posted (see recordDirectDelivery's own
+            // ON CONFLICT ... DO UPDATE SET amount = amount + EXCLUDED.amount),
+            // so it doesn't reflect what these specific units actually cost.
+            // The accumulated cost_actuals total divided by the accumulated
+            // received qty does.
+            const costRes = await client.query<{ amount: string | null }>(
+              `SELECT SUM(amount) AS amount FROM project_cost_actuals WHERE source_type='po_direct_delivery' AND source_id=$1`,
+              [line.poLineId],
+            )
+            const totalDirectCost = parseFloat(String(costRes.rows[0]?.amount ?? 0))
+            const unitCost = qtyReceived > 0 ? totalDirectCost / qtyReceived : 0
+            const totalCost = qty * unitCost
+            totalDirectReturnCost += totalCost
+
+            if (!virtualInId) {
+              const virtInRes = await client.query(
+                `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+                [ctx.auth.companyId],
+              )
+              virtualInId =
+                (virtInRes.rows[0]?.id as string | undefined) ??
+                ((
+                  await client.query(
+                    `INSERT INTO stock_locations (company_id, name, type, is_active) VALUES ($1,'Virtual Receipts','virtual_in',true) RETURNING id`,
+                    [ctx.auth.companyId],
+                  )
+                ).rows[0].id as string)
+            }
+
+            const moveRes = await client.query<{ id: string }>(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,source_id,notes,moved_by)
+               VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'material_return',$8,$9,$10) RETURNING id`,
+              [
+                ctx.auth.companyId,
+                polLine.product_id,
+                virtualInId,
+                line.toLocationId,
+                qty,
+                unitCost,
+                totalCost,
+                returnId,
+                `Material return ${returnNumber}`,
+                ctx.auth.userId,
+              ],
+            )
+
+            await client.query(
+              `INSERT INTO project_material_return_lines
+                 (return_id, po_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [returnId, line.poLineId, polLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0]!.id],
+            )
+            continue
+          }
+
+          // Only the Store Out branch reaches here — the earlier per-line
+          // check guarantees exactly one of issueLineId/poLineId is set, and
+          // the poLineId case already `continue`d above.
+          const issueLineId = line.issueLineId!
 
           const issueLineRes = await client.query<{
             product_id: string
@@ -21240,31 +21510,31 @@ export const resolvers = {
             unit_cost: string
             to_location_id: string | null
             issue_status: string
-            issue_project_id: string
+            issue_po_id: string | null
             issue_company_id: string
             sku: string | null
             product_name: string | null
           }>(
             `SELECT pmil.product_id, pmil.qty_issued, pmil.unit_cost, pmil.to_location_id,
-                    pmi.status AS issue_status, pmi.project_id AS issue_project_id, pmi.company_id AS issue_company_id,
+                    pmi.status AS issue_status, pmi.po_id AS issue_po_id, pmi.company_id AS issue_company_id,
                     p.sku, p.name AS product_name
              FROM project_material_issue_lines pmil
              JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
              LEFT JOIN products p ON p.id = pmil.product_id
              WHERE pmil.id=$1
              FOR UPDATE OF pmil`,
-            [line.issueLineId],
+            [issueLineId],
           )
           const issueLine = issueLineRes.rows[0]
-          if (!issueLine) throw new Error(`Store Out line ${line.issueLineId} not found`)
+          if (!issueLine) throw new Error(`Store Out line ${issueLineId} not found`)
           if (issueLine.issue_company_id !== ctx.auth.companyId)
-            throw new Error(`Store Out line ${line.issueLineId} not found`)
-          if (issueLine.issue_project_id !== input.projectId)
-            throw new Error(`Store Out line ${line.issueLineId} does not belong to this project`)
+            throw new Error(`Store Out line ${issueLineId} not found`)
+          if (issueLine.issue_po_id !== input.poId)
+            throw new Error(`Store Out line ${issueLineId} does not belong to this purchase order`)
           if (issueLine.issue_status !== 'issued')
-            throw new Error(`Store Out line ${line.issueLineId} was never issued — nothing to return`)
+            throw new Error(`Store Out line ${issueLineId} was never issued — nothing to return`)
           if (!issueLine.to_location_id)
-            throw new Error(`Store Out line ${line.issueLineId} has no recorded consumption location to return from`)
+            throw new Error(`Store Out line ${issueLineId} has no recorded consumption location to return from`)
 
           const productLabel = issueLine.sku
             ? `${issueLine.sku} (${issueLine.product_name ?? issueLine.product_id})`
@@ -21272,7 +21542,7 @@ export const resolvers = {
 
           const alreadyReturnedRes = await client.query<{ qty: string | null }>(
             `SELECT SUM(qty_returned) AS qty FROM project_material_return_lines WHERE issue_line_id=$1`,
-            [line.issueLineId],
+            [issueLineId],
           )
           const alreadyReturned = parseFloat(String(alreadyReturnedRes.rows[0]?.qty ?? 0))
           const qtyIssued = parseFloat(issueLine.qty_issued)
@@ -21318,19 +21588,33 @@ export const resolvers = {
             `INSERT INTO project_material_return_lines
                (return_id, issue_line_id, product_id, to_location_id, qty_returned, unit_cost, total_cost, stock_move_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-            [returnId, line.issueLineId, issueLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0]!.id],
+            [returnId, issueLineId, issueLine.product_id, line.toLocationId, qty, unitCost, totalCost, moveRes.rows[0]!.id],
           )
         }
 
-        // Offsetting entry against the project's materials actuals — the
-        // original stock_issue entry is left untouched (append-only, same
-        // as stock_moves), this just nets it down to reflect what's
-        // actually still on site.
-        if (totalReturnCost > 0) {
+        // Offsetting entries against the project's materials actuals — the
+        // original stock_issue / po_direct_delivery entries are left
+        // untouched (append-only, same as stock_moves), this just nets them
+        // down to reflect what's actually still on site. Skipped entirely
+        // when there's no project to offset (a general-stock PO has no
+        // projectId; a direct-delivery PO always has linkedProjectId, per
+        // recordDirectDelivery's own precondition, but the check is kept
+        // symmetrical rather than assumed). Two separate inserts (rather
+        // than one pooled total) because the two branches can in principle
+        // point at different projects if project_id and linked_project_id
+        // ever diverge on the same PO.
+        if (totalReturnCost > 0 && projectId) {
           await client.query(
             `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
              VALUES ($1,'material_return',$2,'materials',$3,'IQD',NOW()::date)`,
-            [input.projectId, returnId, -totalReturnCost],
+            [projectId, returnId, -totalReturnCost],
+          )
+        }
+        if (totalDirectReturnCost > 0 && linkedProjectId) {
+          await client.query(
+            `INSERT INTO project_cost_actuals (project_id, source_type, source_id, cost_category, amount, currency_code, entry_date)
+             VALUES ($1,'material_return',$2,'materials',$3,'IQD',NOW()::date)`,
+            [linkedProjectId, returnId, -totalDirectReturnCost],
           )
         }
 
@@ -21345,10 +21629,12 @@ export const resolvers = {
       const result = await query(
         `SELECT pmr.*,
            p_proj.code AS project_code, p_proj.name AS project_name,
+           po.po_number,
            COALESCE(u.first_name || ' ' || u.last_name, u.email) AS created_by_name,
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
-               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'productId', pmrl.product_id,
+               'id', pmrl.id, 'issueLineId', pmrl.issue_line_id, 'poLineId', pmrl.po_line_id,
+               'productId', pmrl.product_id,
                'productName', prod.name, 'sku', prod.sku,
                'toLocationId', pmrl.to_location_id, 'toLocationName', loc.name,
                'qtyReturned', pmrl.qty_returned, 'unitCost', pmrl.unit_cost, 'totalCost', pmrl.total_cost
@@ -21357,21 +21643,27 @@ export const resolvers = {
            ) AS lines
          FROM project_material_returns pmr
          LEFT JOIN projects p_proj ON p_proj.id = pmr.project_id
+         LEFT JOIN purchase_orders po ON po.id = pmr.po_id
          LEFT JOIN users u ON u.id = pmr.created_by
          LEFT JOIN project_material_return_lines pmrl ON pmrl.return_id = pmr.id
          LEFT JOIN products prod ON prod.id = pmrl.product_id
          LEFT JOIN stock_locations loc ON loc.id = pmrl.to_location_id
          WHERE pmr.id=$1
-         GROUP BY pmr.id, p_proj.code, p_proj.name, u.first_name, u.last_name, u.email`,
+         GROUP BY pmr.id, p_proj.code, p_proj.name, po.po_number, u.first_name, u.last_name, u.email`,
         [returnId],
       )
       const row = result.rows[0] as Record<string, unknown>
-      void publishEntityChanged(ctx.auth.companyId, 'project', input.projectId, 'updated')
+      void publishEntityChanged(ctx.auth.companyId, 'purchase_order', input.poId, 'updated')
+      for (const pid of new Set([projectId, linkedProjectId].filter((p): p is string => !!p))) {
+        void publishEntityChanged(ctx.auth.companyId, 'project', pid, 'updated')
+      }
       return {
         id: row.id,
         returnNumber: row.return_number,
         returnDate: row.return_date,
-        projectId: row.project_id,
+        poId: row.po_id,
+        poNumber: row.po_number ?? null,
+        projectId: row.project_id ?? null,
         projectCode: row.project_code ?? null,
         projectName: row.project_name ?? null,
         notes: row.notes ?? null,

@@ -119,8 +119,12 @@
     projectInvoice(id: ID!): ProjectInvoice
     materialIssues(projectId: ID, status: String): [MaterialIssue!]!
     materialIssue(id: ID!): MaterialIssue
-    materialReturns(projectId: ID): [MaterialReturn!]!
-    returnableMaterialIssueLines(projectId: ID!): [ReturnableIssueLine!]!
+    materialReturns(projectId: ID, poId: ID): [MaterialReturn!]!
+    # At least one of poId/projectId must be given. poId is the primary,
+    # real-world filter — "what's still returnable from this PO" — projectId
+    # stays supported for any future project-wide view.
+    returnableMaterialIssueLines(poId: ID, projectId: ID): [ReturnableIssueLine!]!
+    returnableDirectDeliveryLines(poId: ID!): [ReturnableDirectDeliveryLine!]!
     availableInvoiceCosts(invoiceId: ID!, sourceType: String): AvailableCosts!
 
     # Interco stock transfers
@@ -1381,7 +1385,13 @@
     id: ID!
     returnNumber: String!
     returnDate: String!
-    projectId: ID!
+    poId: ID!
+    poNumber: String
+    # Nullable — the originating PO (and therefore the Store Out it was
+    # issued through) may have no project at all, e.g. a general-stock PO
+    # (migration 213). Not every material return has project cost actuals
+    # to offset.
+    projectId: ID
     projectCode: String
     projectName: String
     notes: String
@@ -1392,7 +1402,12 @@
 
   type MaterialReturnLine {
     id: ID!
-    issueLineId: ID!
+    # Exactly one of these two is set — mirrors project_material_return_lines'
+    # own CHECK constraint (migration 273). issueLineId for material that was
+    # in the warehouse and issued via a Store Out; poLineId for material that
+    # was delivered straight to the jobsite and never touched stock at all.
+    issueLineId: ID
+    poLineId: ID
     productId: ID!
     productName: String
     sku: String
@@ -1424,14 +1439,37 @@
     fromLocationName: String
   }
 
+  # One still-returnable line from a PO delivered straight to a jobsite
+  # (recordDirectDelivery / migration 209) — never in the warehouse, so
+  # there's no Store Out to reverse; this is surplus purchased material
+  # becoming real inventory for the first time. qtyReturnable nets out both
+  # prior MaterialReturns and any vendor return (po_returns) already approved
+  # against the line — material sent back to the vendor was never on site to
+  # bring back. unitCost is the weighted-average cost across however many
+  # partial direct deliveries were posted for this line, not the (possibly
+  # stale, last-write-wins) po_lines.actual_unit_price.
+  type ReturnableDirectDeliveryLine {
+    poLineId: ID!
+    productId: ID!
+    productName: String
+    sku: String
+    uom: String
+    qtyReceived: Float!
+    qtyReturnedSoFar: Float!
+    qtyVendorReturned: Float!
+    qtyReturnable: Float!
+    unitCost: Float!
+  }
+
   input MaterialReturnLineInput {
-    issueLineId: ID!
+    issueLineId: ID
+    poLineId: ID
     toLocationId: ID!
     qtyReturned: Float!
   }
 
   input MaterialReturnInput {
-    projectId: ID!
+    poId: ID!
     returnDate: String
     notes: String
     lines: [MaterialReturnLineInput!]!

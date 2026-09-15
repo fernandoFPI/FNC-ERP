@@ -3,9 +3,10 @@ import { useQuery, useMutation } from '@apollo/client'
 import {
   MATERIAL_RETURNS_QUERY,
   RETURNABLE_MATERIAL_ISSUE_LINES_QUERY,
+  RETURNABLE_DIRECT_DELIVERY_LINES_QUERY,
   CREATE_MATERIAL_RETURN,
-  PROJECTS_QUERY,
 } from '../../../graphql/projects'
+import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
 import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
@@ -21,7 +22,8 @@ import { useTheme } from '../../../theme/ThemeContext'
 
 interface MRLine {
   id: string
-  issueLineId: string
+  issueLineId: string | null
+  poLineId: string | null
   productId: string
   productName: string | null
   sku: string | null
@@ -35,7 +37,9 @@ interface MR {
   id: string
   returnNumber: string
   returnDate: string
-  projectId: string
+  poId: string
+  poNumber: string | null
+  projectId: string | null
   projectCode: string | null
   projectName: string | null
   notes: string | null
@@ -43,7 +47,7 @@ interface MR {
   createdAt: string
   lines: MRLine[]
 }
-interface ReturnableLine {
+interface ReturnableIssueLine {
   issueLineId: string
   issueId: string
   issueNumber: string
@@ -59,6 +63,25 @@ interface ReturnableLine {
   fromLocationId: string | null
   fromLocationName: string | null
 }
+interface ReturnableDirectDeliveryLine {
+  poLineId: string
+  productId: string
+  productName: string | null
+  sku: string | null
+  uom: string | null
+  qtyReceived: number
+  qtyReturnedSoFar: number
+  qtyVendorReturned: number
+  qtyReturnable: number
+  unitCost: number
+}
+interface PO {
+  id: string
+  po_number: string
+  vendor_name: string | null
+  projectCode: string | null
+  projectName: string | null
+}
 
 const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -67,60 +90,74 @@ export default function MaterialReturnsPage() {
   const { theme } = useTheme()
   const addToast = useToastStore((s) => s.addToast)
 
-  const [projectFilter, setProjectFilter] = useState('')
+  const [poFilter, setPoFilter] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // New return modal
   const [showModal, setShowModal] = useState(false)
-  const [formProjectId, setFormProjectId] = useState('')
+  const [formPoId, setFormPoId] = useState('')
   const [formNotes, setFormNotes] = useState('')
   const [returnQty, setReturnQty] = useState<Record<string, string>>({})
   const [returnLocation, setReturnLocation] = useState<Record<string, string>>({})
 
   const { data, loading, refetch } = useQuery(MATERIAL_RETURNS_QUERY, {
-    variables: projectFilter ? { projectId: projectFilter } : {},
+    variables: poFilter ? { poId: poFilter } : {},
     fetchPolicy: 'cache-and-network',
   })
-  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
-    variables: { limit: 200, includeAll: true },
+  const { data: posData } = useQuery(PURCHASE_ORDERS_QUERY, {
+    variables: {},
     fetchPolicy: 'cache-and-network',
   })
-  const { data: returnableData, loading: loadingReturnable } = useQuery(
+  const { data: returnableIssueData, loading: loadingReturnableIssue } = useQuery(
     RETURNABLE_MATERIAL_ISSUE_LINES_QUERY,
-    {
-      variables: { projectId: formProjectId },
-      skip: !formProjectId,
-      fetchPolicy: 'cache-and-network',
-    },
+    { variables: { poId: formPoId }, skip: !formPoId, fetchPolicy: 'cache-and-network' },
+  )
+  const { data: returnableDirectData, loading: loadingReturnableDirect } = useQuery(
+    RETURNABLE_DIRECT_DELIVERY_LINES_QUERY,
+    { variables: { poId: formPoId }, skip: !formPoId, fetchPolicy: 'cache-and-network' },
   )
   const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
 
   const returns = (data?.materialReturns ?? []) as MR[]
-  const projects = (projectsData?.projects?.data ?? []) as { id: string; code: string; name: string }[]
-  const returnableLines = (returnableData?.returnableMaterialIssueLines ?? []) as ReturnableLine[]
+  const purchaseOrders = (posData?.purchaseOrders ?? []) as PO[]
+  const returnableIssueLines = (returnableIssueData?.returnableMaterialIssueLines ?? []) as ReturnableIssueLine[]
+  const returnableDirectLines = (returnableDirectData?.returnableDirectDeliveryLines ?? []) as ReturnableDirectDeliveryLine[]
+  const loadingReturnable = loadingReturnableIssue || loadingReturnableDirect
   const locations = ((locationsData?.stockLocations ?? []) as { id: string; name: string; type: string }[]).filter(
     (l) => !['virtual_in', 'virtual_out'].includes(l.type),
   )
 
-  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name, sublabel: p.code }))
+  const poOptions = purchaseOrders.map((po) => ({
+    value: po.id,
+    label: po.po_number,
+    sublabel: [po.vendor_name, po.projectCode].filter(Boolean).join(' · ') || undefined,
+  }))
   const locationOptions = locations.map((l) => ({ value: l.id, label: l.name }))
 
   const [createReturn, { loading: creating }] = useMutation(CREATE_MATERIAL_RETURN)
 
   function resetModal() {
     setShowModal(false)
-    setFormProjectId('')
+    setFormPoId('')
     setFormNotes('')
     setReturnQty({})
     setReturnLocation({})
   }
 
-  const pendingLines = returnableLines
+  const pendingIssueLines = returnableIssueLines
     .map((l) => ({ line: l, qty: parseFloat(returnQty[l.issueLineId] ?? '0') || 0 }))
     .filter((p) => p.qty > 0)
-  const pendingTotal = pendingLines.reduce((s, p) => s + p.qty * p.line.unitCost, 0)
+  const pendingDirectLines = returnableDirectLines
+    .map((l) => ({ line: l, qty: parseFloat(returnQty[l.poLineId] ?? '0') || 0 }))
+    .filter((p) => p.qty > 0)
+  const pendingCount = pendingIssueLines.length + pendingDirectLines.length
+  const pendingTotal =
+    pendingIssueLines.reduce((s, p) => s + p.qty * p.line.unitCost, 0) +
+    pendingDirectLines.reduce((s, p) => s + p.qty * p.line.unitCost, 0)
   const canSubmit =
-    pendingLines.length > 0 && pendingLines.every((p) => !!returnLocation[p.line.issueLineId])
+    pendingCount > 0 &&
+    pendingIssueLines.every((p) => !!returnLocation[p.line.issueLineId]) &&
+    pendingDirectLines.every((p) => !!returnLocation[p.line.poLineId])
 
   async function handleCreate() {
     if (!canSubmit) return
@@ -128,17 +165,24 @@ export default function MaterialReturnsPage() {
       await createReturn({
         variables: {
           input: {
-            projectId: formProjectId,
+            poId: formPoId,
             notes: formNotes || null,
-            lines: pendingLines.map((p) => ({
-              issueLineId: p.line.issueLineId,
-              toLocationId: returnLocation[p.line.issueLineId],
-              qtyReturned: p.qty,
-            })),
+            lines: [
+              ...pendingIssueLines.map((p) => ({
+                issueLineId: p.line.issueLineId,
+                toLocationId: returnLocation[p.line.issueLineId],
+                qtyReturned: p.qty,
+              })),
+              ...pendingDirectLines.map((p) => ({
+                poLineId: p.line.poLineId,
+                toLocationId: returnLocation[p.line.poLineId],
+                qtyReturned: p.qty,
+              })),
+            ],
           },
         },
       })
-      addToast({ type: 'success', message: `Material return created with ${pendingLines.length} item(s)` })
+      addToast({ type: 'success', message: `Material return created with ${pendingCount} item(s)` })
       resetModal()
       void refetch()
     } catch (e: unknown) {
@@ -161,7 +205,7 @@ export default function MaterialReturnsPage() {
     <div style={{ padding: '24px', maxWidth: '1200px' }}>
       <PageHeader
         title="Material Returns"
-        subtitle="Bring unused, already-issued project material back into inventory"
+        subtitle="Bring unused material — issued from stock or delivered direct to a jobsite — back into inventory"
         actions={
           <Button variant="primary" onClick={() => setShowModal(true)}>
             + New Material Return
@@ -182,16 +226,16 @@ export default function MaterialReturnsPage() {
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
         <div style={{ minWidth: '260px', flex: 1, maxWidth: '400px' }}>
-          <Select
-            label="Project"
-            value={projectFilter}
-            options={projectOptions}
-            placeholder="All Projects"
-            onChange={(e) => setProjectFilter(e.target.value)}
+          <SearchableSelect
+            label="Purchase Order"
+            value={poFilter}
+            onChange={(val) => setPoFilter(val)}
+            options={poOptions}
+            placeholder="All Purchase Orders"
           />
         </div>
-        {projectFilter && (
-          <Button variant="ghost" size="sm" onClick={() => setProjectFilter('')}>
+        {poFilter && (
+          <Button variant="ghost" size="sm" onClick={() => setPoFilter('')}>
             Clear filter
           </Button>
         )}
@@ -215,7 +259,7 @@ export default function MaterialReturnsPage() {
       ) : returns.length === 0 ? (
         <EmptyState
           title="No material returns yet"
-          message="Record unused material coming back from a project into inventory."
+          message="Record unused material — issued from stock or delivered direct to a jobsite — coming back into inventory."
           action={
             <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
               + New Material Return
@@ -247,19 +291,14 @@ export default function MaterialReturnsPage() {
                     {r.returnNumber}
                   </div>
                   <div>
-                    {r.projectCode ? (
-                      <>
-                        <span style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
-                          {r.projectCode}
-                        </span>
-                        {r.projectName && (
-                          <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
-                            {r.projectName}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <span style={{ fontSize: '13px', color: theme.textMuted }}>—</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: theme.textPrimary }}>
+                      {r.poNumber ?? '—'}
+                    </span>
+                    {r.projectCode && (
+                      <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '1px' }}>
+                        {r.projectCode}
+                        {r.projectName ? ` · ${r.projectName}` : ''}
+                      </div>
                     )}
                   </div>
                   <div style={{ fontSize: '12px', color: theme.textMuted }}>{r.returnDate.slice(0, 10)}</div>
@@ -306,6 +345,16 @@ export default function MaterialReturnsPage() {
                             <span style={{ color: theme.textMuted, marginLeft: '8px' }}>
                               → {l.toLocationName ?? 'location'}
                             </span>
+                            <span
+                              style={{
+                                color: theme.textMuted,
+                                marginLeft: '8px',
+                                fontSize: '11px',
+                                fontStyle: 'italic',
+                              }}
+                            >
+                              ({l.poLineId ? 'direct delivery' : 'Store Out'})
+                            </span>
                           </div>
                           <div style={{ fontVariantNumeric: 'tabular-nums', color: theme.textPrimary }}>
                             {l.qtyReturned} × {fmtAmt(l.unitCost)} = {fmtAmt(l.totalCost)}
@@ -330,7 +379,7 @@ export default function MaterialReturnsPage() {
         onClose={resetModal}
         closeOnBackdrop={false}
         title="New Material Return"
-        description="Pick the project, then choose how much of each issued item is coming back and where it's going."
+        description="Pick the purchase order, then choose how much of each item is coming back and where it's going."
         size="lg"
         footer={
           <>
@@ -345,26 +394,26 @@ export default function MaterialReturnsPage() {
               onClick={() => void handleCreate()}
             >
               Create Return
-              {pendingLines.length > 0 ? ` (${pendingLines.length} item${pendingLines.length > 1 ? 's' : ''})` : ''}
+              {pendingCount > 0 ? ` (${pendingCount} item${pendingCount > 1 ? 's' : ''})` : ''}
             </Button>
           </>
         }
       >
         <div style={{ marginBottom: '14px' }}>
           <SearchableSelect
-            label="Project"
-            value={formProjectId}
+            label="Purchase Order"
+            value={formPoId}
             onChange={(val) => {
-              setFormProjectId(val)
+              setFormPoId(val)
               setReturnQty({})
               setReturnLocation({})
             }}
-            options={projectOptions}
-            placeholder="Search project…"
+            options={poOptions}
+            placeholder="Search purchase order…"
           />
         </div>
 
-        {formProjectId && (
+        {formPoId && (
           <div style={{ marginBottom: '14px' }}>
             <p
               style={{
@@ -380,14 +429,14 @@ export default function MaterialReturnsPage() {
             </p>
             {loadingReturnable ? (
               <div style={{ fontSize: '13px', color: theme.textMuted }}>Loading…</div>
-            ) : returnableLines.length === 0 ? (
+            ) : returnableIssueLines.length === 0 && returnableDirectLines.length === 0 ? (
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                No returnable items — this project has no issued Store Out lines with anything still
-                outstanding.
+                No returnable items — this PO has no issued Store Out lines and no direct-to-jobsite
+                deliveries with anything still outstanding.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {returnableLines.map((l) => (
+                {returnableIssueLines.map((l) => (
                   <div
                     key={l.issueLineId}
                     style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
@@ -438,9 +487,61 @@ export default function MaterialReturnsPage() {
                     </div>
                   </div>
                 ))}
+                {returnableDirectLines.map((l) => (
+                  <div
+                    key={l.poLineId}
+                    style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
+                      {l.productName ?? l.productId}
+                      {l.sku && <span style={{ color: theme.textMuted, fontWeight: 400 }}> · {l.sku}</span>}
+                    </div>
+                    <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
+                      Delivered direct to jobsite — received {l.qtyReceived} {l.uom}, {l.qtyReturnable} still
+                      returnable
+                      {l.qtyVendorReturned > 0 ? ` (${l.qtyVendorReturned} already sent back to vendor)` : ''}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ width: '120px' }}>
+                        <input
+                          type="number"
+                          min={0}
+                          max={l.qtyReturnable}
+                          step="any"
+                          placeholder="0"
+                          value={returnQty[l.poLineId] ?? ''}
+                          onChange={(e) => {
+                            const v = Math.max(0, Math.min(l.qtyReturnable, parseFloat(e.target.value) || 0))
+                            setReturnQty((prev) => ({ ...prev, [l.poLineId]: String(v) }))
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            border: `1px solid ${theme.borderInput}`,
+                            background: theme.bgCanvas,
+                            color: theme.textPrimary,
+                            fontSize: '13px',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: '180px' }}>
+                        <Select
+                          value={returnLocation[l.poLineId] ?? ''}
+                          onChange={(e) =>
+                            setReturnLocation((prev) => ({ ...prev, [l.poLineId]: e.target.value }))
+                          }
+                          options={locationOptions}
+                          placeholder="Return to…"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            {pendingLines.length > 0 && (
+            {pendingCount > 0 && (
               <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '10px', textAlign: 'right' }}>
                 Total: <strong style={{ color: theme.textPrimary }}>{fmtAmt(pendingTotal)} IQD</strong>
               </div>

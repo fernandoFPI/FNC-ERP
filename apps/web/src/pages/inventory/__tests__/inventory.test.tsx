@@ -366,8 +366,10 @@ describe('LotTraceability', () => {
 
 // ── MaterialReturnsPage ──────────────────────────────────────────────────────
 describe('MaterialReturnsPage', () => {
-  const projects = [{ id: 'proj1', code: 'PRJ-001', name: 'Test Project' }]
-  const returnableLines = [
+  const purchaseOrders = [
+    { id: 'po1', po_number: 'PO-2026-0001', vendor_name: 'Acme Supplies', projectCode: 'PRJ-001', projectName: 'Test Project' },
+  ]
+  const returnableIssueLines = [
     {
       issueLineId: 'il1',
       issueId: 'i1',
@@ -385,6 +387,20 @@ describe('MaterialReturnsPage', () => {
       fromLocationName: 'Site A',
     },
   ]
+  const returnableDirectLines = [
+    {
+      poLineId: 'pl1',
+      productId: 'p2',
+      productName: 'Steel Rod',
+      sku: 'STL-001',
+      uom: 'unit',
+      qtyReceived: 20,
+      qtyReturnedSoFar: 0,
+      qtyVendorReturned: 0,
+      qtyReturnable: 20,
+      unitCost: 12,
+    },
+  ]
   const locations = [
     { id: 'loc1', name: 'Main Warehouse', code: 'WH-001', type: 'warehouse', is_active: true },
     { id: 'loc2', name: 'Virtual Consumption', code: null, type: 'virtual_out', is_active: true },
@@ -394,6 +410,8 @@ describe('MaterialReturnsPage', () => {
       id: 'r1',
       returnNumber: 'MRET-2026-0001',
       returnDate: '2026-01-15',
+      poId: 'po1',
+      poNumber: 'PO-2026-0001',
       projectId: 'proj1',
       projectCode: 'PRJ-001',
       projectName: 'Test Project',
@@ -404,6 +422,7 @@ describe('MaterialReturnsPage', () => {
         {
           id: 'rl1',
           issueLineId: 'il1',
+          poLineId: null,
           productId: 'p1',
           productName: 'Black Ink',
           sku: 'INK-001',
@@ -425,8 +444,10 @@ describe('MaterialReturnsPage', () => {
       if (opName === 'MaterialReturns')
         return { data: { materialReturns: returns }, loading: false, refetch: vi.fn() }
       if (opName === 'ReturnableMaterialIssueLines')
-        return { data: { returnableMaterialIssueLines: returnableLines }, loading: false }
-      if (opName === 'Projects') return { data: { projects: { data: projects } }, loading: false }
+        return { data: { returnableMaterialIssueLines: returnableIssueLines }, loading: false }
+      if (opName === 'ReturnableDirectDeliveryLines')
+        return { data: { returnableDirectDeliveryLines: returnableDirectLines }, loading: false }
+      if (opName === 'PurchaseOrders') return { data: { purchaseOrders }, loading: false }
       if (opName === 'StockLocations') return { data: { stockLocations: locations }, loading: false }
       return { data: undefined, loading: false }
     })
@@ -439,11 +460,11 @@ describe('MaterialReturnsPage', () => {
     expect(screen.getByText('MRET-2026-0001')).toBeInTheDocument()
   })
 
-  it('opens the New Material Return modal and lists returnable items after picking a project', async () => {
+  it('opens the New Material Return modal and lists returnable items after picking a purchase order', async () => {
     const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
     wrap(<MaterialReturnsPage />)
     fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
-    expect(screen.getByText(/pick the project/i)).toBeInTheDocument()
+    expect(screen.getByText(/pick the purchase order/i)).toBeInTheDocument()
   })
 
   it('excludes virtual locations from the return-to destination options', async () => {

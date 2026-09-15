@@ -4656,13 +4656,20 @@ export const CANCEL_MATERIAL_ISSUE = gql`
   }
 `
 
-// ── Material Return — unused, already-issued material coming back into
-// real inventory. Not to be confused with a vendor PO Return (finance/AP,
-// see procurement.ts's own POReturn types) — this is the opposite
-// direction and has no vendor/credit-note involvement at all.
+// ── Material Return — unused material coming back into real inventory,
+// scoped by the Purchase Order it originally came through (not project
+// directly — a PO, and the Store Out it's linked through, can have no
+// project at all: a general-stock PO). Not to be confused with a vendor
+// PO Return (finance/AP, see procurement.ts's own POReturn types) — this
+// is the opposite direction and has no vendor/credit-note involvement.
+// Two distinct sources feed a return line, mutually exclusive:
+// issueLineId (material that was in the warehouse and issued via a Store
+// Out) or poLineId (material delivered straight to a jobsite that never
+// touched stock — see ReturnableDirectDeliveryLine below).
 const MR_LINE_FIELDS = `
   id
   issueLineId
+  poLineId
   productId
   productName
   sku
@@ -4676,6 +4683,8 @@ const MR_FIELDS = `
   id
   returnNumber
   returnDate
+  poId
+  poNumber
   projectId
   projectCode
   projectName
@@ -4686,14 +4695,14 @@ const MR_FIELDS = `
 `
 
 export const MATERIAL_RETURNS_QUERY = gql`
-  query MaterialReturns($projectId: ID) {
-    materialReturns(projectId: $projectId) { ${MR_FIELDS} }
+  query MaterialReturns($poId: ID) {
+    materialReturns(poId: $poId) { ${MR_FIELDS} }
   }
 `
 
 export const RETURNABLE_MATERIAL_ISSUE_LINES_QUERY = gql`
-  query ReturnableMaterialIssueLines($projectId: ID!) {
-    returnableMaterialIssueLines(projectId: $projectId) {
+  query ReturnableMaterialIssueLines($poId: ID!) {
+    returnableMaterialIssueLines(poId: $poId) {
       issueLineId
       issueId
       issueNumber
@@ -4708,6 +4717,26 @@ export const RETURNABLE_MATERIAL_ISSUE_LINES_QUERY = gql`
       unitCost
       fromLocationId
       fromLocationName
+    }
+  }
+`
+
+// Counterpart for PO lines delivered straight to a jobsite (recordDirectDelivery)
+// — never issued from stock, so there's no Store Out line to reverse; this is
+// surplus purchased material becoming real inventory for the first time.
+export const RETURNABLE_DIRECT_DELIVERY_LINES_QUERY = gql`
+  query ReturnableDirectDeliveryLines($poId: ID!) {
+    returnableDirectDeliveryLines(poId: $poId) {
+      poLineId
+      productId
+      productName
+      sku
+      uom
+      qtyReceived
+      qtyReturnedSoFar
+      qtyVendorReturned
+      qtyReturnable
+      unitCost
     }
   }
 `
