@@ -253,6 +253,66 @@ async function releaseLineStockReservations(client: PoolClient, lineIds: string[
   }
 }
 
+// Called when an edit request shrinks a line's qty_ordered below its
+// already-reserved qty_from_stock — caps the reservation down to match,
+// releasing the excess (same confirmed-Store-Out cap as
+// releaseLineStockReservations/the qty_from_stock edit branch below).
+// Without this, a line reserved 5-from-stock against 10 ordered, then
+// edited down to 3 ordered, kept 5 reserved forever — 2 units nobody
+// could use, sitting there until the whole line/parent got cancelled.
+// A no-op whenever the new qty_ordered still covers the existing
+// qty_from_stock. Must run BEFORE the caller's own qty_ordered UPDATE —
+// reads whatever qty_from_stock currently is, unaffected by ordering
+// relative to that write since it only ever touches qty_from_stock/
+// in_stock/stock_balances, never qty_ordered itself.
+async function capLineReservationToQtyOrdered(
+  client: PoolClient,
+  lineId: string,
+  newQtyOrdered: number,
+): Promise<void> {
+  const lineRes = await client.query<{
+    product_id: string | null
+    source_location_id: string | null
+    qty_from_stock: string
+  }>(`SELECT product_id, source_location_id, qty_from_stock FROM po_lines WHERE id=$1`, [lineId])
+  const line = lineRes.rows[0]
+  if (!line || !line.source_location_id) return
+  const oldQtyFromStock = parseFloat(line.qty_from_stock)
+  if (oldQtyFromStock <= newQtyOrdered) return
+
+  const issuedRes = await client.query<{ qty_issued_confirmed: string | null }>(
+    `SELECT SUM(pmil.qty_issued) AS qty_issued_confirmed
+     FROM project_material_issue_lines pmil
+     JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+     WHERE pmil.po_line_id=$1 AND pmi.status != 'draft'`,
+    [lineId],
+  )
+  const confirmed = parseFloat(String(issuedRes.rows[0]?.qty_issued_confirmed ?? 0))
+  const stillReservedForLine = Math.max(oldQtyFromStock - confirmed, 0)
+  const excess = oldQtyFromStock - newQtyOrdered
+
+  const balRes = await client.query<{ qty_reserved: string }>(
+    `SELECT qty_reserved FROM stock_balances
+     WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
+    [line.product_id, line.source_location_id],
+  )
+  const reserved = parseFloat(String(balRes.rows[0]?.qty_reserved ?? 0))
+  const release = Math.min(excess, stillReservedForLine, reserved)
+  if (release > 0) {
+    await client.query(
+      `UPDATE stock_balances SET qty_reserved = qty_reserved - $1, updated_at = NOW()
+       WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+      [release, line.product_id, line.source_location_id],
+    )
+  }
+  const newQtyFromStock = Math.min(oldQtyFromStock, newQtyOrdered)
+  await client.query(`UPDATE po_lines SET qty_from_stock=$1, in_stock=($1::numeric>=$3::numeric) WHERE id=$2`, [
+    newQtyFromStock,
+    lineId,
+    newQtyOrdered,
+  ])
+}
+
 async function applyPOEditChanges(
   client: PoolClient,
   poId: string,
@@ -281,12 +341,21 @@ async function applyPOEditChanges(
       )
     }
   }
+  // product_id is deliberately NOT in this list — swapping a line's
+  // product while it still holds a from-stock reservation would orphan
+  // the OLD product's stock_balances.qty_reserved claim (same failure
+  // mode releaseLineStockReservations exists to prevent) while the NEW
+  // product shows a qty_from_stock it never actually reserved. Neither
+  // PurchaseOrderDetail's regular edit-request builder nor
+  // RequisitionDetail's ever emits a product_id line edit — only the
+  // separate admin-correction tool (buildAdminChanges/adminCorrectPO,
+  // which reverses real stock_moves rather than reservations) needs it —
+  // so dropping it here closes a latent hole nothing depends on.
   const lineAllowed = [
     'description',
     'qty_ordered',
     'unit_price',
     'uom',
-    'product_id',
     'currency_code',
     'store_price',
     'store_price_currency',
@@ -413,6 +482,9 @@ async function applyPOEditChanges(
       // unit_price) — reject it rather than silently accepting a price
       // that's almost certainly not real.
       throw new Error('Actual price must be greater than 0')
+    }
+    if (e.field === 'qty_ordered') {
+      await capLineReservationToQtyOrdered(client, e.id, Number(e.to))
     }
     await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND po_id=$3`, [
       e.to,
@@ -562,7 +634,10 @@ async function applyRequisitionEditChanges(
       )
     }
   }
-  const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom', 'product_id']
+  // product_id is deliberately NOT in this list — see applyPOEditChanges'
+  // own lineAllowed comment for why (swapping it while a line still holds
+  // a from-stock reservation would orphan the old product's claim).
+  const lineAllowed = ['description', 'qty_ordered', 'unit_price', 'uom']
 
   // Guard: refuse to edit or remove a line that's already been bought
   // against (po_line_purchases) or forked into a child PO (po_id set).
@@ -596,6 +671,9 @@ async function applyRequisitionEditChanges(
   const priceAffectedLineIds = new Set<string>()
   for (const e of changes.lines?.edited ?? []) {
     if (!lineAllowed.includes(e.field)) continue
+    if (e.field === 'qty_ordered') {
+      await capLineReservationToQtyOrdered(client, e.id, Number(e.to))
+    }
     await client.query(`UPDATE po_lines SET ${e.field}=$1 WHERE id=$2 AND requisition_id=$3`, [
       e.to,
       e.id,

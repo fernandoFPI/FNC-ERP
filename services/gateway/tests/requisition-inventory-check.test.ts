@@ -55,6 +55,10 @@ async function cleanup(): Promise<void> {
     [TEST_COMPANY_ID, userId],
   )
   await pool.query(
+    `DELETE FROM po_edit_requests WHERE requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
+    [TEST_COMPANY_ID, userId],
+  )
+  await pool.query(
     `DELETE FROM po_lines WHERE requisition_id IN (SELECT id FROM requisitions WHERE company_id=$1 AND organizer_id=$2)`,
     [TEST_COMPANY_ID, userId],
   )
@@ -379,6 +383,98 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
         ctx as never,
       ),
     ).rejects.toThrow(/insufficient available stock/i)
+  })
+})
+
+// Regression coverage for the same reservation-orphaning bug class found
+// live on REQ-2026-0013 (production): an edit request removing a
+// from-stock line, or shrinking its qty_ordered below the already-
+// reserved qty_from_stock, must release the excess back to
+// stock_balances rather than stranding it. Mirrors po-stock-locking.test.ts's
+// own coverage of applyPOEditChanges — this is applyRequisitionEditChanges'
+// side of the same shared release helpers.
+describe('applyRequisitionEditChanges releases stock reservations', () => {
+  async function makeReqAtMarketPricing(productId: string, qtyOrdered: number, qtyFromStock: number) {
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: qtyOrdered, unit_price: 10 }] } },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+    await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+    const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
+    const lineId = lineRow.rows[0]!.id
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    return { reqId, lineId }
+  }
+
+  it('releases the reservation when an edit request removes a from-stock line', async () => {
+    const productId = await makeProduct('edit-remove')
+    await receive(productId, warehouseId, 20)
+    const { reqId, lineId } = await makeReqAtMarketPricing(productId, 10, 4)
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    await resolvers.Mutation.submitPOEditRequest(
+      null,
+      { requisitionId: reqId, changes: JSON.stringify({ lines: { removed: [lineId] } }) },
+      ctx as never,
+    )
+
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+    const remainingLine = await pool.query(`SELECT id FROM po_lines WHERE id=$1`, [lineId])
+    expect(remainingLine.rows.length).toBe(0)
+  })
+
+  it('caps the reservation down when qty_ordered is edited below the existing qty_from_stock', async () => {
+    const productId = await makeProduct('edit-shrink')
+    await receive(productId, warehouseId, 20)
+    const { reqId, lineId } = await makeReqAtMarketPricing(productId, 10, 5)
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(5)
+
+    await resolvers.Mutation.submitPOEditRequest(
+      null,
+      {
+        requisitionId: reqId,
+        changes: JSON.stringify({ lines: { edited: [{ id: lineId, field: 'qty_ordered', from: 10, to: 3 }] } }),
+      },
+      ctx as never,
+    )
+
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(3)
+    const line = await pool.query<{ qty_ordered: string; qty_from_stock: string }>(
+      `SELECT qty_ordered, qty_from_stock FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(line.rows[0]!.qty_ordered)).toBe(3)
+    expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(3)
+  })
+
+  it('ignores a product_id edit on an existing line rather than orphaning its reservation', async () => {
+    const productId = await makeProduct('edit-swap-old')
+    const otherProductId = await makeProduct('edit-swap-new')
+    await receive(productId, warehouseId, 20)
+    const { reqId, lineId } = await makeReqAtMarketPricing(productId, 10, 4)
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    await resolvers.Mutation.submitPOEditRequest(
+      null,
+      {
+        requisitionId: reqId,
+        changes: JSON.stringify({
+          lines: { edited: [{ id: lineId, field: 'product_id', from: productId, to: otherProductId }] },
+        }),
+      },
+      ctx as never,
+    )
+
+    const line = await pool.query<{ product_id: string }>(`SELECT product_id FROM po_lines WHERE id=$1`, [lineId])
+    expect(line.rows[0]!.product_id).toBe(productId)
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+    expect((await getBalance(otherProductId, warehouseId)).reserved).toBe(0)
   })
 })
 

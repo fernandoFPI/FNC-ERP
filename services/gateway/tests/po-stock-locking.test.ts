@@ -326,6 +326,74 @@ describe('applyPOEditChanges qty_from_stock delta (Site 1, edit-request path)', 
     const remainingLine = await pool.query(`SELECT id FROM po_lines WHERE id=$1`, [lineId])
     expect(remainingLine.rows.length).toBe(0)
   })
+
+  it('caps the reservation down when qty_ordered is edited below the existing qty_from_stock', async () => {
+    const productId = await makeProduct('shrinkqty')
+    await receive(productId, warehouseId, 20)
+
+    const poId = await makePO('inventory_check')
+    const lineId = await makePOLine(poId, productId, 10)
+
+    await resolvers.Mutation.confirmPOInventoryCheck(
+      null,
+      { id: poId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(5)
+
+    // Shrink qty_ordered from 10 to 3 — below the 5 already reserved.
+    await resolvers.Mutation.submitPOEditRequest(
+      null,
+      {
+        id: poId,
+        changes: JSON.stringify({ lines: { edited: [{ id: lineId, field: 'qty_ordered', from: 10, to: 3 }] } }),
+      },
+      ctx as never,
+    )
+
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(3)
+    const line = await pool.query<{ qty_ordered: string; qty_from_stock: string }>(
+      `SELECT qty_ordered, qty_from_stock FROM po_lines WHERE id=$1`,
+      [lineId],
+    )
+    expect(parseFloat(line.rows[0]!.qty_ordered)).toBe(3)
+    expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(3)
+  })
+
+  it('ignores a product_id edit on an existing line rather than orphaning its reservation', async () => {
+    const productId = await makeProduct('swapproduct-old')
+    const otherProductId = await makeProduct('swapproduct-new')
+    await receive(productId, warehouseId, 20)
+
+    const poId = await makePO('inventory_check')
+    const lineId = await makePOLine(poId, productId, 10)
+
+    await resolvers.Mutation.confirmPOInventoryCheck(
+      null,
+      { id: poId, lineStockQtys: [{ lineId, qtyFromStock: 4, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    await resolvers.Mutation.submitPOEditRequest(
+      null,
+      {
+        id: poId,
+        changes: JSON.stringify({
+          lines: { edited: [{ id: lineId, field: 'product_id', from: productId, to: otherProductId }] },
+        }),
+      },
+      ctx as never,
+    )
+
+    // product_id is no longer in lineAllowed — the edit is silently
+    // dropped, the line keeps its original product, and the reservation
+    // stays exactly where it was (nothing orphaned, nothing swapped).
+    const line = await pool.query<{ product_id: string }>(`SELECT product_id FROM po_lines WHERE id=$1`, [lineId])
+    expect(line.rows[0]!.product_id).toBe(productId)
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+    expect((await getBalance(otherProductId, warehouseId)).reserved).toBe(0)
+  })
 })
 
 describe('cancelPO interim G7 guard', () => {
