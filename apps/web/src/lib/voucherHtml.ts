@@ -194,17 +194,17 @@ function buildPVTemplateHTML(data: VoucherPrintData, template: string): string {
 
   <!-- Top-left amount boxes (landscape): دينار عراقي left, دولار right -->
   <span class="val val-r" style="top:20mm;left:18mm;width:45mm;font-size:11px;font-weight:600">${data.total_amount_iqd > 0 ? fmtNum(data.total_amount_iqd) : ''}</span>
-  <span class="val val-r" style="top:20mm;left:53mm;width:40mm;font-size:11px;font-weight:600">${data.total_amount_usd > 0 ? fmtNum(data.total_amount_usd) : ''}</span>
+  <span class="val val-r" style="top:20mm;left:68mm;width:45mm;font-size:11px;font-weight:600">${data.total_amount_usd > 0 ? fmtNum(data.total_amount_usd) : ''}</span>
 
   <!-- Voucher number -->
-  <span class="val val-c" style="top:33mm;left:115mm;width:90mm;font-size:10px">${data.voucher_number}</span>
+  <span class="val val-c" style="top:33mm;left:102mm;width:90mm;font-size:10px">${data.voucher_number}</span>
 
   <!-- Field lines -->
   <span class="val" style="top:42mm;left:68mm;width:220mm">${data.received_from}</span>
   <span class="val" style="top:51mm;left:100mm;width:220mm">${data.total_amount_iqd > 0 ? fmtNum(data.total_amount_iqd) + ' IQD' : ''}${data.total_amount_usd > 0 ? '   /   ' + fmtNum(data.total_amount_usd) + ' USD' : ''}</span>
   <span class="val" style="top:66mm;left:66mm;width:120mm">${refText}</span>
-  <span class="val val-r" style="top:65mm;left:110mm;width:80mm">${fmtDate(data.voucher_date)}</span>
-  <span class="val val-r" style="top:78mm;left:105mm;width:80mm">${data.bank_account_fund ?? ''}</span>
+  <span class="val val-r" style="top:65mm;left:100mm;width:40mm">${fmtDate(data.voucher_date)}</span>
+  <span class="val" style="top:83mm;left:100mm;width:42mm;overflow:hidden;text-overflow:ellipsis">${data.bank_account_fund ?? ''}</span>
 
   <!-- Data rows -->
   ${lineOverlays}
@@ -213,10 +213,10 @@ function buildPVTemplateHTML(data: VoucherPrintData, template: string): string {
   <span class="val val-r" style="top:${totalY}mm;left:${CIQD.l}mm;width:${CIQD.w}mm;font-weight:600">${fmtNum(data.total_amount_iqd)}</span>
   <span class="val val-r" style="top:${totalY}mm;left:${CUSD.l}mm;width:${CUSD.w}mm;font-weight:600">${data.total_amount_usd > 0 ? fmtNum(data.total_amount_usd) : ''}</span>
 
-  <!-- Signatures -->
-  <span class="val" style="top:${sigY}mm;left:58mm;width:45mm;font-size:9px">${data.auditor_email ?? ''}</span>
-  <span class="val val-c" style="top:${sigY}mm;left:105mm;width:55mm;font-size:9px">${data.receiver_name ?? ''}</span>
-  <span class="val val-c" style="top:${sigY}mm;left:180mm;width:50mm;font-size:9px">${data.cashier_email ?? ''}</span>
+  <!-- Signatures: Authorized (58mm, no data field) - Cashier (105mm) - Received by (180mm) - Auditor (230mm) -->
+  <span class="val val-c" style="top:${sigY}mm;left:105mm;width:55mm;font-size:9px">${data.cashier_email ?? ''}</span>
+  <span class="val val-c" style="top:${sigY}mm;left:180mm;width:50mm;font-size:9px">${data.receiver_name ?? ''}</span>
+  <span class="val" style="top:${sigY}mm;left:230mm;width:45mm;font-size:9px">${data.auditor_email ?? ''}</span>
 </div>
 </body></html>`
 }
@@ -349,11 +349,12 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
           .join(', ')
       : ''
 
-  // Row y-positions: table header 40-53mm, data rows from 54mm, pitch 7mm
-  // MAX_ROWS=8 so totalY lands at 112mm (main table totals), above cost center section (~120mm)
-  const ROW_START = 54
-  const ROW_H = 7
-  const MAX_ROWS = 8
+  // Row/column positions calibrated against the actual template image (pixel-measured):
+  // header bottom / row 1 top at 53mm, 10 rows drawn at ~6.1mm pitch, then a taller
+  // shaded "المجموع" totals row, matching column boundaries measured directly off the image.
+  const ROW_START = 53
+  const ROW_H = 6.1
+  const MAX_ROWS = 10
 
   const lineOverlays = data.lines
     .slice(0, MAX_ROWS)
@@ -363,20 +364,30 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
       const creditIqd = l.currency_code === 'IQD' ? l.credit : 0
       const debitUsd = l.currency_code !== 'IQD' ? l.debit : (l.debit_usd ?? 0)
       const creditUsd = l.currency_code !== 'IQD' ? l.credit : (l.credit_usd ?? 0)
+      // Entry reference + date apply to the whole journal entry, not per line — shown
+      // once, in the "التاريخ / Date" and "رقم القيد / Entry Number" columns of row 1,
+      // matching how these are filled by hand on the physical form.
+      const firstRowExtras =
+        i === 0
+          ? `
+      <span class="val val-c" style="top:${y}mm;left:235mm;width:22mm;font-size:9px">${fmtDate(data.entry_date)}</span>
+      <span class="val val-c" style="top:${y}mm;left:261mm;width:24mm;font-size:9px">${data.reference}</span>
+      `
+          : ''
       return `
-      <span class="val val-c" style="top:${y}mm;left:8mm;width:12mm;font-size:9px">${i + 1}</span>
-      <span class="val" style="top:${y}mm;left:46mm;width:58mm;font-size:9px">${l.description ?? l.account_name ?? ''}</span>
-      <span class="val val-r" style="top:${y}mm;left:104mm;width:16mm;font-size:9px">${creditUsd > 0 ? fmtNum(creditUsd) : ''}</span>
-      <span class="val val-r" style="top:${y}mm;left:120mm;width:16mm;font-size:9px">${debitUsd > 0 ? fmtNum(debitUsd) : ''}</span>
-      <span class="val val-r" style="top:${y}mm;left:136mm;width:16mm;font-size:9px">${creditIqd > 0 ? fmtNum(creditIqd) : ''}</span>
-      <span class="val val-r" style="top:${y}mm;left:152mm;width:16mm;font-size:9px">${debitIqd > 0 ? fmtNum(debitIqd) : ''}</span>
-      <span class="val val-r" style="top:${y}mm;left:182mm;width:20mm;font-size:9px">${l.account_code ?? ''}</span>
+      <span class="val val-c" style="top:${y}mm;left:79mm;width:15mm;font-size:9px">${l.account_code ?? ''}</span>
+      <span class="val" style="top:${y}mm;left:98mm;width:58mm;font-size:9px">${l.description ?? l.account_name ?? ''}</span>
+      <span class="val val-r" style="top:${y}mm;left:160mm;width:9mm;font-size:9px">${creditUsd > 0 ? fmtNum(creditUsd) : ''}</span>
+      <span class="val val-r" style="top:${y}mm;left:172mm;width:11mm;font-size:9px">${debitUsd > 0 ? fmtNum(debitUsd) : ''}</span>
+      <span class="val val-r" style="top:${y}mm;left:186mm;width:20mm;font-size:9px">${creditIqd > 0 ? fmtNum(creditIqd) : ''}</span>
+      <span class="val val-r" style="top:${y}mm;left:210mm;width:20mm;font-size:9px">${debitIqd > 0 ? fmtNum(debitIqd) : ''}</span>
+      ${firstRowExtras}
     `
     })
     .join('')
 
-  const totalY = ROW_START + MAX_ROWS * ROW_H + 6
-  const sigY = totalY + 80
+  const totalY = ROW_START + MAX_ROWS * ROW_H + 3
+  const sigY = 189
 
   return `<!DOCTYPE html><html dir="ltr">
 <head><meta charset="UTF-8"><title>General Journal – ${data.reference}</title>
@@ -386,23 +397,20 @@ function buildJournalTemplateHTML(data: JournalPrintData, template: string): str
   <div class="tmpl-bg"><img src="${template}" alt=""/></div>
 
   <!-- Left header: linked PO / description in "وذلك عن" field -->
-  <span class="val" style="top:19mm;left:20mm;width:80mm;font-size:9.5px">${linkedPOList || data.description || ''}</span>
-  <!-- Right header: entry reference + date (below company logo, right panel) -->
-  <span class="val val-c" style="top:30mm;left:200mm;width:70mm;font-size:10px;font-weight:600">${data.reference}</span>
-  <span class="val val-c" style="top:37mm;left:200mm;width:70mm;font-size:10px">${fmtDate(data.entry_date)}</span>
+  <span class="val" style="top:23mm;left:20mm;width:80mm;font-size:9.5px">${linkedPOList || data.description || ''}</span>
 
-  <!-- Data rows -->
+  <!-- Data rows (entry reference + date rendered once, on row 1 — see firstRowExtras) -->
   ${lineOverlays}
 
   <!-- Totals row -->
-  <span class="val val-r" style="top:${totalY}mm;left:104mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
-  <span class="val val-r" style="top:${totalY}mm;left:120mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
-  <span class="val val-r" style="top:${totalY}mm;left:185mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
-  <span class="val val-r" style="top:${totalY}mm;left:210mm;width:16mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
+  <span class="val val-r" style="top:${totalY}mm;left:160mm;width:9mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
+  <span class="val val-r" style="top:${totalY}mm;left:172mm;width:11mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
+  <span class="val val-r" style="top:${totalY}mm;left:186mm;width:20mm;font-weight:600;font-size:9px">${fmtNum(data.total_credit)}</span>
+  <span class="val val-r" style="top:${totalY}mm;left:210mm;width:20mm;font-weight:600;font-size:9px">${fmtNum(data.total_debit)}</span>
 
-  <!-- Signatures -->
-  <span class="val" style="top:${sigY}mm;left:8mm;width:80mm;font-size:9px">${data.accountant_email ?? ''}</span>
-  <span class="val val-r" style="top:${sigY}mm;left:120mm;width:80mm;font-size:9px">${data.auditor_email ?? ''}</span>
+  <!-- Signatures: Accountant blank ~45-100mm, Auditor blank ~225-278mm -->
+  <span class="val" style="top:${sigY}mm;left:45mm;width:55mm;font-size:9px">${data.accountant_email ?? ''}</span>
+  <span class="val" style="top:${sigY}mm;left:225mm;width:50mm;font-size:9px">${data.auditor_email ?? ''}</span>
 </div>
 </body></html>`
 }
