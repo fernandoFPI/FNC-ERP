@@ -210,6 +210,49 @@ const POST_APPROVAL_PO_STATUSES = [
   'cancelled',
 ]
 
+// Releases whatever's left of a from-stock reservation for a specific set
+// of po_lines rows that are about to be DELETEd by an edit-request removal
+// — called by both applyPOEditChanges and applyRequisitionEditChanges.
+// Mirrors releasePOStockReservations/releaseRequisitionStockReservations
+// exactly (same capped-by-confirmed-Store-Out logic), just scoped by line
+// id instead of parent id, since the line row itself won't exist to scope
+// by afterward. Without this, removing a line that already went through
+// confirmPOInventoryCheck/confirmRequisitionInventoryCheck permanently
+// stranded its stock_balances.qty_reserved claim — the row (and the only
+// record of which product/location/qty it held) is gone the moment the
+// DELETE below runs, with nothing left to reconcile against later.
+async function releaseLineStockReservations(client: PoolClient, lineIds: string[]): Promise<void> {
+  if (lineIds.length === 0) return
+  const rows = await client.query<{
+    product_id: string
+    source_location_id: string
+    remaining: string
+  }>(
+    `SELECT pl.product_id, pl.source_location_id,
+            pl.qty_from_stock - COALESCE(issued.qty_issued_confirmed, 0) AS remaining
+     FROM po_lines pl
+     LEFT JOIN (
+       SELECT pmil.po_line_id, SUM(pmil.qty_issued) AS qty_issued_confirmed
+       FROM project_material_issue_lines pmil
+       JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+       WHERE pmi.status != 'draft'
+       GROUP BY pmil.po_line_id
+     ) issued ON issued.po_line_id = pl.id
+     WHERE pl.id = ANY($1) AND pl.qty_from_stock > 0 AND pl.source_location_id IS NOT NULL
+     ORDER BY pl.product_id, pl.source_location_id`,
+    [lineIds],
+  )
+  for (const row of rows.rows) {
+    const remaining = parseFloat(String(row.remaining ?? 0))
+    if (remaining <= 0) continue
+    await client.query(
+      `UPDATE stock_balances SET qty_reserved = GREATEST(qty_reserved - $1, 0), updated_at = NOW()
+       WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
+      [remaining, row.product_id, row.source_location_id],
+    )
+  }
+}
+
 async function applyPOEditChanges(
   client: PoolClient,
   poId: string,
@@ -451,7 +494,9 @@ async function applyPOEditChanges(
       )
     }
   }
-  for (const lineId of changes.lines?.removed ?? []) {
+  const removedLineIds = changes.lines?.removed ?? []
+  await releaseLineStockReservations(client, removedLineIds)
+  for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND po_id=$2`, [lineId, poId])
   }
   if (changes.lines) {
@@ -581,7 +626,9 @@ async function applyRequisitionEditChanges(
       )
     }
   }
-  for (const lineId of changes.lines?.removed ?? []) {
+  const removedLineIds = changes.lines?.removed ?? []
+  await releaseLineStockReservations(client, removedLineIds)
+  for (const lineId of removedLineIds) {
     await client.query(`DELETE FROM po_lines WHERE id=$1 AND requisition_id=$2`, [lineId, reqId])
   }
 }

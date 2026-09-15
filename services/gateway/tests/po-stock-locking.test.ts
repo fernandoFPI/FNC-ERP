@@ -301,6 +301,31 @@ describe('applyPOEditChanges qty_from_stock delta (Site 1, edit-request path)', 
     )
     expect(parseFloat(lineAfterDecrease.rows[0]!.qty_from_stock)).toBe(2)
   })
+
+  it('releases the reservation when a from-stock line is removed, not just edited', async () => {
+    const productId = await makeProduct('removeline')
+    await receive(productId, warehouseId, 20)
+
+    const poId = await makePO('inventory_check')
+    const lineId = await makePOLine(poId, productId, 10)
+
+    await resolvers.Mutation.confirmPOInventoryCheck(
+      null,
+      { id: poId, lineStockQtys: [{ lineId, qtyFromStock: 4, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    await resolvers.Mutation.submitPOEditRequest(
+      null,
+      { id: poId, changes: JSON.stringify({ lines: { removed: [lineId] } }) },
+      ctx as never,
+    )
+
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+    const remainingLine = await pool.query(`SELECT id FROM po_lines WHERE id=$1`, [lineId])
+    expect(remainingLine.rows.length).toBe(0)
+  })
 })
 
 describe('cancelPO interim G7 guard', () => {
