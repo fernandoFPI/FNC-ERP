@@ -80,6 +80,7 @@ export const REQUISITION_QUERY = gql`
         description
         product_id
         product_name
+        product_name_ar
         sku
         qty
         uom
@@ -317,6 +318,7 @@ export const REQUISITION_ITEMS_BOUGHT_QUERY = gql`
         description
         product_id
         product_name
+        product_name_ar
         sku
         qty
         uom

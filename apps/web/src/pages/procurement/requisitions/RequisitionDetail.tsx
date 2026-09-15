@@ -67,6 +67,7 @@ interface ReqLine {
   description?: string | null
   product_id?: string | null
   product_name?: string | null
+  product_name_ar?: string | null
   sku?: string | null
   qty: string
   uom?: string | null
@@ -377,6 +378,11 @@ export default function RequisitionDetail() {
           <div style={{ fontSize: '13px', color: theme.textPrimary }}>
             {l.description || l.product_name || '—'}
           </div>
+          {l.product_name_ar && (
+            <div dir="rtl" style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'left' }}>
+              {l.product_name_ar}
+            </div>
+          )}
           {l.sku && <div style={{ fontSize: '11px', color: theme.textMuted }}>{l.sku}</div>}
         </div>
       ),

@@ -54,6 +54,7 @@ interface ReqLine {
   description?: string | null
   product_id?: string | null
   product_name?: string | null
+  product_name_ar?: string | null
   sku?: string | null
   qty: string
   uom?: string | null
@@ -344,6 +345,11 @@ export default function ItemsBoughtPage() {
                 <div style={{ fontSize: '14px', fontWeight: 600, color: theme.textPrimary }}>
                   {line.description || line.product_name || '—'}
                 </div>
+                {line.product_name_ar && (
+                  <div dir="rtl" style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'left', marginTop: '2px' }}>
+                    {line.product_name_ar}
+                  </div>
+                )}
                 <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
                   Ordered {fmtN(line.qty)} {line.uom} — from stock {fmtN(line.qty_from_stock ?? 0)} — remaining to buy{' '}
                   <strong style={{ color: remaining > 0 ? theme.warning : theme.success }}>{fmtN(remaining)}</strong>
