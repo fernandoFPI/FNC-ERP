@@ -66,15 +66,13 @@ async function makeStockOnlyReqAtSourcing(qty: number): Promise<{ reqId: string;
   const lineId = lineRow.rows[0]!.id
 
   await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+  // 100%-from-stock — confirmRequisitionInventoryCheck now skips straight to
+  // pending_approval itself (nothing needs market pricing or verification).
   await resolvers.Mutation.confirmRequisitionInventoryCheck(
     null,
     { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: qty, sourceLocationId: warehouseId }] },
     ctx as never,
   )
-  // confirmRequisitionInventoryCheck now auto-advances straight through
-  // store_pricing to market_pricing — no separate call needed.
-  await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
-  await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
   const result = await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
   expect((result as { status: string }).status).toBe('sourcing')
   return { reqId, lineId, productId }
@@ -248,15 +246,14 @@ describe('completion evaluator — Store Out confirm', () => {
     const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
     const lineId = lineRow.rows[0]!.id
     await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
+    // 100%-from-stock — confirmRequisitionInventoryCheck now skips straight
+    // to pending_approval itself (nothing needs market pricing or
+    // verification), so no separate calls are needed before approving.
     await resolvers.Mutation.confirmRequisitionInventoryCheck(
       null,
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 6, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    // confirmRequisitionInventoryCheck now auto-advances straight through
-    // store_pricing to market_pricing — no separate call needed.
-    await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
-    await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
     await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
 
     const balBefore = await pool.query<{ qty_reserved: string }>(

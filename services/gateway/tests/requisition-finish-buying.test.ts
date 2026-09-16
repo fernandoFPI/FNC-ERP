@@ -367,6 +367,24 @@ describe('finishBuyingRequisition', () => {
     expect(child.rows[0]!.vendor_id).toBe(vendorAId)
   })
 
+  it('exposes the parent requisition_number as requisitionNumber on the forked child PO', async () => {
+    const { reqId, lineId } = await makeReqAtItemsBought({ qtyOrdered: 4, marketPrice: 12 })
+    await recordPurchase(lineId, vendorAId, 4, 12)
+    await resolvers.Mutation.finishBuyingRequisition(null, { id: reqId }, ctx as never)
+
+    const parentReq = await pool.query<{ requisition_number: string }>(
+      `SELECT requisition_number FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    const line = await pool.query<{ po_id: string }>(`SELECT po_id FROM po_lines WHERE id=$1`, [lineId])
+    const childId = line.rows[0]!.po_id
+
+    const fetched = (await resolvers.Query.purchaseOrder(null, { id: childId }, ctx as never)) as {
+      requisitionNumber: string | null
+    }
+    expect(fetched.requisitionNumber).toBe(parentReq.rows[0]!.requisition_number)
+  })
+
   // G1 Phase 3 — Manufacturing Order is the third call site migrated from
   // direct PO creation to requisition-first purchasing (Project and Vendor
   // already done). purchase_orders.linked_mo_id is what the existing MO-

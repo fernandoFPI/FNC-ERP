@@ -2326,6 +2326,9 @@
     linkedMoId: ID
     projectCode: String
     projectName: String
+    # Set only when this PO was forked from a requisition (finishBuyingRequisition) —
+    # null for a PO created directly, or for a legacy PO migrated with no requisition_id.
+    requisitionNumber: String
     branch_id: ID
     branch_name: String
     company_name: String
@@ -2368,11 +2371,13 @@
     branch_name: String
     project_id: ID
     projectName: String
+    projectCode: String
     linked_mo_id: ID
     linkedMoNumber: String
     purpose: String
     delivery_destination: String
     priority: String
+    expected_delivery_date: String
     organizer_id: ID
     organizerName: String
     assigned_approver_id: ID
@@ -2453,6 +2458,7 @@
     branch_id: ID
     assigned_receiver_id: ID
     notes: String
+    expected_delivery_date: String
     # G1 Phase 3 — third call-site migration (Manufacturing Order); mirrors
     # PurchaseOrder.linkedMoId, propagated onto the forked child PO by
     # finishBuyingRequisition so the existing MO-consumption-on-receipt

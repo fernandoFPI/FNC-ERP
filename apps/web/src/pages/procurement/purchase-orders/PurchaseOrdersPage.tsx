@@ -43,6 +43,7 @@ interface PurchaseOrder {
   project_id?: string | null
   projectCode?: string | null
   projectName?: string | null
+  requisitionNumber?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -262,9 +263,14 @@ export default function PurchaseOrdersPage() {
       key: 'po_number',
       header: 'PO Number',
       render: (o) => (
-        <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>
-          {o.po_number}
-        </span>
+        <div>
+          <span style={{ fontFamily: 'monospace', color: theme.accent, fontSize: '13px' }}>
+            {o.po_number}
+          </span>
+          {o.requisitionNumber && (
+            <div style={{ fontSize: '11px', color: theme.textMuted }}>from {o.requisitionNumber}</div>
+          )}
+        </div>
       ),
     },
     {

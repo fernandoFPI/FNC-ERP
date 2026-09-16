@@ -1854,6 +1854,59 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
       break
     }
 
+    // ── Requisition pricing-pipeline notifications ─────────────────────────────
+    // Payload from notifyPositionHoldersForRequisitionGW/
+    // notifyDeptHeadsAndAdminsForRequisitionGW: { userId, requisitionId, type, title, body }.
+    // Unlike the PO cases above, these also email the recipient — the PO
+    // equivalents never got that (see the comment at PO_INVENTORY_CHECK_REQUIRED
+    // and friends: those are in-app only), but this is a brand-new
+    // notification path with no established in-app-only precedent, so it
+    // starts with both.
+    case 'REQ_MARKET_PRICING_REQUIRED':
+    case 'REQ_PRICE_VERIFICATION_REQUIRED':
+    case 'REQ_APPROVAL_REQUIRED': {
+      const reqRes = await pool.query<{ company_id: string; requisition_number: string; email: string | null }>(
+        `SELECT req.company_id, req.requisition_number, u.email
+         FROM requisitions req, users u
+         WHERE req.id=$1 AND u.id=$2`,
+        [String(p['requisitionId']), String(p['userId'])],
+      )
+      const row = reqRes.rows[0]
+      if (!row) {
+        log.warn({ requisitionId: p['requisitionId'], eventType: event.event_type }, 'requisition or user not found for notification — skipping')
+        break
+      }
+      const title = String(p['title'] ?? '')
+      const body = String(p['body'] ?? '')
+      await pool.query(
+        `INSERT INTO notifications (user_id, company_id, type, title, body, data, push_sent)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,false)`,
+        [String(p['userId']), row.company_id, event.event_type, title, body,
+         JSON.stringify({ requisitionId: p['requisitionId'], requisitionNumber: row.requisition_number })]
+      )
+      if (row.email && await isEmailEnabled('email.requisition_pricing_stage')) {
+        await sendEmail({
+          to: row.email,
+          subject: `FNC ERP — ${title}`,
+          html: `
+            <div style="font-family:Arial;max-width:600px;margin:0 auto">
+              <div style="background:#4a7a9b;color:white;padding:16px 24px">
+                <h1 style="margin:0;font-size:18px">${title}</h1>
+              </div>
+              <div style="padding:24px;background:white">
+                <p style="font-size:14px;color:#374151">${body}</p>
+                <p style="font-size:13px;color:#374151">
+                  Requisition <strong>${row.requisition_number}</strong> — open it in FNC ERP under
+                  Procurement &#8594; Requisitions to act on it.
+                </p>
+              </div>
+            </div>
+          `,
+        })
+      }
+      break
+    }
+
     case 'PO_APPROVED_NOTIFICATION': {
       const coRes = await pool.query<{ company_id: string; po_number: string }>(
         `SELECT company_id, po_number FROM purchase_orders WHERE id=$1`, [String(p['poId'])]

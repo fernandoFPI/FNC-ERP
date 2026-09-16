@@ -131,6 +131,19 @@ describe('RequisitionDetail', () => {
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
   })
 
+  it('shows the project code alongside the project name, and the expected delivery date', async () => {
+    mockReq({
+      project_id: 'proj-1',
+      projectCode: 'PRJ-004',
+      projectName: 'Tower A',
+      expected_delivery_date: '2026-06-15T00:00:00.000Z',
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText('PRJ-004 — Tower A')).toBeInTheDocument()
+    expect(screen.getByText('2026-06-15')).toBeInTheDocument()
+  })
+
   it('shows the lines table with the line description', async () => {
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
@@ -239,6 +252,43 @@ describe('RequisitionDetail', () => {
     expect(submit).not.toBeDisabled()
   })
 
+  // A line fully covered from stock was already zeroed and store-priced at
+  // inventory check — it never needs a market price, so it must not show up
+  // here at all (mirrors PurchaseOrderDetail's own purchaseLines filter).
+  it('market_pricing: excludes a line fully covered from stock, only asking for the line that still needs buying', async () => {
+    mockReq({
+      status: 'market_pricing',
+      callerHasMarketPricingPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Fully from stock', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '0', qty_from_stock: '5', store_price: 10, market_price: null, verified_price: null, total: '0', purchases: [] },
+        { id: 'line-2', line_number: 2, description: 'Needs buying', product_id: 'prod-2', product_name: 'Rebar', sku: 'REB-1', qty: '3', uom: 'unit', currency_code: 'IQD', unit_price: '0', qty_from_stock: '0', store_price: null, market_price: null, verified_price: null, total: '0', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    // "Fully from stock" still appears once, in the always-visible Lines
+    // table — but only one "Market price" input is rendered (for the line
+    // that still needs buying), proving the fully-covered line was left out
+    // of the action panel itself.
+    expect(screen.getAllByText('Fully from stock')).toHaveLength(1)
+    expect(screen.getAllByText('Needs buying').length).toBeGreaterThan(0)
+    expect(screen.getAllByPlaceholderText('0.00')).toHaveLength(1)
+  })
+
+  it('market_pricing: shows a clear message and no inputs when every line is already covered from stock', async () => {
+    mockReq({
+      status: 'market_pricing',
+      callerHasMarketPricingPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Fully from stock', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '0', qty_from_stock: '5', store_price: 10, market_price: null, verified_price: null, total: '0', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText(/every line is covered from stock/i)).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('0.00')).not.toBeInTheDocument()
+  })
+
   it('price_verification: shows Submit for approval, disabled until a verified price exists', async () => {
     mockReq({ status: 'price_verification', callerHasPriceVerificationPosition: true })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
@@ -264,6 +314,25 @@ describe('RequisitionDetail', () => {
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
     expect(screen.getByRole('button', { name: /submit for approval/i })).not.toBeDisabled()
+  })
+
+  it('price_verification: excludes a line fully covered from stock, only asking to verify the line that was market-priced', async () => {
+    mockReq({
+      status: 'price_verification',
+      callerHasPriceVerificationPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Fully from stock', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '0', qty_from_stock: '5', store_price: 10, market_price: null, verified_price: null, total: '0', purchases: [] },
+        { id: 'line-2', line_number: 2, description: 'Needs verification', product_id: 'prod-2', product_name: 'Rebar', sku: 'REB-1', qty: '3', uom: 'unit', currency_code: 'IQD', unit_price: '20', qty_from_stock: '0', store_price: null, market_price: 20, market_price_currency: 'IQD', verified_price: null, total: '60', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    // Same reasoning as the market_pricing test above — the fully-covered
+    // line still shows in the always-visible Lines table, but only one
+    // "Verified price" input is rendered.
+    expect(screen.getAllByText('Fully from stock')).toHaveLength(1)
+    expect(screen.getAllByText('Needs verification').length).toBeGreaterThan(0)
+    expect(screen.getAllByPlaceholderText('0.00')).toHaveLength(1)
   })
 
   it('pending_approval: shows Approve and Reject for an authorized approver', async () => {

@@ -352,6 +352,10 @@ export const poStateMachine = new StateMachine<POStatus, POAction>({
 // ── Requisition State Machine (G1) ──────────────────────────────────────────
 //
 // draft → inventory_check → store_pricing → market_pricing → price_verification → pending_approval
+//                         ↘ pending_approval  (100%-from-stock shortcut — nothing needs a market
+//                                              price or a verification pass, so confirm_inventory_check
+//                                              skips straight there, mirroring poStateMachine's own
+//                                              inventory_check → ready_to_issue shortcut)
 // pending_approval → approved   (ONE gate — covers both the stock issue for from-stock
 //                                 lines and the spend for bought lines, shown per currency.
 //                                 In the same transaction: draft Store Out created for every
@@ -446,6 +450,12 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
   transitions: [
     { from: 'draft', to: 'inventory_check', action: 'submit_to_inventory_check' },
     { from: 'inventory_check', to: 'store_pricing', action: 'confirm_inventory_check' },
+    // 100%-from-stock shortcut, mirroring poStateMachine's own
+    // inventory_check -> ready_to_issue edge: nothing left to price or
+    // verify, so this skips straight to pending_approval instead of
+    // forcing a no-op pass through store_pricing/market_pricing/
+    // price_verification.
+    { from: 'inventory_check', to: 'pending_approval', action: 'confirm_inventory_check' },
     { from: 'store_pricing', to: 'market_pricing', action: 'submit_to_market_pricing' },
     { from: 'market_pricing', to: 'price_verification', action: 'submit_to_price_verification' },
     { from: 'price_verification', to: 'pending_approval', action: 'submit_for_approval' },

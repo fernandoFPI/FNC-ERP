@@ -79,6 +79,7 @@ export const REQUISITION_QUERY = gql`
       delivery_destination
       project_id
       projectName
+      projectCode
       linked_mo_id
       linkedMoNumber
       branch_id
@@ -89,6 +90,7 @@ export const REQUISITION_QUERY = gql`
       assigned_receiver_id
       assigned_receiver_name
       notes
+      expected_delivery_date
       created_at
       updated_at
       callerHasStoreKeeperPosition
@@ -316,11 +318,13 @@ export const REQUISITIONS_QUERY = gql`
       delivery_destination
       project_id
       projectName
+      projectCode
       branch_id
       branch_name
       organizer_id
       organizerName
       notes
+      expected_delivery_date
       created_at
       updated_at
     }

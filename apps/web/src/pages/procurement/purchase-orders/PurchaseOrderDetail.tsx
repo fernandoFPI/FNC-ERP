@@ -162,6 +162,7 @@ export interface PO {
   // its status vocabulary diverges from a legacy PO's from 'bought' onward
   // (see CHILD_PO_STATUSES in po-constants.ts).
   requisition_id?: string | null
+  requisitionNumber?: string | null
   // Server-computed: true when the caller isn't the organizer, an admin, the
   // finance team (once at finance_audit+), or the position holder for this
   // PO's current stage. When true, every other field is withheld by the
@@ -1377,6 +1378,24 @@ export default function PurchaseOrderDetail() {
         actions={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <Badge variant={getPOStatusVariant(po.status)}>{getPOStatusLabel(po.status)}</Badge>
+            {po.requisitionNumber && (
+              <span
+                onClick={() => navigate(`/procurement/requisitions/${po.requisition_id}`)}
+                title="Open the requisition this PO was forked from"
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '7px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  background: `${theme.accent}18`,
+                  color: theme.accent,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+              >
+                Forked from {po.requisitionNumber}
+              </span>
+            )}
             {/* Priority selector */}
             {(() => {
               const PRIORITIES = [

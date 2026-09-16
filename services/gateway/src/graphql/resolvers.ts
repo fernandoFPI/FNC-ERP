@@ -682,7 +682,7 @@ async function applyRequisitionEditChanges(
   reqId: string,
   changes: EditChanges,
 ): Promise<void> {
-  const allowed = ['notes', 'priority', 'delivery_destination', 'branch_id']
+  const allowed = ['notes', 'priority', 'delivery_destination', 'branch_id', 'expected_delivery_date']
   if (changes.header && Object.keys(changes.header).length > 0) {
     const sets: string[] = []
     const vals: unknown[] = []
@@ -1627,7 +1627,7 @@ async function getRequisitionForReturn(reqId: string): Promise<Record<string, un
     query(
       `SELECT req.*,
               cb.name AS branch_name,
-              p.name AS "projectName",
+              p.code AS "projectCode", p.name AS "projectName",
               COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName",
               COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name
        FROM requisitions req
@@ -2674,6 +2674,7 @@ async function fetchFullPurchaseOrderGW(
               aa.name AS analytic_account_name, COALESCE(au.first_name || ' ' || au.last_name, au.email) AS assigned_to_email,
               po.linked_project_id AS "linkedProjectId", po.linked_mo_id AS "linkedMoId",
               proj.code AS "projectCode", proj.name AS "projectName",
+              rq.requisition_number AS "requisitionNumber",
               cb.name AS branch_name, co.name AS company_name,
               COALESCE(NULLIF(TRIM(re.first_name || ' ' || re.last_name), ''), re.email) AS assigned_receiver_name,
               fadv.advance_number AS funding_advance_number, fadv.employee_name AS funding_employee_name,
@@ -2685,6 +2686,7 @@ async function fetchFullPurchaseOrderGW(
        LEFT JOIN users au ON au.id=po.assigned_to
        LEFT JOIN employees re ON re.id=po.assigned_receiver_id
        LEFT JOIN projects proj ON proj.id=po.project_id
+       LEFT JOIN requisitions rq ON rq.id=po.requisition_id
        LEFT JOIN company_branches cb ON cb.id=po.branch_id
        LEFT JOIN companies co ON co.id=po.company_id
        LEFT JOIN employee_advances fadv ON fadv.id=po.funding_advance_id
@@ -3304,6 +3306,88 @@ async function notifyDeptHeadsAndAdminsGW(
     await query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
       [notification.type, JSON.stringify({ userId: r.user_id, poId, ...notification })],
+    )
+  }
+}
+
+// ── Requisition notification helpers ─────────────────────────────────────────
+// Requisition equivalents of notifyPositionHoldersGW/notifyDeptHeadsAndAdminsGW
+// above — same po_position_assignments matching logic (it's already
+// company-wide, not PO-specific, despite the table name), just scoped off
+// requisitions' own project_id/branch_id/organizer_id instead of a PO's.
+// G1 Phase 4 — closes the gap flagged on submitRequisitionStorePricing.
+async function notifyPositionHoldersForRequisitionGW(
+  requisitionId: string,
+  position: string,
+  notification: POAuthGWNotification,
+): Promise<void> {
+  const reqResult = await query(
+    `SELECT req.project_id, req.branch_id, ou.id AS organizer_user_id
+     FROM requisitions req
+     LEFT JOIN users ou ON ou.id = req.organizer_id
+     WHERE req.id = $1`,
+    [requisitionId],
+  )
+  const req = reqResult.rows[0]
+  if (!req) return
+
+  const deptResult = await query(
+    `SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1`,
+    [req.organizer_user_id],
+  )
+  const departmentId = (deptResult.rows[0]?.department_id as string | null) ?? null
+
+  const holders = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM po_position_assignments ppa
+     JOIN employees e ON e.id = ppa.employee_id
+     JOIN users u ON u.id = e.user_id
+     WHERE ppa.position = $1 AND ppa.is_active = true
+       AND (
+         ($2::uuid IS NOT NULL AND ppa.project_id = $2)
+         OR ($3::uuid IS NOT NULL AND ppa.department_id = $3)
+         OR ($4::uuid IS NOT NULL AND ppa.branch_id = $4)
+         OR (ppa.project_id IS NULL AND ppa.department_id IS NULL AND ppa.branch_id IS NULL)
+       )`,
+    [position, req.project_id ?? null, departmentId, req.branch_id ?? null],
+  )
+  for (const holder of holders.rows) {
+    await query(
+      `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+      [notification.type, JSON.stringify({ userId: holder.user_id, requisitionId, ...notification })],
+    )
+  }
+}
+
+async function notifyDeptHeadsAndAdminsForRequisitionGW(
+  requisitionId: string,
+  notification: POAuthGWNotification,
+): Promise<void> {
+  const reqResult = await query(`SELECT organizer_id FROM requisitions WHERE id = $1`, [
+    requisitionId,
+  ])
+  const organizerId = reqResult.rows[0]?.organizer_id as string | undefined
+  if (!organizerId) return
+
+  const deptHeads = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM departments d
+     JOIN employees mgr ON mgr.id = d.manager_id
+     JOIN users u ON u.id = mgr.user_id
+     WHERE d.id = (SELECT e.department_id FROM employees e WHERE e.user_id = $1 LIMIT 1)`,
+    [organizerId],
+  )
+  const admins = await query(
+    `SELECT DISTINCT u.id AS user_id
+     FROM users u
+     JOIN user_company_roles ucr ON ucr.user_id = u.id
+     WHERE ucr.role = 'system_admin' AND u.is_active = true`,
+    [],
+  )
+  for (const r of [...deptHeads.rows, ...admins.rows]) {
+    await query(
+      `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
+      [notification.type, JSON.stringify({ userId: r.user_id, requisitionId, ...notification })],
     )
   }
 }
@@ -5682,11 +5766,13 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) return []
       let sql = `SELECT po.*, v.name AS vendor_name, proj.code AS "projectCode", proj.name AS "projectName",
+        rq.requisition_number AS "requisitionNumber",
         cb.name AS branch_name,
         (SELECT COUNT(*) FROM vendor_invoices vi WHERE vi.po_id = po.id AND vi.company_id = po.company_id)::int AS invoice_count
         FROM purchase_orders po
         LEFT JOIN vendors v ON v.id = po.vendor_id
         LEFT JOIN projects proj ON proj.id = po.project_id
+        LEFT JOIN requisitions rq ON rq.id = po.requisition_id
         LEFT JOIN company_branches cb ON cb.id = po.branch_id
         WHERE po.company_id = $1`
       const params: unknown[] = [ctx.auth.companyId]
@@ -8994,7 +9080,7 @@ export const resolvers = {
       if (!ctx.auth) return null
       const [req, lines, approvals, currencyTotals, editRequests] = await Promise.all([
         query(
-          `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
+          `SELECT req.*, cb.name AS branch_name, p.code AS "projectCode", p.name AS "projectName",
                   mo.mo_number AS "linkedMoNumber",
                   COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
            FROM requisitions req
@@ -9142,7 +9228,7 @@ export const resolvers = {
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      let sql = `SELECT req.*, cb.name AS branch_name, p.name AS "projectName",
+      let sql = `SELECT req.*, cb.name AS branch_name, p.code AS "projectCode", p.name AS "projectName",
         COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
         FROM requisitions req
         LEFT JOIN company_branches cb ON cb.id = req.branch_id
@@ -29211,6 +29297,7 @@ const phase5MutationResolvers = {
         branch_id?: string
         assigned_receiver_id?: string
         notes?: string
+        expected_delivery_date?: string
         linked_mo_id?: string
         lines: {
           product_id?: string
@@ -29273,8 +29360,8 @@ const phase5MutationResolvers = {
           ? i.priority
           : 'low'
         const req = await client.query(
-          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, assigned_receiver_id, notes, linked_mo_id, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'draft') RETURNING *`,
+          `INSERT INTO requisitions (company_id, branch_id, requisition_number, project_id, purpose, delivery_destination, priority, organizer_id, assigned_receiver_id, notes, expected_delivery_date, linked_mo_id, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'draft') RETURNING *`,
           [
             ctx.auth!.companyId,
             i.branch_id ?? null,
@@ -29286,6 +29373,7 @@ const phase5MutationResolvers = {
             ctx.auth!.userId,
             i.assigned_receiver_id ?? null,
             i.notes ?? null,
+            i.expected_delivery_date ?? null,
             i.purpose === 'manufacturing' ? (i.linked_mo_id ?? null) : null,
           ],
         )
@@ -29377,6 +29465,7 @@ const phase5MutationResolvers = {
     )
     if (!isAdmin && !isOrganizer && !isStoreKeeper)
       throw new Error('Only the requisition owner or a Store Keeper can confirm the inventory check')
+    const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const isSysAdmin = auth.role === 'system_admin'
 
     // Same cross-company location-ownership check as confirmPOInventoryCheck
@@ -29397,6 +29486,7 @@ const phase5MutationResolvers = {
         throw new Error('Source stock location not found or not accessible to you')
     }
 
+    let needsPurchase = false
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -29528,22 +29618,33 @@ const phase5MutationResolvers = {
         )
       }
 
-      await reqTransition(
-        client,
-        args.id,
-        'inventory_check',
-        'store_pricing',
-        'confirm_inventory_check',
-        auth,
-        args.notes,
+      const needsPurchaseRes = await client.query<{ needs_purchase: string }>(
+        `SELECT COUNT(*) FILTER (WHERE qty_from_stock < qty_ordered) AS needs_purchase
+         FROM po_lines WHERE requisition_id=$1`,
+        [args.id],
       )
+      needsPurchase = parseInt(needsPurchaseRes.rows[0]?.needs_purchase ?? '0', 10) > 0
+
+      if (needsPurchase) {
+        await reqTransition(
+          client,
+          args.id,
+          'inventory_check',
+          'store_pricing',
+          'confirm_inventory_check',
+          auth,
+          args.notes,
+        )
+      }
+      // else: no transition yet — the 100%-from-stock case takes a single
+      // hop straight from 'inventory_check' to 'pending_approval' below,
+      // mirroring confirmPOInventoryCheck's own inventory_check ->
+      // ready_to_issue shortcut (never visiting 'store_pricing' as an
+      // externally observable status at all, not even transiently).
 
       // Store Pricing is no longer a human step here either — mirrors
       // confirmPOInventoryCheck's own auto-fill-and-advance exactly (see
-      // that resolver's comment for the full rationale). Unlike POs,
-      // requisitions have no 'ready_to_issue' bypass for a 100%-from-stock
-      // case, so this always advances straight through regardless of
-      // whether any line actually needs purchasing.
+      // that resolver's comment for the full rationale).
       const baseCcyRes = await client.query<{ default_currency: string }>(
         `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
         [auth.companyId],
@@ -29598,15 +29699,33 @@ const phase5MutationResolvers = {
         })
       }
 
-      await reqTransition(
-        client,
-        args.id,
-        'store_pricing',
-        'market_pricing',
-        'submit_to_market_pricing',
-        auth,
-        'Store pricing auto-filled from cached market price',
-      )
+      if (needsPurchase) {
+        await reqTransition(
+          client,
+          args.id,
+          'store_pricing',
+          'market_pricing',
+          'submit_to_market_pricing',
+          auth,
+          'Store pricing auto-filled from cached market price',
+        )
+      } else {
+        // 100%-from-stock — nothing left to market-price or verify, so
+        // skip straight to pending_approval instead of leaving the
+        // requisition observably parked at 'store_pricing' with nothing
+        // for anyone to do. Still requires the same human approval every
+        // requisition does — this removes the mechanical no-op stage
+        // hops, not the approval gate itself.
+        await reqTransition(
+          client,
+          args.id,
+          'inventory_check',
+          'pending_approval',
+          'confirm_inventory_check',
+          auth,
+          args.notes,
+        )
+      }
       await logAudit({
         userId: auth.userId,
         companyId: auth.companyId,
@@ -29616,12 +29735,35 @@ const phase5MutationResolvers = {
         newValues: { lines: autoFilledLines },
         client,
       })
+      if (empId)
+        await client.query(`UPDATE requisitions SET store_keeper_id=$1 WHERE id=$2`, [
+          empId,
+          args.id,
+        ])
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
       throw e
     } finally {
       client.release()
+    }
+    if (needsPurchase) {
+      void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_officer', {
+        type: 'REQ_MARKET_PRICING_REQUIRED',
+        title: 'Market pricing required',
+        body: 'Requisition requires external vendor quotes',
+      })
+    } else {
+      // No market_pricing/price_verification stage was ever visited for this
+      // requisition, so verifyRequisitionPrices' own REQ_APPROVAL_REQUIRED
+      // ping — the only other place that fires it — never runs either.
+      // Without this, a 100%-from-stock requisition would reach
+      // pending_approval completely silently.
+      void notifyDeptHeadsAndAdminsForRequisitionGW(args.id, {
+        type: 'REQ_APPROVAL_REQUIRED',
+        title: 'Requisition approval required',
+        body: 'A requisition is awaiting your approval',
+      })
     }
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
@@ -29639,14 +29781,12 @@ const phase5MutationResolvers = {
   //     line's currency_code is its one real currency, never converted;
   //     totals are per-currency (getRequisitionCurrencyTotals), never
   //     collapsed into one number the way recalcPO's total_amount is.
-  // Also deliberately NOT ported: the store_pricing_id/procurement_officer_id/
-  // procurement_2nd_id position-holder stamping and the position-holder
-  // push notifications submitPOStorePricing/submitPOMarketPricing/
-  // submitPOPriceVerification each send — requisitions has no equivalent
-  // tracking columns yet, and notifyPositionHoldersGW/
-  // notifyDeptHeadsAndAdminsGW are hardcoded to purchase_orders. Scoped
-  // out rather than silently built wrong; flagging for a decision on
-  // whether requisitions need their own version of either.
+  // G1 Phase 4 — now also stamps store_pricing_id/procurement_officer_id/
+  // procurement_2nd_id (migration 275) and pings the next stage's position
+  // holders, mirroring submitPOStorePricing/submitPOMarketPricing/
+  // submitPOPriceVerification via the requisition-scoped
+  // notifyPositionHoldersForRequisitionGW/notifyDeptHeadsAndAdminsForRequisitionGW
+  // helpers instead of the PO-hardcoded ones.
 
   submitRequisitionStorePricing: async (
     _: unknown,
@@ -29666,6 +29806,7 @@ const phase5MutationResolvers = {
       'store_pricing',
     )
     if (!isAdmin && !hasPos) throw new Error('store_pricing position required')
+    const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -29678,6 +29819,11 @@ const phase5MutationResolvers = {
           [lp.storePrice, lp.currencyCode, lp.lineId, args.id],
         )
       }
+      if (empId)
+        await client.query(`UPDATE requisitions SET store_pricing_id=$1 WHERE id=$2`, [
+          empId,
+          args.id,
+        ])
       await reqTransition(
         client,
         args.id,
@@ -29693,6 +29839,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_officer', {
+      type: 'REQ_MARKET_PRICING_REQUIRED',
+      title: 'Market pricing required',
+      body: 'Requisition requires external vendor quotes',
+    })
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },
@@ -29720,6 +29871,7 @@ const phase5MutationResolvers = {
       'procurement_officer',
     )
     if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
+    const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -29746,6 +29898,11 @@ const phase5MutationResolvers = {
           )
         }
       }
+      if (empId)
+        await client.query(`UPDATE requisitions SET procurement_officer_id=$1 WHERE id=$2`, [
+          empId,
+          args.id,
+        ])
       await reqTransition(
         client,
         args.id,
@@ -29761,6 +29918,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_2nd', {
+      type: 'REQ_PRICE_VERIFICATION_REQUIRED',
+      title: 'Price verification required',
+      body: 'Requisition market prices require cross-checking',
+    })
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },
@@ -29784,6 +29946,7 @@ const phase5MutationResolvers = {
       'procurement_2nd',
     )
     if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -29797,6 +29960,11 @@ const phase5MutationResolvers = {
           [la.verifiedPrice, la.lineId, args.id],
         )
       }
+      if (empId)
+        await client.query(`UPDATE requisitions SET procurement_2nd_id=$1 WHERE id=$2`, [
+          empId,
+          args.id,
+        ])
       await reqTransition(
         client,
         args.id,
@@ -29813,6 +29981,11 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void notifyDeptHeadsAndAdminsForRequisitionGW(args.id, {
+      type: 'REQ_APPROVAL_REQUIRED',
+      title: 'Requisition approval required',
+      body: 'A requisition is awaiting your approval',
+    })
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },
@@ -29824,7 +29997,9 @@ const phase5MutationResolvers = {
   // rather than silently assumed complete). callerHasPOAdmin is reused
   // as-is: it's already company-wide, not PO-specific, despite the name.
   //
-  // Notifications deliberately deferred to Phase 4, same as PR 1b.
+  // approveRequisition/rejectRequisitionApproval themselves still send no
+  // notification (there's no further "next stage" position holder to ping
+  // once approved/rejected) — only that part remains deferred.
 
   approveRequisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')

@@ -32,6 +32,12 @@ export const NOTIFICATION_ROUTES = [
     description:
       'Email system admins when a critical or high-priority outbox event exhausts all retries',
   },
+  {
+    key: 'email.requisition_pricing_stage',
+    label: 'Requisition pricing pipeline pings',
+    description:
+      'Email store pricing / market pricing / price verification / approval position holders when a requisition reaches their stage',
+  },
 ] as const
 
 export type NotificationRouteKey = (typeof NOTIFICATION_ROUTES)[number]['key']

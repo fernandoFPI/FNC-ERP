@@ -9,9 +9,11 @@ import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const TEST_USER_EMAIL = 'g1-requisition-test@fnc-erp.local'
+const TEST_EMPLOYEE_NUMBER = 'G1TEST-STOREKEEPER'
 const SKU_PREFIX = 'G1TEST-'
 
 let userId: string
+let employeeId: string
 let warehouseId: string
 let virtualInId: string
 let baseCurrency: string
@@ -91,6 +93,14 @@ beforeAll(async () => {
   userId = userR.rows[0]!.id
   ctx = { auth: { companyId: TEST_COMPANY_ID, userId, role: 'system_admin', module: 'all', sessionId: 'g1-test' } }
 
+  const employeeR = await pool.query<{ id: string }>(
+    `INSERT INTO employees (company_id, user_id, first_name, last_name, hire_date, employee_number)
+     VALUES ($1,$2,'Test','StoreKeeper',CURRENT_DATE,$3)
+     ON CONFLICT (company_id, employee_number) DO UPDATE SET user_id = EXCLUDED.user_id RETURNING id`,
+    [TEST_COMPANY_ID, userId, TEST_EMPLOYEE_NUMBER],
+  )
+  employeeId = employeeR.rows[0]!.id
+
   const whR = await pool.query<{ id: string }>(
     `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
     [TEST_COMPANY_ID],
@@ -116,6 +126,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanup()
+  await pool.query(`DELETE FROM employees WHERE employee_number=$1`, [TEST_EMPLOYEE_NUMBER])
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
   await pool.end()
 })
@@ -205,7 +216,7 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
     return { reqId, lineId: lineRow.rows[0]!.id }
   }
 
-  it('reserves stock, zeroes the line total when fully covered, auto-fills store pricing, and advances straight to market_pricing', async () => {
+  it('reserves stock, zeroes the line total when fully covered, auto-fills store pricing, and skips straight to pending_approval', async () => {
     const productId = await makeProduct('reserve')
     await receive(productId, warehouseId, 20, 10) // unit_cost 10 -> average_cost becomes 10
     const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
@@ -215,9 +226,10 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    // No 'ready_to_issue' equivalent for requisitions (unlike confirmPOInventoryCheck) —
-    // always lands on market_pricing, mirroring the PO fast path's own store-pricing skip.
-    expect((result as { status: string }).status).toBe('market_pricing')
+    // 100%-from-stock — nothing left to market-price or verify, so this
+    // skips straight to pending_approval, mirroring confirmPOInventoryCheck's
+    // own inventory_check -> ready_to_issue shortcut.
+    expect((result as { status: string }).status).toBe('pending_approval')
 
     const bal = await getBalance(productId, warehouseId)
     expect(bal.reserved).toBe(5)
@@ -269,6 +281,38 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
     // qty_from_stock > 0 is the only gate, not full coverage.
     expect(parseFloat(line.rows[0]!.store_price)).toBe(7)
     expect(line.rows[0]!.store_price_currency).toBe(baseCurrency)
+  })
+
+  it('stamps store_keeper_id on the requisition, whether the line needs more purchasing or not', async () => {
+    const fullyCoveredProduct = await makeProduct('stamp-full')
+    await receive(fullyCoveredProduct, warehouseId, 20, 10)
+    const full = await makeReqAtInventoryCheck(fullyCoveredProduct, 5)
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: full.reqId, lineStockQtys: [{ lineId: full.lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    const fullRow = await pool.query<{ store_keeper_id: string | null; status: string }>(
+      `SELECT store_keeper_id, status FROM requisitions WHERE id=$1`,
+      [full.reqId],
+    )
+    expect(fullRow.rows[0]!.store_keeper_id).toBe(employeeId)
+    expect(fullRow.rows[0]!.status).toBe('pending_approval')
+
+    const needsPurchaseProduct = await makeProduct('stamp-partial')
+    await receive(needsPurchaseProduct, warehouseId, 3, 7)
+    const partial = await makeReqAtInventoryCheck(needsPurchaseProduct, 10)
+    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: partial.reqId, lineStockQtys: [{ lineId: partial.lineId, qtyFromStock: 3, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    const partialRow = await pool.query<{ store_keeper_id: string | null; status: string }>(
+      `SELECT store_keeper_id, status FROM requisitions WHERE id=$1`,
+      [partial.reqId],
+    )
+    expect(partialRow.rows[0]!.store_keeper_id).toBe(employeeId)
+    expect(partialRow.rows[0]!.status).toBe('market_pricing')
   })
 
   it('prefers a cached last-market-price and its real currency over the average-cost/base-currency fallback', async () => {
@@ -404,7 +448,8 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
       },
       ctx as never,
     )
-    expect((result as { status: string }).status).toBe('market_pricing')
+    // 100%-from-stock — skips straight to pending_approval.
+    expect((result as { status: string }).status).toBe('pending_approval')
 
     // Reserved against the NEW product, not the one the line started with.
     expect((await getBalance(wrongProductId, warehouseId)).reserved).toBe(0)

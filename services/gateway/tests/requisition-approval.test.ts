@@ -237,10 +237,9 @@ describe('approveRequisition', () => {
 
   it('a fully stock-covered requisition (zero bought lines) goes to sourcing, not items_bought', async () => {
     // Deliberately not reusing makeReqAtPendingApproval here — a fully-
-    // covered line has nothing to price, so this calls store/market
-    // pricing with empty linePrices (advancing the requisition's status
-    // without touching the line, which is already correctly zeroed by
-    // confirmRequisitionInventoryCheck).
+    // covered line has nothing to price, so confirmRequisitionInventoryCheck
+    // now skips straight to pending_approval itself (no separate store/
+    // market pricing calls needed at all).
     const productId = await makeProduct('zerobought')
     await receive(productId, warehouseId, 10)
     const created = await resolvers.Mutation.createRequisition(
@@ -253,15 +252,12 @@ describe('approveRequisition', () => {
     const lineId = lineRow.rows[0]!.id
 
     await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
-    await resolvers.Mutation.confirmRequisitionInventoryCheck(
+    const afterInventoryCheck = await resolvers.Mutation.confirmRequisitionInventoryCheck(
       null,
       { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
       ctx as never,
     )
-    // confirmRequisitionInventoryCheck now auto-advances straight through
-    // store_pricing to market_pricing — no separate call needed.
-    await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
-    await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
+    expect((afterInventoryCheck as { status: string }).status).toBe('pending_approval')
 
     const line = await pool.query<{ total_price: string; qty_from_stock: string }>(
       `SELECT total_price, qty_from_stock FROM po_lines WHERE id=$1`,
@@ -331,10 +327,8 @@ describe('approveRequisition', () => {
       },
       ctx as never,
     )
-    // confirmRequisitionInventoryCheck now auto-advances straight through
-    // store_pricing to market_pricing — no separate call needed.
-    await resolvers.Mutation.submitRequisitionMarketPricing(null, { id: reqId }, ctx as never)
-    await resolvers.Mutation.verifyRequisitionPrices(null, { id: reqId }, ctx as never)
+    // Both lines are 100%-from-stock — confirmRequisitionInventoryCheck now
+    // skips straight to pending_approval itself, no separate calls needed.
     await resolvers.Mutation.approveRequisition(null, { id: reqId }, ctx as never)
 
     const issues = await pool.query<{ id: string }>(

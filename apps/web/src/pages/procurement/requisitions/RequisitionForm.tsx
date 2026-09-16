@@ -60,6 +60,7 @@ export default function RequisitionForm() {
   const [branchId, setBranchId] = useState('')
   const [assignedReceiverId, setAssignedReceiverId] = useState('')
   const [priority, setPriority] = useState<'low' | 'high' | 'emergency'>('low')
+  const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ReqLineDraft[]>([emptyLine()])
   const formRef = useRef<HTMLFormElement>(null)
@@ -259,6 +260,7 @@ export default function RequisitionForm() {
         branch_id: branchId || undefined,
         assigned_receiver_id: assignedReceiverId || undefined,
         notes: notes || undefined,
+        expected_delivery_date: expectedDeliveryDate || undefined,
         lines: realLines.map((l) => ({
           product_id: l.product_id || undefined,
           description: l.description,
@@ -361,6 +363,14 @@ export default function RequisitionForm() {
                 options={employeeOptions}
                 placeholder="Search employee…"
                 minDropdownWidth={320}
+              />
+            </div>
+            <div style={{ flex: '1 1 180px' }}>
+              <Input
+                label="Expected Delivery (optional)"
+                type="date"
+                value={expectedDeliveryDate}
+                onChange={(e) => setExpectedDeliveryDate(e.target.value)}
               />
             </div>
           </div>

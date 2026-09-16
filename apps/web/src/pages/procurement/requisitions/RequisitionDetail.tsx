@@ -151,6 +151,7 @@ interface Requisition {
   delivery_destination?: string | null
   project_id?: string | null
   projectName?: string | null
+  projectCode?: string | null
   linked_mo_id?: string | null
   linkedMoNumber?: string | null
   branch_id?: string | null
@@ -160,6 +161,7 @@ interface Requisition {
   assigned_receiver_id?: string | null
   assigned_receiver_name?: string | null
   notes?: string | null
+  expected_delivery_date?: string | null
   created_at: string
   updated_at: string
   callerHasStoreKeeperPosition?: boolean
@@ -649,11 +651,15 @@ export default function RequisitionDetail() {
                 ),
             },
             { label: 'Priority', value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—' },
-            { label: 'Project', value: req.projectName ?? '—' },
+            {
+              label: 'Project',
+              value: req.projectCode ? `${req.projectCode} — ${req.projectName ?? ''}` : (req.projectName ?? '—'),
+            },
             ...(req.linkedMoNumber ? [{ label: 'Manufacturing Order', value: req.linkedMoNumber }] : []),
             { label: 'Branch', value: req.branch_name ?? '—' },
             { label: 'Organizer', value: req.organizerName ?? '—' },
             { label: 'Received By', value: req.assigned_receiver_name ?? '—' },
+            { label: 'Expected Delivery', value: req.expected_delivery_date?.slice(0, 10) ?? '—' },
             { label: 'Created', value: req.created_at.slice(0, 10) },
           ].map((f) => (
             <div
@@ -1472,9 +1478,23 @@ export default function RequisitionDetail() {
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
               Only a Procurement Officer (or an admin) can act here.
             </div>
-          ) : (
+          ) : (() => {
+            // Only lines still needing purchase — a line fully covered
+            // from stock was already zeroed and priced (for reference) at
+            // inventory check, and never needs a market price. Mirrors
+            // PurchaseOrderDetail's own purchaseLines filter exactly. A
+            // free-text/service line has no qty_from_stock at all, so it
+            // always shows up here.
+            const purchaseLines = req.lines.filter(
+              (l) => (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0.0001,
+            )
+            return purchaseLines.length === 0 ? (
+              <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                Nothing on this requisition needs a market price — every line is covered from stock.
+              </div>
+            ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => {
+              {purchaseLines.map((l) => {
                 const raw = marketPrices[l.id]
                 const missing = raw === undefined || raw === ''
                 const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
@@ -1522,7 +1542,7 @@ export default function RequisitionDetail() {
                 )
               })}
               {(() => {
-                const allPriced = req.lines.every((l) => {
+                const allPriced = purchaseLines.every((l) => {
                   const raw = marketPrices[l.id]
                   return raw !== undefined && raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
                 })
@@ -1542,7 +1562,7 @@ export default function RequisitionDetail() {
                         void submitMarketPricing({
                           variables: {
                             id: req.id,
-                            linePrices: req.lines.map((l) => ({
+                            linePrices: purchaseLines.map((l) => ({
                               lineId: l.id,
                               marketPrice: parseFloat(marketPrices[l.id]!),
                               currencyCode: marketCurrency[l.id] ?? l.currency_code,
@@ -1558,7 +1578,8 @@ export default function RequisitionDetail() {
                 )
               })()}
             </div>
-          )}
+            )
+          })()}
         </Card>
       )}
 
@@ -1573,9 +1594,20 @@ export default function RequisitionDetail() {
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
               Only 2nd Procurement (or an admin) can act here.
             </div>
-          ) : (
+          ) : (() => {
+            // Same purchaseLines filter as the market-pricing panel above —
+            // a line fully covered from stock never got a market price
+            // either, so there's nothing here to verify for it.
+            const purchaseLines = req.lines.filter(
+              (l) => (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0.0001,
+            )
+            return purchaseLines.length === 0 ? (
+              <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                Nothing on this requisition needs price verification — every line is covered from stock.
+              </div>
+            ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => {
+              {purchaseLines.map((l) => {
                 const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
                 const missing = raw === ''
                 const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
@@ -1602,7 +1634,7 @@ export default function RequisitionDetail() {
                 )
               })}
               {(() => {
-                const allVerified = req.lines.every((l) => {
+                const allVerified = purchaseLines.every((l) => {
                   const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
                   return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
                 })
@@ -1623,7 +1655,7 @@ export default function RequisitionDetail() {
                         void verifyPrices({
                           variables: {
                             id: req.id,
-                            lineAdjustments: req.lines.map((l) => ({
+                            lineAdjustments: purchaseLines.map((l) => ({
                               lineId: l.id,
                               verifiedPrice: parseFloat(
                                 verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : ''),
@@ -1639,7 +1671,8 @@ export default function RequisitionDetail() {
                 )
               })()}
             </div>
-          )}
+            )
+          })()}
         </Card>
       )}
 

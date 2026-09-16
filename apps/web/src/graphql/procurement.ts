@@ -90,6 +90,7 @@ export const PURCHASE_ORDERS_QUERY = gql`
       project_id
       projectCode
       projectName
+      requisitionNumber
       branch_id
       branch_name
     }
@@ -413,6 +414,7 @@ export const PO_LIFECYCLE_QUERY = gql`
       status
       priority
       requisition_id
+      requisitionNumber
       viewerRestricted
       currency_code
       base_currency_code

@@ -8,9 +8,11 @@ import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
 const TEST_USER_EMAIL = 'g1-requisition-pricing-test@fnc-erp.local'
+const TEST_EMPLOYEE_NUMBER = 'G1PTEST-PROCUREMENT'
 const SKU_PREFIX = 'G1PTEST-'
 
 let userId: string
+let employeeId: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 
 async function makeProduct(suffix: string): Promise<string> {
@@ -84,11 +86,21 @@ beforeAll(async () => {
   )
   userId = userR.rows[0]!.id
   ctx = { auth: { companyId: TEST_COMPANY_ID, userId, role: 'system_admin', module: 'all', sessionId: 'g1-test' } }
+
+  const employeeR = await pool.query<{ id: string }>(
+    `INSERT INTO employees (company_id, user_id, first_name, last_name, hire_date, employee_number)
+     VALUES ($1,$2,'Test','Procurement',CURRENT_DATE,$3)
+     ON CONFLICT (company_id, employee_number) DO UPDATE SET user_id = EXCLUDED.user_id RETURNING id`,
+    [TEST_COMPANY_ID, userId, TEST_EMPLOYEE_NUMBER],
+  )
+  employeeId = employeeR.rows[0]!.id
+
   await cleanup()
 })
 
 afterAll(async () => {
   await cleanup()
+  await pool.query(`DELETE FROM employees WHERE employee_number=$1`, [TEST_EMPLOYEE_NUMBER])
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
   await pool.end()
 })
@@ -110,6 +122,12 @@ describe('submitRequisitionStorePricing', () => {
     )
     expect(parseFloat(line.rows[0]!.store_price)).toBe(7)
     expect(parseFloat(line.rows[0]!.total_price)).toBe(50) // unchanged: 5 qty * 10 unit_price
+
+    const req = await pool.query<{ store_pricing_id: string | null }>(
+      `SELECT store_pricing_id FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    expect(req.rows[0]!.store_pricing_id).toBe(employeeId)
   })
 })
 
@@ -158,6 +176,12 @@ describe('submitRequisitionMarketPricing', () => {
     )
     expect(parseFloat(product.rows[0]!.last_market_price)).toBe(12)
     expect(product.rows[0]!.last_market_price_currency).toBe('USD')
+
+    const req = await pool.query<{ procurement_officer_id: string | null }>(
+      `SELECT procurement_officer_id FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    expect(req.rows[0]!.procurement_officer_id).toBe(employeeId)
   })
 })
 
@@ -193,6 +217,12 @@ describe('verifyRequisitionPrices', () => {
       [reqId],
     )
     expect(log.rows[0]!.notes).toBe('looks right')
+
+    const req = await pool.query<{ procurement_2nd_id: string | null }>(
+      `SELECT procurement_2nd_id FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    expect(req.rows[0]!.procurement_2nd_id).toBe(employeeId)
   })
 })
 

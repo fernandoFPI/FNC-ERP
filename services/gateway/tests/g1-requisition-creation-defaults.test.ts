@@ -300,3 +300,48 @@ describe('createRequisition — account/cost-center defaulting', () => {
     }
   })
 })
+
+describe('createRequisition — expected_delivery_date and projectCode', () => {
+  it('accepts an optional expected_delivery_date, and resolves projectCode alongside projectName', async () => {
+    const productId = await makeProduct('delivery-date')
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      {
+        input: {
+          purpose: 'project',
+          project_id: projectId,
+          delivery_destination: 'inventory',
+          branch_id: branchId,
+          expected_delivery_date: '2026-06-15',
+          lines: [{ product_id: productId, description: 'x', qty: 1, unit_price: 1 }],
+        },
+      },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+
+    const fetched = (await resolvers.Query.requisition(null, { id: reqId }, ctx as never)) as {
+      expected_delivery_date: string
+      projectCode: string
+      projectName: string
+    }
+    expect(fetched.expected_delivery_date.slice(0, 10)).toBe('2026-06-15')
+    expect(fetched.projectCode).toBe(`${PREFIX}PRJ`)
+    expect(fetched.projectName).toBe('G1 RCD Test Project')
+  })
+
+  it('leaves expected_delivery_date null when omitted — it is optional, not required', async () => {
+    const productId = await makeProduct('no-delivery-date')
+    const created = await resolvers.Mutation.createRequisition(
+      null,
+      { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: 1, unit_price: 1 }] } },
+      ctx as never,
+    )
+    const reqId = (created as { id: string }).id
+    const row = await pool.query<{ expected_delivery_date: string | null }>(
+      `SELECT expected_delivery_date FROM requisitions WHERE id=$1`,
+      [reqId],
+    )
+    expect(row.rows[0]!.expected_delivery_date).toBeNull()
+  })
+})
