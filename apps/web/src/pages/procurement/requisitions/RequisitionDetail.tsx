@@ -1474,65 +1474,89 @@ export default function RequisitionDetail() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => (
-                <div
-                  key={l.id}
-                  style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
-                >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
-                    {l.description || l.product_name}
+              {req.lines.map((l) => {
+                const raw = marketPrices[l.id]
+                const missing = raw === undefined || raw === ''
+                const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
+                return (
+                  <div
+                    key={l.id}
+                    style={{
+                      padding: '12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${missing || invalid ? theme.dangerBorder : theme.border}`,
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '8px' }}>
+                      {l.description || l.product_name}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ width: '140px' }}>
+                        <Input
+                          label="Market price"
+                          type="number"
+                          min="0"
+                          value={raw ?? ''}
+                          onChange={(e) => setMarketPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                          placeholder="0.00"
+                          error={missing ? 'Required' : invalid ? 'Enter a valid price' : undefined}
+                        />
+                      </div>
+                      <div style={{ width: '110px' }}>
+                        <Select
+                          label="Currency"
+                          value={marketCurrency[l.id] ?? l.currency_code}
+                          onChange={(e) => setMarketCurrency((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                          options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: '160px' }}>
+                        <Input
+                          label="Vendor quote ref (optional)"
+                          value={quoteRefs[l.id] ?? ''}
+                          onChange={(e) => setQuoteRefs((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <div style={{ width: '140px' }}>
-                      <Input
-                        label="Market price"
-                        type="number"
-                        min="0"
-                        value={marketPrices[l.id] ?? ''}
-                        onChange={(e) => setMarketPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div style={{ width: '110px' }}>
-                      <Select
-                        label="Currency"
-                        value={marketCurrency[l.id] ?? l.currency_code}
-                        onChange={(e) => setMarketCurrency((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-                      />
-                    </div>
-                    <div style={{ flex: 1, minWidth: '160px' }}>
-                      <Input
-                        label="Vendor quote ref (optional)"
-                        value={quoteRefs[l.id] ?? ''}
-                        onChange={(e) => setQuoteRefs((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-              <Button
-                variant="primary"
-                loading={lMarket}
-                style={{ alignSelf: 'flex-start' }}
-                onClick={() =>
-                  void submitMarketPricing({
-                    variables: {
-                      id: req.id,
-                      linePrices: req.lines
-                        .filter((l) => marketPrices[l.id])
-                        .map((l) => ({
-                          lineId: l.id,
-                          marketPrice: parseFloat(marketPrices[l.id]!) || 0,
-                          currencyCode: marketCurrency[l.id] ?? l.currency_code,
-                          vendorQuoteRef: quoteRefs[l.id] || undefined,
-                        })),
-                    },
-                  })
-                }
-              >
-                Submit to price verification
-              </Button>
+                )
+              })}
+              {(() => {
+                const allPriced = req.lines.every((l) => {
+                  const raw = marketPrices[l.id]
+                  return raw !== undefined && raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
+                })
+                return (
+                  <>
+                    {!allPriced && (
+                      <div style={{ fontSize: '12px', color: theme.danger }}>
+                        Enter a price for every line — including free-text/service lines — before submitting.
+                      </div>
+                    )}
+                    <Button
+                      variant="primary"
+                      loading={lMarket}
+                      disabled={!allPriced}
+                      style={{ alignSelf: 'flex-start' }}
+                      onClick={() =>
+                        void submitMarketPricing({
+                          variables: {
+                            id: req.id,
+                            linePrices: req.lines.map((l) => ({
+                              lineId: l.id,
+                              marketPrice: parseFloat(marketPrices[l.id]!),
+                              currencyCode: marketCurrency[l.id] ?? l.currency_code,
+                              vendorQuoteRef: quoteRefs[l.id] || undefined,
+                            })),
+                          },
+                        })
+                      }
+                    >
+                      Submit to price verification
+                    </Button>
+                  </>
+                )
+              })()}
             </div>
           )}
         </Card>
@@ -1551,44 +1575,69 @@ export default function RequisitionDetail() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {req.lines.map((l) => (
-                <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
-                    {l.description || l.product_name}
-                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                      Market: {fmtN(l.market_price)} {l.market_price_currency}
+              {req.lines.map((l) => {
+                const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                const missing = raw === ''
+                const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
+                return (
+                  <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                    <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
+                      {l.description || l.product_name}
+                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                        Market: {l.market_price != null ? `${fmtN(l.market_price)} ${l.market_price_currency}` : 'not set'}
+                      </div>
+                    </div>
+                    <div style={{ width: '140px' }}>
+                      <Input
+                        label="Verified price"
+                        type="number"
+                        min="0"
+                        value={raw}
+                        onChange={(e) => setVerifiedPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        placeholder="0.00"
+                        error={missing ? 'Required' : invalid ? 'Enter a valid price' : undefined}
+                      />
                     </div>
                   </div>
-                  <div style={{ width: '140px' }}>
-                    <Input
-                      label="Verified price"
-                      type="number"
-                      min="0"
-                      value={verifiedPrices[l.id] ?? l.market_price ?? ''}
-                      onChange={(e) => setVerifiedPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-              ))}
-              <Button
-                variant="primary"
-                loading={lVerify}
-                style={{ alignSelf: 'flex-start' }}
-                onClick={() =>
-                  void verifyPrices({
-                    variables: {
-                      id: req.id,
-                      lineAdjustments: req.lines.map((l) => ({
-                        lineId: l.id,
-                        verifiedPrice: parseFloat(verifiedPrices[l.id] ?? l.market_price ?? '0') || 0,
-                      })),
-                    },
-                  })
-                }
-              >
-                Submit for approval
-              </Button>
+                )
+              })}
+              {(() => {
+                const allVerified = req.lines.every((l) => {
+                  const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                  return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
+                })
+                return (
+                  <>
+                    {!allVerified && (
+                      <div style={{ fontSize: '12px', color: theme.danger }}>
+                        Enter a verified price for every line before submitting — a missing market price does
+                        not default to 0.
+                      </div>
+                    )}
+                    <Button
+                      variant="primary"
+                      loading={lVerify}
+                      disabled={!allVerified}
+                      style={{ alignSelf: 'flex-start' }}
+                      onClick={() =>
+                        void verifyPrices({
+                          variables: {
+                            id: req.id,
+                            lineAdjustments: req.lines.map((l) => ({
+                              lineId: l.id,
+                              verifiedPrice: parseFloat(
+                                verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : ''),
+                              ),
+                            })),
+                          },
+                        })
+                      }
+                    >
+                      Submit for approval
+                    </Button>
+                  </>
+                )
+              })()}
             </div>
           )}
         </Card>

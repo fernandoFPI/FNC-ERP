@@ -199,11 +199,71 @@ describe('RequisitionDetail', () => {
     expect(screen.getByRole('button', { name: /submit to price verification/i })).toBeInTheDocument()
   })
 
-  it('price_verification: shows Submit for approval', async () => {
+  // Regression coverage for REQ-2026-0007: a line left blank at market
+  // pricing was silently dropped from the submitted payload instead of
+  // blocking submission, so it kept its creation-time price of 0 all the
+  // way to approval. The submit button must stay disabled until every line
+  // has an explicit, valid price.
+  it('market_pricing: disables submit until every line has a price, including a single free-text line', async () => {
+    mockReq({ status: 'market_pricing', callerHasMarketPricingPosition: true })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    const submit = screen.getByRole('button', { name: /submit to price verification/i })
+    expect(submit).toBeDisabled()
+    expect(screen.getByText(/enter a price for every line/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '150' } })
+    expect(submit).not.toBeDisabled()
+  })
+
+  it('market_pricing: stays disabled if only one of two lines has a price', async () => {
+    mockReq({
+      status: 'market_pricing',
+      callerHasMarketPricingPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Cement bags', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '0', qty_from_stock: '0', store_price: null, market_price: null, verified_price: null, total: '0', purchases: [] },
+        { id: 'line-2', line_number: 2, description: 'Electricity fees', product_id: null, product_name: null, sku: null, qty: '1', uom: 'unit', currency_code: 'IQD', unit_price: '0', qty_from_stock: '0', store_price: null, market_price: null, verified_price: null, total: '0', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    const submit = screen.getByRole('button', { name: /submit to price verification/i })
+    expect(submit).toBeDisabled()
+
+    const inputs = screen.getAllByPlaceholderText('0.00')
+    expect(inputs).toHaveLength(2)
+    fireEvent.change(inputs[0]!, { target: { value: '150' } })
+    expect(submit).toBeDisabled() // second line (the free-text one) still blank
+
+    fireEvent.change(inputs[1]!, { target: { value: '0' } }) // an explicit 0 still counts as entered
+    expect(submit).not.toBeDisabled()
+  })
+
+  it('price_verification: shows Submit for approval, disabled until a verified price exists', async () => {
     mockReq({ status: 'price_verification', callerHasPriceVerificationPosition: true })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
-    expect(screen.getByRole('button', { name: /submit for approval/i })).toBeInTheDocument()
+    const submit = screen.getByRole('button', { name: /submit for approval/i })
+    // Base fixture's line has market_price: null — exactly REQ-2026-0007's
+    // state — so this must NOT silently default to 0.
+    expect(submit).toBeDisabled()
+    expect(screen.getByText(/does not default to 0/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '150' } })
+    expect(submit).not.toBeDisabled()
+  })
+
+  it('price_verification: is enabled by default when the line already has a market price', async () => {
+    mockReq({
+      status: 'price_verification',
+      callerHasPriceVerificationPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Cement bags', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '100', qty_from_stock: '0', store_price: null, market_price: 100, market_price_currency: 'IQD', verified_price: null, total: '500', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByRole('button', { name: /submit for approval/i })).not.toBeDisabled()
   })
 
   it('pending_approval: shows Approve and Reject for an authorized approver', async () => {
