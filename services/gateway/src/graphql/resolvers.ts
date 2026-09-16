@@ -21409,6 +21409,30 @@ export const resolvers = {
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
+        // A draft PO/requisition-originated line still holds whatever
+        // reservation confirmPOInventoryCheck/confirmRequisitionInventoryCheck
+        // placed for it — issueMaterialIssue is the only place that ever
+        // releases it (on confirm), so cancelling instead left it stranded
+        // forever, the same class of bug as REQ-2026-0013's orphaned
+        // reservation, just triggered by cancelling the Store Out document
+        // directly instead of an edit-request line removal. Must run BEFORE
+        // the status flip below: releaseLineStockReservations excludes
+        // 'draft' rows from its own "already confirmed elsewhere" sum, so
+        // flipping first would make it see this issue as confirmed usage
+        // and release nothing. A no-op for a manual/ad-hoc issue (no
+        // po_line_id lines) — those never had a reservation to begin with.
+        // Nothing to release for an already-'issued' issue either — that
+        // reservation was already correctly released at confirm time.
+        if (issue.status === 'draft') {
+          const lineIdsRes = await client.query<{ po_line_id: string }>(
+            `SELECT po_line_id FROM project_material_issue_lines WHERE issue_id=$1 AND po_line_id IS NOT NULL`,
+            [args.id],
+          )
+          await releaseLineStockReservations(
+            client,
+            lineIdsRes.rows.map((r) => r.po_line_id),
+          )
+        }
         await client.query(`UPDATE project_material_issues SET status='cancelled' WHERE id=$1`, [
           args.id,
         ])
