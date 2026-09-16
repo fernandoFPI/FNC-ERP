@@ -5671,7 +5671,13 @@ export const resolvers = {
 
     purchaseOrders: async (
       _: unknown,
-      args: { status?: string; vendor_id?: string; project_id?: string; myPOsOnly?: boolean },
+      args: {
+        status?: string
+        vendor_id?: string
+        project_id?: string
+        product_id?: string
+        myPOsOnly?: boolean
+      },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
@@ -5696,6 +5702,13 @@ export const resolvers = {
       if (args.project_id !== undefined) {
         sql += ` AND po.project_id = $${idx++}`
         params.push(args.project_id)
+      }
+      if (args.product_id !== undefined) {
+        // Any line, not just still-returnable ones — this is a picker
+        // narrowing filter (find the PO an item was ordered on), the
+        // actual returnable check happens once a PO is picked.
+        sql += ` AND EXISTS (SELECT 1 FROM po_lines pl WHERE pl.po_id = po.id AND pl.product_id = $${idx++})`
+        params.push(args.product_id)
       }
       // "My PO" toggle — mirrors the "My Projects" toggle: organizer_id is
       // the PO equivalent of project membership (see userIsOrganizerGW /

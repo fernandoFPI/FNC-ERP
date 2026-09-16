@@ -36,7 +36,7 @@
 
     # Procurement
     vendors: [Vendor]
-    purchaseOrders(status: String, vendor_id: ID, project_id: ID, myPOsOnly: Boolean): [PurchaseOrder]
+    purchaseOrders(status: String, vendor_id: ID, project_id: ID, product_id: ID, myPOsOnly: Boolean): [PurchaseOrder]
     purchaseOrder(id: ID!): PurchaseOrder
     requisition(id: ID!): Requisition
     # G1 Phase 3 Milestone A — list view (RequisitionsPage) and worklist

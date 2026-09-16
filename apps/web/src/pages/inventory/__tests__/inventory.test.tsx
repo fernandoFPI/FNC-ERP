@@ -505,6 +505,30 @@ describe('MaterialReturnsPage', () => {
     expect(screen.getByText(/pick the purchase order/i)).toBeInTheDocument()
   })
 
+  it('New Material Return modal: narrows the Purchase Order picker by project and item', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
+
+    expect(screen.getByText('Narrow by project (optional)')).toBeInTheDocument()
+    expect(screen.getByText('Narrow by item (optional)')).toBeInTheDocument()
+
+    const findLatestPOVariables = () => {
+      const calls = mockUseQuery.mock.calls.filter(
+        (c) => (c[0] as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value === 'PurchaseOrders',
+      )
+      return (calls[calls.length - 1]?.[1] as { variables?: Record<string, unknown> })?.variables
+    }
+
+    fireEvent.click(screen.getByText('Any project…'))
+    fireEvent.mouseDown(screen.getByText('Test Project'))
+    expect(findLatestPOVariables()).toMatchObject({ projectId: 'proj1' })
+
+    fireEvent.click(screen.getByText('Any item…'))
+    fireEvent.mouseDown(screen.getByText('Black Ink'))
+    expect(findLatestPOVariables()).toMatchObject({ projectId: 'proj1', productId: 'p1' })
+  })
+
   it('excludes virtual locations from the return-to destination options', async () => {
     const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
     wrap(<MaterialReturnsPage />)

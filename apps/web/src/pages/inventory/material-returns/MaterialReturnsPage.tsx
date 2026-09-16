@@ -109,6 +109,10 @@ export default function MaterialReturnsPage() {
   // New return modal
   const [showModal, setShowModal] = useState(false)
   const [formPoId, setFormPoId] = useState('')
+  // Narrow the Purchase Order picker itself — separate from the list
+  // filters above, and cleared whenever the picked PO no longer matches.
+  const [formProjectFilter, setFormProjectFilter] = useState('')
+  const [formProductFilter, setFormProductFilter] = useState('')
   const [formNotes, setFormNotes] = useState('')
   const [returnQty, setReturnQty] = useState<Record<string, string>>({})
   const [returnLocation, setReturnLocation] = useState<Record<string, string>>({})
@@ -123,6 +127,17 @@ export default function MaterialReturnsPage() {
   })
   const { data: posData } = useQuery(PURCHASE_ORDERS_QUERY, {
     variables: {},
+    fetchPolicy: 'cache-and-network',
+  })
+  // Separate from posData above — this one is scoped to the New Return
+  // modal's own Project/Item narrowing filters, so picking one there
+  // doesn't affect the page-level Purchase Order filter or vice versa.
+  const { data: modalPosData } = useQuery(PURCHASE_ORDERS_QUERY, {
+    variables: {
+      projectId: formProjectFilter || undefined,
+      productId: formProductFilter || undefined,
+    },
+    skip: !showModal,
     fetchPolicy: 'cache-and-network',
   })
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
@@ -155,7 +170,13 @@ export default function MaterialReturnsPage() {
   const projects = (projectsData?.projects?.data ?? []) as ProjectOption[]
   const products = (productsData?.products ?? []) as ProductOption[]
 
+  const modalPurchaseOrders = (modalPosData?.purchaseOrders ?? []) as PO[]
   const poOptions = purchaseOrders.map((po) => ({
+    value: po.id,
+    label: po.po_number,
+    sublabel: [po.vendor_name, po.projectCode].filter(Boolean).join(' · ') || undefined,
+  }))
+  const modalPoOptions = modalPurchaseOrders.map((po) => ({
     value: po.id,
     label: po.po_number,
     sublabel: [po.vendor_name, po.projectCode].filter(Boolean).join(' · ') || undefined,
@@ -169,7 +190,15 @@ export default function MaterialReturnsPage() {
   function resetModal() {
     setShowModal(false)
     setFormPoId('')
+    setFormProjectFilter('')
+    setFormProductFilter('')
     setFormNotes('')
+    setReturnQty({})
+    setReturnLocation({})
+  }
+
+  function clearFormPoSelection() {
+    setFormPoId('')
     setReturnQty({})
     setReturnLocation({})
   }
@@ -455,6 +484,33 @@ export default function MaterialReturnsPage() {
           </>
         }
       >
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: '180px' }}>
+            <SearchableSelect
+              label="Narrow by project (optional)"
+              value={formProjectFilter}
+              onChange={(val) => {
+                setFormProjectFilter(val)
+                clearFormPoSelection()
+              }}
+              options={projectOptions}
+              placeholder="Any project…"
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: '180px' }}>
+            <SearchableSelect
+              label="Narrow by item (optional)"
+              value={formProductFilter}
+              onChange={(val) => {
+                setFormProductFilter(val)
+                clearFormPoSelection()
+              }}
+              options={productOptions}
+              placeholder="Any item…"
+            />
+          </div>
+        </div>
+
         <div style={{ marginBottom: '14px' }}>
           <SearchableSelect
             label="Purchase Order"
@@ -464,7 +520,7 @@ export default function MaterialReturnsPage() {
               setReturnQty({})
               setReturnLocation({})
             }}
-            options={poOptions}
+            options={modalPoOptions}
             placeholder="Search purchase order…"
           />
         </div>
