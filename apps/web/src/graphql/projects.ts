@@ -4695,8 +4695,8 @@ const MR_FIELDS = `
 `
 
 export const MATERIAL_RETURNS_QUERY = gql`
-  query MaterialReturns($poId: ID) {
-    materialReturns(poId: $poId) { ${MR_FIELDS} }
+  query MaterialReturns($poId: ID, $projectId: ID, $productId: ID) {
+    materialReturns(poId: $poId, projectId: $projectId, productId: $productId) { ${MR_FIELDS} }
   }
 `
 

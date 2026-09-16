@@ -7890,7 +7890,7 @@ export const resolvers = {
 
     materialReturns: async (
       _: unknown,
-      args: { projectId?: string; poId?: string },
+      args: { projectId?: string; poId?: string; productId?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
@@ -7904,6 +7904,15 @@ export const resolvers = {
       if (args.poId) {
         conditions.push(`pmr.po_id=$${params.length + 1}`)
         params.push(args.poId)
+      }
+      if (args.productId) {
+        // EXISTS, not a join condition — the outer LEFT JOIN below still
+        // needs every line of a matching return in its JSON_AGG, not just
+        // the one line that matched this product.
+        conditions.push(
+          `EXISTS (SELECT 1 FROM project_material_return_lines pmrl2 WHERE pmrl2.return_id = pmr.id AND pmrl2.product_id = $${params.length + 1})`,
+        )
+        params.push(args.productId)
       }
       const result = await query(
         `SELECT pmr.*,

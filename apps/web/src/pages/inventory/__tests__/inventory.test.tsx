@@ -405,6 +405,8 @@ describe('MaterialReturnsPage', () => {
     { id: 'loc1', name: 'Main Warehouse', code: 'WH-001', type: 'warehouse', is_active: true },
     { id: 'loc2', name: 'Virtual Consumption', code: null, type: 'virtual_out', is_active: true },
   ]
+  const projects = [{ id: 'proj1', code: 'PRJ-001', name: 'Test Project' }]
+  const products = [{ id: 'p1', sku: 'INK-001', name: 'Black Ink' }]
   const returns = [
     {
       id: 'r1',
@@ -449,6 +451,8 @@ describe('MaterialReturnsPage', () => {
         return { data: { returnableDirectDeliveryLines: returnableDirectLines }, loading: false }
       if (opName === 'PurchaseOrders') return { data: { purchaseOrders }, loading: false }
       if (opName === 'StockLocations') return { data: { stockLocations: locations }, loading: false }
+      if (opName === 'Projects') return { data: { projects: { data: projects } }, loading: false }
+      if (opName === 'Products') return { data: { products }, loading: false }
       return { data: undefined, loading: false }
     })
   })
@@ -458,6 +462,40 @@ describe('MaterialReturnsPage', () => {
     wrap(<MaterialReturnsPage />)
     expect(screen.getByText('Material Returns')).toBeInTheDocument()
     expect(screen.getByText('MRET-2026-0001')).toBeInTheDocument()
+  })
+
+  it('shows Project and Item filters alongside Purchase Order', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    expect(screen.getByText('Purchase Order')).toBeInTheDocument()
+    expect(screen.getByText('Project')).toBeInTheDocument()
+    expect(screen.getByText('Item')).toBeInTheDocument()
+    // SearchableSelect renders its placeholder as plain text inside the
+    // closed trigger, not an <input placeholder> attribute.
+    expect(screen.getByText('All Purchase Orders')).toBeInTheDocument()
+    expect(screen.getByText('All Projects')).toBeInTheDocument()
+    expect(screen.getByText('All Items')).toBeInTheDocument()
+  })
+
+  it('passes the picked project and item through to the MaterialReturns query variables', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+
+    const findLatestVariables = () => {
+      const calls = mockUseQuery.mock.calls.filter(
+        (c) => (c[0] as { definitions?: { name?: { value?: string } }[] })?.definitions?.[0]?.name?.value === 'MaterialReturns',
+      )
+      return (calls[calls.length - 1]?.[1] as { variables?: Record<string, unknown> })?.variables
+    }
+    expect(findLatestVariables()).toEqual({ poId: undefined, projectId: undefined, productId: undefined })
+
+    fireEvent.click(screen.getByText('All Projects'))
+    fireEvent.mouseDown(screen.getByText('Test Project'))
+    expect(findLatestVariables()).toMatchObject({ projectId: 'proj1' })
+
+    fireEvent.click(screen.getByText('All Items'))
+    fireEvent.mouseDown(screen.getByText('Black Ink'))
+    expect(findLatestVariables()).toMatchObject({ projectId: 'proj1', productId: 'p1' })
   })
 
   it('opens the New Material Return modal and lists returnable items after picking a purchase order', async () => {

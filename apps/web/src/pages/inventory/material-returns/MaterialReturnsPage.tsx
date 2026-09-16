@@ -5,9 +5,10 @@ import {
   RETURNABLE_MATERIAL_ISSUE_LINES_QUERY,
   RETURNABLE_DIRECT_DELIVERY_LINES_QUERY,
   CREATE_MATERIAL_RETURN,
+  PROJECTS_QUERY,
 } from '../../../graphql/projects'
 import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
-import { STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
+import { STOCK_LOCATIONS_QUERY, PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Modal } from '../../../components/ui/Modal'
@@ -82,6 +83,16 @@ interface PO {
   projectCode: string | null
   projectName: string | null
 }
+interface ProjectOption {
+  id: string
+  code: string
+  name: string
+}
+interface ProductOption {
+  id: string
+  sku: string
+  name: string
+}
 
 const fmtAmt = (n: number) =>
   n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -91,6 +102,8 @@ export default function MaterialReturnsPage() {
   const addToast = useToastStore((s) => s.addToast)
 
   const [poFilter, setPoFilter] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
+  const [productFilter, setProductFilter] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // New return modal
@@ -101,10 +114,22 @@ export default function MaterialReturnsPage() {
   const [returnLocation, setReturnLocation] = useState<Record<string, string>>({})
 
   const { data, loading, refetch } = useQuery(MATERIAL_RETURNS_QUERY, {
-    variables: poFilter ? { poId: poFilter } : {},
+    variables: {
+      poId: poFilter || undefined,
+      projectId: projectFilter || undefined,
+      productId: productFilter || undefined,
+    },
     fetchPolicy: 'cache-and-network',
   })
   const { data: posData } = useQuery(PURCHASE_ORDERS_QUERY, {
+    variables: {},
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: projectsData } = useQuery(PROJECTS_QUERY, {
+    variables: { limit: 500, includeAll: true },
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
     variables: {},
     fetchPolicy: 'cache-and-network',
   })
@@ -127,11 +152,16 @@ export default function MaterialReturnsPage() {
     (l) => !['virtual_in', 'virtual_out'].includes(l.type),
   )
 
+  const projects = (projectsData?.projects?.data ?? []) as ProjectOption[]
+  const products = (productsData?.products ?? []) as ProductOption[]
+
   const poOptions = purchaseOrders.map((po) => ({
     value: po.id,
     label: po.po_number,
     sublabel: [po.vendor_name, po.projectCode].filter(Boolean).join(' · ') || undefined,
   }))
+  const projectOptions = projects.map((p) => ({ value: p.id, label: p.name, sublabel: p.code }))
+  const productOptions = products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku }))
   const locationOptions = locations.map((l) => ({ value: l.id, label: l.name }))
 
   const [createReturn, { loading: creating }] = useMutation(CREATE_MATERIAL_RETURN)
@@ -225,7 +255,7 @@ export default function MaterialReturnsPage() {
       </div>
 
       <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ minWidth: '260px', flex: 1, maxWidth: '400px' }}>
+        <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
           <SearchableSelect
             label="Purchase Order"
             value={poFilter}
@@ -234,9 +264,35 @@ export default function MaterialReturnsPage() {
             placeholder="All Purchase Orders"
           />
         </div>
-        {poFilter && (
-          <Button variant="ghost" size="sm" onClick={() => setPoFilter('')}>
-            Clear filter
+        <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
+          <SearchableSelect
+            label="Project"
+            value={projectFilter}
+            onChange={(val) => setProjectFilter(val)}
+            options={projectOptions}
+            placeholder="All Projects"
+          />
+        </div>
+        <div style={{ minWidth: '220px', flex: 1, maxWidth: '340px' }}>
+          <SearchableSelect
+            label="Item"
+            value={productFilter}
+            onChange={(val) => setProductFilter(val)}
+            options={productOptions}
+            placeholder="All Items"
+          />
+        </div>
+        {(poFilter || projectFilter || productFilter) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setPoFilter('')
+              setProjectFilter('')
+              setProductFilter('')
+            }}
+          >
+            Clear filters
           </Button>
         )}
       </div>

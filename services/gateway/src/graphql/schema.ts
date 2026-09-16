@@ -119,7 +119,7 @@
     projectInvoice(id: ID!): ProjectInvoice
     materialIssues(projectId: ID, status: String): [MaterialIssue!]!
     materialIssue(id: ID!): MaterialIssue
-    materialReturns(projectId: ID, poId: ID): [MaterialReturn!]!
+    materialReturns(projectId: ID, poId: ID, productId: ID): [MaterialReturn!]!
     # At least one of poId/projectId must be given. poId is the primary,
     # real-world filter — "what's still returnable from this PO" — projectId
     # stays supported for any future project-wide view.
