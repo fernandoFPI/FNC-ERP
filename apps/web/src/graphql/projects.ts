@@ -4612,7 +4612,7 @@ export const DELETE_MEETING_ACTION = gql`
 // ── Store Out / Material Issues ────────────────────────────────────────────
 
 const MI_LINE_FIELDS = `id productId productName sku uom poLineId fromLocationName toLocationName qtyIssued unitCost totalCost isInvoiced`
-const MI_FIELDS = `id issueNumber issueDate status notes poId poNumber projectCode projectName issuedByName createdAt lines { ${MI_LINE_FIELDS} }`
+const MI_FIELDS = `id issueNumber issueDate status notes poId requisitionId poNumber projectCode projectName issuedByName createdAt lines { ${MI_LINE_FIELDS} }`
 
 export const MATERIAL_ISSUES_QUERY = gql`
   query MaterialIssues($projectId: ID, $status: String) {

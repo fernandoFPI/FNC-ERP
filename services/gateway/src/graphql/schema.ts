@@ -1355,6 +1355,7 @@
     status: String!
     notes: String
     poId: ID
+    requisitionId: ID
     poNumber: String
     projectCode: String
     projectName: String

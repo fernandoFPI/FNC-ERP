@@ -1,12 +1,13 @@
 // Regression coverage for a real gap found auditing this feature: cancelling
-// a draft, PO-originated Store Out never released the stock reservation
-// confirmPOInventoryCheck placed for it — the same class of bug as
-// REQ-2026-0013's orphaned reservation from the start of this session, just
-// triggered by cancelling the Store Out document directly (reachable via the
-// "Cancel" button on any draft Store Out) instead of an edit-request line
-// removal. issueMaterialIssue is the only other place that releases this
-// reservation, and only on confirm — cancelling instead skipped it entirely.
-// Real-Postgres pattern, same as project-material-return.test.ts.
+// a draft, PO-originated Store Out (or deleting one of its lines) never
+// released the stock reservation confirmPOInventoryCheck placed for it — the
+// same class of bug as REQ-2026-0013's orphaned reservation from the start of
+// this session, just triggered by cancelling/editing the Store Out document
+// directly (both reachable from the Store Out page) instead of an
+// edit-request line removal. issueMaterialIssue is the only other place that
+// releases this reservation, and only on confirm — cancelling or deleting a
+// line instead skipped it entirely. Real-Postgres pattern, same as
+// project-material-return.test.ts.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
@@ -255,6 +256,61 @@ describe('cancelMaterialIssue releases the from-stock reservation', () => {
     )
     await expect(
       resolvers.Mutation.cancelMaterialIssue(null, { id: issue.id }, ctx as never),
+    ).resolves.toBeTruthy()
+    expect(await getReserved(productId, warehouseId)).toBe(0)
+  })
+})
+
+// Same underlying gap, single-line granularity: removing one line from a
+// still-draft store-out (without cancelling the whole document) left that
+// line's reservation stranded too, since the row it was tracked against no
+// longer existed for any later cancel to find.
+describe('deleteMaterialIssueLine releases that line\'s from-stock reservation', () => {
+  it('releases the reservation for a PO-originated line before deleting it', async () => {
+    const productId = await makeProduct('delete-line')
+    const poId = await makePO()
+    const poLineId = await makePOLineWithReservation(poId, productId, 7)
+
+    const issue = (await resolvers.Mutation.createMaterialIssue(
+      null,
+      { poId, issueDate: new Date().toISOString().slice(0, 10) },
+      ctx as never,
+    )) as { id: string }
+    const addedLine = (await resolvers.Mutation.addMaterialIssueLine(
+      null,
+      { issueId: issue.id, productId, poLineId, qtyIssued: 7, unitCost: 10, fromLocationId: warehouseId },
+      ctx as never,
+    )) as { id: string }
+    expect(await getReserved(productId, warehouseId)).toBe(7)
+
+    await resolvers.Mutation.deleteMaterialIssueLine(
+      null,
+      { id: addedLine.id, issueId: issue.id },
+      ctx as never,
+    )
+
+    expect(await getReserved(productId, warehouseId)).toBe(0)
+    const remaining = await pool.query(`SELECT id FROM project_material_issue_lines WHERE id=$1`, [
+      addedLine.id,
+    ])
+    expect(remaining.rows).toHaveLength(0)
+  })
+
+  it('is a no-op for a manual line with no po_line_id', async () => {
+    const productId = await makeProduct('delete-line-manual')
+    const issue = (await resolvers.Mutation.createMaterialIssue(
+      null,
+      { issueDate: new Date().toISOString().slice(0, 10) },
+      ctx as never,
+    )) as { id: string }
+    const addedLine = (await resolvers.Mutation.addMaterialIssueLine(
+      null,
+      { issueId: issue.id, productId, qtyIssued: 2, unitCost: 10, fromLocationId: warehouseId },
+      ctx as never,
+    )) as { id: string }
+
+    await expect(
+      resolvers.Mutation.deleteMaterialIssueLine(null, { id: addedLine.id, issueId: issue.id }, ctx as never),
     ).resolves.toBeTruthy()
     expect(await getReserved(productId, warehouseId)).toBe(0)
   })

@@ -7827,6 +7827,7 @@ export const resolvers = {
         status: r.status,
         notes: r.notes ?? null,
         poId: r.po_id ?? null,
+        requisitionId: r.requisition_id ?? null,
         poNumber: r.po_number ?? null,
         projectCode: r.project_code ?? null,
         projectName: r.project_name ?? null,
@@ -7892,6 +7893,7 @@ export const resolvers = {
         status: r.status,
         notes: r.notes ?? null,
         poId: r.po_id ?? null,
+        requisitionId: r.requisition_id ?? null,
         poNumber: r.po_number ?? null,
         projectCode: r.project_code ?? null,
         projectName: r.project_name ?? null,
@@ -20866,6 +20868,7 @@ export const resolvers = {
         status: row.status,
         notes: row.notes ?? null,
         poId: row.po_id ?? null,
+        requisitionId: row.requisition_id ?? null,
         poNumber: null,
         issuedByName: null,
         createdAt: row.created_at,
@@ -20969,10 +20972,34 @@ export const resolvers = {
       if (!issue || issue.company_id !== ctx.auth.companyId)
         throw new Error('Material issue not found')
       if (issue.status !== 'draft') throw new Error('Can only remove lines from a draft store-out')
-      await query('DELETE FROM project_material_issue_lines WHERE id=$1 AND issue_id=$2', [
-        args.id,
-        args.issueId,
-      ])
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        // Same reservation-orphan risk cancelMaterialIssue has, just at
+        // single-line granularity: a PO/requisition-originated line still
+        // holds whatever confirmPOInventoryCheck/confirmRequisitionInventoryCheck
+        // reserved for it, and once this line is deleted there's no longer
+        // any row left to release it from later — must query and release
+        // BEFORE the DELETE, not after.
+        const lineRes = await client.query<{ po_line_id: string | null }>(
+          `SELECT po_line_id FROM project_material_issue_lines WHERE id=$1 AND issue_id=$2`,
+          [args.id, args.issueId],
+        )
+        const poLineId = lineRes.rows[0]?.po_line_id ?? null
+        if (poLineId) {
+          await releaseLineStockReservations(client, [poLineId])
+        }
+        await client.query('DELETE FROM project_material_issue_lines WHERE id=$1 AND issue_id=$2', [
+          args.id,
+          args.issueId,
+        ])
+        await client.query('COMMIT')
+      } catch (e) {
+        await client.query('ROLLBACK')
+        throw e
+      } finally {
+        client.release()
+      }
       return true
     },
 
@@ -21351,6 +21378,7 @@ export const resolvers = {
         status: row.status,
         notes: row.notes ?? null,
         poId: row.po_id ?? null,
+        requisitionId: row.requisition_id ?? null,
         poNumber: row.po_number ?? null,
         issuedByName: row.issued_by_name ?? null,
         createdAt: row.created_at,
@@ -21462,6 +21490,7 @@ export const resolvers = {
         status: row.status,
         notes: row.notes ?? null,
         poId: row.po_id ?? null,
+        requisitionId: row.requisition_id ?? null,
         poNumber: null,
         issuedByName: null,
         createdAt: row.created_at,

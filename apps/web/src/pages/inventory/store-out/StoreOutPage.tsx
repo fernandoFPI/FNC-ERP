@@ -46,6 +46,7 @@ interface MI {
   status: string
   notes: string | null
   poId: string | null
+  requisitionId: string | null
   poNumber: string | null
   projectCode: string | null
   projectName: string | null
@@ -312,9 +313,11 @@ export default function StoreOutPage() {
   )
 
   // Table columns for existing issue lines (read + delete)
-  // `editable` should be false for PO-originated store-outs — those lines were
-  // already decided during the PO's inventory-check step, so letting a store
-  // keeper add/remove items here would let stock deduction diverge from the PO.
+  // `editable` should be false for PO- or requisition-originated store-outs —
+  // those lines were already decided during the inventory-check step, so
+  // letting a store keeper add/remove items here would let stock deduction
+  // diverge from what was reserved (and, for remove, orphan that reservation
+  // entirely — see deleteMaterialIssueLine).
   function linesColumns(editable: boolean, issueId: string): Column<MILine>[] {
     return [
       {
@@ -717,18 +720,21 @@ export default function StoreOutPage() {
                   <div style={{ borderTop: `1px solid ${theme.border}`, padding: '16px' }}>
                     {/* Lines table */}
                     <Table<MILine>
-                      columns={linesColumns(isDraft && !si.poId, si.id)}
+                      columns={linesColumns(isDraft && !si.poId && !si.requisitionId, si.id)}
                       data={si.lines}
                       rowKey="id"
                       emptyMessage={
-                        si.poId ? 'No items on this store-out.' : 'No items yet — add one below.'
+                        si.poId || si.requisitionId
+                          ? 'No items on this store-out.'
+                          : 'No items yet — add one below.'
                       }
                     />
 
-                    {/* Add item row — manual/ad-hoc drafts only. PO-originated store-outs
-                        already had their lines fixed during the PO's inventory-check step,
+                    {/* Add item row — manual/ad-hoc drafts only. PO- or
+                        requisition-originated store-outs already had their lines
+                        fixed during the PO's/requisition's inventory-check step,
                         so no reselect/add UI is shown for those. */}
-                    {isDraft && !si.poId && (
+                    {isDraft && !si.poId && !si.requisitionId && (
                       <div
                         style={{
                           border: `1px dashed ${theme.border}`,
