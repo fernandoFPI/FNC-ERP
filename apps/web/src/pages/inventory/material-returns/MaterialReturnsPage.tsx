@@ -92,6 +92,7 @@ interface ProductOption {
   id: string
   sku: string
   name: string
+  name_ar: string | null
 }
 
 const fmtAmt = (n: number) =>
@@ -182,7 +183,12 @@ export default function MaterialReturnsPage() {
     sublabel: [po.vendor_name, po.projectCode].filter(Boolean).join(' · ') || undefined,
   }))
   const projectOptions = projects.map((p) => ({ value: p.id, label: p.name, sublabel: p.code }))
-  const productOptions = products.map((p) => ({ value: p.id, label: p.name, sublabel: p.sku }))
+  const productOptions = products.map((p) => ({
+    value: p.id,
+    label: p.name,
+    sublabel: p.sku,
+    keywords: p.name_ar || undefined,
+  }))
   const locationOptions = locations.map((l) => ({ value: l.id, label: l.name }))
 
   const [createReturn, { loading: creating }] = useMutation(CREATE_MATERIAL_RETURN)

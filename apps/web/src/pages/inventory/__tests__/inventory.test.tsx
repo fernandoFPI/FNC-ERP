@@ -406,7 +406,7 @@ describe('MaterialReturnsPage', () => {
     { id: 'loc2', name: 'Virtual Consumption', code: null, type: 'virtual_out', is_active: true },
   ]
   const projects = [{ id: 'proj1', code: 'PRJ-001', name: 'Test Project' }]
-  const products = [{ id: 'p1', sku: 'INK-001', name: 'Black Ink' }]
+  const products = [{ id: 'p1', sku: 'INK-001', name: 'Black Ink', name_ar: 'حبر أسود' }]
   const returns = [
     {
       id: 'r1',
@@ -525,6 +525,7 @@ describe('MaterialReturnsPage', () => {
     expect(findLatestPOVariables()).toMatchObject({ projectId: 'proj1' })
 
     fireEvent.click(screen.getByText('Any item…'))
+    expect(screen.getByText('حبر أسود')).toBeInTheDocument()
     fireEvent.mouseDown(screen.getByText('Black Ink'))
     expect(findLatestPOVariables()).toMatchObject({ projectId: 'proj1', productId: 'p1' })
   })
