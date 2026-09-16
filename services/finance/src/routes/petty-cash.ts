@@ -25,9 +25,11 @@ pettyCashRouter.get(
     try {
       const r = await query(
         `SELECT f.*, a.code AS account_code, a.name AS account_name,
+              COALESCE(e.first_name || ' ' || e.last_name, f.custodian_name) AS custodian_display_name,
               ROUND((f.current_balance::NUMERIC / NULLIF(f.authorized_limit,0))*100, 1) AS pct_remaining
        FROM petty_cash_floats f
        LEFT JOIN chart_of_accounts a ON a.id = f.gl_account_id
+       LEFT JOIN employees e ON e.id = f.custodian_employee_id
        WHERE f.company_id=$1 ORDER BY f.name`,
         [req.auth!.companyId],
       )
@@ -38,37 +40,61 @@ pettyCashRouter.get(
   },
 )
 
+// A petty cash float must post to a real, postable CASH account — its one
+// link to the ledger — validated server-side rather than trusted from
+// whatever the frontend's (also filtered) picker sent. A replenishment's
+// funding source is allowed to be CASH or BANK (topping up from another
+// cashbox, or from a bank transfer).
+async function assertAccountCategory(
+  companyId: string,
+  accountId: string,
+  categories: string[],
+  fieldName: string,
+): Promise<void> {
+  const r = await query(
+    `SELECT 1 FROM chart_of_accounts WHERE id=$1 AND company_id=$2 AND account_category = ANY($3) AND is_postable=true`,
+    [accountId, companyId, categories],
+  )
+  if (!r.rows[0]) {
+    throw Object.assign(
+      new Error(`${fieldName} must be a postable ${categories.join(' or ')} account`),
+      { isValidation: true },
+    )
+  }
+}
+const assertCashAccount = (companyId: string, accountId: string) =>
+  assertAccountCategory(companyId, accountId, ['CASH'], 'gl_account_id')
+
 pettyCashRouter.post(
   '/floats',
   requirePermission('finance.petty_cash.edit', 'edit'),
   async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
-      location: z.string().optional(),
-      custodian_name: z.string().optional(),
+      custodian_employee_id: z.string().uuid().optional(),
       currency_code: z.string().length(3).default('IQD'),
       authorized_limit: z.coerce.number().positive(),
       opening_balance: z.coerce.number().min(0).default(0),
-      gl_account_id: z.string().uuid().optional(),
+      gl_account_id: z.string().uuid(),
       notes: z.string().optional(),
     })
     try {
       const d = schema.parse(req.body)
+      await assertCashAccount(req.auth!.companyId, d.gl_account_id)
       const result = await withTransaction(
         { companyId: req.auth!.companyId, userId: req.auth!.userId, role: req.auth!.role },
         async (client) => {
           const fRes = await client.query(
-            `INSERT INTO petty_cash_floats (company_id, name, location, custodian_name, currency_code, authorized_limit, current_balance, gl_account_id, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+            `INSERT INTO petty_cash_floats (company_id, name, custodian_employee_id, currency_code, authorized_limit, current_balance, gl_account_id, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
             [
               req.auth!.companyId,
               d.name,
-              d.location ?? null,
-              d.custodian_name ?? null,
+              d.custodian_employee_id ?? null,
               d.currency_code,
               d.authorized_limit,
               d.opening_balance,
-              d.gl_account_id ?? null,
+              d.gl_account_id,
               d.notes ?? null,
             ],
           )
@@ -90,6 +116,10 @@ pettyCashRouter.post(
         sendError(res, 409, 'DUPLICATE', 'Float name already exists')
         return
       }
+      if ((err as { isValidation?: boolean }).isValidation) {
+        sendError(res, 422, 'VALIDATION', (err as Error).message)
+        return
+      }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to create float', err)
     }
   },
@@ -101,24 +131,23 @@ pettyCashRouter.put(
   async (req, res) => {
     const schema = z.object({
       name: z.string().min(1),
-      location: z.string().optional(),
-      custodian_name: z.string().optional(),
+      custodian_employee_id: z.string().uuid().optional(),
       authorized_limit: z.coerce.number().positive(),
-      gl_account_id: z.string().uuid().optional(),
+      gl_account_id: z.string().uuid(),
       is_active: z.boolean().default(true),
       notes: z.string().optional(),
     })
     try {
       const d = schema.parse(req.body)
+      await assertCashAccount(req.auth!.companyId, d.gl_account_id)
       const r = await query(
-        `UPDATE petty_cash_floats SET name=$1, location=$2, custodian_name=$3, authorized_limit=$4, gl_account_id=$5, is_active=$6, notes=$7, updated_at=NOW()
-       WHERE id=$8 AND company_id=$9 RETURNING *`,
+        `UPDATE petty_cash_floats SET name=$1, custodian_employee_id=$2, authorized_limit=$3, gl_account_id=$4, is_active=$5, notes=$6, updated_at=NOW()
+       WHERE id=$7 AND company_id=$8 RETURNING *`,
         [
           d.name,
-          d.location ?? null,
-          d.custodian_name ?? null,
+          d.custodian_employee_id ?? null,
           d.authorized_limit,
-          d.gl_account_id ?? null,
+          d.gl_account_id,
           d.is_active,
           d.notes ?? null,
           req.params['id'],
@@ -131,6 +160,10 @@ pettyCashRouter.put(
       }
       sendOk(res, r.rows[0])
     } catch (err) {
+      if ((err as { isValidation?: boolean }).isValidation) {
+        sendError(res, 422, 'VALIDATION', (err as Error).message)
+        return
+      }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to update float', err)
     }
   },
@@ -144,8 +177,11 @@ pettyCashRouter.get(
   async (req, res) => {
     try {
       const fRes = await query(
-        `SELECT f.*, a.code AS account_code, a.name AS account_name
-       FROM petty_cash_floats f LEFT JOIN chart_of_accounts a ON a.id=f.gl_account_id
+        `SELECT f.*, a.code AS account_code, a.name AS account_name,
+              COALESCE(e.first_name || ' ' || e.last_name, f.custodian_name) AS custodian_display_name
+       FROM petty_cash_floats f
+       LEFT JOIN chart_of_accounts a ON a.id=f.gl_account_id
+       LEFT JOIN employees e ON e.id = f.custodian_employee_id
        WHERE f.id=$1 AND f.company_id=$2`,
         [req.params['id'], req.auth!.companyId],
       )
@@ -323,6 +359,14 @@ pettyCashRouter.post(
     })
     try {
       const { approved_amount, offset_account_id } = schema.parse(req.body)
+      if (offset_account_id) {
+        await assertAccountCategory(
+          req.auth!.companyId,
+          offset_account_id,
+          ['CASH', 'BANK'],
+          'offset_account_id',
+        )
+      }
       const repRes = await query(
         `SELECT r.*, f.gl_account_id AS float_gl_account_id, f.currency_code, f.current_balance
        FROM petty_cash_replenishments r
@@ -397,6 +441,10 @@ pettyCashRouter.post(
       })
       sendOk(res, result)
     } catch (err) {
+      if ((err as { isValidation?: boolean }).isValidation) {
+        sendError(res, 422, 'VALIDATION', (err as Error).message)
+        return
+      }
       sendError(res, 500, 'INTERNAL_ERROR', 'Failed to approve replenishment', err)
     }
   },

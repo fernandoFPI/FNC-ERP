@@ -11,8 +11,15 @@ import { usePermission } from '../../../hooks/usePermission'
 interface Float_ {
   id: string
   name: string
+  // Legacy free-text fields — no longer collected on new floats (superseded
+  // by gl_account_id and custodian_employee_id below), kept only so an
+  // older float's pre-existing values still display.
   location: string | null
   custodian_name: string | null
+  custodian_employee_id: string | null
+  // Server-resolved display name: the custodian employee's name when set,
+  // falling back to the legacy custodian_name for older floats.
+  custodian_display_name: string | null
   currency_code: string
   authorized_limit: number
   current_balance: number
@@ -58,6 +65,11 @@ interface GLAccount {
   code: string
   name: string
 }
+interface Employee {
+  id: string
+  first_name: string
+  last_name: string
+}
 
 const STATUS_BADGE: Record<string, 'neutral' | 'info' | 'success' | 'danger'> = {
   pending: 'info',
@@ -75,7 +87,16 @@ export default function PettyCashPage() {
   const [selected, setSelected] = useState<FloatDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
+  // Unfiltered — used only by Record Spend's Expense GL Account picker,
+  // which legitimately spans every expense-type account.
   const [glAccounts, setGlAccounts] = useState<GLAccount[]>([])
+  // A petty cash float's own account must be a real, postable CASH account
+  // (e.g. code 1211 Main Cashbox) — this is what a cash box actually is in
+  // the Chart of Accounts, not any of the ~300 accounts of every type.
+  const [cashAccounts, setCashAccounts] = useState<GLAccount[]>([])
+  // A replenishment can be funded from another cashbox or a bank account.
+  const [cashAndBankAccounts, setCashAndBankAccounts] = useState<GLAccount[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
 
   const [showNewFloat, setShowNewFloat] = useState(false)
   const [showSpend, setShowSpend] = useState(false)
@@ -85,8 +106,7 @@ export default function PettyCashPage() {
 
   const [floatForm, setFloatForm] = useState({
     name: '',
-    location: '',
-    custodian_name: '',
+    custodian_employee_id: '',
     currency_code: 'IQD',
     authorized_limit: '',
     opening_balance: '0',
@@ -106,14 +126,20 @@ export default function PettyCashPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [fRes, catRes, glRes] = await Promise.all([
+      const [fRes, catRes, glRes, cashRes, cashBankRes, empRes] = await Promise.all([
         api.get<Float_[]>('/finance/petty-cash/floats'),
         api.get<Category[]>('/finance/expense-claims/categories'),
         api.get<GLAccount[]>('/finance/accounts?limit=500'),
+        api.get<GLAccount[]>('/finance/accounts?category=CASH&is_postable=true&is_active=true'),
+        api.get<GLAccount[]>('/finance/accounts?category=CASH,BANK&is_postable=true&is_active=true'),
+        api.get<Employee[]>('/hr/employees?limit=500'),
       ])
       setFloats(fRes.data)
       setCategories(catRes.data)
       setGlAccounts(glRes.data)
+      setCashAccounts(cashRes.data)
+      setCashAndBankAccounts(cashBankRes.data)
+      setEmployees(empRes.data)
       if (selected) {
         const dRes = await api.get<FloatDetail>(`/finance/petty-cash/floats/${selected.id}`)
         setSelected(dRes.data)
@@ -139,19 +165,19 @@ export default function PettyCashPage() {
   }
 
   async function handleCreateFloat() {
+    if (!floatForm.gl_account_id) return
     setSaving(true)
     try {
       await api.post('/finance/petty-cash/floats', {
         ...floatForm,
         authorized_limit: Number(floatForm.authorized_limit),
         opening_balance: Number(floatForm.opening_balance),
-        gl_account_id: floatForm.gl_account_id || undefined,
+        custodian_employee_id: floatForm.custodian_employee_id || undefined,
       })
       setShowNewFloat(false)
       setFloatForm({
         name: '',
-        location: '',
-        custodian_name: '',
+        custodian_employee_id: '',
         currency_code: 'IQD',
         authorized_limit: '',
         opening_balance: '0',
@@ -460,9 +486,9 @@ export default function PettyCashPage() {
                         {selected.location}
                       </p>
                     )}
-                    {selected.custodian_name && (
+                    {selected.custodian_display_name && (
                       <p style={{ margin: 0, fontSize: '12px', color: theme.textSecondary }}>
-                        Custodian: {selected.custodian_name}
+                        Custodian: {selected.custodian_display_name}
                       </p>
                     )}
                   </div>
@@ -808,25 +834,45 @@ export default function PettyCashPage() {
                   }}
                 />
               </div>
-              <div>
-                <label style={labelStyle}>Location</label>
-                <input
+              <div style={{ gridColumn: '1/-1' }}>
+                <label style={labelStyle}>Cashbox (GL Account) *</label>
+                <select
                   style={inputStyle}
-                  value={floatForm.location}
+                  value={floatForm.gl_account_id}
                   onChange={(e) => {
-                    setFloatForm((f) => ({ ...f, location: e.target.value }))
+                    setFloatForm((f) => ({ ...f, gl_account_id: e.target.value }))
                   }}
-                />
+                >
+                  <option value="">— Select cashbox —</option>
+                  {cashAccounts.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.code} · {g.name}
+                    </option>
+                  ))}
+                </select>
+                {cashAccounts.length === 0 && (
+                  <p style={{ fontSize: '10px', color: theme.textMuted, marginTop: '3px' }}>
+                    No postable CASH accounts found — ask Finance to add one under Chart of
+                    Accounts (e.g. a branch/site cashbox under 1212/1213) first.
+                  </p>
+                )}
               </div>
               <div>
-                <label style={labelStyle}>Custodian Name</label>
-                <input
+                <label style={labelStyle}>Custodian</label>
+                <select
                   style={inputStyle}
-                  value={floatForm.custodian_name}
+                  value={floatForm.custodian_employee_id}
                   onChange={(e) => {
-                    setFloatForm((f) => ({ ...f, custodian_name: e.target.value }))
+                    setFloatForm((f) => ({ ...f, custodian_employee_id: e.target.value }))
                   }}
-                />
+                >
+                  <option value="">— Select employee —</option>
+                  {employees.map((em) => (
+                    <option key={em.id} value={em.id}>
+                      {em.first_name} {em.last_name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label style={labelStyle}>Authorized Limit *</label>
@@ -850,23 +896,6 @@ export default function PettyCashPage() {
                   }}
                 />
               </div>
-              <div style={{ gridColumn: '1/-1' }}>
-                <label style={labelStyle}>GL Account (Petty Cash)</label>
-                <select
-                  style={inputStyle}
-                  value={floatForm.gl_account_id}
-                  onChange={(e) => {
-                    setFloatForm((f) => ({ ...f, gl_account_id: e.target.value }))
-                  }}
-                >
-                  <option value="">— Select account —</option>
-                  {glAccounts.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.code} · {g.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
             <div
               style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}
@@ -884,7 +913,9 @@ export default function PettyCashPage() {
                 variant="primary"
                 size="sm"
                 onClick={() => void handleCreateFloat()}
-                disabled={saving || !floatForm.name || !floatForm.authorized_limit}
+                disabled={
+                  saving || !floatForm.name || !floatForm.authorized_limit || !floatForm.gl_account_id
+                }
               >
                 {saving ? 'Creating...' : 'Create Float'}
               </Button>
@@ -1231,7 +1262,7 @@ export default function PettyCashPage() {
                   }}
                 >
                   <option value="">— Optional — needed for JE —</option>
-                  {glAccounts.map((g) => (
+                  {cashAndBankAccounts.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.code} · {g.name}
                     </option>

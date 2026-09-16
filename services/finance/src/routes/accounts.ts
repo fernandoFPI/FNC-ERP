@@ -24,7 +24,7 @@ const UpdateAccountSchema = CreateAccountSchema.partial().omit({ code: true })
 accountsRouter.get('/', requirePermission('finance.accounts.view', 'view'), async (req, res) => {
   try {
     const companyId = req.auth!.companyId
-    const { type, is_active } = req.query
+    const { type, is_active, category, is_postable } = req.query
 
     let sql = `SELECT * FROM chart_of_accounts WHERE company_id = $1`
     const params: unknown[] = [companyId]
@@ -37,6 +37,18 @@ accountsRouter.get('/', requirePermission('finance.accounts.view', 'view'), asyn
     if (is_active !== undefined) {
       sql += ` AND is_active = $${idx++}`
       params.push(is_active === 'true')
+    }
+    // Comma-separated list (e.g. "CASH,BANK") — a petty cash float's own
+    // account must be CASH-only, but a replenishment's funding source can
+    // be either.
+    if (category) {
+      const categories = String(category).split(',').map((c) => c.trim().toUpperCase())
+      sql += ` AND account_category = ANY($${idx++})`
+      params.push(categories)
+    }
+    if (is_postable !== undefined) {
+      sql += ` AND is_postable = $${idx++}`
+      params.push(is_postable === 'true')
     }
     sql += ' ORDER BY code'
 

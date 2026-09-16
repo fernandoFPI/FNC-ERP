@@ -62,6 +62,39 @@ describe('GET /finance/accounts', () => {
     expect(res.status).toBe(200)
     expect(res.body.data.every((a: { account_type: string }) => a.account_type === 'asset')).toBe(true)
   })
+
+  // Petty cash's own float-creation picker relies on this — without it, it
+  // has no way to show only cash accounts instead of all ~300 of every type.
+  // The seeded test fixture never set account_category on any row (it
+  // predates migration 236), so this test sets it on two accounts itself
+  // rather than assuming production-like data is already there.
+  it('filters by category, accepting a comma-separated list', async () => {
+    const payableId = await getAccountId('2100')
+    const capitalId = await getAccountId('3100')
+    await pool.query(`UPDATE chart_of_accounts SET account_category='PAYABLE' WHERE id=$1`, [payableId])
+    await pool.query(`UPDATE chart_of_accounts SET account_category='EQUITY' WHERE id=$1`, [capitalId])
+
+    const res = await request(app)
+      .get('/finance/accounts?category=payable,equity')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    const ids = res.body.data.map((a: { id: string }) => a.id)
+    expect(ids).toContain(payableId)
+    expect(ids).toContain(capitalId)
+    expect(
+      res.body.data.every((a: { account_category: string | null }) =>
+        ['PAYABLE', 'EQUITY'].includes(a.account_category ?? ''),
+      ),
+    ).toBe(true)
+  })
+
+  it('filters by is_postable', async () => {
+    const res = await request(app)
+      .get('/finance/accounts?is_postable=true')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.data.every((a: { is_postable: boolean }) => a.is_postable === true)).toBe(true)
+  })
 })
 
 describe('GET /finance/accounts/:id', () => {
