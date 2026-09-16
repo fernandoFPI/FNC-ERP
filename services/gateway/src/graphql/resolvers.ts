@@ -2257,6 +2257,25 @@ async function completeStoreInLineForResolvedProduct(
       toLocationId = warehouseRes.rows[0]?.id as string | undefined
       if (!toLocationId) continue
     }
+
+    // A store keeper who noticed the missing quantity before this line ever
+    // got cataloged has no way to fix it except a manual stock adjustment
+    // (createStockAdjustment) — which has no link back to this receipt line,
+    // so the NOT EXISTS check above can't see it. Backfilling on top of an
+    // adjustment like that would double the quantity — exactly what
+    // happened across 2 of the 13 receipts this helper was built to fix.
+    // Not location-scoped deliberately: a real compensating adjustment may
+    // not land at the same location this receipt would have used, and the
+    // safe default when it's ambiguous is to skip and leave it for manual
+    // review, not to write.
+    const adjustmentRes = await client.query(
+      `SELECT 1 FROM stock_moves
+       WHERE company_id=$1 AND product_id=$2 AND source_type='adjustment' AND moved_at >= $3::date
+       LIMIT 1`,
+      [companyId, line.product_id, rl.received_date],
+    )
+    if (adjustmentRes.rows[0]) continue
+
     if (!virtualInId) {
       const virtInRes = await client.query(
         `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,

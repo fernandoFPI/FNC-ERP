@@ -135,6 +135,12 @@ async function cleanup(): Promise<void> {
     TEST_COMPANY_ID,
     `${PO_PREFIX}%`,
   ])
+  // Catches stock_moves with no po_line_id at all — e.g. a manual
+  // createStockAdjustment — that the po_line-scoped delete above can't see.
+  await pool.query(
+    `DELETE FROM stock_moves WHERE product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
+    [TEST_COMPANY_ID, `${SKU_PREFIX}%`],
+  )
   await pool.query(
     `DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
     [TEST_COMPANY_ID, `${SKU_PREFIX}%`],
@@ -245,6 +251,41 @@ describe('completeStoreInLineForResolvedProduct (via createProductFromPendingCat
     expect(moves.rows[0]!.product_id).toBe(existingProductId)
     expect(parseFloat(moves.rows[0]!.qty)).toBe(6)
     expect((await getBalance(existingProductId, warehouseId)).onHand).toBe(6)
+  })
+
+  it('does not double-count a line a store keeper already fixed by hand with a manual stock adjustment', async () => {
+    const existingProductId = await makeProduct('manually-fixed')
+    const poId = await makePO()
+    const poLineId = await makePOLineNoProduct(poId, 7, 30)
+    await confirmReceiptFor(poId, poLineId, 7)
+
+    // The store keeper notices the item never shows as on hand and corrects
+    // it directly — same real path production used (createStockAdjustment),
+    // with no link back to this receipt line at all.
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: existingProductId, location_id: warehouseId, new_qty: 7 } },
+      ctx as never,
+    )
+    expect((await getBalance(existingProductId, warehouseId)).onHand).toBe(7)
+
+    const pendingRes = await pool.query<{ id: string }>(
+      `SELECT id FROM pending_product_catalog_items WHERE po_line_id=$1`,
+      [poLineId],
+    )
+    const pendingId = pendingRes.rows[0]!.id
+
+    // Cataloging happens after the manual fix — this must NOT also post the
+    // backfill move, or the balance would double to 14.
+    await resolvers.Mutation.linkPendingCatalogItemToProduct(
+      null,
+      { id: pendingId, productId: existingProductId },
+      ctx as never,
+    )
+
+    const moves = await pool.query(`SELECT id FROM stock_moves WHERE po_line_id=$1`, [poLineId])
+    expect(moves.rows).toHaveLength(0)
+    expect((await getBalance(existingProductId, warehouseId)).onHand).toBe(7)
   })
 
   it('backfills both receipts when the same line was received in two partial deliveries before being cataloged', async () => {
