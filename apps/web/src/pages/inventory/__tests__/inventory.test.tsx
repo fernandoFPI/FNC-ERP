@@ -375,6 +375,8 @@ describe('MaterialReturnsPage', () => {
       issueId: 'i1',
       issueNumber: 'SO-2026-0001',
       issueDate: '2026-01-10',
+      poId: 'po1',
+      poNumber: 'PO-2026-0001',
       productId: 'p1',
       productName: 'Black Ink',
       sku: 'INK-001',
@@ -390,6 +392,8 @@ describe('MaterialReturnsPage', () => {
   const returnableDirectLines = [
     {
       poLineId: 'pl1',
+      poId: 'po1',
+      poNumber: 'PO-2026-0001',
       productId: 'p2',
       productName: 'Steel Rod',
       sku: 'STL-001',
@@ -502,7 +506,23 @@ describe('MaterialReturnsPage', () => {
     const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
     wrap(<MaterialReturnsPage />)
     fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
-    expect(screen.getByText(/pick the purchase order/i)).toBeInTheDocument()
+    expect(screen.getByText(/pick a purchase order, or search by item/i)).toBeInTheDocument()
+  })
+
+  it('New Material Return modal: searching by item alone shows returnable lines across POs without picking one', async () => {
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
+
+    fireEvent.click(screen.getByText('Any item…'))
+    fireEvent.mouseDown(screen.getByText('Black Ink'))
+
+    // No PO was picked, yet the returnable lines still render, each
+    // carrying its own PO badge since results can span multiple POs.
+    expect(screen.getByText('Returnable Items')).toBeInTheDocument()
+    expect(screen.getAllByText('Black Ink').length).toBeGreaterThan(0)
+    expect(screen.getByText('Steel Rod')).toBeInTheDocument()
+    expect(screen.getAllByText('PO-2026-0001').length).toBeGreaterThan(0)
   })
 
   it('New Material Return modal: narrows the Purchase Order picker by project and item', async () => {
@@ -528,6 +548,76 @@ describe('MaterialReturnsPage', () => {
     expect(screen.getByText('حبر أسود')).toBeInTheDocument()
     fireEvent.mouseDown(screen.getByText('Black Ink'))
     expect(findLatestPOVariables()).toMatchObject({ projectId: 'proj1', productId: 'p1' })
+  })
+
+  it('groups pending lines by resolved PO and submits one createMaterialReturn call per PO when an item search spans two POs', async () => {
+    const createReturnMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([createReturnMock, { loading: false }])
+
+    const secondPoIssueLine = {
+      issueLineId: 'il2',
+      issueId: 'i2',
+      issueNumber: 'SO-2026-0002',
+      issueDate: '2026-01-11',
+      poId: 'po2',
+      poNumber: 'PO-2026-0002',
+      productId: 'p1',
+      productName: 'Black Ink',
+      sku: 'INK-001',
+      uom: 'litre',
+      qtyIssued: 5,
+      qtyReturnedSoFar: 0,
+      qtyReturnable: 5,
+      unitCost: 15,
+      fromLocationId: 'loc1',
+      fromLocationName: 'Site B',
+    }
+    mockUseQuery.mockImplementation((query: { definitions?: { name?: { value?: string } }[] }) => {
+      const opName = query?.definitions?.[0]?.name?.value ?? ''
+      if (opName === 'MaterialReturns')
+        return { data: { materialReturns: returns }, loading: false, refetch: vi.fn() }
+      if (opName === 'ReturnableMaterialIssueLines')
+        return { data: { returnableMaterialIssueLines: [...returnableIssueLines, secondPoIssueLine] }, loading: false }
+      if (opName === 'ReturnableDirectDeliveryLines')
+        return { data: { returnableDirectDeliveryLines: [] }, loading: false }
+      if (opName === 'PurchaseOrders') return { data: { purchaseOrders }, loading: false }
+      if (opName === 'StockLocations') return { data: { stockLocations: locations }, loading: false }
+      if (opName === 'Projects') return { data: { projects: { data: projects } }, loading: false }
+      if (opName === 'Products') return { data: { products }, loading: false }
+      return { data: undefined, loading: false }
+    })
+
+    const MaterialReturnsPage = (await import('../material-returns/MaterialReturnsPage')).default
+    wrap(<MaterialReturnsPage />)
+    fireEvent.click(screen.getByRole('button', { name: /\+ new material return/i }))
+    fireEvent.click(screen.getByText('Any item…'))
+    fireEvent.mouseDown(screen.getByText('Black Ink'))
+
+    const qtyInputs = document.body.querySelectorAll('input[type="number"]')
+    expect(qtyInputs.length).toBe(2)
+    fireEvent.change(qtyInputs[0], { target: { value: '2' } })
+    fireEvent.change(qtyInputs[1], { target: { value: '1' } })
+
+    fireEvent.click(screen.getAllByText('Return to…')[0])
+    fireEvent.mouseDown(screen.getAllByText('Main Warehouse').at(-1)!)
+    fireEvent.click(screen.getByText('Return to…'))
+    fireEvent.mouseDown(screen.getAllByText('Main Warehouse').at(-1)!)
+
+    const createButton = screen.getByRole('button', { name: /create return/i })
+    expect(createButton).not.toBeDisabled()
+    fireEvent.click(createButton)
+
+    await waitFor(() => expect(createReturnMock).toHaveBeenCalledTimes(2))
+    const poIdsSubmitted = createReturnMock.mock.calls.map((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId)
+    expect(poIdsSubmitted.sort()).toEqual(['po1', 'po2'])
+    const call1 = createReturnMock.mock.calls.find((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId === 'po1')
+    const call2 = createReturnMock.mock.calls.find((c) => (c[0] as { variables: { input: { poId: string } } }).variables.input.poId === 'po2')
+    expect((call1?.[0] as { variables: { input: { lines: { issueLineId: string }[] } } }).variables.input.lines).toEqual([
+      { issueLineId: 'il1', toLocationId: 'loc1', qtyReturned: 2 },
+    ])
+    expect((call2?.[0] as { variables: { input: { lines: { issueLineId: string }[] } } }).variables.input.lines).toEqual([
+      { issueLineId: 'il2', toLocationId: 'loc1', qtyReturned: 1 },
+    ])
   })
 
   it('excludes virtual locations from the return-to destination options', async () => {

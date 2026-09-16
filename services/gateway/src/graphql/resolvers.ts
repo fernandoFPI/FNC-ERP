@@ -7979,13 +7979,18 @@ export const resolvers = {
     // out; there's nothing left to bring back.
     returnableMaterialIssueLines: async (
       _: unknown,
-      args: { projectId?: string; poId?: string },
+      args: { projectId?: string; poId?: string; productId?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
-      if (!args.poId && !args.projectId) return []
+      if (!args.poId && !args.projectId && !args.productId) return []
       await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
-      const conditions: string[] = ['pmi.company_id=$1', "pmi.status='issued'"]
+      // po_id IS NOT NULL always applies (not just when poId is given) —
+      // createMaterialReturn requires one, so a manual/ad-hoc Store Out with
+      // no PO at all can never actually be completed through this flow.
+      // Harmless for the poId-scoped case (that condition already implies
+      // it); load-bearing once productId alone can match across every PO.
+      const conditions: string[] = ['pmi.company_id=$1', "pmi.status='issued'", 'pmi.po_id IS NOT NULL']
       const params: unknown[] = [ctx.auth.companyId]
       if (args.poId) {
         conditions.push(`pmi.po_id=$${params.length + 1}`)
@@ -7995,8 +8000,13 @@ export const resolvers = {
         conditions.push(`pmi.project_id=$${params.length + 1}`)
         params.push(args.projectId)
       }
+      if (args.productId) {
+        conditions.push(`pmil.product_id=$${params.length + 1}`)
+        params.push(args.productId)
+      }
       const result = await query(
         `SELECT pmil.id AS issue_line_id, pmi.id AS issue_id, pmi.issue_number, pmi.issue_date,
+                pmi.po_id, po.po_number,
                 pmil.product_id, prod.name AS product_name, prod.sku, prod.uom,
                 pmil.qty_issued, pmil.unit_cost,
                 COALESCE(ret.qty_returned_so_far, 0) AS qty_returned_so_far,
@@ -8004,6 +8014,7 @@ export const resolvers = {
                 pmil.to_location_id AS from_location_id, loc.name AS from_location_name
          FROM project_material_issue_lines pmil
          JOIN project_material_issues pmi ON pmi.id = pmil.issue_id
+         LEFT JOIN purchase_orders po ON po.id = pmi.po_id
          LEFT JOIN products prod ON prod.id = pmil.product_id
          LEFT JOIN stock_locations loc ON loc.id = pmil.to_location_id
          LEFT JOIN (
@@ -8021,6 +8032,8 @@ export const resolvers = {
         issueId: r.issue_id,
         issueNumber: r.issue_number,
         issueDate: r.issue_date,
+        poId: r.po_id,
+        poNumber: r.po_number ?? null,
         productId: r.product_id,
         productName: r.product_name ?? null,
         sku: r.sku ?? null,
@@ -8041,19 +8054,38 @@ export const resolvers = {
     // approved for the line, since neither reduces po_lines.qty_received.
     returnableDirectDeliveryLines: async (
       _: unknown,
-      args: { poId: string },
+      args: { poId?: string; projectId?: string; productId?: string },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
+      // projectId alone is intentionally not enough — it stays a picker-
+      // narrowing aid on the Purchase Order field, not a direct trigger (too
+      // broad on its own); poId or productId actually scopes a search.
+      if (!args.poId && !args.productId) return []
       await requirePermGW(ctx.auth, 'projects.execution.view', 'view')
-      const poRes = await query<{ delivery_destination: string | null }>(
-        `SELECT delivery_destination FROM purchase_orders WHERE id=$1 AND company_id=$2`,
-        [args.poId, ctx.auth.companyId],
-      )
-      if (!poRes.rows[0] || poRes.rows[0].delivery_destination !== 'jobsite') return []
+      const conditions: string[] = [
+        'po.company_id=$1',
+        "po.delivery_destination='jobsite'",
+        'COALESCE(pl.qty_received,0) > 0',
+      ]
+      const params: unknown[] = [ctx.auth.companyId]
+      if (args.poId) {
+        conditions.push(`po.id=$${params.length + 1}`)
+        params.push(args.poId)
+      }
+      if (args.productId) {
+        conditions.push(`pl.product_id=$${params.length + 1}`)
+        params.push(args.productId)
+      }
+      if (args.projectId) {
+        conditions.push(`po.project_id=$${params.length + 1}`)
+        params.push(args.projectId)
+      }
 
       const result = await query<{
         po_line_id: string
+        po_id: string
+        po_number: string
         product_id: string
         product_name: string | null
         sku: string | null
@@ -8063,12 +8095,14 @@ export const resolvers = {
         already_returned: string | null
         vendor_returned: string | null
       }>(
-        `SELECT pl.id AS po_line_id, pl.product_id, prod.name AS product_name, prod.sku, pl.uom,
+        `SELECT pl.id AS po_line_id, po.id AS po_id, po.po_number,
+                pl.product_id, prod.name AS product_name, prod.sku, pl.uom,
                 pl.qty_received,
                 dd.direct_cost,
                 ret.qty_returned AS already_returned,
                 vr.qty_returned AS vendor_returned
          FROM po_lines pl
+         JOIN purchase_orders po ON po.id = pl.po_id
          JOIN products prod ON prod.id = pl.product_id
          LEFT JOIN (
            SELECT source_id AS po_line_id, SUM(amount) AS direct_cost
@@ -8087,8 +8121,8 @@ export const resolvers = {
            WHERE pr.status IN ('approved','credited')
            GROUP BY pri.po_line_id
          ) vr ON vr.po_line_id = pl.id
-         WHERE pl.po_id=$1 AND COALESCE(pl.qty_received,0) > 0`,
-        [args.poId],
+         WHERE ${conditions.join(' AND ')}`,
+        params,
       )
 
       return result.rows
@@ -8101,6 +8135,8 @@ export const resolvers = {
           const unitCost = qtyReceived > 0 ? directCost / qtyReceived : 0
           return {
             poLineId: r.po_line_id,
+            poId: r.po_id,
+            poNumber: r.po_number ?? null,
             productId: r.product_id,
             productName: r.product_name ?? null,
             sku: r.sku ?? null,

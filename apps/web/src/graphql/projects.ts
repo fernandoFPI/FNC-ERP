@@ -4701,12 +4701,14 @@ export const MATERIAL_RETURNS_QUERY = gql`
 `
 
 export const RETURNABLE_MATERIAL_ISSUE_LINES_QUERY = gql`
-  query ReturnableMaterialIssueLines($poId: ID!) {
-    returnableMaterialIssueLines(poId: $poId) {
+  query ReturnableMaterialIssueLines($poId: ID, $projectId: ID, $productId: ID) {
+    returnableMaterialIssueLines(poId: $poId, projectId: $projectId, productId: $productId) {
       issueLineId
       issueId
       issueNumber
       issueDate
+      poId
+      poNumber
       productId
       productName
       sku
@@ -4725,9 +4727,11 @@ export const RETURNABLE_MATERIAL_ISSUE_LINES_QUERY = gql`
 // — never issued from stock, so there's no Store Out line to reverse; this is
 // surplus purchased material becoming real inventory for the first time.
 export const RETURNABLE_DIRECT_DELIVERY_LINES_QUERY = gql`
-  query ReturnableDirectDeliveryLines($poId: ID!) {
-    returnableDirectDeliveryLines(poId: $poId) {
+  query ReturnableDirectDeliveryLines($poId: ID, $projectId: ID, $productId: ID) {
+    returnableDirectDeliveryLines(poId: $poId, projectId: $projectId, productId: $productId) {
       poLineId
+      poId
+      poNumber
       productId
       productName
       sku

@@ -313,8 +313,49 @@ describe('returnableMaterialIssueLines', () => {
     expect(rows).toEqual([])
   })
 
-  it('returns nothing when neither poId nor projectId is given', async () => {
+  it('returns nothing when neither poId, projectId, nor productId is given', async () => {
     const rows = await resolvers.Query.returnableMaterialIssueLines(null, {}, ctx as never)
+    expect(rows).toEqual([])
+  })
+
+  it('productId alone finds returnable lines across more than one PO, each carrying its own poId', async () => {
+    const productId = await makeProduct('cross-po-item')
+    await receive(productId, warehouseId, 30, 20)
+    const projectA = await makeProject('cross-po-a')
+    const projectB = await makeProject('cross-po-b')
+    const poA = await makePO(projectA)
+    const poB = await makePO(projectB)
+    const lineA = await makeIssuedLine(poA, projectA, productId, 5, warehouseId, 20)
+    const lineB = await makeIssuedLine(poB, projectB, productId, 7, warehouseId, 20)
+
+    const rows = (await resolvers.Query.returnableMaterialIssueLines(
+      null,
+      { productId },
+      ctx as never,
+    )) as { issueLineId: string; poId: string; poNumber: string }[]
+    expect(rows).toHaveLength(2)
+    const byLine = new Map(rows.map((r) => [r.issueLineId, r]))
+    expect(byLine.get(lineA)!.poId).toBe(poA)
+    expect(byLine.get(lineB)!.poId).toBe(poB)
+    expect(byLine.get(lineA)!.poNumber).toMatch(/^MRETTEST-PO-/)
+  })
+
+  it('excludes a manual/ad-hoc issued line with no PO from a productId-only search — createMaterialReturn could never resolve a PO for it', async () => {
+    const productId = await makeProduct('cross-po-no-po')
+    await receive(productId, warehouseId, 10, 10)
+    const issue = (await resolvers.Mutation.createMaterialIssue(
+      null,
+      { issueDate: new Date().toISOString().slice(0, 10) },
+      ctx as never,
+    )) as { id: string }
+    await resolvers.Mutation.addMaterialIssueLine(
+      null,
+      { issueId: issue.id, productId, qtyIssued: 3, unitCost: 10, fromLocationId: warehouseId },
+      ctx as never,
+    )
+    await resolvers.Mutation.issueMaterialIssue(null, { id: issue.id }, ctx as never)
+
+    const rows = await resolvers.Query.returnableMaterialIssueLines(null, { productId }, ctx as never)
     expect(rows).toEqual([])
   })
 })
@@ -559,6 +600,35 @@ describe('returnableDirectDeliveryLines', () => {
 
     const rows = await resolvers.Query.returnableDirectDeliveryLines(null, { poId }, ctx as never)
     expect(rows).toEqual([])
+  })
+
+  it('returns nothing when neither poId nor productId is given — projectId alone is not enough', async () => {
+    const projectId = await makeProject('dd-project-only')
+    const rows = await resolvers.Query.returnableDirectDeliveryLines(null, { projectId }, ctx as never)
+    expect(rows).toEqual([])
+  })
+
+  it('productId alone finds returnable direct-delivery lines across more than one jobsite PO', async () => {
+    const productId = await makeProduct('dd-cross-po-item')
+    const projectA = await makeProject('dd-cross-po-a')
+    const projectB = await makeProject('dd-cross-po-b')
+    const poA = await makeDirectDeliveryPO(projectA)
+    const poB = await makeDirectDeliveryPO(projectB)
+    const lineA = await makePOLine(poA, productId, 10, 10)
+    const lineB = await makePOLine(poB, productId, 6, 10)
+    await deliverDirect(poA, lineA, 10, 10)
+    await deliverDirect(poB, lineB, 6, 10)
+
+    const rows = (await resolvers.Query.returnableDirectDeliveryLines(
+      null,
+      { productId },
+      ctx as never,
+    )) as { poLineId: string; poId: string; poNumber: string }[]
+    expect(rows).toHaveLength(2)
+    const byLine = new Map(rows.map((r) => [r.poLineId, r]))
+    expect(byLine.get(lineA)!.poId).toBe(poA)
+    expect(byLine.get(lineB)!.poId).toBe(poB)
+    expect(byLine.get(lineA)!.poNumber).toMatch(/^MRETTEST-PO-/)
   })
 })
 

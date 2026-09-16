@@ -53,6 +53,8 @@ interface ReturnableIssueLine {
   issueId: string
   issueNumber: string
   issueDate: string
+  poId: string
+  poNumber: string | null
   productId: string
   productName: string | null
   sku: string | null
@@ -66,6 +68,8 @@ interface ReturnableIssueLine {
 }
 interface ReturnableDirectDeliveryLine {
   poLineId: string
+  poId: string
+  poNumber: string | null
   productId: string
   productName: string | null
   sku: string | null
@@ -151,11 +155,27 @@ export default function MaterialReturnsPage() {
   })
   const { data: returnableIssueData, loading: loadingReturnableIssue } = useQuery(
     RETURNABLE_MATERIAL_ISSUE_LINES_QUERY,
-    { variables: { poId: formPoId }, skip: !formPoId, fetchPolicy: 'cache-and-network' },
+    {
+      variables: {
+        poId: formPoId || undefined,
+        projectId: formProjectFilter || undefined,
+        productId: formProductFilter || undefined,
+      },
+      skip: !formPoId && !formProductFilter,
+      fetchPolicy: 'cache-and-network',
+    },
   )
   const { data: returnableDirectData, loading: loadingReturnableDirect } = useQuery(
     RETURNABLE_DIRECT_DELIVERY_LINES_QUERY,
-    { variables: { poId: formPoId }, skip: !formPoId, fetchPolicy: 'cache-and-network' },
+    {
+      variables: {
+        poId: formPoId || undefined,
+        projectId: formProjectFilter || undefined,
+        productId: formProductFilter || undefined,
+      },
+      skip: !formPoId && !formProductFilter,
+      fetchPolicy: 'cache-and-network',
+    },
   )
   const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
 
@@ -226,33 +246,75 @@ export default function MaterialReturnsPage() {
 
   async function handleCreate() {
     if (!canSubmit) return
-    try {
-      await createReturn({
-        variables: {
-          input: {
-            poId: formPoId,
-            notes: formNotes || null,
-            lines: [
-              ...pendingIssueLines.map((p) => ({
-                issueLineId: p.line.issueLineId,
-                toLocationId: returnLocation[p.line.issueLineId],
-                qtyReturned: p.qty,
-              })),
-              ...pendingDirectLines.map((p) => ({
-                poLineId: p.line.poLineId,
-                toLocationId: returnLocation[p.line.poLineId],
-                qtyReturned: p.qty,
-              })),
-            ],
-          },
-        },
-      })
-      addToast({ type: 'success', message: `Material return created with ${pendingCount} item(s)` })
-      resetModal()
-      void refetch()
-    } catch (e: unknown) {
-      addToast({ type: 'error', message: e instanceof Error ? e.message : 'Failed to create material return' })
+
+    // Results can span more than one PO once "Narrow by item" is used
+    // without a specific PO selected — createMaterialReturn takes exactly
+    // one poId, so group the pending lines by their resolved PO and submit
+    // one return per group.
+    const groups = new Map<
+      string,
+      { poNumber: string | null; issueLines: typeof pendingIssueLines; directLines: typeof pendingDirectLines }
+    >()
+    for (const p of pendingIssueLines) {
+      const g = groups.get(p.line.poId) ?? { poNumber: p.line.poNumber, issueLines: [], directLines: [] }
+      g.issueLines.push(p)
+      groups.set(p.line.poId, g)
     }
+    for (const p of pendingDirectLines) {
+      const g = groups.get(p.line.poId) ?? { poNumber: p.line.poNumber, issueLines: [], directLines: [] }
+      g.directLines.push(p)
+      groups.set(p.line.poId, g)
+    }
+
+    const succeeded: string[] = []
+    const failed: { poNumber: string; error: string }[] = []
+    for (const [poId, g] of groups) {
+      try {
+        await createReturn({
+          variables: {
+            input: {
+              poId,
+              notes: formNotes || null,
+              lines: [
+                ...g.issueLines.map((p) => ({
+                  issueLineId: p.line.issueLineId,
+                  toLocationId: returnLocation[p.line.issueLineId],
+                  qtyReturned: p.qty,
+                })),
+                ...g.directLines.map((p) => ({
+                  poLineId: p.line.poLineId,
+                  toLocationId: returnLocation[p.line.poLineId],
+                  qtyReturned: p.qty,
+                })),
+              ],
+            },
+          },
+        })
+        succeeded.push(g.poNumber ?? poId)
+      } catch (e: unknown) {
+        failed.push({ poNumber: g.poNumber ?? poId, error: e instanceof Error ? e.message : 'Failed to create material return' })
+      }
+    }
+
+    if (failed.length === 0) {
+      addToast({
+        type: 'success',
+        message:
+          groups.size > 1
+            ? `Created ${groups.size} material returns across ${succeeded.join(', ')} with ${pendingCount} item(s) total`
+            : `Material return created with ${pendingCount} item(s)`,
+      })
+      resetModal()
+    } else if (succeeded.length === 0) {
+      addToast({ type: 'error', message: `Failed to create material return: ${failed.map((f) => `${f.poNumber} (${f.error})`).join('; ')}` })
+    } else {
+      addToast({
+        type: 'error',
+        message: `Created returns for ${succeeded.join(', ')}, but failed for ${failed.map((f) => `${f.poNumber} (${f.error})`).join('; ')}`,
+      })
+      resetModal()
+    }
+    void refetch()
   }
 
   const totalValue = returns.reduce(
@@ -470,7 +532,7 @@ export default function MaterialReturnsPage() {
         onClose={resetModal}
         closeOnBackdrop={false}
         title="New Material Return"
-        description="Pick the purchase order, then choose how much of each item is coming back and where it's going."
+        description="Pick a purchase order, or search by item to find every returnable instance of it — then choose how much is coming back and where it's going."
         size="lg"
         footer={
           <>
@@ -519,7 +581,7 @@ export default function MaterialReturnsPage() {
 
         <div style={{ marginBottom: '14px' }}>
           <SearchableSelect
-            label="Purchase Order"
+            label={formProductFilter ? 'Purchase Order (optional — item search already narrows results)' : 'Purchase Order'}
             value={formPoId}
             onChange={(val) => {
               setFormPoId(val)
@@ -531,7 +593,7 @@ export default function MaterialReturnsPage() {
           />
         </div>
 
-        {formPoId && (
+        {(formPoId || formProductFilter) && (
           <div style={{ marginBottom: '14px' }}>
             <p
               style={{
@@ -549,8 +611,9 @@ export default function MaterialReturnsPage() {
               <div style={{ fontSize: '13px', color: theme.textMuted }}>Loading…</div>
             ) : returnableIssueLines.length === 0 && returnableDirectLines.length === 0 ? (
               <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                No returnable items — this PO has no issued Store Out lines and no direct-to-jobsite
-                deliveries with anything still outstanding.
+                {formPoId
+                  ? 'No returnable items — this PO has no issued Store Out lines and no direct-to-jobsite deliveries with anything still outstanding.'
+                  : 'No returnable items — this item has nothing outstanding on any purchase order (either never ordered, or already fully returned).'}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -559,9 +622,25 @@ export default function MaterialReturnsPage() {
                     key={l.issueLineId}
                     style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
                   >
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
-                      {l.productName ?? l.productId}
-                      {l.sku && <span style={{ color: theme.textMuted, fontWeight: 400 }}> · {l.sku}</span>}
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>
+                        {l.productName ?? l.productId}
+                        {l.sku && <span style={{ color: theme.textMuted, fontWeight: 400 }}> · {l.sku}</span>}
+                      </span>
+                      {!formPoId && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            color: theme.accent,
+                            background: `${theme.accent}18`,
+                            borderRadius: '5px',
+                            padding: '2px 6px',
+                          }}
+                        >
+                          {l.poNumber ?? 'PO'}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
                       Store Out {l.issueNumber} — issued {l.qtyIssued} {l.uom}, {l.qtyReturnable} still returnable
@@ -610,9 +689,25 @@ export default function MaterialReturnsPage() {
                     key={l.poLineId}
                     style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${theme.border}` }}
                   >
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px' }}>
-                      {l.productName ?? l.productId}
-                      {l.sku && <span style={{ color: theme.textMuted, fontWeight: 400 }}> · {l.sku}</span>}
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span>
+                        {l.productName ?? l.productId}
+                        {l.sku && <span style={{ color: theme.textMuted, fontWeight: 400 }}> · {l.sku}</span>}
+                      </span>
+                      {!formPoId && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            color: theme.accent,
+                            background: `${theme.accent}18`,
+                            borderRadius: '5px',
+                            padding: '2px 6px',
+                          }}
+                        >
+                          {l.poNumber ?? 'PO'}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '8px' }}>
                       Delivered direct to jobsite — received {l.qtyReceived} {l.uom}, {l.qtyReturnable} still

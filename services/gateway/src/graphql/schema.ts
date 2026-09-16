@@ -123,8 +123,8 @@
     # At least one of poId/projectId must be given. poId is the primary,
     # real-world filter — "what's still returnable from this PO" — projectId
     # stays supported for any future project-wide view.
-    returnableMaterialIssueLines(poId: ID, projectId: ID): [ReturnableIssueLine!]!
-    returnableDirectDeliveryLines(poId: ID!): [ReturnableDirectDeliveryLine!]!
+    returnableMaterialIssueLines(poId: ID, projectId: ID, productId: ID): [ReturnableIssueLine!]!
+    returnableDirectDeliveryLines(poId: ID, projectId: ID, productId: ID): [ReturnableDirectDeliveryLine!]!
     availableInvoiceCosts(invoiceId: ID!, sourceType: String): AvailableCosts!
 
     # Interco stock transfers
@@ -1428,6 +1428,12 @@
     issueId: ID!
     issueNumber: String!
     issueDate: String!
+    # Which PO this line's Store Out belongs to — always present (a line
+    # with no PO can't be resolved by createMaterialReturn, which requires
+    # one, so those are excluded upstream). Needed once a search can span
+    # more than one PO at a time (see productId below).
+    poId: ID!
+    poNumber: String
     productId: ID!
     productName: String
     sku: String
@@ -1451,6 +1457,8 @@
   # stale, last-write-wins) po_lines.actual_unit_price.
   type ReturnableDirectDeliveryLine {
     poLineId: ID!
+    poId: ID!
+    poNumber: String
     productId: ID!
     productName: String
     sku: String
