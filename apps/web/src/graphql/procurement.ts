@@ -93,6 +93,7 @@ export const PURCHASE_ORDERS_QUERY = gql`
       requisitionNumber
       branch_id
       branch_name
+      itemSearchText
     }
   }
 `

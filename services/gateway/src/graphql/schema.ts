@@ -2355,6 +2355,12 @@
     receipts: [POReceipt!]
     approval_log: [POApprovalLogEntry!]
     edit_requests: [POEditRequest!]
+    # Populated only by purchaseOrders (the list query) — a search-friendly
+    # blob of this PO's own line item names/name_ar/skus/descriptions, so the
+    # list page's search box can match "which PO has this item" without a
+    # separate item picker. Not meaningful on purchaseOrder(id)/
+    # purchaseOrderForAction(id).
+    itemSearchText: String
   }
 
   # G1: the pre-vendor document. Vendor is chosen only at Items Bought
@@ -2388,6 +2394,10 @@
     created_at: String!
     updated_at: String!
     lines: [POLine!]
+    # Populated only by requisitions (the list query) — same purpose as
+    # PurchaseOrder.itemSearchText: lets the list search box match "which
+    # requisition has this item" without a separate item picker.
+    itemSearchText: String
     approval_log: [RequisitionApprovalLogEntry!]
     # No-conversion policy: one entry per currency actually used by this
     # requisition's lines, never summed across currencies into one number

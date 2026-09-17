@@ -45,6 +45,7 @@ interface Requisition {
   notes?: string | null
   created_at: string
   updated_at: string
+  itemSearchText?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -98,7 +99,8 @@ export default function RequisitionsPage() {
         !r.requisition_number.toLowerCase().includes(q) &&
         !(r.purpose ?? '').toLowerCase().includes(q) &&
         !(r.projectName ?? '').toLowerCase().includes(q) &&
-        !(r.notes ?? '').toLowerCase().includes(q)
+        !(r.notes ?? '').toLowerCase().includes(q) &&
+        !(r.itemSearchText ?? '').toLowerCase().includes(q)
       )
         return false
     }
@@ -268,6 +270,7 @@ export default function RequisitionsPage() {
         <FilterBar
           search={search}
           onSearchChange={setSearch}
+          searchPlaceholder="Search requisition #, purpose, project, or item…"
           filters={[
             {
               key: 'status',

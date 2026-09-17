@@ -44,6 +44,7 @@ interface PurchaseOrder {
   projectCode?: string | null
   projectName?: string | null
   requisitionNumber?: string | null
+  itemSearchText?: string | null
 }
 
 const STATUS_OPTIONS = [
@@ -109,7 +110,8 @@ export default function PurchaseOrdersPage() {
         !o.po_number.toLowerCase().includes(q) &&
         !(o.vendor_name ?? '').toLowerCase().includes(q) &&
         !(o.projectCode ?? '').toLowerCase().includes(q) &&
-        !(o.projectName ?? '').toLowerCase().includes(q)
+        !(o.projectName ?? '').toLowerCase().includes(q) &&
+        !(o.itemSearchText ?? '').toLowerCase().includes(q)
       )
         return false
     }
@@ -510,6 +512,7 @@ export default function PurchaseOrdersPage() {
         <FilterBar
           search={search}
           onSearchChange={setSearch}
+          searchPlaceholder="Search PO #, vendor, project, or item…"
           filters={[
             {
               key: 'status',

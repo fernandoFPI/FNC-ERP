@@ -5768,7 +5768,12 @@ export const resolvers = {
       let sql = `SELECT po.*, v.name AS vendor_name, proj.code AS "projectCode", proj.name AS "projectName",
         rq.requisition_number AS "requisitionNumber",
         cb.name AS branch_name,
-        (SELECT COUNT(*) FROM vendor_invoices vi WHERE vi.po_id = po.id AND vi.company_id = po.company_id)::int AS invoice_count
+        (SELECT COUNT(*) FROM vendor_invoices vi WHERE vi.po_id = po.id AND vi.company_id = po.company_id)::int AS invoice_count,
+        (SELECT COALESCE(string_agg(DISTINCT
+           COALESCE(p.name,'') || ' ' || COALESCE(p.name_ar,'') || ' ' || COALESCE(p.sku,'') || ' ' || COALESCE(pl.description,''),
+           ' • '), '')
+         FROM po_lines pl LEFT JOIN products p ON p.id = pl.product_id
+         WHERE pl.po_id = po.id) AS "itemSearchText"
         FROM purchase_orders po
         LEFT JOIN vendors v ON v.id = po.vendor_id
         LEFT JOIN projects proj ON proj.id = po.project_id
@@ -9255,7 +9260,12 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) return []
       let sql = `SELECT req.*, cb.name AS branch_name, p.code AS "projectCode", p.name AS "projectName",
-        COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName"
+        COALESCE(u.first_name || ' ' || u.last_name, u.email) AS "organizerName",
+        (SELECT COALESCE(string_agg(DISTINCT
+           COALESCE(prod.name,'') || ' ' || COALESCE(prod.name_ar,'') || ' ' || COALESCE(prod.sku,'') || ' ' || COALESCE(pl.description,''),
+           ' • '), '')
+         FROM po_lines pl LEFT JOIN products prod ON prod.id = pl.product_id
+         WHERE pl.requisition_id = req.id) AS "itemSearchText"
         FROM requisitions req
         LEFT JOIN company_branches cb ON cb.id = req.branch_id
         LEFT JOIN projects p ON p.id = req.project_id
