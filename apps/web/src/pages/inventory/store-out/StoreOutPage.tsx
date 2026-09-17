@@ -11,7 +11,7 @@ import {
   PROJECTS_QUERY,
 } from '../../../graphql/projects'
 import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
-import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
+import { PURCHASE_ORDERS_QUERY, PURCHASE_ORDER_QUERY } from '../../../graphql/procurement'
 import { PRODUCTS_QUERY, STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
@@ -141,6 +141,14 @@ export default function StoreOutPage() {
     skip: !formProjectId,
     fetchPolicy: 'cache-and-network',
   })
+  // Full line detail for whichever PO is linked in the modal — lets "Add
+  // all items from PO" pre-fill Items to Issue instead of re-entering each
+  // product/qty/cost by hand.
+  const { data: linkedPoData } = useQuery(PURCHASE_ORDER_QUERY, {
+    variables: { id: formPoId },
+    skip: !formPoId,
+    fetchPolicy: 'cache-and-network',
+  })
   // Unscoped — for the page-level "search by PO" filter, separate from the
   // New Store Out modal's own project-scoped PO picker above.
   const { data: allPosData } = useQuery(PURCHASE_ORDERS_QUERY, {
@@ -176,6 +184,23 @@ export default function StoreOutPage() {
   }
   const projectPOs = (poData?.purchaseOrders ?? []) as POOption[]
   const allPOs = (allPosData?.purchaseOrders ?? []) as POOption[]
+  interface LinkedPOLine {
+    id: string
+    product_id: string | null
+    product_name: string | null
+    sku: string | null
+    qty_received: number | null
+    unit_price: number
+  }
+  const linkedPoLines = (linkedPoData?.purchaseOrder?.lines ?? []) as LinkedPOLine[]
+  // Only lines actually received (and not already staged in this modal) are
+  // real candidates to issue out of the warehouse.
+  const autoFillCandidates = linkedPoLines.filter(
+    (l) =>
+      l.product_id &&
+      (parseFloat(String(l.qty_received ?? 0)) || 0) > 0 &&
+      !pendingLines.some((p) => p.productId === l.product_id),
+  )
   interface RequisitionOption {
     id: string
     requisition_number: string
@@ -293,6 +318,24 @@ export default function StoreOutPage() {
     setNewQty('')
     setNewUnit('')
     setNewFromLocationId('')
+  }
+
+  // Stages one row per received line on the linked PO, defaulting quantity
+  // to what was actually received and cost to that line's own unit price —
+  // a starting point the user can still edit or remove before creating.
+  function autoFillFromPO() {
+    setPendingLines((prev) => [
+      ...prev,
+      ...autoFillCandidates.map((l) => ({
+        key: ++pendingKey.current,
+        productId: l.product_id!,
+        productName: l.product_name ?? '',
+        sku: l.sku ?? '',
+        qty: String(parseFloat(String(l.qty_received))),
+        unitCost: String(l.unit_price),
+        fromLocationId: '',
+      })),
+    ])
   }
 
   async function handleCreate() {
@@ -1070,6 +1113,18 @@ export default function StoreOutPage() {
               </span>
             )}
           </div>
+
+          {formPoId && autoFillCandidates.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              style={{ marginBottom: '12px' }}
+              onClick={autoFillFromPO}
+            >
+              + Add {autoFillCandidates.length} received item
+              {autoFillCandidates.length > 1 ? 's' : ''} from this PO
+            </Button>
+          )}
 
           {/* Pending lines table */}
           {pendingLines.length > 0 && (
