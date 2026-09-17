@@ -1885,6 +1885,7 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
          JSON.stringify({ requisitionId: p['requisitionId'], requisitionNumber: row.requisition_number })]
       )
       if (row.email && await isEmailEnabled('email.requisition_pricing_stage')) {
+        const requisitionUrl = `${env.FRONTEND_URL}/procurement/requisitions/${String(p['requisitionId'])}`
         await sendEmail({
           to: row.email,
           subject: `FNC ERP — ${title}`,
@@ -1896,9 +1897,15 @@ async function deliverToNotifications(event: OutboxRow): Promise<void> {
               <div style="padding:24px;background:white">
                 <p style="font-size:14px;color:#374151">${body}</p>
                 <p style="font-size:13px;color:#374151">
-                  Requisition <strong>${row.requisition_number}</strong> — open it in FNC ERP under
-                  Procurement &#8594; Requisitions to act on it.
+                  Requisition <strong>${row.requisition_number}</strong> is waiting on you.
                 </p>
+                <div style="text-align:center;margin:28px 0">
+                  <a href="${requisitionUrl}"
+                     style="background:#4a7a9b;color:white;padding:12px 28px;
+                            border-radius:6px;text-decoration:none;font-size:14px;font-weight:600">
+                    Open Requisition ${row.requisition_number}
+                  </a>
+                </div>
               </div>
             </div>
           `,
