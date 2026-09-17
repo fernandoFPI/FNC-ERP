@@ -21262,14 +21262,21 @@ export const resolvers = {
           const unitCost = parseFloat(String(line.unit_cost ?? 0))
 
           // Lock the balance row and verify there's actually enough before
-          // posting the move — this used to be entirely unchecked. A
-          // PO-originated line already had its qty reserved at Inventory
-          // Check time (confirmPOInventoryCheck writes qty_reserved), so it
-          // only needs the physical on-hand check, and confirming here is
-          // what releases that reservation. A manual/ad-hoc issue has no
-          // reservation behind it, so it must respect what other POs have
-          // already reserved too — it can only draw from the unreserved
-          // portion, not on_hand as a whole.
+          // posting the move — this used to be entirely unchecked. A line
+          // that traces back to a specific po_line (po_line_id set — always
+          // true for a line issueStockForPOLines/issueStockForRequisitionLines
+          // auto-created, since it only ever does so for that po_line's own
+          // qty_from_stock) already had its qty reserved at Inventory Check
+          // time, so it only needs the physical on-hand check, and confirming
+          // here is what releases that reservation. This is deliberately
+          // per-LINE, not "does the parent issue have a po_id/requisition_id"
+          // — a Store Out can be manually created and merely *linked* to a
+          // PO/requisition for reference (e.g. recording that already-
+          // received stock is now going out to a project) with no po_line_id
+          // and no reservation ever made for it; that line has no
+          // reservation behind it either, so it must respect what other
+          // POs/requisitions have already reserved too — it can only draw
+          // from the unreserved portion, not on_hand as a whole.
           const balRes = await client.query(
             `SELECT qty_on_hand, qty_reserved FROM stock_balances
              WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL
@@ -21281,7 +21288,7 @@ export const resolvers = {
           const productLabel = line.sku
             ? `${String(line.sku)} (${String(line.product_name ?? productId)})`
             : String(line.product_name ?? productId)
-          if (issue.po_id || issue.requisition_id) {
+          if (line.po_line_id) {
             if (onHand < qty) {
               throw new Error(
                 `Insufficient stock to confirm this Store Out — ${productLabel}: ${onHand} on hand, ${qty} required`,

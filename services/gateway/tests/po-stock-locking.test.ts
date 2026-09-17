@@ -72,17 +72,29 @@ async function makePOLine(poId: string, productId: string, qtyOrdered: number, u
   return r.rows[0]!.id
 }
 
-async function makeDraftIssue(poId: string, productId: string, qtyIssued: number): Promise<string> {
+// poLineId set (the default, via the optional param) makes this line look
+// like one issueStockForPOLines would have auto-created — i.e. genuinely
+// reserved at Inventory Check time, which is what confirming it now checks
+// per-line rather than off the parent issue's po_id. Pass null explicitly
+// to instead simulate a manually-created, merely PO-*linked* line with no
+// reservation behind it.
+async function makeDraftIssue(
+  poId: string,
+  productId: string,
+  qtyIssued: number,
+  poLineId?: string | null,
+): Promise<string> {
   const issueR = await pool.query<{ id: string }>(
     `INSERT INTO project_material_issues (company_id, po_id, issue_number, issue_date, status, created_by)
      VALUES ($1,$2,$3,NOW()::date,'draft',$4) RETURNING id`,
     [TEST_COMPANY_ID, poId, `G9TEST-SO-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, userId],
   )
   const issueId = issueR.rows[0]!.id
+  const resolvedPoLineId = poLineId === undefined ? await makePOLine(poId, productId, qtyIssued) : poLineId
   await pool.query(
-    `INSERT INTO project_material_issue_lines (issue_id, product_id, qty_issued, from_location_id, unit_cost)
-     VALUES ($1,$2,$3,$4,0)`,
-    [issueId, productId, qtyIssued, warehouseId],
+    `INSERT INTO project_material_issue_lines (issue_id, product_id, po_line_id, qty_issued, from_location_id, unit_cost)
+     VALUES ($1,$2,$3,$4,$5,0)`,
+    [issueId, productId, resolvedPoLineId, qtyIssued, warehouseId],
   )
   return issueId
 }
@@ -247,6 +259,30 @@ describe('issueMaterialIssue strict guard (Site 2)', () => {
       issueId,
     ])
     expect(issue.rows[0]!.status).toBe('draft')
+  })
+
+  // Regression: a Store Out manually created via "+ New Store Out" and
+  // merely *linked* to a PO for reference (e.g. recording that stock the
+  // PO already delivered is now going out to a project) has po_id set but
+  // no po_line_id — nothing was ever reserved for it at Inventory Check
+  // time, since it never went through confirmPOInventoryCheck at all. This
+  // used to be misread as "PO-reserved" purely because po_id was set,
+  // throwing a reservation-mismatch error even with plenty of unreserved
+  // stock on hand.
+  it('confirms fine against available stock when the PO-linked issue has no po_line_id (manually created, never reserved)', async () => {
+    const productId = await makeProduct('polinkednoreservation')
+    await receive(productId, warehouseId, 10)
+    // No reservation at all for this product/location — matches a PO that
+    // was 100% "needs purchase" and simply received into the warehouse.
+    const poId = await makePO('items_bought')
+    const issueId = await makeDraftIssue(poId, productId, 2, null)
+
+    const result = await resolvers.Mutation.issueMaterialIssue(null, { id: issueId }, ctx as never)
+    expect((result as { status: string }).status).toBe('issued')
+
+    const bal = await getBalance(productId, warehouseId)
+    expect(bal.onHand).toBe(8)
+    expect(bal.reserved).toBe(0)
   })
 })
 
