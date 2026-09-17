@@ -7925,7 +7925,13 @@ export const resolvers = {
 
     materialIssues: async (
       _: unknown,
-      args: { projectId?: string; status?: string },
+      args: {
+        projectId?: string
+        status?: string
+        poId?: string
+        requisitionId?: string
+        receiptNumber?: string
+      },
       ctx: GQLContext,
     ) => {
       if (!ctx.auth) return []
@@ -7941,11 +7947,29 @@ export const resolvers = {
         conditions.push(`pmi.status=$${idx++}`)
         params.push(args.status)
       }
+      if (args.poId) {
+        conditions.push(`pmi.po_id=$${idx++}`)
+        params.push(args.poId)
+      }
+      if (args.requisitionId) {
+        conditions.push(`pmi.requisition_id=$${idx++}`)
+        params.push(args.requisitionId)
+      }
+      if (args.receiptNumber) {
+        // No direct link from a Store Out to a specific receipt — resolves
+        // via the PO both share instead: find which PO(s) that receipt
+        // number belongs to, then match Store Outs on the same po_id.
+        conditions.push(
+          `pmi.po_id IN (SELECT po_id FROM po_receipts WHERE receipt_number ILIKE $${idx++})`,
+        )
+        params.push(`%${args.receiptNumber}%`)
+      }
       const where = conditions.join(' AND ')
       const result = await query(
         `SELECT pmi.*,
            p_proj.code AS project_code, p_proj.name AS project_name,
            po_linked.po_number,
+           req_linked.requisition_number,
            COALESCE(u_issued.first_name || ' ' || u_issued.last_name, u_issued.email) AS issued_by_name,
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
@@ -7961,13 +7985,14 @@ export const resolvers = {
          FROM project_material_issues pmi
          LEFT JOIN projects p_proj ON p_proj.id = pmi.project_id
          LEFT JOIN purchase_orders po_linked ON po_linked.id = pmi.po_id
+         LEFT JOIN requisitions req_linked ON req_linked.id = pmi.requisition_id
          LEFT JOIN users u_issued ON u_issued.id = pmi.issued_by
          LEFT JOIN project_material_issue_lines pmil ON pmil.issue_id = pmi.id
          LEFT JOIN products prod ON prod.id = pmil.product_id
          LEFT JOIN stock_locations loc_from ON loc_from.id = pmil.from_location_id
          LEFT JOIN stock_locations loc_to ON loc_to.id = pmil.to_location_id
          WHERE ${where}
-         GROUP BY pmi.id, p_proj.code, p_proj.name, po_linked.po_number,
+         GROUP BY pmi.id, p_proj.code, p_proj.name, po_linked.po_number, req_linked.requisition_number,
                   u_issued.first_name, u_issued.last_name, u_issued.email
          ORDER BY pmi.created_at DESC`,
         params,
@@ -7981,6 +8006,7 @@ export const resolvers = {
         poId: r.po_id ?? null,
         requisitionId: r.requisition_id ?? null,
         poNumber: r.po_number ?? null,
+        requisitionNumber: r.requisition_number ?? null,
         projectCode: r.project_code ?? null,
         projectName: r.project_name ?? null,
         issuedByName: r.issued_by_name ?? null,

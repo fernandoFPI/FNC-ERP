@@ -117,7 +117,7 @@
     projectContract(id: ID!): ProjectContract
     projectInvoices(projectId: ID, contractId: ID, status: String): [ProjectInvoice!]!
     projectInvoice(id: ID!): ProjectInvoice
-    materialIssues(projectId: ID, status: String): [MaterialIssue!]!
+    materialIssues(projectId: ID, status: String, poId: ID, requisitionId: ID, receiptNumber: String): [MaterialIssue!]!
     materialIssue(id: ID!): MaterialIssue
     materialReturns(projectId: ID, poId: ID, productId: ID): [MaterialReturn!]!
     # At least one of poId/projectId must be given. poId is the primary,
@@ -1357,6 +1357,7 @@
     poId: ID
     requisitionId: ID
     poNumber: String
+    requisitionNumber: String
     projectCode: String
     projectName: String
     issuedByName: String

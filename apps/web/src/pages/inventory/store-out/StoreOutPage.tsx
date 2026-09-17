@@ -10,6 +10,7 @@ import {
   CANCEL_MATERIAL_ISSUE,
   PROJECTS_QUERY,
 } from '../../../graphql/projects'
+import { REQUISITIONS_QUERY } from '../../../graphql/requisitions'
 import { PURCHASE_ORDERS_QUERY } from '../../../graphql/procurement'
 import { PRODUCTS_QUERY, STOCK_LOCATIONS_QUERY } from '../../../graphql/inventory'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -48,6 +49,7 @@ interface MI {
   poId: string | null
   requisitionId: string | null
   poNumber: string | null
+  requisitionNumber: string | null
   projectCode: string | null
   projectName: string | null
   issuedByName: string | null
@@ -89,6 +91,9 @@ export default function StoreOutPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState('')
   const [projectFilter, setProjectFilter] = useState('')
+  const [poFilter, setPoFilter] = useState('')
+  const [requisitionFilter, setRequisitionFilter] = useState('')
+  const [receiptNumberFilter, setReceiptNumberFilter] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Confirm dialogs
@@ -121,6 +126,9 @@ export default function StoreOutPage() {
     variables: {
       ...(projectFilter ? { projectId: projectFilter } : {}),
       ...(statusFilter ? { status: statusFilter } : {}),
+      ...(poFilter ? { poId: poFilter } : {}),
+      ...(requisitionFilter ? { requisitionId: requisitionFilter } : {}),
+      ...(receiptNumberFilter ? { receiptNumber: receiptNumberFilter } : {}),
     },
     fetchPolicy: 'cache-and-network',
   })
@@ -131,6 +139,16 @@ export default function StoreOutPage() {
   const { data: poData } = useQuery(PURCHASE_ORDERS_QUERY, {
     variables: { projectId: formProjectId },
     skip: !formProjectId,
+    fetchPolicy: 'cache-and-network',
+  })
+  // Unscoped — for the page-level "search by PO" filter, separate from the
+  // New Store Out modal's own project-scoped PO picker above.
+  const { data: allPosData } = useQuery(PURCHASE_ORDERS_QUERY, {
+    variables: {},
+    fetchPolicy: 'cache-and-network',
+  })
+  const { data: requisitionsData } = useQuery(REQUISITIONS_QUERY, {
+    variables: {},
     fetchPolicy: 'cache-and-network',
   })
   const { data: productsData } = useQuery(PRODUCTS_QUERY, {
@@ -157,6 +175,12 @@ export default function StoreOutPage() {
     status: string
   }
   const projectPOs = (poData?.purchaseOrders ?? []) as POOption[]
+  const allPOs = (allPosData?.purchaseOrders ?? []) as POOption[]
+  interface RequisitionOption {
+    id: string
+    requisition_number: string
+  }
+  const requisitionsList = (requisitionsData?.requisitions ?? []) as RequisitionOption[]
 
   // Options for SearchableSelect / Select
   const projectOptions = projects.map((p) => ({ value: p.id, label: p.name, sublabel: p.code }))
@@ -178,6 +202,15 @@ export default function StoreOutPage() {
       sublabel: po.po_number,
     })),
   ]
+  const poFilterOptions = allPOs.map((po) => ({
+    value: po.id,
+    label: po.po_number,
+    sublabel: po.vendor_name || undefined,
+  }))
+  const requisitionFilterOptions = requisitionsList.map((r) => ({
+    value: r.id,
+    label: r.requisition_number,
+  }))
   const statusFilterOptions = [
     { value: 'draft', label: 'Draft' },
     { value: 'issued', label: 'Issued' },
@@ -538,7 +571,7 @@ export default function StoreOutPage() {
             }}
           />
         </div>
-        <div style={{ minWidth: '260px', flex: 1, maxWidth: '400px' }}>
+        <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
           <Select
             label="Project"
             value={projectFilter}
@@ -549,13 +582,44 @@ export default function StoreOutPage() {
             }}
           />
         </div>
-        {(statusFilter || projectFilter) && (
+        <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
+          <SearchableSelect
+            label="Purchase Order"
+            value={poFilter}
+            onChange={setPoFilter}
+            options={poFilterOptions}
+            placeholder="All Purchase Orders"
+          />
+        </div>
+        <div style={{ minWidth: '220px', flex: 1, maxWidth: '320px' }}>
+          <SearchableSelect
+            label="Requisition"
+            value={requisitionFilter}
+            onChange={setRequisitionFilter}
+            options={requisitionFilterOptions}
+            placeholder="All Requisitions"
+          />
+        </div>
+        <div style={{ minWidth: '200px', flex: 1, maxWidth: '260px' }}>
+          <Input
+            label="Store In / Receipt #"
+            value={receiptNumberFilter}
+            placeholder="e.g. GRN-2026-0012"
+            onChange={(e) => {
+              setReceiptNumberFilter(e.target.value)
+            }}
+          />
+        </div>
+        {(statusFilter || projectFilter || poFilter || requisitionFilter || receiptNumberFilter) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setStatusFilter('')
               setProjectFilter('')
+              setPoFilter('')
+              setRequisitionFilter('')
+              setReceiptNumberFilter('')
             }}
           >
             Clear filters
@@ -677,6 +741,10 @@ export default function StoreOutPage() {
                     {si.poNumber ? (
                       <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
                         PO: {si.poNumber}
+                      </span>
+                    ) : si.requisitionNumber ? (
+                      <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                        REQ: {si.requisitionNumber}
                       </span>
                     ) : (
                       (si.notes?.slice(0, 35) ?? '—')
