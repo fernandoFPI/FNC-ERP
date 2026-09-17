@@ -181,6 +181,9 @@ export default function StoreOutPage() {
     po_number: string
     vendor_name: string
     status: string
+    project_id: string | null
+    projectCode: string | null
+    projectName: string | null
   }
   const projectPOs = (poData?.purchaseOrders ?? []) as POOption[]
   const allPOs = (allPosData?.purchaseOrders ?? []) as POOption[]
@@ -219,12 +222,18 @@ export default function StoreOutPage() {
     { value: '', label: 'Default warehouse' },
     ...locations.map((l) => ({ value: l.id, label: l.code ? `${l.name} (${l.code})` : l.name })),
   ]
+  // Searchable regardless of whether a project is picked first: scoped to
+  // that project's own POs once one is chosen, otherwise every PO — picking
+  // one here then fills in Project below instead (see its onChange), rather
+  // than requiring Project to be picked first just to narrow this list.
   const poOptions = [
     { value: '', label: 'No PO link' },
-    ...projectPOs.map((po) => ({
+    ...(formProjectId ? projectPOs : allPOs).map((po) => ({
       value: po.id,
       label: po.vendor_name || po.po_number,
-      sublabel: po.po_number,
+      sublabel: formProjectId
+        ? po.po_number
+        : [po.po_number, po.projectCode].filter(Boolean).join(' · '),
     })),
   ]
   const poFilterOptions = allPOs.map((po) => ({
@@ -1063,10 +1072,18 @@ export default function StoreOutPage() {
           <SearchableSelect
             label="Link to PO (optional)"
             value={formPoId}
-            onChange={setFormPoId}
+            onChange={(val) => {
+              setFormPoId(val)
+              // Fill in Project from the picked PO when none is set yet,
+              // rather than requiring it to be picked first — doesn't
+              // clobber a project the user already chose deliberately.
+              if (val && !formProjectId) {
+                const picked = allPOs.find((po) => po.id === val) ?? projectPOs.find((po) => po.id === val)
+                if (picked?.project_id) setFormProjectId(picked.project_id)
+              }
+            }}
             options={poOptions}
-            placeholder={formProjectId ? 'Search PO…' : 'Select a project first'}
-            disabled={!formProjectId || projectPOs.length === 0}
+            placeholder="Search PO…"
           />
         </div>
 
