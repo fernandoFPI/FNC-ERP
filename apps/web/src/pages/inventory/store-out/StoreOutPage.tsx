@@ -34,6 +34,7 @@ interface MILine {
   id: string
   productId: string
   productName: string | null
+  sku: string | null
   poLineId: string | null
   qtyIssued: number
   unitCost: number
@@ -94,6 +95,7 @@ export default function StoreOutPage() {
   const [poFilter, setPoFilter] = useState('')
   const [requisitionFilter, setRequisitionFilter] = useState('')
   const [receiptNumberFilter, setReceiptNumberFilter] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Confirm dialogs
@@ -165,6 +167,28 @@ export default function StoreOutPage() {
   const { data: locationsData } = useQuery(STOCK_LOCATIONS_QUERY, { variables: { isActive: true } })
 
   const issues = (data?.materialIssues ?? []) as MI[]
+  // Client-side — every issue's own line items (productName/sku) are already
+  // fetched in full by MATERIAL_ISSUES_QUERY, so no separate query is needed
+  // to search "which Store Out has this item" (mirrors PO/Requisition list
+  // search, which does the equivalent match server-side via itemSearchText).
+  const visibleIssues = itemSearch
+    ? issues.filter((si) => {
+        const q = itemSearch.toLowerCase()
+        return si.lines.some(
+          (l) =>
+            (l.productName ?? '').toLowerCase().includes(q) ||
+            (l.sku ?? '').toLowerCase().includes(q),
+        )
+      })
+    : issues
+  const hasActiveFilters = !!(
+    statusFilter ||
+    projectFilter ||
+    poFilter ||
+    requisitionFilter ||
+    receiptNumberFilter ||
+    itemSearch
+  )
   const projects = (projectsData?.projects?.data ?? []) as {
     id: string
     code: string
@@ -388,8 +412,8 @@ export default function StoreOutPage() {
   }
 
   // KPI values
-  const draftCount = issues.filter((i) => i.status === 'draft').length
-  const issuedCount = issues.filter((i) => i.status === 'issued').length
+  const draftCount = visibleIssues.filter((i) => i.status === 'draft').length
+  const issuedCount = visibleIssues.filter((i) => i.status === 'issued').length
 
   // Pending lines total
   const pendingTotal = pendingLines.reduce(
@@ -662,7 +686,17 @@ export default function StoreOutPage() {
             }}
           />
         </div>
-        {(statusFilter || projectFilter || poFilter || requisitionFilter || receiptNumberFilter) && (
+        <div style={{ minWidth: '200px', flex: 1, maxWidth: '260px' }}>
+          <Input
+            label="Item name or SKU"
+            value={itemSearch}
+            placeholder="e.g. Bolt 25* 4.8mm or GEN-048"
+            onChange={(e) => {
+              setItemSearch(e.target.value)
+            }}
+          />
+        </div>
+        {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
@@ -672,6 +706,7 @@ export default function StoreOutPage() {
               setPoFilter('')
               setRequisitionFilter('')
               setReceiptNumberFilter('')
+              setItemSearch('')
             }}
           >
             Clear filters
@@ -695,20 +730,26 @@ export default function StoreOutPage() {
             />
           ))}
         </div>
-      ) : issues.length === 0 ? (
+      ) : visibleIssues.length === 0 ? (
         <EmptyState
-          title="No store-outs yet"
-          message="Create a store-out to record inventory items issued to a project."
+          title={hasActiveFilters ? 'No matching store-outs' : 'No store-outs yet'}
+          message={
+            hasActiveFilters
+              ? 'Nothing matches these filters — try clearing them or adjusting the item search.'
+              : 'Create a store-out to record inventory items issued to a project.'
+          }
           action={
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                setShowModal(true)
-              }}
-            >
-              + New Store Out
-            </Button>
+            hasActiveFilters ? undefined : (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowModal(true)
+                }}
+              >
+                + New Store Out
+              </Button>
+            )
           }
           icon={
             <svg
@@ -725,7 +766,7 @@ export default function StoreOutPage() {
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {issues.map((si) => {
+          {visibleIssues.map((si) => {
             const isExpanded = expandedId === si.id
             const isDraft = si.status === 'draft'
 
