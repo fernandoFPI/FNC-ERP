@@ -1489,8 +1489,17 @@ export default function RequisitionDetail() {
               (l) => (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0.0001,
             )
             return purchaseLines.length === 0 ? (
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                Nothing on this requisition needs a market price — every line is covered from stock.
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                  Nothing on this requisition needs a market price — every line is covered from stock.
+                </div>
+                <Button
+                  variant="primary"
+                  loading={lMarket}
+                  onClick={() => void submitMarketPricing({ variables: { id: req.id, linePrices: [] } })}
+                >
+                  Continue to price verification
+                </Button>
               </div>
             ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1602,8 +1611,17 @@ export default function RequisitionDetail() {
               (l) => (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0.0001,
             )
             return purchaseLines.length === 0 ? (
-              <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                Nothing on this requisition needs price verification — every line is covered from stock.
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                  Nothing on this requisition needs price verification — every line is covered from stock.
+                </div>
+                <Button
+                  variant="primary"
+                  loading={lVerify}
+                  onClick={() => void verifyPrices({ variables: { id: req.id, lineAdjustments: [] } })}
+                >
+                  Continue to approval
+                </Button>
               </div>
             ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

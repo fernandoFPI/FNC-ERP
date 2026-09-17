@@ -275,7 +275,9 @@ describe('RequisitionDetail', () => {
     expect(screen.getAllByPlaceholderText('0.00')).toHaveLength(1)
   })
 
-  it('market_pricing: shows a clear message and no inputs when every line is already covered from stock', async () => {
+  it('market_pricing: shows a clear message and a Continue button (no inputs) when every line is already covered from stock', async () => {
+    const submitMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([submitMock, { loading: false }])
     mockReq({
       status: 'market_pricing',
       callerHasMarketPricingPosition: true,
@@ -287,6 +289,30 @@ describe('RequisitionDetail', () => {
     wrap(<RequisitionDetail />)
     expect(screen.getByText(/every line is covered from stock/i)).toBeInTheDocument()
     expect(screen.queryByPlaceholderText('0.00')).not.toBeInTheDocument()
+
+    // Regression: this used to be a dead end — an informational message
+    // with no way to actually move the requisition past market_pricing.
+    fireEvent.click(screen.getByRole('button', { name: /continue to price verification/i }))
+    expect(submitMock).toHaveBeenCalledWith({ variables: { id: 'req-1', linePrices: [] } })
+  })
+
+  it('price_verification: shows a clear message and a Continue button (no inputs) when every line is already covered from stock', async () => {
+    const verifyMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([verifyMock, { loading: false }])
+    mockReq({
+      status: 'price_verification',
+      callerHasPriceVerificationPosition: true,
+      lines: [
+        { id: 'line-1', line_number: 1, description: 'Fully from stock', product_id: 'prod-1', product_name: 'Cement', sku: 'CEM-1', qty: '5', uom: 'bag', currency_code: 'IQD', unit_price: '0', qty_from_stock: '5', store_price: 10, market_price: null, verified_price: null, total: '0', purchases: [] },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText(/every line is covered from stock/i)).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('0.00')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /continue to approval/i }))
+    expect(verifyMock).toHaveBeenCalledWith({ variables: { id: 'req-1', lineAdjustments: [] } })
   })
 
   it('price_verification: shows Submit for approval, disabled until a verified price exists', async () => {
