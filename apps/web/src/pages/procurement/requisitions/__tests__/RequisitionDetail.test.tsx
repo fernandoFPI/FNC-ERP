@@ -150,6 +150,17 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText('Cement bags')).toBeInTheDocument()
   })
 
+  it('Print button opens a print modal with the requisition number, closable via ×', async () => {
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.queryByText('Print Requisition — REQ-2026-001')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^print$/i }))
+    expect(screen.getByText('Print Requisition — REQ-2026-001')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /print \/ save as pdf/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '×' }))
+    expect(screen.queryByText('Print Requisition — REQ-2026-001')).not.toBeInTheDocument()
+  })
+
   it('a fully-from-stock line shows its store-price reference value instead of a bare 0 total', async () => {
     // Mirrors confirmRequisitionInventoryCheck's own zeroing rule: total_price
     // is 0 because nothing is being purchased, not because the item has no

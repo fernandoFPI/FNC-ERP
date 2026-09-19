@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -45,6 +45,7 @@ import { Textarea } from '../../../components/ui/Textarea'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
+import { buildRequisitionHTML } from '../../../lib/requisitionHtml'
 import {
   REQUISITION_STATUSES,
   REQUISITION_PRIORITY_LABELS,
@@ -404,6 +405,8 @@ export default function RequisitionDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [cancelReason, setCancelReason] = useState('')
   const [showCancelBox, setShowCancelBox] = useState(false)
+  const [showPrintModal, setShowPrintModal] = useState(false)
+  const printIframeRef = useRef<HTMLIFrameElement>(null)
   const [activeTab, setActiveTab] = useState<Tab>('lines')
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
@@ -663,11 +666,16 @@ export default function RequisitionDetail() {
           </Badge>
         }
         actions={
-          canCancel ? (
-            <Button variant="danger" size="sm" onClick={() => setShowCancelBox((v) => !v)}>
-              Cancel
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button variant="secondary" size="sm" onClick={() => setShowPrintModal(true)}>
+              Print
             </Button>
-          ) : undefined
+            {canCancel && (
+              <Button variant="danger" size="sm" onClick={() => setShowCancelBox((v) => !v)}>
+                Cancel
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -799,7 +807,7 @@ export default function RequisitionDetail() {
           visually without moving that ~400-line block in the source; it
           stays exactly where it was, right before the closing </div>. */}
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 460px', minWidth: 0, order: 2 }}>
+        <div style={{ flex: '3 1 560px', minWidth: 0, order: 2 }}>
       {/* Tabs — Lines / Log / Edit requests (Receipts/Returns/Finance-Audit
           tabs from PurchaseOrderDetail don't apply: those are post-fork,
           PO-side concerns this page never reaches) */}
@@ -1288,7 +1296,7 @@ export default function RequisitionDetail() {
         })()}
         </div>
 
-        <div style={{ flex: '1 1 460px', minWidth: 0, order: 1 }}>
+        <div style={{ flex: '1 1 340px', minWidth: 0, order: 1 }}>
       {/* ── Panel 1: draft ────────────────────────────────────────────────── */}
       {req.status === 'draft' && (
         <Card style={sectionCard}>
@@ -2137,6 +2145,163 @@ export default function RequisitionDetail() {
       )}
         </div>
       </div>
+
+      {/* Print dialog — mirrors PurchaseOrderDetail's own print modal
+          (buildRequisitionHTML instead of buildPurchaseOrderHTML: no vendor
+          block since a requisition predates vendor selection, and no
+          "include internal notes" toggle since — unlike a PO — a
+          requisition is never sent outside the company, so there's no
+          vendor-copy/internal-copy distinction to redact for. */}
+      {showPrintModal &&
+        (() => {
+          const fromStockTotals = new Map<string, number>()
+          for (const l of req.lines) {
+            const fromStock = (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
+            if (fromStock) {
+              fromStockTotals.set(fromStock.currency, (fromStockTotals.get(fromStock.currency) ?? 0) + fromStock.amount)
+            }
+          }
+          const approvalTrail = [
+            { action: 'confirm_inventory_check', label: 'Inventory Checked By' },
+            { action: 'submit_to_market_pricing', label: 'Store Priced By' },
+            { action: 'submit_to_price_verification', label: 'Market Priced By' },
+            { action: 'submit_for_approval', label: 'Price Verified By' },
+            { action: 'approve', label: 'Approved By' },
+          ]
+            .map(({ action, label }) => {
+              const entry = [...req.approval_log].reverse().find((e) => e.action === action)
+              return entry ? { label, name: entry.actor_name ?? '—', date: entry.created_at } : null
+            })
+            .filter((s): s is { label: string; name: string; date: string } => s !== null)
+
+          return (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 9999,
+                background: 'rgba(0,0,0,0.45)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px',
+              }}
+              onClick={() => setShowPrintModal(false)}
+            >
+              <div
+                style={{
+                  background: theme.bgSurface,
+                  borderRadius: '12px',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                  width: '94vw',
+                  maxWidth: '1100px',
+                  height: '92vh',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Dialog header */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '16px 20px',
+                    borderBottom: `1px solid ${theme.border}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, fontSize: '15px', color: theme.textPrimary }}>
+                    Print Requisition — {req.requisition_number}
+                  </span>
+                  <button
+                    onClick={() => setShowPrintModal(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: theme.textMuted,
+                      fontSize: '18px',
+                      lineHeight: 1,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* iframe preview */}
+                <div style={{ flex: 1, overflow: 'hidden', background: '#f3f4f6', minHeight: 0 }}>
+                  <iframe
+                    ref={printIframeRef}
+                    srcDoc={buildRequisitionHTML({
+                      requisition_number: req.requisition_number,
+                      status: getRequisitionStatusLabel(req.status),
+                      priority: req.priority ?? 'low',
+                      purpose: req.purpose,
+                      created_at: req.created_at,
+                      expected_delivery_date: req.expected_delivery_date,
+                      projectCode: req.projectCode,
+                      projectName: req.projectName,
+                      branchName: req.branch_name,
+                      organizerName: req.organizerName,
+                      lines: req.lines.map((l) => ({
+                        description: l.description ?? l.product_name ?? '',
+                        product_name: l.product_name,
+                        qty: parseFloat(l.qty) || 0,
+                        uom: l.uom ?? '',
+                        currency_code: l.currency_code,
+                        unit_price: parseFloat(l.unit_price) || 0,
+                        total: parseFloat(l.total) || 0,
+                        fromStock: (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null,
+                      })),
+                      currencyTotals: req.currencyTotals.map((ct) => ({
+                        currency: ct.currency_code,
+                        amount: parseFloat(ct.subtotal) || 0,
+                      })),
+                      fromStockTotals: [...fromStockTotals.entries()].map(([currency, amount]) => ({
+                        currency,
+                        amount,
+                      })),
+                      approvalTrail,
+                    })}
+                    style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                    title={`Requisition ${req.requisition_number}`}
+                  />
+                </div>
+
+                {/* Dialog footer */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: '12px',
+                    padding: '14px 20px',
+                    borderTop: `1px solid ${theme.border}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <Button variant="ghost" size="sm" onClick={() => setShowPrintModal(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => printIframeRef.current?.contentWindow?.print()}
+                    >
+                      Print / Save as PDF
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
     </div>
   )
 }
