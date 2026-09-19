@@ -24,7 +24,7 @@ import {
   APPROVE_REQUISITION_EDIT_REQUEST,
   REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
-import { NOTIFY_PO_OWNER_FOR_EDIT_REQUEST } from '../../../graphql/procurement'
+import { NOTIFY_PO_OWNER_FOR_EDIT_REQUEST, RESOLVE_LINE_FLAG } from '../../../graphql/procurement'
 import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
@@ -102,6 +102,13 @@ interface ReqLine {
   short_marked_at?: string | null
   closed_at?: string | null
   closed_reason?: string | null
+  flag_reason?: string | null
+  flagged_at?: string | null
+  flagged_by_name?: string | null
+  flagged_from_status?: string | null
+  flag_addressed_at?: string | null
+  flag_resolved_at?: string | null
+  flag_resolved_by_name?: string | null
   purchases?: Purchase[] | null
 }
 
@@ -280,6 +287,7 @@ export default function RequisitionDetail() {
   const rejectOpts = {
     onCompleted: () => {
       setRejectReason('')
+      setFlaggedLines({})
       void refetch()
     },
     onError: onErr,
@@ -313,6 +321,7 @@ export default function RequisitionDetail() {
     REJECT_REQUISITION_TO_INVENTORY_CHECK,
     rejectOpts,
   )
+  const [resolveLineFlag, { loading: lResolveFlag }] = useMutation(RESOLVE_LINE_FLAG, mutOpts)
   // Mirrors PurchaseOrderDetail's own anyLoading — every button within a
   // reject box (plus that panel's own primary action) shares one combined
   // flag so a click on one disables its siblings too. Without this, the
@@ -403,6 +412,42 @@ export default function RequisitionDetail() {
   const [quoteRefs, setQuoteRefs] = useState<Record<string, string>>({})
   const [verifiedPrices, setVerifiedPrices] = useState<Record<string, string>>({})
   const [rejectReason, setRejectReason] = useState('')
+  // Per-line review flags for the price_verification/pending_approval reject
+  // boxes — key=lineId, value=that line's own reason. At least one is
+  // required to reject (see applyLineFlags's own comment); the overall
+  // rejectReason textarea above is auto-composed from these but stays
+  // editable. Shared across both boxes the same way rejectReason already is.
+  const [flaggedLines, setFlaggedLines] = useState<Record<string, string>>({})
+  const flaggedLineIds = Object.keys(flaggedLines)
+  const toggleLineFlag = (lineId: string) => {
+    setFlaggedLines((prev) => {
+      if (lineId in prev) {
+        const next = { ...prev }
+        delete next[lineId]
+        return next
+      }
+      return { ...prev, [lineId]: '' }
+    })
+  }
+  // Every flagged line needs a non-empty reason before either reject box's
+  // destination buttons enable — mirrors applyLineFlags's own backend
+  // validation exactly, so the button never fires a request the resolver
+  // would just reject anyway.
+  const hasValidFlags =
+    flaggedLineIds.length > 0 && flaggedLineIds.every((lid) => (flaggedLines[lid] ?? '').trim())
+  const lineFlagsPayload = flaggedLineIds.map((lid) => ({ lineId: lid, reason: flaggedLines[lid]!.trim() }))
+  // Auto-composed from the flagged lines, same as PurchaseOrderDetail's own
+  // flagAutoReason — rejectReason stays editable on top of it rather than
+  // being silently overwritten.
+  const flagAutoReason = flaggedLineIds
+    .map((lid) => {
+      const line = req?.lines.find((l) => l.id === lid)
+      const name = line?.description || line?.product_name || 'Unknown item'
+      const note = (flaggedLines[lid] ?? '').trim()
+      return `• ${name}: ${note || 'flagged for review'}`
+    })
+    .join('\n')
+  const effectiveRejectReason = rejectReason || flagAutoReason
   const [cancelReason, setCancelReason] = useState('')
   const [showCancelBox, setShowCancelBox] = useState(false)
   const [showPrintModal, setShowPrintModal] = useState(false)
@@ -456,6 +501,25 @@ export default function RequisitionDetail() {
   // to quietly do nothing.
   const deliveryDestinationEditable = !['sourcing', 'completed'].includes(req.status)
 
+  // Shared by both reject boxes (price_verification/pending_approval) — the
+  // actual flag checkbox + reason live on each row in the Lines tab (right
+  // side), not duplicated here as a second list of line names. This is just
+  // a pointer + live count so the action panel still shows where things
+  // stand without repeating the line names.
+  const renderLineFlagHint = () => (
+    <div
+      style={{
+        fontSize: '12px',
+        color: flaggedLineIds.length > 0 ? theme.accent : theme.textMuted,
+        marginBottom: '12px',
+      }}
+    >
+      {flaggedLineIds.length > 0
+        ? `${flaggedLineIds.length} line${flaggedLineIds.length === 1 ? '' : 's'} flagged — check the Lines tab to add more or edit reasons.`
+        : 'Check the line(s) that need attention in the Lines tab on the right (required to reject).'}
+    </div>
+  )
+
   const sectionCard: React.CSSProperties = {
     padding: '20px',
     marginBottom: '16px',
@@ -474,6 +538,45 @@ export default function RequisitionDetail() {
 
   // ── Lines table (columns adapt to current stage) ────────────────────────
   const lineColumns: Column<ReqLine>[] = [
+    // Flag-to-reject checkbox — only at the two statuses a reject box can
+    // appear for. Leftmost deliberately: this table can grow wider than the
+    // visible card (many price columns), and only leading columns are
+    // guaranteed visible without horizontal scroll. Lives here, next to the
+    // actual line, instead of a second list of line names in the action
+    // panel — see toggleLineFlag.
+    ...(req.status === 'price_verification' || req.status === 'pending_approval'
+      ? [
+          {
+            key: 'flag_toggle',
+            header: 'Flag',
+            width: '36px',
+            render: (l: ReqLine) => (
+              <input
+                type="checkbox"
+                checked={l.id in flaggedLines}
+                onChange={() => toggleLineFlag(l.id)}
+                title="Flag this line for rejection"
+              />
+            ),
+          },
+        ]
+      : []),
+    {
+      key: 'index',
+      header: '#',
+      width: '32px',
+      render: (l) => (
+        <span
+          style={{
+            fontSize: '12px',
+            color: theme.textMuted,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {req.lines.findIndex((line) => line.id === l.id) + 1}
+        </span>
+      ),
+    },
     {
       key: 'description',
       header: 'Item',
@@ -829,7 +932,111 @@ export default function RequisitionDetail() {
 
       {activeTab === 'lines' && (
         <Card style={sectionCard}>
-          <Table columns={lineColumns} data={req.lines} rowKey="id" />
+          <Table
+            columns={lineColumns}
+            data={req.lines}
+            rowKey="id"
+            getRowStyle={(l) => {
+              // Currently checked for the reject box in progress — takes
+              // priority over an older, already-resolved-away flag.
+              if (l.id in flaggedLines) {
+                return { borderLeft: `4px solid ${theme.accent}`, background: `${theme.accent}0c` }
+              }
+              if (!l.flag_reason || l.flag_resolved_at) return {}
+              const open = !l.flag_addressed_at
+              const color = open ? theme.danger : theme.warning
+              return { borderLeft: `4px solid ${color}`, background: `${color}0c` }
+            }}
+            renderExpanded={(l) => {
+              const hasOpenFlag = !!l.flag_reason && !l.flag_resolved_at
+              const isComposing = l.id in flaggedLines
+              if (!hasOpenFlag && !isComposing) return null
+              const open = hasOpenFlag && !l.flag_addressed_at
+              const color = open ? theme.danger : theme.warning
+              // Whoever could have created a flag from that same stage may
+              // resolve it — mirrors resolveLineFlag's own backend gate
+              // exactly (procurement_2nd for price_verification-origin,
+              // dept-head/approver/admin for pending_approval-origin).
+              const canResolve =
+                (l.flagged_from_status === 'price_verification' && (isSystemLevel || canVerifyPrice)) ||
+                (l.flagged_from_status === 'pending_approval' && (isSystemLevel || canApprove))
+              // Stacked (not side-by-side) deliberately — this cell is
+              // colSpan'd across every column, so its rendered width matches
+              // the table's full (often wider-than-viewport, horizontally-
+              // scrolled) width, not the visible card. A flex row with
+              // justifyContent:'space-between' would push the Resolve button
+              // out past the visible area, reachable only by scrolling right
+              // with no hint to do so.
+              return (
+                <div>
+                  {hasOpenFlag && (
+                    <div style={{ marginBottom: isComposing ? '10px' : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            background: `${color}18`,
+                            color,
+                            border: `1px solid ${color}40`,
+                          }}
+                        >
+                          {open ? 'Flagged' : 'Addressed — awaiting confirmation'}
+                        </span>
+                        <span style={{ fontSize: '11px', color: theme.textMuted }}>
+                          by {l.flagged_by_name ?? 'someone'} during{' '}
+                          {l.flagged_from_status === 'price_verification' ? 'Price Verification' : 'Pending Approval'}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          color: theme.textPrimary,
+                          marginBottom: canResolve && !open ? '8px' : 0,
+                        }}
+                      >
+                        {l.flag_reason}
+                      </div>
+                      {canResolve && !open && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={lResolveFlag}
+                          onClick={() => void resolveLineFlag({ variables: { lineId: l.id } })}
+                        >
+                          Resolve
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  {isComposing && (
+                    <div>
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: theme.accent,
+                          marginBottom: '4px',
+                        }}
+                      >
+                        Flagging this line — required to reject
+                      </div>
+                      <Textarea
+                        value={flaggedLines[l.id] ?? ''}
+                        onChange={(e) => setFlaggedLines((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        placeholder="What's wrong with this line?"
+                        rows={2}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            }}
+          />
         </Card>
       )}
 
@@ -1903,8 +2110,9 @@ export default function RequisitionDetail() {
               )}
 
               {/* ── Reject box — mirrors PurchaseOrderDetail's price_verification
-                   "Not ready to approve?" panel exactly, plus Reset to Draft and
-                   Inventory Check, which have no PO equivalent ─────────────── */}
+                   "Not ready to approve?" panel, now with a required per-line
+                   flag picker (migration 279) feeding both the destination
+                   mutations' lineFlags and this composed reason ─────────── */}
               <div
                 style={{
                   marginTop: '4px',
@@ -1917,11 +2125,12 @@ export default function RequisitionDetail() {
                 <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
                   Not ready to approve?
                 </div>
+                {renderLineFlagHint()}
                 <Textarea
-                  label="Reject reason (required to reject)"
+                  label="Overall reason (auto-filled from flagged lines — edit as needed)"
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Enter reason…"
+                  placeholder={flagAutoReason || 'Enter reason…'}
                   rows={2}
                 />
                 <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, margin: '12px 0 6px' }}>
@@ -1930,44 +2139,58 @@ export default function RequisitionDetail() {
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <Button
                     variant="danger"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyVerifyLoading}
-                    onClick={() => void resetToDraft({ variables: { id: req.id, reason: rejectReason } })}
+                    onClick={() =>
+                      void resetToDraft({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
+                    }
                   >
                     Reset to Draft
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyVerifyLoading}
                     onClick={() =>
-                      void rejectVerificationToInventory({ variables: { id: req.id, reason: rejectReason } })
+                      void rejectVerificationToInventory({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
                     }
                   >
                     Inventory Check
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyVerifyLoading}
-                    onClick={() => void rejectVerificationToStore({ variables: { id: req.id, reason: rejectReason } })}
+                    onClick={() =>
+                      void rejectVerificationToStore({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
+                    }
                   >
                     Store Pricing
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyVerifyLoading}
-                    onClick={() => void rejectVerificationToMarket({ variables: { id: req.id, reason: rejectReason } })}
+                    onClick={() =>
+                      void rejectVerificationToMarket({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
+                    }
                   >
                     Market Pricing
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={!rejectReason.trim()}
+                    disabled={!effectiveRejectReason.trim()}
                     loading={anyVerifyLoading}
                     onClick={() =>
-                      void notifyOwnerForEdit({ variables: { requisitionId: req.id, reason: rejectReason } })
+                      void notifyOwnerForEdit({ variables: { requisitionId: req.id, reason: effectiveRejectReason } })
                     }
                   >
                     Owner (Request Edit)
@@ -2001,8 +2224,9 @@ export default function RequisitionDetail() {
               </Button>
 
               {/* ── Reject box — mirrors PurchaseOrderDetail's pending_approval
-                   "Not ready to approve?" panel, plus Reject to Inventory
-                   Check, which has no PO equivalent ────────────────────────── */}
+                   "Not ready to approve?" panel, now with a required per-line
+                   flag picker (migration 279) feeding both the destination
+                   mutations' lineFlags and this composed reason ─────────── */}
               <div
                 style={{
                   marginTop: '4px',
@@ -2015,35 +2239,48 @@ export default function RequisitionDetail() {
                 <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
                   Not ready to approve?
                 </div>
+                {renderLineFlagHint()}
                 <Textarea
-                  label="Rejection reason (required to reject)"
+                  label="Overall reason (auto-filled from flagged lines — edit as needed)"
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Enter reason…"
+                  placeholder={flagAutoReason || 'Enter reason…'}
                   rows={2}
                 />
                 <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                   <Button
                     variant="danger"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyApprovalLoading}
-                    onClick={() => void reject({ variables: { id: req.id, reason: rejectReason } })}
+                    onClick={() =>
+                      void reject({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
+                    }
                   >
                     Reset to Draft
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyApprovalLoading}
-                    onClick={() => void rejectToInventoryCheck({ variables: { id: req.id, reason: rejectReason } })}
+                    onClick={() =>
+                      void rejectToInventoryCheck({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
+                    }
                   >
                     Send Back to Inventory Check
                   </Button>
                   <Button
                     variant="secondary"
-                    disabled={!rejectReason.trim()}
+                    disabled={!hasValidFlags}
                     loading={anyApprovalLoading}
-                    onClick={() => void rejectToMarketPricing({ variables: { id: req.id, reason: rejectReason } })}
+                    onClick={() =>
+                      void rejectToMarketPricing({
+                        variables: { id: req.id, reason: effectiveRejectReason, lineFlags: lineFlagsPayload },
+                      })
+                    }
                   >
                     Send Back to Market Pricing
                   </Button>

@@ -169,22 +169,22 @@
     submitRequisitionMarketPricing(id: ID!, linePrices: [RequisitionMarketPriceInput!]): Requisition!
     verifyRequisitionPrices(id: ID!, verificationNotes: String, lineAdjustments: [RequisitionPriceVerificationAdjustment!]): Requisition!
     approveRequisition(id: ID!): Requisition!
-    rejectRequisitionApproval(id: ID!, reason: String!): Requisition!
+    rejectRequisitionApproval(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
     # Mirrors rejectPOVerificationToMarketPricing/rejectPOVerificationToStorePricing —
     # same procurement_2nd authorization as verifyRequisitionPrices itself,
     # no stock-reservation change (the from-stock portion confirmed at
     # inventory_check stays valid either way).
-    rejectRequisitionVerificationToMarketPricing(id: ID!, reason: String!): Requisition!
-    rejectRequisitionVerificationToStorePricing(id: ID!, reason: String!): Requisition!
+    rejectRequisitionVerificationToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
+    rejectRequisitionVerificationToStorePricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
     # Both release the requisition's existing stock reservations (same as
     # rejectRequisitionApproval does for pending_approval -> draft) since
     # they send it back past inventory_check, which will be redone.
-    resetRequisitionToDraft(id: ID!, reason: String!): Requisition!
-    rejectRequisitionVerificationToInventoryCheck(id: ID!, reason: String!): Requisition!
+    resetRequisitionToDraft(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
+    rejectRequisitionVerificationToInventoryCheck(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
     # Mirrors rejectPOToMarketPricing — same dept-head/approver/admin
     # authorization as rejectRequisitionApproval itself.
-    rejectRequisitionToMarketPricing(id: ID!, reason: String!): Requisition!
-    rejectRequisitionToInventoryCheck(id: ID!, reason: String!): Requisition!
+    rejectRequisitionToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
+    rejectRequisitionToInventoryCheck(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): Requisition!
 
     # G1 PR 3: Items Bought — record an actual purchase against a
     # requisition line (one call per vendor; call it more than once on the
@@ -213,9 +213,9 @@
     submitPOStorePricing(id: ID!, linePrices: [LinePriceInput!]): PurchaseOrder!
     submitPOMarketPricing(id: ID!, vendorId: ID, linePrices: [MarketPriceInput!]): PurchaseOrder!
     submitPOPriceVerification(id: ID!, verificationNotes: String, lineAdjustments: [PriceAdjustmentInput]): PurchaseOrder!
-    rejectPOToMarketPricing(id: ID!, reason: String!): PurchaseOrder!
-    rejectPOVerificationToMarketPricing(id: ID!, reason: String!): PurchaseOrder!
-    rejectPOVerificationToStorePricing(id: ID!, reason: String!): PurchaseOrder!
+    rejectPOToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
+    rejectPOVerificationToMarketPricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
+    rejectPOVerificationToStorePricing(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
     # G1 Phase 3 Milestone A — id/requisitionId are mutually exclusive
     # (exactly one required, enforced in the resolver). Return type is
     # Boolean! rather than PurchaseOrder!/Requisition! since neither the
@@ -224,7 +224,8 @@
     # notification.
     notifyPOOwnerForEditRequest(id: ID, requisitionId: ID, reason: String!): Boolean!
     approvePO(id: ID!): PurchaseOrder!
-    rejectPO(id: ID!, reason: String!): PurchaseOrder!
+    rejectPO(id: ID!, reason: String!, lineFlags: [LineFlagInput!]!): PurchaseOrder!
+    resolveLineFlag(lineId: ID!): Boolean!
     reopenPO(id: ID!): PurchaseOrder!
     cancelPO(id: ID!, reason: String): PurchaseOrder!
     sendPOToAudit(id: ID!): PurchaseOrder!
@@ -2168,6 +2169,20 @@
     closed_at: String
     closed_reason: String
     closed_by: ID
+    # Line-level review flag (migration 279) — distinct from audit_status
+    # above (that's the separate finance_audit-stage mechanism). Set when a
+    # price_verification/pending_approval reviewer rejects with this line
+    # flagged; flag_addressed_at auto-stamps the moment the flagged line is
+    # next touched by whichever stage it was sent back to; flag_resolved_at/
+    # flag_resolved_by only get set by the explicit resolveLineFlag mutation
+    # — see that resolver's own comment for who's allowed to call it.
+    flag_reason: String
+    flagged_at: String
+    flagged_by_name: String
+    flagged_from_status: String
+    flag_addressed_at: String
+    flag_resolved_at: String
+    flag_resolved_by_name: String
     # One row per vendor a line was bought from — more than one means the
     # line was split across vendors. Only populated when fetched via the
     # requisition(id) query; a bare RETURNING * from a line mutation (e.g.
@@ -2518,6 +2533,14 @@
     lineId: ID!
     verifiedPrice: Float!
     notes: String
+  }
+
+  # Migration 279 — required non-empty on every reject/send-back mutation:
+  # at least one specific line, with its own reason, per line-level review
+  # flags (see POLine.flag_reason's own comment).
+  input LineFlagInput {
+    lineId: ID!
+    reason: String!
   }
 
   input StockConfirmLineInput {

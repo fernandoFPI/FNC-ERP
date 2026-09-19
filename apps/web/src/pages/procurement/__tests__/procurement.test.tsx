@@ -143,7 +143,10 @@ describe('PurchaseOrderDetail', () => {
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
     expect(screen.getByRole('button', { name: /approve po/i })).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/enter reason/i)).toBeInTheDocument()
+    // Migration 279 — rejecting now requires flagging a line first (see the
+    // "Review Lines" panel above this box), so the reason box's placeholder
+    // points there instead of inviting free text directly.
+    expect(screen.getByPlaceholderText(/flag at least one line/i)).toBeInTheDocument()
   })
 
   it('shows action notes textarea in inline action panel', async () => {

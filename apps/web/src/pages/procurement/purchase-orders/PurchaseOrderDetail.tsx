@@ -42,6 +42,7 @@ import {
   RESOLVE_PO_LINE_COMMENT,
   PO_FX_RATES_QUERY,
   ADMIN_CORRECT_PO,
+  RESOLVE_LINE_FLAG,
 } from '../../../graphql/procurement'
 import { useAuthStore } from '../../../store/authStore'
 import { EMPLOYEES_QUERY, ENTITY_ATTACHMENTS_QUERY } from '../../../graphql/hr'
@@ -111,6 +112,13 @@ export interface POLine {
   audit_note?: string | null
   audit_flagged_by_email?: string | null
   audit_flagged_at?: string | null
+  flag_reason?: string | null
+  flagged_at?: string | null
+  flagged_by_name?: string | null
+  flagged_from_status?: string | null
+  flag_addressed_at?: string | null
+  flag_resolved_at?: string | null
+  flag_resolved_by_name?: string | null
   account_id?: string | null
   account_code?: string | null
   account_name?: string | null
@@ -863,6 +871,15 @@ export default function PurchaseOrderDetail() {
         .join('\n')
     : ''
   const effectiveRejectReason = rejectReason || flagAutoReason
+  // Migration 279 — rejecting/sending back now requires at least one flagged
+  // line with its own non-empty reason (mirrors RequisitionDetail); typing
+  // only the overall reason box is no longer sufficient.
+  const hasValidFlags =
+    flaggedLineIds.length > 0 && flaggedLineIds.every((lid) => (lineFlagNotes[lid] ?? '').trim())
+  const lineFlagsPayload = flaggedLineIds.map((lid) => ({
+    lineId: lid,
+    reason: (lineFlagNotes[lid] ?? '').trim(),
+  }))
 
   useEffect(() => {
     if (!id || isTourDemo || po?.viewerRestricted) return
@@ -942,34 +959,45 @@ export default function PurchaseOrderDetail() {
     mutOpts,
   )
   const [approvePO, { loading: l8 }] = useMutation(APPROVE_PO, mutOpts)
-  const [rejectPO] = useMutation(REJECT_PO, {
+  const [rejectPO, { loading: l6 }] = useMutation(REJECT_PO, {
     onCompleted: () => {
       setRejectReason('')
+      setLineFlagNotes({})
       void refetch()
     },
     onError: onErr,
   })
-  const [rejectToMarket] = useMutation(REJECT_PO_TO_MARKET, {
+  const [rejectToMarket, { loading: l7 }] = useMutation(REJECT_PO_TO_MARKET, {
     onCompleted: () => {
       setRejectReason('')
+      setLineFlagNotes({})
       void refetch()
     },
     onError: onErr,
   })
-  const [rejectVerificationToMarket] = useMutation(REJECT_PO_VERIFICATION_TO_MARKET_PRICING, {
-    onCompleted: () => {
-      setRejectReason('')
-      void refetch()
+  const [rejectVerificationToMarket, { loading: l10 }] = useMutation(
+    REJECT_PO_VERIFICATION_TO_MARKET_PRICING,
+    {
+      onCompleted: () => {
+        setRejectReason('')
+        setLineFlagNotes({})
+        void refetch()
+      },
+      onError: onErr,
     },
-    onError: onErr,
-  })
-  const [rejectVerificationToStore] = useMutation(REJECT_PO_VERIFICATION_TO_STORE_PRICING, {
-    onCompleted: () => {
-      setRejectReason('')
-      void refetch()
+  )
+  const [rejectVerificationToStore, { loading: l11 }] = useMutation(
+    REJECT_PO_VERIFICATION_TO_STORE_PRICING,
+    {
+      onCompleted: () => {
+        setRejectReason('')
+        setLineFlagNotes({})
+        void refetch()
+      },
+      onError: onErr,
     },
-    onError: onErr,
-  })
+  )
+  const [resolveLineFlag, { loading: lResolveFlag }] = useMutation(RESOLVE_LINE_FLAG, mutOpts)
   const [notifyOwnerForEdit] = useMutation(NOTIFY_PO_OWNER_FOR_EDIT_REQUEST, {
     onCompleted: () => {
       setRejectReason('')
@@ -1304,7 +1332,8 @@ export default function PurchaseOrderDetail() {
     )
   }
 
-  const anyLoading = l1 || l2 || l3 || l4 || l5 || l8 || l9 || lIssue || lAudit || lPass
+  const anyLoading =
+    l1 || l2 || l3 || l4 || l5 || l6 || l7 || l8 || l9 || l10 || l11 || lIssue || lAudit || lPass
 
   if (loading) return <div style={{ padding: '48px', color: theme.textMuted }}>Loading…</div>
   if (!po) return <div style={{ padding: '48px', color: theme.textMuted }}>PO not found.</div>
@@ -1333,6 +1362,25 @@ export default function PurchaseOrderDetail() {
       </div>
     )
   }
+
+  // Both reject boxes (price_verification/pending_approval) — the actual
+  // flag checkbox + reason live on each row in the Lines tab (right side),
+  // not duplicated here as a second list of line names. This is just a
+  // pointer + live count so the action panel still shows where things
+  // stand without repeating the line names.
+  const renderLineFlagHint = () => (
+    <div
+      style={{
+        fontSize: '12px',
+        color: hasFlaggedLines ? theme.accent : theme.textMuted,
+        marginBottom: '12px',
+      }}
+    >
+      {hasFlaggedLines
+        ? `${flaggedLineIds.length} line${flaggedLineIds.length === 1 ? '' : 's'} flagged — check the Lines tab to add more or edit reasons.`
+        : 'Check the line(s) that need attention in the Lines tab on the right (required to reject).'}
+    </div>
+  )
 
   const pendingEdits = (po.edit_requests ?? []).filter((r) => r.status === 'pending').length
 
@@ -3066,13 +3114,14 @@ export default function PurchaseOrderDetail() {
                         <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
                           Not ready to approve?
                         </div>
+                        {renderLineFlagHint()}
                         <Textarea
-                          label="Reject reason (required to reject)"
-                          value={rejectReason}
+                          label="Overall reason (auto-filled from flagged lines — edit as needed)"
+                          value={effectiveRejectReason}
                           onChange={(e) => {
                             setRejectReason(e.target.value)
                           }}
-                          placeholder="Enter reason…"
+                          placeholder="Flag at least one line above to reject…"
                           rows={2}
                         />
                         <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, margin: '12px 0 6px' }}>
@@ -3081,11 +3130,15 @@ export default function PurchaseOrderDetail() {
                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <Button
                             variant="secondary"
-                            disabled={!rejectReason}
+                            disabled={!hasValidFlags}
                             loading={anyLoading}
                             onClick={() =>
                               void rejectVerificationToMarket({
-                                variables: { id: po.id, reason: rejectReason },
+                                variables: {
+                                  id: po.id,
+                                  reason: effectiveRejectReason,
+                                  lineFlags: lineFlagsPayload,
+                                },
                               })
                             }
                           >
@@ -3093,11 +3146,15 @@ export default function PurchaseOrderDetail() {
                           </Button>
                           <Button
                             variant="secondary"
-                            disabled={!rejectReason}
+                            disabled={!hasValidFlags}
                             loading={anyLoading}
                             onClick={() =>
                               void rejectVerificationToStore({
-                                variables: { id: po.id, reason: rejectReason },
+                                variables: {
+                                  id: po.id,
+                                  reason: effectiveRejectReason,
+                                  lineFlags: lineFlagsPayload,
+                                },
                               })
                             }
                           >
@@ -3105,11 +3162,11 @@ export default function PurchaseOrderDetail() {
                           </Button>
                           <Button
                             variant="secondary"
-                            disabled={!rejectReason}
+                            disabled={!effectiveRejectReason.trim()}
                             loading={anyLoading}
                             onClick={() =>
                               void notifyOwnerForEdit({
-                                variables: { id: po.id, reason: rejectReason },
+                                variables: { id: po.id, reason: effectiveRejectReason },
                               })
                             }
                           >
@@ -3121,558 +3178,80 @@ export default function PurchaseOrderDetail() {
                   )
                 })()}
 
-              {po.status === 'pending_approval' &&
-                (() => {
-                  const fmtN = (n: number | string) =>
-                    parseFloat(String(n)).toLocaleString('en-US', {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 2,
-                    })
-                  return (
-                    <>
-                      {/* ── Line review panel ─────────────────────────────────────── */}
-                      <div
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: theme.textMuted,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
-                          marginBottom: '8px',
-                        }}
-                      >
-                        Review Lines
-                        {hasFlaggedLines && (
-                          <span
-                            style={{
-                              marginLeft: '8px',
-                              padding: '2px 8px',
-                              borderRadius: '10px',
-                              background: theme.warningBg,
-                              border: `1px solid ${theme.warningBorder}`,
-                              color: theme.warning,
-                              fontWeight: 600,
-                              fontSize: '10px',
-                              textTransform: 'none',
-                              letterSpacing: 0,
-                            }}
-                          >
-                            {flaggedLineIds.length} flagged
-                          </span>
-                        )}
-                      </div>
+              {po.status === 'pending_approval' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* ── Approve ───────────────────────────────────────────────── */}
+                  <Button
+                    data-tour="po-approve-btn"
+                    variant="primary"
+                    style={PRIMARY_CTA_STYLE}
+                    loading={anyLoading}
+                    disabled={hasFlaggedLines}
+                    onClick={() => void approvePO({ variables: { id: po.id } })}
+                  >
+                    Approve PO
+                  </Button>
 
-                      <div
-                        style={{
-                          border: `1px solid ${theme.border}`,
-                          borderRadius: '10px',
-                          overflow: 'hidden',
-                          marginBottom: '14px',
-                        }}
-                      >
-                        {/* Table header */}
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '28px 1fr 90px 110px 110px 110px 80px',
-                            padding: '7px 12px',
-                            background: theme.bgCanvas,
-                            borderBottom: `1px solid ${theme.border}`,
-                          }}
-                        >
-                          {[
-                            '#',
-                            'Item',
-                            'Qty',
-                            'Market Price',
-                            'Store Price',
-                            `Total (${po.base_currency_code})`,
-                            '',
-                          ].map(
-                            (h, i) => (
-                              <div
-                                key={i}
-                                style={{
-                                  fontSize: '10px',
-                                  fontWeight: 600,
-                                  color: theme.textMuted,
-                                  textTransform: 'uppercase',
-                                  letterSpacing: '0.06em',
-                                }}
-                              >
-                                {h}
-                              </div>
-                            ),
-                          )}
-                        </div>
-
-                        {/* Lines */}
-                        {po.lines.map((line, lineIdx) => {
-                          const isFlagged = lineFlagNotes[line.id] !== undefined
-                          const rowBg = isFlagged ? theme.warningBg : 'transparent'
-                          const rowBorder = isFlagged ? theme.warningBorder : theme.border
-                          const _sp = parseFloat(String(line.store_price ?? 0))
-                          const lineEffectiveTotal = poLineTotal(line)
-                          return (
-                            <div
-                              key={line.id}
-                              style={{
-                                borderBottom: `1px solid ${rowBorder}`,
-                                background: rowBg,
-                                transition: 'background 0.15s',
-                              }}
-                            >
-                              {/* Main row */}
-                              <div
-                                style={{
-                                  display: 'grid',
-                                  gridTemplateColumns: '28px 1fr 90px 110px 110px 110px 80px',
-                                  padding: '10px 12px',
-                                  alignItems: 'center',
-                                }}
-                              >
-                                <div
-                                  style={{
-                                    fontSize: '12px',
-                                    color: theme.textMuted,
-                                    fontVariantNumeric: 'tabular-nums',
-                                  }}
-                                >
-                                  {lineIdx + 1}
-                                </div>
-                                <div>
-                                  <div
-                                    style={{
-                                      fontSize: '13px',
-                                      color: theme.textPrimary,
-                                      fontWeight: isFlagged ? 600 : 400,
-                                    }}
-                                  >
-                                    {line.description || line.product_name || '—'}
-                                  </div>
-                                  {isFlagged && (
-                                    <div
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        marginTop: '2px',
-                                      }}
-                                    >
-                                      <svg
-                                        width="10"
-                                        height="10"
-                                        viewBox="0 0 24 24"
-                                        fill={theme.warning}
-                                        stroke="none"
-                                      >
-                                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
-                                      </svg>
-                                      <span
-                                        style={{
-                                          fontSize: '10px',
-                                          color: theme.warning,
-                                          fontWeight: 600,
-                                        }}
-                                      >
-                                        Flagged
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    color: theme.textSecondary,
-                                    fontVariantNumeric: 'tabular-nums',
-                                  }}
-                                >
-                                  {fmtN(line.qty)} {line.uom}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    color: theme.textSecondary,
-                                    fontVariantNumeric: 'tabular-nums',
-                                  }}
-                                >
-                                  {fmtN(line.unit_price)}{' '}
-                                  {line.market_price_currency ??
-                                    line.requested_currency_code ??
-                                    po.currency_code}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    color: _sp > 0 ? theme.success : theme.textMuted,
-                                    fontVariantNumeric: 'tabular-nums',
-                                  }}
-                                >
-                                  {_sp > 0
-                                    ? `${fmtN(_sp)} ${line.store_price_currency ?? po.currency_code}`
-                                    : '—'}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '13px',
-                                    fontWeight: 600,
-                                    color: theme.textPrimary,
-                                    fontVariantNumeric: 'tabular-nums',
-                                  }}
-                                >
-                                  {fmtN(lineEffectiveTotal)} {po.base_currency_code}
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                  {isFlagged ? (
-                                    <button
-                                      onClick={() => {
-                                        clearFlag(line.id)
-                                      }}
-                                      title="Clear flag"
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 8px',
-                                        borderRadius: '5px',
-                                        border: `1px solid ${theme.warningBorder}`,
-                                        background: 'transparent',
-                                        color: theme.warning,
-                                        cursor: 'pointer',
-                                        fontSize: '11px',
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      <svg
-                                        width="10"
-                                        height="10"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2.5"
-                                      >
-                                        <path d="M18 6L6 18M6 6l12 12" />
-                                      </svg>
-                                      Clear
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() => {
-                                        flagLine(line.id)
-                                      }}
-                                      title="Flag this line"
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 8px',
-                                        borderRadius: '5px',
-                                        border: `1px solid ${theme.border}`,
-                                        background: 'transparent',
-                                        color: theme.textMuted,
-                                        cursor: 'pointer',
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.borderColor = theme.warning
-                                        e.currentTarget.style.color = theme.warning
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.borderColor = theme.border
-                                        e.currentTarget.style.color = theme.textMuted
-                                      }}
-                                    >
-                                      <svg
-                                        width="10"
-                                        height="10"
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        stroke="none"
-                                      >
-                                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
-                                      </svg>
-                                      Flag
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Pricing & stock breakdown strip */}
-                              {(() => {
-                                const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                                const totalQty = parseFloat(String(line.qty ?? 0))
-                                const toBuy = Math.max(0, totalQty - fromStock)
-                                const hasStock = fromStock > 0
-                                const hasBuy = toBuy > 0
-                                const sp = parseFloat(String(line.store_price ?? 0))
-                                const mp = parseFloat(String(line.market_price ?? 0))
-                                if (!hasStock && !hasBuy && sp === 0 && mp === 0) return null
-                                const chipBase: React.CSSProperties = {
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '2px 8px',
-                                  borderRadius: '10px',
-                                  fontSize: '11px',
-                                  fontWeight: 500,
-                                  fontVariantNumeric: 'tabular-nums',
-                                  whiteSpace: 'nowrap',
-                                }
-                                return (
-                                  <div
-                                    style={{
-                                      padding: '0 12px 10px',
-                                      display: 'flex',
-                                      gap: '6px',
-                                      flexWrap: 'wrap',
-                                    }}
-                                  >
-                                    {hasStock && (
-                                      <span
-                                        style={{
-                                          ...chipBase,
-                                          background: theme.successBg,
-                                          border: `1px solid ${theme.successBorder}`,
-                                          color: theme.success,
-                                        }}
-                                      >
-                                        <svg
-                                          width="9"
-                                          height="9"
-                                          viewBox="0 0 24 24"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          strokeWidth="2.5"
-                                        >
-                                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                                        </svg>
-                                        {fmtN(fromStock)} {line.uom} from inventory
-                                      </span>
-                                    )}
-                                    {hasBuy && (
-                                      <span
-                                        style={{
-                                          ...chipBase,
-                                          background: theme.infoBg,
-                                          border: `1px solid ${theme.infoBorder}`,
-                                          color: theme.info,
-                                        }}
-                                      >
-                                        <svg
-                                          width="9"
-                                          height="9"
-                                          viewBox="0 0 24 24"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          strokeWidth="2.5"
-                                        >
-                                          <circle cx="9" cy="21" r="1" />
-                                          <circle cx="20" cy="21" r="1" />
-                                          <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-                                        </svg>
-                                        {fmtN(toBuy)} {line.uom} to purchase
-                                      </span>
-                                    )}
-                                    {mp > 0 && (
-                                      <span
-                                        style={{
-                                          ...chipBase,
-                                          background: theme.bgCanvas,
-                                          border: `1px solid ${theme.border}`,
-                                          color: theme.textSecondary,
-                                        }}
-                                      >
-                                        Market price: {fmtN(mp)}{' '}
-                                        {line.market_price_currency ?? po.currency_code}
-                                      </span>
-                                    )}
-                                  </div>
-                                )
-                              })()}
-
-                              {/* Flag note input — only shown when flagged */}
-                              {isFlagged && (
-                                <div style={{ padding: '0 12px 10px' }}>
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '6px',
-                                      marginBottom: '4px',
-                                    }}
-                                  >
-                                    <svg
-                                      width="11"
-                                      height="11"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke={theme.warning}
-                                      strokeWidth="2"
-                                    >
-                                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                                    </svg>
-                                    <span
-                                      style={{
-                                        fontSize: '11px',
-                                        color: theme.warning,
-                                        fontWeight: 600,
-                                      }}
-                                    >
-                                      Reason for flagging (will appear in rejection note)
-                                    </span>
-                                  </div>
-                                  <textarea
-                                    value={lineFlagNotes[line.id]}
-                                    onChange={(e) => {
-                                      setFlagNote(line.id, e.target.value)
-                                    }}
-                                    placeholder={`e.g. Price is higher than market rate, quantity exceeds project requirement…`}
-                                    rows={2}
-                                    autoFocus
-                                    style={{
-                                      width: '100%',
-                                      padding: '8px 10px',
-                                      fontSize: '12px',
-                                      resize: 'vertical',
-                                      border: `1px solid ${theme.warningBorder}`,
-                                      borderRadius: '6px',
-                                      background: 'transparent',
-                                      color: theme.textPrimary,
-                                      fontFamily: 'inherit',
-                                      outline: 'none',
-                                      boxSizing: 'border-box',
-                                    }}
-                                    onFocus={(e) => {
-                                      e.currentTarget.style.borderColor = theme.warning
-                                    }}
-                                    onBlur={(e) => {
-                                      e.currentTarget.style.borderColor = theme.warningBorder
-                                    }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-
-                        {/* Totals footer */}
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 90px 110px 110px 110px 80px',
-                            padding: '8px 12px',
-                            background: theme.bgCanvas,
-                          }}
-                        >
-                          <div
-                            style={{
-                              gridColumn: '1 / 5',
-                              fontSize: '11px',
-                              color: theme.textMuted,
-                            }}
-                          >
-                            {po.lines.length} line{po.lines.length !== 1 ? 's' : ''}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: '13px',
-                              fontWeight: 700,
-                              color: theme.textPrimary,
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            {fmtN(po.total_amount)} {po.base_currency_code}
-                          </div>
-                          <div />
-                        </div>
-                      </div>
-
-                      {/* Flagged banner */}
-                      {hasFlaggedLines && (
-                        <div
-                          style={{
-                            padding: '10px 14px',
-                            borderRadius: '8px',
-                            background: theme.warningBg,
-                            border: `1px solid ${theme.warningBorder}`,
-                            marginBottom: '14px',
-                            fontSize: '12px',
-                            color: theme.warning,
-                            fontWeight: 500,
-                          }}
-                        >
-                          {flaggedLineIds.length} line{flaggedLineIds.length !== 1 ? 's' : ''}{' '}
-                          flagged — clear all flags to approve, or reject with the reason below.
-                        </div>
-                      )}
-
-                      {/* ── Approve ───────────────────────────────────────────────── */}
+                  {/* ── Reject ────────────────────────────────────────────────── */}
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      padding: '16px',
+                      borderRadius: '10px',
+                      background: theme.bgCanvas,
+                      border: `1px solid ${theme.border}`,
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
+                      Not ready to approve?
+                    </div>
+                    {renderLineFlagHint()}
+                    <Textarea
+                      label="Overall reason (auto-filled from flagged lines — edit as needed)"
+                      value={effectiveRejectReason}
+                      onChange={(e) => {
+                        setRejectReason(e.target.value)
+                      }}
+                      placeholder="Flag at least one line above to reject…"
+                      rows={hasFlaggedLines ? 3 : 2}
+                    />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                       <Button
-                        data-tour="po-approve-btn"
-                        variant="primary"
-                        style={PRIMARY_CTA_STYLE}
+                        variant="danger"
+                        disabled={!hasValidFlags}
                         loading={anyLoading}
-                        disabled={hasFlaggedLines}
-                        onClick={() => void approvePO({ variables: { id: po.id } })}
+                        onClick={() =>
+                          void rejectPO({
+                            variables: {
+                              id: po.id,
+                              reason: effectiveRejectReason,
+                              lineFlags: lineFlagsPayload,
+                            },
+                          })
+                        }
                       >
-                        Approve PO
+                        Reject PO
                       </Button>
-
-                      {/* ── Reject ────────────────────────────────────────────────── */}
-                      <div
-                        style={{
-                          marginTop: '4px',
-                          padding: '16px',
-                          borderRadius: '10px',
-                          background: theme.bgCanvas,
-                          border: `1px solid ${theme.border}`,
-                        }}
+                      <Button
+                        variant="secondary"
+                        disabled={!hasValidFlags}
+                        loading={anyLoading}
+                        onClick={() =>
+                          void rejectToMarket({
+                            variables: {
+                              id: po.id,
+                              reason: effectiveRejectReason,
+                              lineFlags: lineFlagsPayload,
+                            },
+                          })
+                        }
                       >
-                        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
-                          Not ready to approve?
-                        </div>
-                        <Textarea
-                          label={`Rejection reason ${
-                            hasFlaggedLines
-                              ? '(pre-filled from flags — edit as needed)'
-                              : '(required to reject)'
-                          }`}
-                          value={effectiveRejectReason}
-                          onChange={(e) => {
-                            setRejectReason(e.target.value)
-                          }}
-                          placeholder="Enter reason…"
-                          rows={hasFlaggedLines ? 3 : 2}
-                        />
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                          <Button
-                            variant="danger"
-                            disabled={!effectiveRejectReason}
-                            onClick={() =>
-                              void rejectPO({
-                                variables: { id: po.id, reason: effectiveRejectReason },
-                              })
-                            }
-                          >
-                            Reject PO
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            disabled={!effectiveRejectReason}
-                            onClick={() =>
-                              void rejectToMarket({
-                                variables: { id: po.id, reason: effectiveRejectReason },
-                              })
-                            }
-                          >
-                            Send Back to Market Pricing
-                          </Button>
-                        </div>
-                      </div>
-                    </>
-                  )
-                })()}
+                        Send Back to Market Pricing
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {(po.status === 'approved' || po.status === 'bought') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -5231,6 +4810,30 @@ export default function PurchaseOrderDetail() {
           }
 
           const lineColumns: Column<POLine>[] = [
+            // Flag-to-reject checkbox — only at the two statuses a reject
+            // box can appear for. Leftmost deliberately: this table can grow
+            // wider than the visible card (many price/received/notes
+            // columns), and only leading columns are guaranteed visible
+            // without horizontal scroll. Lives here, next to the actual
+            // line, instead of a second list of line names in the action
+            // panel — see flagLine/clearFlag.
+            ...(po.status === 'price_verification' || po.status === 'pending_approval'
+              ? [
+                  {
+                    key: 'flag_toggle',
+                    header: 'Flag',
+                    width: '36px',
+                    render: (line: POLine) => (
+                      <input
+                        type="checkbox"
+                        checked={line.id in lineFlagNotes}
+                        onChange={() => (line.id in lineFlagNotes ? clearFlag(line.id) : flagLine(line.id))}
+                        title="Flag this line for rejection"
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               key: 'index',
               header: '#',
@@ -5569,6 +5172,27 @@ export default function PurchaseOrderDetail() {
                 data={po.lines}
                 rowKey="id"
                 getRowStyle={(line) => {
+                  // Currently checked for the reject box in progress — takes
+                  // priority over everything else below.
+                  if (line.id in lineFlagNotes) {
+                    return {
+                      borderBottom: `1px solid ${theme.border}22`,
+                      background: `${theme.accent}0c`,
+                      borderLeft: `4px solid ${theme.accent}`,
+                    }
+                  }
+                  // Migration 279's review flag (a formal, persisted
+                  // rejection reason) takes visual priority over the
+                  // ephemeral comment-thread flag and the audit flag below.
+                  if (line.flag_reason && !line.flag_resolved_at) {
+                    const open = !line.flag_addressed_at
+                    const color = open ? theme.danger : theme.warning
+                    return {
+                      borderBottom: `1px solid ${theme.border}22`,
+                      background: `${color}0c`,
+                      borderLeft: `4px solid ${color}`,
+                    }
+                  }
                   const activeFlag = getLineFlag(line.id)
                   const flagStyle = activeFlag ? FLAG_COLORS[activeFlag] : null
                   const isAuditFlagged = line.audit_status === 'flagged'
@@ -5589,6 +5213,69 @@ export default function PurchaseOrderDetail() {
                         ? `3px solid ${flagStyle.dot}`
                         : '3px solid transparent',
                   }
+                }}
+                renderExpanded={(line) => {
+                  const hasOpenFlag = !!line.flag_reason && !line.flag_resolved_at
+                  const isComposing = line.id in lineFlagNotes
+                  if (!hasOpenFlag && !isComposing) return null
+                  const open = hasOpenFlag && !line.flag_addressed_at
+                  const color = open ? theme.danger : theme.warning
+                  return (
+                    // Stacked (not side-by-side) deliberately — this cell is
+                    // colSpan'd across every column, so its rendered width
+                    // matches the table's full (often wider-than-viewport,
+                    // horizontally-scrolled) width, not the visible card. A
+                    // flex row with justifyContent:'space-between' would push
+                    // the Resolve button out past the visible area, reachable
+                    // only by scrolling right with no hint to do so.
+                    <div style={{ padding: '10px 14px', background: `${isComposing ? theme.accent : color}0c` }}>
+                      {hasOpenFlag && (
+                        <div style={{ marginBottom: isComposing ? '10px' : 0 }}>
+                          <div style={{ fontSize: '11px', fontWeight: 600, color, marginBottom: '4px' }}>
+                            {open ? 'Flagged' : 'Addressed — awaiting confirmation'}
+                            <span style={{ fontWeight: 400, color: theme.textMuted, marginLeft: '6px' }}>
+                              by {line.flagged_by_name ?? 'someone'} during{' '}
+                              {line.flagged_from_status === 'price_verification'
+                                ? 'Price Verification'
+                                : 'Pending Approval'}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              color: theme.textPrimary,
+                              marginBottom: open ? 0 : '8px',
+                            }}
+                          >
+                            {line.flag_reason}
+                          </div>
+                          {!open && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              loading={lResolveFlag}
+                              onClick={() => void resolveLineFlag({ variables: { lineId: line.id } })}
+                            >
+                              Resolve
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {isComposing && (
+                        <div>
+                          <div style={{ fontSize: '11px', fontWeight: 600, color: theme.accent, marginBottom: '4px' }}>
+                            Flagging this line — required to reject
+                          </div>
+                          <Textarea
+                            value={lineFlagNotes[line.id] ?? ''}
+                            onChange={(e) => setFlagNote(line.id, e.target.value)}
+                            placeholder="What's wrong with this line?"
+                            rows={2}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
                 }}
               />
             </Card>

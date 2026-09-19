@@ -1622,6 +1622,78 @@ async function reqTransition(
   })
 }
 
+// Line-level review flags (migration 279) — shared by every PO/requisition
+// reject mutation, since po_lines is the one table both document types'
+// lines live in. Called inside the same transaction as the status
+// transition. `docId`/`docIdColumn` scope which lines are actually allowed
+// to be flagged (a lineId belonging to some other PO/requisition must not
+// be flaggable through this one's mutation). Throws if lineFlags is empty
+// (required — see LineFlagInput's own schema comment) or if any lineId
+// doesn't resolve to this document.
+async function applyLineFlags(
+  client: PoolClient,
+  docId: string,
+  docIdColumn: 'po_id' | 'requisition_id',
+  lineFlags: { lineId: string; reason: string }[],
+  flaggedBy: string,
+  fromStatus: string,
+): Promise<void> {
+  if (!lineFlags || lineFlags.length === 0)
+    throw new Error('At least one line must be flagged with a reason to reject')
+  for (const lf of lineFlags) {
+    if (!lf.reason.trim()) throw new Error('Every flagged line needs a reason')
+  }
+  const lineIds = lineFlags.map((lf) => lf.lineId)
+  const owned = await client.query<{ id: string }>(
+    `SELECT id FROM po_lines WHERE id = ANY($1) AND ${docIdColumn} = $2`,
+    [lineIds, docId],
+  )
+  if (owned.rows.length !== lineIds.length)
+    throw new Error('One or more flagged lines do not belong to this document')
+  for (const lf of lineFlags) {
+    // Re-flagging a line starts a fresh cycle — clears whatever addressed/
+    // resolved state a previous flag on it had.
+    await client.query(
+      `UPDATE po_lines SET flag_reason=$1, flagged_at=NOW(), flagged_by=$2, flagged_from_status=$3,
+         flag_addressed_at=NULL, flag_resolved_at=NULL, flag_resolved_by=NULL
+       WHERE id=$4`,
+      [lf.reason.trim(), flaggedBy, fromStatus, lf.lineId],
+    )
+  }
+}
+
+// Auto-stamps flag_addressed_at on any of the given lines that currently
+// carry an open (unresolved) flag — called from every forward-moving
+// mutation that re-processes a line's data (confirm inventory check, submit
+// store/market pricing, resubmit to inventory check from draft). Downgrades
+// the flag from "open" to "addressed" in the UI; does NOT clear it — only
+// resolveLineFlag does that. A no-op for lines with no open flag.
+async function markLinesAddressed(client: PoolClient, lineIds: string[]): Promise<void> {
+  if (lineIds.length === 0) return
+  await client.query(
+    `UPDATE po_lines SET flag_addressed_at=NOW()
+     WHERE id = ANY($1) AND flagged_at IS NOT NULL AND flag_resolved_at IS NULL`,
+    [lineIds],
+  )
+}
+
+// Same as markLinesAddressed, but for the "whole document resubmitted"
+// signal (submit_to_inventory_check from draft) rather than a specific set
+// of touched lines — resetRequisitionToDraft/rejectPO's reopen flow sends
+// the whole thing back to square one, so every open flag on it is
+// addressed by the act of resubmitting, not just some of its lines.
+async function markAllOpenFlagsAddressed(
+  client: PoolClient,
+  docId: string,
+  docIdColumn: 'po_id' | 'requisition_id',
+): Promise<void> {
+  await client.query(
+    `UPDATE po_lines SET flag_addressed_at=NOW()
+     WHERE ${docIdColumn}=$1 AND flagged_at IS NOT NULL AND flag_resolved_at IS NULL`,
+    [docId],
+  )
+}
+
 async function getRequisitionForReturn(reqId: string): Promise<Record<string, unknown>> {
   const [r, currencyTotals] = await Promise.all([
     query(
@@ -2706,6 +2778,9 @@ async function fetchFullPurchaseOrderGW(
               sl.company_id AS source_company_id, sc.name AS source_company_name,
               sb.average_cost AS source_average_cost,
               pol.audit_status, pol.audit_note, pol.audit_flagged_by_email, pol.audit_flagged_at,
+              pol.flag_reason, pol.flagged_at, pol.flagged_from_status, pol.flag_addressed_at, pol.flag_resolved_at,
+              COALESCE(NULLIF(TRIM(fbu.first_name || ' ' || fbu.last_name), ''), fbu.email) AS flagged_by_name,
+              COALESCE(NULLIF(TRIM(fru.first_name || ' ' || fru.last_name), ''), fru.email) AS flag_resolved_by_name,
               pol.line_number, p.name AS product_name, p.name_ar AS product_name_ar, p.sku,
               pol.account_id, coa.code AS account_code, coa.name AS account_name,
               pol.cost_center_id, cc.name AS cost_center_name, pol.advance_settlement_id,
@@ -2717,6 +2792,8 @@ async function fetchFullPurchaseOrderGW(
        LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
        LEFT JOIN chart_of_accounts coa ON coa.id=pol.account_id
        LEFT JOIN cost_centers cc ON cc.id=pol.cost_center_id
+       LEFT JOIN users fbu ON fbu.id=pol.flagged_by
+       LEFT JOIN users fru ON fru.id=pol.flag_resolved_by
        WHERE pol.po_id=$1 ORDER BY pol.line_number`,
       [id],
     ),
@@ -9169,6 +9246,9 @@ export const resolvers = {
                   pol.is_bought,
                   pol.approved_unit_price, pol.short_reason, pol.short_marked_by, pol.short_marked_at, pol.origin_line_id,
                   pol.closed_at, pol.closed_reason, pol.closed_by,
+                  pol.flag_reason, pol.flagged_at, pol.flagged_from_status, pol.flag_addressed_at, pol.flag_resolved_at,
+                  COALESCE(NULLIF(TRIM(fbu.first_name || ' ' || fbu.last_name), ''), fbu.email) AS flagged_by_name,
+                  COALESCE(NULLIF(TRIM(fru.first_name || ' ' || fru.last_name), ''), fru.email) AS flag_resolved_by_name,
                   (SELECT COALESCE(json_agg(jsonb_build_object(
                      'id', plp.id, 'po_line_id', plp.po_line_id, 'vendor_id', plp.vendor_id,
                      'vendor_name', v.name, 'currency_code', plp.currency_code, 'qty', plp.qty,
@@ -9200,6 +9280,8 @@ export const resolvers = {
            LEFT JOIN stock_balances sb ON sb.product_id=pol.product_id AND sb.location_id=pol.source_location_id AND sb.lot_id IS NULL
            LEFT JOIN chart_of_accounts coa ON coa.id=pol.account_id
            LEFT JOIN cost_centers cc ON cc.id=pol.cost_center_id
+           LEFT JOIN users fbu ON fbu.id=pol.flagged_by
+           LEFT JOIN users fru ON fru.id=pol.flag_resolved_by
            WHERE pol.requisition_id=$1 ORDER BY pol.line_number`,
           [args.id],
         ),
@@ -29495,6 +29577,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await markAllOpenFlagsAddressed(client, args.id, 'requisition_id')
       await reqTransition(
         client,
         args.id,
@@ -29816,6 +29899,7 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
+      await markLinesAddressed(client, args.lineStockQtys.map((l) => l.lineId))
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -29900,6 +29984,7 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
+      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
       await reqTransition(
         client,
         args.id,
@@ -29979,6 +30064,7 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
+      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
       await reqTransition(
         client,
         args.id,
@@ -30078,7 +30164,7 @@ const phase5MutationResolvers = {
   // edge below).
   rejectRequisitionVerificationToMarketPricing: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30095,6 +30181,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
       await reqTransition(
         client,
         args.id,
@@ -30122,7 +30209,7 @@ const phase5MutationResolvers = {
 
   rejectRequisitionVerificationToStorePricing: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30139,6 +30226,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
       await reqTransition(
         client,
         args.id,
@@ -30166,7 +30254,7 @@ const phase5MutationResolvers = {
 
   resetRequisitionToDraft: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30183,6 +30271,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
       await releaseRequisitionStockReservations(client, args.id)
       await reqTransition(
         client,
@@ -30206,7 +30295,7 @@ const phase5MutationResolvers = {
 
   rejectRequisitionVerificationToInventoryCheck: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30223,6 +30312,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'price_verification')
       await releaseRequisitionStockReservations(client, args.id)
       await reqTransition(
         client,
@@ -30381,7 +30471,7 @@ const phase5MutationResolvers = {
 
   rejectRequisitionApproval: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30409,6 +30499,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'pending_approval')
       // Unlike rejectPO (pending_approval -> rejected, a terminal status
       // needing a separate reopen action), rejecting a requisition goes
       // straight back to draft in one step — see reqStateMachine's header
@@ -30445,7 +30536,7 @@ const phase5MutationResolvers = {
   // same reasoning as rejectRequisitionVerificationToInventoryCheck above.
   rejectRequisitionToMarketPricing: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30464,6 +30555,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'pending_approval')
       await reqTransition(
         client,
         args.id,
@@ -30491,7 +30583,7 @@ const phase5MutationResolvers = {
 
   rejectRequisitionToInventoryCheck: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -30510,6 +30602,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'requisition_id', args.lineFlags, auth.userId, 'pending_approval')
       await releaseRequisitionStockReservations(client, args.id)
       await reqTransition(
         client,
@@ -31252,6 +31345,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await markAllOpenFlagsAddressed(client, args.id, 'po_id')
       if (isEmergency) {
         await poTransition(
           client,
@@ -31581,6 +31675,7 @@ const phase5MutationResolvers = {
           empId,
           args.id,
         ])
+      await markLinesAddressed(client, args.lineStockQtys.map((l) => l.lineId))
       await client.query('COMMIT')
     } catch (e) {
       await client.query('ROLLBACK')
@@ -31702,6 +31797,7 @@ const phase5MutationResolvers = {
           args.id,
         ])
       await recalcPO(client, args.id)
+      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
       await poTransition(
         client,
         args.id,
@@ -31809,6 +31905,7 @@ const phase5MutationResolvers = {
           args.id,
         ])
       await recalcPO(client, args.id)
+      await markLinesAddressed(client, (args.linePrices ?? []).map((lp) => lp.lineId))
       await poTransition(
         client,
         args.id,
@@ -31894,7 +31991,7 @@ const phase5MutationResolvers = {
 
   rejectPOToMarketPricing: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -31914,6 +32011,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'pending_approval')
       await poTransition(
         client,
         args.id,
@@ -31944,7 +32042,7 @@ const phase5MutationResolvers = {
   // for approval at this stage should also be able to send it back instead.
   rejectPOVerificationToMarketPricing: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -31956,6 +32054,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'price_verification')
       await poTransition(
         client,
         args.id,
@@ -31983,7 +32082,7 @@ const phase5MutationResolvers = {
 
   rejectPOVerificationToStorePricing: async (
     _: unknown,
-    args: { id: string; reason: string },
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
     ctx: GQLContext,
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
@@ -31995,6 +32094,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'price_verification')
       await poTransition(
         client,
         args.id,
@@ -32156,7 +32256,11 @@ const phase5MutationResolvers = {
     return getPOForReturn(args.id)
   },
 
-  rejectPO: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
+  rejectPO: async (
+    _: unknown,
+    args: { id: string; reason: string; lineFlags: { lineId: string; reason: string }[] },
+    ctx: GQLContext,
+  ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
@@ -32175,6 +32279,7 @@ const phase5MutationResolvers = {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await applyLineFlags(client, args.id, 'po_id', args.lineFlags, auth.userId, 'pending_approval')
       await releasePOStockReservations(client, args.id)
       await poTransition(
         client,
@@ -32206,6 +32311,70 @@ const phase5MutationResolvers = {
     }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
+  },
+
+  // Shared by both PO and requisition lines (po_lines is the one table
+  // both live in). Gated to the same authority that could have SET a flag
+  // from that stage in the first place — not specifically the original
+  // flagger, since staffing changes and any current holder of that review
+  // position should be able to confirm a fix. Deliberately not restricted
+  // to only when the document has cycled back to that exact status: the
+  // reviewer acknowledging "yes, this was fixed" is meaningful whenever
+  // they look at it, matching flag_addressed_at's own "someone touched it
+  // again" signal rather than requiring a specific revisit.
+  resolveLineFlag: async (_: unknown, args: { lineId: string }, ctx: GQLContext) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const lineRes = await query<{
+      po_id: string | null
+      requisition_id: string | null
+      flagged_at: string | null
+      flag_resolved_at: string | null
+      flagged_from_status: string | null
+      company_id: string
+    }>(
+      `SELECT pl.po_id, pl.requisition_id, pl.flagged_at, pl.flag_resolved_at, pl.flagged_from_status,
+              COALESCE(po.company_id, req.company_id) AS company_id
+       FROM po_lines pl
+       LEFT JOIN purchase_orders po ON po.id = pl.po_id
+       LEFT JOIN requisitions req ON req.id = pl.requisition_id
+       WHERE pl.id = $1`,
+      [args.lineId],
+    )
+    const line = lineRes.rows[0]
+    if (!line) throw new Error('Line not found')
+    if (line.company_id !== auth.companyId) throw new Error('Line not found')
+    if (!line.flagged_at) throw new Error('This line has no flag to resolve')
+    if (line.flag_resolved_at) throw new Error('This flag is already resolved')
+
+    const isAdmin = await hasProcurementAuthorityGW(auth)
+    let authorized = isAdmin
+    if (!authorized && line.flagged_from_status === 'price_verification') {
+      authorized = line.po_id
+        ? await userHasPositionGW(auth.userId, auth.companyId, line.po_id, 'procurement_2nd')
+        : await userHasPositionForRequisitionGW(auth.userId, auth.companyId, line.requisition_id!, 'procurement_2nd')
+    } else if (!authorized && line.flagged_from_status === 'pending_approval') {
+      authorized = line.po_id
+        ? (await userIsDeptHeadGW(auth.userId, line.po_id)) ||
+          (await userIsAssignedApproverGW(auth.userId, line.po_id)) ||
+          (await callerHasPOAdmin(auth.userId, auth.companyId))
+        : (await userIsDeptHeadForRequisitionGW(auth.userId, line.requisition_id!)) ||
+          (await userIsAssignedApproverForRequisitionGW(auth.userId, line.requisition_id!)) ||
+          (await callerHasPOAdmin(auth.userId, auth.companyId))
+    }
+    if (!authorized) throw new Error('Not authorized to resolve this flag')
+
+    await query(`UPDATE po_lines SET flag_resolved_at=NOW(), flag_resolved_by=$1 WHERE id=$2`, [
+      auth.userId,
+      args.lineId,
+    ])
+    void publishEntityChanged(
+      auth.companyId,
+      line.po_id ? 'purchase_order' : 'requisition',
+      (line.po_id ?? line.requisition_id)!,
+      'updated',
+    )
+    return true
   },
 
   reopenPO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {

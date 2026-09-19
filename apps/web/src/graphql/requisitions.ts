@@ -133,6 +133,13 @@ export const REQUISITION_QUERY = gql`
         short_marked_at
         closed_at
         closed_reason
+        flag_reason
+        flagged_at
+        flagged_by_name
+        flagged_from_status
+        flag_addressed_at
+        flag_resolved_at
+        flag_resolved_by_name
         purchases {
           id
           vendor_id
@@ -284,9 +291,11 @@ export const VERIFY_REQUISITION_PRICES = gql`
 // REJECT_PO_VERIFICATION_TO_MARKET_PRICING/REJECT_PO_VERIFICATION_TO_STORE_PRICING.
 // RESET_REQUISITION_TO_DRAFT and REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK
 // have no PO equivalent.
+// Migration 279 — every reject/send-back mutation now requires at least one
+// flagged line (lineId + reason); see LineFlagInput's own schema comment.
 export const REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING = gql`
-  mutation RejectRequisitionVerificationToMarketPricing($id: ID!, $reason: String!) {
-    rejectRequisitionVerificationToMarketPricing(id: $id, reason: $reason) {
+  mutation RejectRequisitionVerificationToMarketPricing($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectRequisitionVerificationToMarketPricing(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -294,8 +303,8 @@ export const REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING = gql`
 `
 
 export const REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING = gql`
-  mutation RejectRequisitionVerificationToStorePricing($id: ID!, $reason: String!) {
-    rejectRequisitionVerificationToStorePricing(id: $id, reason: $reason) {
+  mutation RejectRequisitionVerificationToStorePricing($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectRequisitionVerificationToStorePricing(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -303,8 +312,8 @@ export const REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING = gql`
 `
 
 export const RESET_REQUISITION_TO_DRAFT = gql`
-  mutation ResetRequisitionToDraft($id: ID!, $reason: String!) {
-    resetRequisitionToDraft(id: $id, reason: $reason) {
+  mutation ResetRequisitionToDraft($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    resetRequisitionToDraft(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -312,8 +321,8 @@ export const RESET_REQUISITION_TO_DRAFT = gql`
 `
 
 export const REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK = gql`
-  mutation RejectRequisitionVerificationToInventoryCheck($id: ID!, $reason: String!) {
-    rejectRequisitionVerificationToInventoryCheck(id: $id, reason: $reason) {
+  mutation RejectRequisitionVerificationToInventoryCheck($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectRequisitionVerificationToInventoryCheck(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -330,8 +339,8 @@ export const APPROVE_REQUISITION = gql`
 `
 
 export const REJECT_REQUISITION_APPROVAL = gql`
-  mutation RejectRequisitionApproval($id: ID!, $reason: String!) {
-    rejectRequisitionApproval(id: $id, reason: $reason) {
+  mutation RejectRequisitionApproval($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectRequisitionApproval(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -341,8 +350,8 @@ export const REJECT_REQUISITION_APPROVAL = gql`
 // pending_approval-only reject destinations — mirror REJECT_PO_TO_MARKET.
 // REJECT_REQUISITION_TO_INVENTORY_CHECK has no PO equivalent.
 export const REJECT_REQUISITION_TO_MARKET_PRICING = gql`
-  mutation RejectRequisitionToMarketPricing($id: ID!, $reason: String!) {
-    rejectRequisitionToMarketPricing(id: $id, reason: $reason) {
+  mutation RejectRequisitionToMarketPricing($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectRequisitionToMarketPricing(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -350,8 +359,8 @@ export const REJECT_REQUISITION_TO_MARKET_PRICING = gql`
 `
 
 export const REJECT_REQUISITION_TO_INVENTORY_CHECK = gql`
-  mutation RejectRequisitionToInventoryCheck($id: ID!, $reason: String!) {
-    rejectRequisitionToInventoryCheck(id: $id, reason: $reason) {
+  mutation RejectRequisitionToInventoryCheck($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectRequisitionToInventoryCheck(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }

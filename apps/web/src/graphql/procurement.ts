@@ -493,6 +493,13 @@ export const PO_LIFECYCLE_QUERY = gql`
         audit_note
         audit_flagged_by_email
         audit_flagged_at
+        flag_reason
+        flagged_at
+        flagged_by_name
+        flagged_from_status
+        flag_addressed_at
+        flag_resolved_at
+        flag_resolved_by_name
         account_id
         account_code
         account_name
@@ -703,9 +710,11 @@ export const SUBMIT_PO_PRICE_VERIFICATION = gql`
   }
 `
 
+// Migration 279 — every reject/send-back mutation now requires at least one
+// flagged line (lineId + reason); see LineFlagInput's own schema comment.
 export const REJECT_PO_TO_MARKET = gql`
-  mutation RejectPOToMarketPricing($id: ID!, $reason: String!) {
-    rejectPOToMarketPricing(id: $id, reason: $reason) {
+  mutation RejectPOToMarketPricing($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectPOToMarketPricing(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -713,8 +722,8 @@ export const REJECT_PO_TO_MARKET = gql`
 `
 
 export const REJECT_PO_VERIFICATION_TO_MARKET_PRICING = gql`
-  mutation RejectPOVerificationToMarketPricing($id: ID!, $reason: String!) {
-    rejectPOVerificationToMarketPricing(id: $id, reason: $reason) {
+  mutation RejectPOVerificationToMarketPricing($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectPOVerificationToMarketPricing(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
@@ -722,11 +731,19 @@ export const REJECT_PO_VERIFICATION_TO_MARKET_PRICING = gql`
 `
 
 export const REJECT_PO_VERIFICATION_TO_STORE_PRICING = gql`
-  mutation RejectPOVerificationToStorePricing($id: ID!, $reason: String!) {
-    rejectPOVerificationToStorePricing(id: $id, reason: $reason) {
+  mutation RejectPOVerificationToStorePricing($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectPOVerificationToStorePricing(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }
+  }
+`
+
+// Shared by both PO and requisition lines — po_lines is the one table both
+// document types' lines live in, so this one mutation works for either.
+export const RESOLVE_LINE_FLAG = gql`
+  mutation ResolveLineFlag($lineId: ID!) {
+    resolveLineFlag(lineId: $lineId)
   }
 `
 
@@ -746,8 +763,8 @@ export const APPROVE_PO = gql`
 `
 
 export const REJECT_PO = gql`
-  mutation RejectPO($id: ID!, $reason: String!) {
-    rejectPO(id: $id, reason: $reason) {
+  mutation RejectPO($id: ID!, $reason: String!, $lineFlags: [LineFlagInput!]!) {
+    rejectPO(id: $id, reason: $reason, lineFlags: $lineFlags) {
       id
       status
     }

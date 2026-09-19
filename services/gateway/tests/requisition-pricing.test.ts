@@ -373,12 +373,12 @@ describe('price_verification reject destinations', () => {
   it('rejectRequisitionVerificationToMarketPricing sends it back to market_pricing without touching reservations', async () => {
     const productId = await makeProduct('rejmarket')
     await receive(productId, warehouseId, 10)
-    const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 10, qtyFromStock: 4, marketPrice: 15, productId })
+    const { reqId, lineId } = await makeReqAtPriceVerification({ qtyOrdered: 10, qtyFromStock: 4, marketPrice: 15, productId })
     expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
 
     const result = await resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
       null,
-      { id: reqId, reason: 'quote looks wrong' },
+      { id: reqId, reason: 'quote looks wrong', lineFlags: [{ lineId, reason: 'quote looks wrong' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('market_pricing')
@@ -388,10 +388,10 @@ describe('price_verification reject destinations', () => {
   })
 
   it('rejectRequisitionVerificationToStorePricing sends it back to store_pricing', async () => {
-    const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 3, marketPrice: 9 })
+    const { reqId, lineId } = await makeReqAtPriceVerification({ qtyOrdered: 3, marketPrice: 9 })
     const result = await resolvers.Mutation.rejectRequisitionVerificationToStorePricing(
       null,
-      { id: reqId, reason: 'store price should be checked first' },
+      { id: reqId, reason: 'store price should be checked first', lineFlags: [{ lineId, reason: 'x' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('store_pricing')
@@ -405,7 +405,7 @@ describe('price_verification reject destinations', () => {
 
     const result = await resolvers.Mutation.resetRequisitionToDraft(
       null,
-      { id: reqId, reason: 'start over' },
+      { id: reqId, reason: 'start over', lineFlags: [{ lineId, reason: 'start over' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('draft')
@@ -437,7 +437,7 @@ describe('price_verification reject destinations', () => {
 
     const result = await resolvers.Mutation.rejectRequisitionVerificationToInventoryCheck(
       null,
-      { id: reqId, reason: 'stock count was wrong' },
+      { id: reqId, reason: 'stock count was wrong', lineFlags: [{ lineId, reason: 'stock count was wrong' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('inventory_check')

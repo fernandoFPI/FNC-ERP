@@ -439,9 +439,11 @@ describe('RequisitionDetail', () => {
     })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
-    // Same reasoning as the market_pricing test above — the fully-covered
-    // line still shows in the always-visible Lines table, but only one
-    // "Verified price" input is rendered.
+    // Same reasoning as the market_pricing test above — only one
+    // "Verified price" input is rendered for the line that needs it.
+    // The flag-to-reject checkbox lives on the line's own row in the Lines
+    // table (no separate line-name picker elsewhere), so the description
+    // still appears exactly once.
     expect(screen.getAllByText('Fully from stock')).toHaveLength(1)
     expect(screen.getAllByText('Needs verification').length).toBeGreaterThan(0)
     expect(screen.getAllByPlaceholderText('0.00')).toHaveLength(1)
@@ -460,13 +462,23 @@ describe('RequisitionDetail', () => {
     expect(screen.getByRole('button', { name: /^send back to market pricing$/i })).toBeInTheDocument()
   })
 
-  it('pending_approval: reject-box destinations stay disabled until a reason is entered', async () => {
+  it('pending_approval: reject-box destinations stay disabled until a line is flagged with a reason', async () => {
     mockReq({ status: 'pending_approval', callerCanApprove: true })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
     const resetBtn = screen.getByRole('button', { name: /^reset to draft$/i })
     expect(resetBtn).toBeDisabled()
+    // Filling only the overall reason box is no longer enough — at least one
+    // line must be flagged (checkbox) with its own non-empty reason.
     fireEvent.change(screen.getByPlaceholderText(/enter reason/i), { target: { value: 'price too high' } })
+    expect(resetBtn).toBeDisabled()
+    // The flag checkbox now lives on the line's own row in the Lines tab
+    // table (not a separate line-name picker), identified by its title.
+    fireEvent.click(screen.getByRole('checkbox', { name: /flag this line/i }))
+    expect(resetBtn).toBeDisabled()
+    fireEvent.change(screen.getByPlaceholderText(/what's wrong with this line/i), {
+      target: { value: 'wrong item' },
+    })
     expect(resetBtn).not.toBeDisabled()
   })
 

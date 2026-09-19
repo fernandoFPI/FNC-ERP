@@ -426,7 +426,7 @@ describe('rejectRequisitionApproval', () => {
 
     const result = await resolvers.Mutation.rejectRequisitionApproval(
       null,
-      { id: reqId, reason: 'wrong quantity, redo' },
+      { id: reqId, reason: 'wrong quantity, redo', lineFlags: [{ lineId, reason: 'wrong quantity' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('draft')
@@ -456,12 +456,12 @@ describe('rejectRequisitionApproval', () => {
   })
 
   it('assigned_approver_id grants rejection rights to a non-admin, non-dept-head user', async () => {
-    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
+    const { reqId, lineId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
 
     await expect(
       resolvers.Mutation.rejectRequisitionApproval(
         null,
-        { id: reqId, reason: 'not authorized yet' },
+        { id: reqId, reason: 'not authorized yet', lineFlags: [{ lineId, reason: 'x' }] },
         approverCtx as never,
       ),
     ).rejects.toThrow(/not authorized to reject this requisition/i)
@@ -470,7 +470,7 @@ describe('rejectRequisitionApproval', () => {
 
     const result = await resolvers.Mutation.rejectRequisitionApproval(
       null,
-      { id: reqId, reason: 'assigned approver says redo' },
+      { id: reqId, reason: 'assigned approver says redo', lineFlags: [{ lineId, reason: 'x' }] },
       approverCtx as never,
     )
     expect((result as { status: string }).status).toBe('draft')
@@ -491,12 +491,12 @@ describe('rejectRequisitionToMarketPricing / rejectRequisitionToInventoryCheck',
   it('rejectRequisitionToMarketPricing sends it back to market_pricing without touching reservations', async () => {
     const productId = await makeProduct('pendrejmarket')
     await receive(productId, warehouseId, 10)
-    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 10, qtyFromStock: 4, marketPrice: 15, productId })
+    const { reqId, lineId } = await makeReqAtPendingApproval({ qtyOrdered: 10, qtyFromStock: 4, marketPrice: 15, productId })
     expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
 
     const result = await resolvers.Mutation.rejectRequisitionToMarketPricing(
       null,
-      { id: reqId, reason: 'approver wants a better quote' },
+      { id: reqId, reason: 'approver wants a better quote', lineFlags: [{ lineId, reason: 'price too high' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('market_pricing')
@@ -504,10 +504,18 @@ describe('rejectRequisitionToMarketPricing / rejectRequisitionToInventoryCheck',
   })
 
   it('rejectRequisitionToMarketPricing only works from pending_approval', async () => {
-    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 1, qtyFromStock: 0, marketPrice: 1 })
-    await resolvers.Mutation.rejectRequisitionToMarketPricing(null, { id: reqId, reason: 'redo' }, ctx as never)
+    const { reqId, lineId } = await makeReqAtPendingApproval({ qtyOrdered: 1, qtyFromStock: 0, marketPrice: 1 })
+    await resolvers.Mutation.rejectRequisitionToMarketPricing(
+      null,
+      { id: reqId, reason: 'redo', lineFlags: [{ lineId, reason: 'x' }] },
+      ctx as never,
+    )
     await expect(
-      resolvers.Mutation.rejectRequisitionToMarketPricing(null, { id: reqId, reason: 'again' }, ctx as never),
+      resolvers.Mutation.rejectRequisitionToMarketPricing(
+        null,
+        { id: reqId, reason: 'again', lineFlags: [{ lineId, reason: 'x' }] },
+        ctx as never,
+      ),
     ).rejects.toThrow(/cannot reject to market pricing from status 'market_pricing'/i)
   })
 
@@ -519,7 +527,7 @@ describe('rejectRequisitionToMarketPricing / rejectRequisitionToInventoryCheck',
 
     const result = await resolvers.Mutation.rejectRequisitionToInventoryCheck(
       null,
-      { id: reqId, reason: 'stock count needs a recheck' },
+      { id: reqId, reason: 'stock count needs a recheck', lineFlags: [{ lineId, reason: 'recheck stock' }] },
       ctx as never,
     )
     expect((result as { status: string }).status).toBe('inventory_check')
@@ -537,11 +545,11 @@ describe('rejectRequisitionToMarketPricing / rejectRequisitionToInventoryCheck',
   })
 
   it('requires dept-head/assigned-approver/admin authorization, same as rejectRequisitionApproval', async () => {
-    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
+    const { reqId, lineId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
     await expect(
       resolvers.Mutation.rejectRequisitionToInventoryCheck(
         null,
-        { id: reqId, reason: 'not authorized yet' },
+        { id: reqId, reason: 'not authorized yet', lineFlags: [{ lineId, reason: 'x' }] },
         approverCtx as never,
       ),
     ).rejects.toThrow(/not authorized to reject this requisition/i)
