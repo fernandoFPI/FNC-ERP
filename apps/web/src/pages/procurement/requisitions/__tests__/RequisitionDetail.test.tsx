@@ -150,6 +150,81 @@ describe('RequisitionDetail', () => {
     expect(screen.getByText('Cement bags')).toBeInTheDocument()
   })
 
+  it('a fully-from-stock line shows its store-price reference value instead of a bare 0 total', async () => {
+    // Mirrors confirmRequisitionInventoryCheck's own zeroing rule: total_price
+    // is 0 because nothing is being purchased, not because the item has no
+    // value — the Lines table (and Summary Total) should show store_price ×
+    // qty for display, in store_price's own currency, instead of just "0 IQD".
+    mockReq({
+      status: 'pending_approval',
+      currencyTotals: [],
+      lines: [
+        {
+          id: 'line-1',
+          line_number: 1,
+          description: 'Plastic Cravty Lover lhv160',
+          product_id: 'prod-1',
+          product_name: 'Plastic Cravty Lover lhv160',
+          sku: 'ELEC-858',
+          qty: '1',
+          uom: 'EA',
+          currency_code: 'IQD',
+          unit_price: '0',
+          qty_from_stock: '1',
+          store_price: '10.72',
+          store_price_currency: 'USD',
+          market_price: null,
+          verified_price: null,
+          total: '0',
+          purchases: [],
+        },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    // Shows up in both the Lines table's Total column and, folded in, the
+    // Summary panel's Total stat (RTL matches every ancestor whose own
+    // textContent also equals just this text, so >=2 rather than an exact
+    // count, which would be brittle against incidental DOM nesting).
+    expect(screen.getAllByText(/10\.72 USD/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText(/\(from stock\)/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText('0 IQD')).not.toBeInTheDocument()
+    // Summary panel specifically — prefixed with "+" since it's additive to
+    // (here, empty) currencyTotals.
+    expect(screen.getByText(/\+ 10\.72 USD \(from stock\)/)).toBeInTheDocument()
+  })
+
+  it('a partially-from-stock line keeps showing its real purchase total, not the store-price reference', async () => {
+    mockReq({
+      status: 'pending_approval',
+      lines: [
+        {
+          id: 'line-1',
+          line_number: 1,
+          description: 'Rebar 12mm',
+          product_id: 'prod-1',
+          product_name: 'Rebar 12mm',
+          sku: 'REB-1',
+          qty: '10',
+          uom: 'unit',
+          currency_code: 'IQD',
+          unit_price: '20',
+          qty_from_stock: '4',
+          store_price: '15',
+          store_price_currency: 'USD',
+          market_price: '20',
+          verified_price: '20',
+          total: '200',
+          purchases: [],
+        },
+      ],
+    })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByText(/200 IQD/)).toBeInTheDocument()
+    expect(screen.queryByText(/\(from stock\)/)).not.toBeInTheDocument()
+  })
+
   it('draft: shows Submit for inventory check for the organizer', async () => {
     mockReq({ status: 'draft' })
     const RequisitionDetail = (await import('../RequisitionDetail')).default

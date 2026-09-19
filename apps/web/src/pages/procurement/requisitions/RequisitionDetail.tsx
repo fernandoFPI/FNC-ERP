@@ -217,6 +217,23 @@ interface LineAvailability {
 const fmtN = (n: string | number | null | undefined) =>
   parseFloat(String(n ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 
+// Display-only — a fully-from-stock line's total_price is deliberately
+// zeroed by confirmRequisitionInventoryCheck (nothing is being purchased,
+// so nothing is owed; the item's real cost is booked to the project
+// separately, via project_cost_actuals, once the Store Out that issues it
+// is confirmed). That's correct for approval snapshots/tolerance checks,
+// which must keep meaning "amount to purchase" — but it reads as if the
+// item's value vanished entirely, so show store_price × qty here purely
+// for display, in the line's own store_price_currency (which can differ
+// from the line's currency_code).
+function fromStockDisplayValue(l: ReqLine): { amount: number; currency: string } | null {
+  const qty = parseFloat(l.qty) || 0
+  const qtyFromStock = parseFloat(String(l.qty_from_stock ?? '0')) || 0
+  const storePrice = parseFloat(String(l.store_price ?? '0')) || 0
+  if (qty <= 0 || qtyFromStock + 0.0001 < qty || storePrice <= 0) return null
+  return { amount: qtyFromStock * storePrice, currency: l.store_price_currency ?? '' }
+}
+
 export default function RequisitionDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -557,7 +574,26 @@ export default function RequisitionDetail() {
           },
         ]
       : []),
-    { key: 'total', header: 'Total', render: (l) => <span style={{ fontSize: '13px' }}>{fmtN(l.total)} {l.currency_code}</span> },
+    {
+      key: 'total',
+      header: 'Total',
+      render: (l) => {
+        const fromStock = (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
+        if (fromStock) {
+          return (
+            <span style={{ fontSize: '13px', color: theme.textMuted }}>
+              {fmtN(fromStock.amount)} {fromStock.currency}
+              <span style={{ fontSize: '11px' }}> (from stock)</span>
+            </span>
+          )
+        }
+        return (
+          <span style={{ fontSize: '13px' }}>
+            {fmtN(l.total)} {l.currency_code}
+          </span>
+        )
+      },
+    },
   ]
 
   // ── Edit requests: diff builder (mirrors PurchaseOrderDetail's own
@@ -681,18 +717,39 @@ export default function RequisitionDetail() {
           {[
             {
               label: 'Total',
-              value:
-                req.currencyTotals.length > 0 ? (
+              value: (() => {
+                // Purchased amount (per currency) plus, folded in separately
+                // since it's display-only, each from-stock line's reference
+                // value — see fromStockDisplayValue's own comment for why
+                // this stays out of req.currencyTotals itself (that number
+                // feeds the approval snapshot/tolerance checks and must keep
+                // meaning "amount to purchase").
+                const fromStockTotals = new Map<string, number>()
+                for (const l of req.lines) {
+                  const fromStock = (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null
+                  if (fromStock) {
+                    fromStockTotals.set(
+                      fromStock.currency,
+                      (fromStockTotals.get(fromStock.currency) ?? 0) + fromStock.amount,
+                    )
+                  }
+                }
+                if (req.currencyTotals.length === 0 && fromStockTotals.size === 0) return '—'
+                return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                     {req.currencyTotals.map((ct) => (
                       <span key={ct.currency_code}>
                         {fmtN(ct.subtotal)} {ct.currency_code}
                       </span>
                     ))}
+                    {[...fromStockTotals.entries()].map(([currency, amount]) => (
+                      <span key={`stock-${currency}`} style={{ color: theme.textMuted, fontSize: '12px' }}>
+                        + {fmtN(amount)} {currency} (from stock)
+                      </span>
+                    ))}
                   </div>
-                ) : (
-                  '—'
-                ),
+                )
+              })(),
             },
             { label: 'Priority', value: REQUISITION_PRIORITY_LABELS[req.priority ?? 'low'] ?? req.priority ?? '—' },
             {
