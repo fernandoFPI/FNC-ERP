@@ -11,14 +11,21 @@ import {
   SUBMIT_REQUISITION_STORE_PRICING,
   SUBMIT_REQUISITION_MARKET_PRICING,
   VERIFY_REQUISITION_PRICES,
+  REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING,
+  REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING,
+  RESET_REQUISITION_TO_DRAFT,
+  REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK,
   APPROVE_REQUISITION,
   REJECT_REQUISITION_APPROVAL,
+  REJECT_REQUISITION_TO_MARKET_PRICING,
+  REJECT_REQUISITION_TO_INVENTORY_CHECK,
   CANCEL_REQUISITION,
   SUBMIT_REQUISITION_EDIT_REQUEST,
   APPROVE_REQUISITION_EDIT_REQUEST,
   REJECT_REQUISITION_EDIT_REQUEST,
 } from '../../../graphql/requisitions'
-import { STOCK_LOCATIONS_QUERY, PRODUCTS_QUERY } from '../../../graphql/inventory'
+import { NOTIFY_PO_OWNER_FOR_EDIT_REQUEST } from '../../../graphql/procurement'
+import { PRODUCTS_QUERY } from '../../../graphql/inventory'
 import { useAuthStore } from '../../../store/authStore'
 import { useTheme } from '../../../theme/ThemeContext'
 import { usePermission } from '../../../hooks/usePermission'
@@ -34,6 +41,7 @@ import { TabBar } from '../../../components/ui/TabBar'
 import type { Column } from '../../../components/ui/Table'
 import { Table } from '../../../components/ui/Table'
 import { Input } from '../../../components/ui/Input'
+import { Textarea } from '../../../components/ui/Textarea'
 import { Select } from '../../../components/ui/Select'
 import { SearchableSelect } from '../../../components/ui/SearchableSelect'
 import { LineItemEditor, type LineItemField } from '../../../components/ui/LineItemEditor'
@@ -247,14 +255,56 @@ export default function RequisitionDetail() {
     mutOpts,
   )
   const [verifyPrices, { loading: lVerify }] = useMutation(VERIFY_REQUISITION_PRICES, mutOpts)
-  const [approve, { loading: lApprove }] = useMutation(APPROVE_REQUISITION, mutOpts)
-  const [reject, { loading: lReject }] = useMutation(REJECT_REQUISITION_APPROVAL, {
+  // price_verification-only reject destinations — mirror PurchaseOrderDetail's
+  // rejectVerificationToMarket/rejectVerificationToStore, plus the two with no
+  // PO equivalent (resetToDraft, rejectVerificationToInventory). All share
+  // rejectReason with the pending_approval reject box below, same as PO does.
+  const rejectOpts = {
     onCompleted: () => {
       setRejectReason('')
       void refetch()
     },
     onError: onErr,
-  })
+  }
+  const [rejectVerificationToMarket, { loading: lRejectVerifyMarket }] = useMutation(
+    REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING,
+    rejectOpts,
+  )
+  const [rejectVerificationToStore, { loading: lRejectVerifyStore }] = useMutation(
+    REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING,
+    rejectOpts,
+  )
+  const [resetToDraft, { loading: lResetDraft }] = useMutation(RESET_REQUISITION_TO_DRAFT, rejectOpts)
+  const [rejectVerificationToInventory, { loading: lRejectVerifyInventory }] = useMutation(
+    REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK,
+    rejectOpts,
+  )
+  const [notifyOwnerForEdit, { loading: lNotifyOwner }] = useMutation(
+    NOTIFY_PO_OWNER_FOR_EDIT_REQUEST,
+    rejectOpts,
+  )
+  const [approve, { loading: lApprove }] = useMutation(APPROVE_REQUISITION, mutOpts)
+  const [reject, { loading: lReject }] = useMutation(REJECT_REQUISITION_APPROVAL, rejectOpts)
+  // pending_approval-only reject destinations — mirror REJECT_PO_TO_MARKET;
+  // rejectToInventoryCheck has no PO equivalent.
+  const [rejectToMarketPricing, { loading: lRejectToMarket }] = useMutation(
+    REJECT_REQUISITION_TO_MARKET_PRICING,
+    rejectOpts,
+  )
+  const [rejectToInventoryCheck, { loading: lRejectToInventory }] = useMutation(
+    REJECT_REQUISITION_TO_INVENTORY_CHECK,
+    rejectOpts,
+  )
+  // Mirrors PurchaseOrderDetail's own anyLoading — every button within a
+  // reject box (plus that panel's own primary action) shares one combined
+  // flag so a click on one disables its siblings too. Without this, the
+  // per-mutation FOR UPDATE row lock in reqTransition still prevents any
+  // actual double-transition (the loser just gets a clean "Expected X, got
+  // Y" error toast), but nothing stops the race from being triggerable in
+  // the first place — this closes that off at the UI layer instead.
+  const anyVerifyLoading =
+    lVerify || lResetDraft || lRejectVerifyInventory || lRejectVerifyStore || lRejectVerifyMarket || lNotifyOwner
+  const anyApprovalLoading = lApprove || lReject || lRejectToMarket || lRejectToInventory
   const [cancel, { loading: lCancel }] = useMutation(CANCEL_REQUISITION, {
     onCompleted: () => {
       setCancelReason('')
@@ -282,12 +332,6 @@ export default function RequisitionDetail() {
     fetchPolicy: 'cache-and-network',
   })
   const children: ChildPO[] = childData?.requisitionChildPurchaseOrders ?? []
-
-  const { data: locData } = useQuery(STOCK_LOCATIONS_QUERY, {
-    variables: { isActive: true },
-    skip: !req || req.status !== 'inventory_check',
-  })
-  const locations: { id: string; name: string }[] = locData?.stockLocations ?? []
 
   const { data: availData } = useQuery(REQUISITION_STOCK_AVAILABILITY_QUERY, {
     variables: { requisitionId: id },
@@ -1297,7 +1341,7 @@ export default function RequisitionDetail() {
                         flexWrap: 'wrap',
                         fontSize: '12px',
                         color: theme.textMuted,
-                        marginBottom: '10px',
+                        marginBottom: '12px',
                       }}
                     >
                       <span>
@@ -1312,21 +1356,118 @@ export default function RequisitionDetail() {
                           {fmtN(avail.qtyAvailable)}
                         </strong>
                       </span>
-                      {avail.byLocation.length > 0 && (
-                        <span style={{ width: '100%' }}>
-                          {avail.byLocation.map((loc) => (
-                            <span key={loc.locationId} style={{ marginRight: '12px' }}>
-                              {loc.locationName}
-                              {loc.companyName ? ` (${loc.companyName})` : ''}: {fmtN(loc.qtyAvailable)} avail.
-                            </span>
-                          ))}
-                        </span>
-                      )}
                     </div>
                   ) : (
                     <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '10px' }}>
                       {isOverridden ? 'Checking stock for the newly selected item…' : 'Loading stock levels…'}
                     </div>
+                  )}
+                  {avail && (
+                    // Only locations that actually have stock of this item —
+                    // matches PurchaseOrderDetail's own inventory-check card
+                    // list, fed by the same byLocation shape instead of a
+                    // plain dropdown built from every active stock location.
+                    avail.byLocation.length > 0 ? (
+                      <div style={{ marginBottom: '12px' }}>
+                        <label
+                          style={{
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            color: theme.textSecondary,
+                            display: 'block',
+                            marginBottom: '6px',
+                          }}
+                        >
+                          Source location
+                        </label>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {avail.byLocation.map((loc) => {
+                            const selected = invLoc[l.id] === loc.locationId
+                            return (
+                              <button
+                                key={loc.locationId}
+                                type="button"
+                                onClick={() => {
+                                  setInvLoc((prev) => ({ ...prev, [l.id]: loc.locationId }))
+                                  const currentQty = parseFloat(invQty[l.id] ?? '0') || 0
+                                  if (currentQty > loc.qtyAvailable) {
+                                    setInvQty((prev) => ({ ...prev, [l.id]: String(Math.max(0, loc.qtyAvailable)) }))
+                                  }
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '12px',
+                                  padding: '10px 14px',
+                                  borderRadius: '8px',
+                                  textAlign: 'left',
+                                  cursor: 'pointer',
+                                  fontFamily: 'inherit',
+                                  border: `1px solid ${selected ? theme.accent : theme.border}`,
+                                  background: selected ? `${theme.accent}18` : theme.bgCanvas,
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <span
+                                    style={{
+                                      width: '14px',
+                                      height: '14px',
+                                      borderRadius: '50%',
+                                      border: `2px solid ${selected ? theme.accent : theme.border}`,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {selected && (
+                                      <span
+                                        style={{
+                                          width: '6px',
+                                          height: '6px',
+                                          borderRadius: '50%',
+                                          background: theme.accent,
+                                        }}
+                                      />
+                                    )}
+                                  </span>
+                                  <span>
+                                    <div
+                                      style={{
+                                        fontSize: '13px',
+                                        fontWeight: selected ? 600 : 500,
+                                        color: selected ? theme.accent : theme.textPrimary,
+                                      }}
+                                    >
+                                      {loc.locationName}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                      {loc.companyName}
+                                    </div>
+                                  </span>
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: selected ? theme.accent : theme.textSecondary,
+                                    whiteSpace: 'nowrap',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {fmtN(loc.qtyAvailable)} avail.
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom: '12px', fontSize: '12px', color: theme.textMuted }}>
+                        No stock available at any location for this item.
+                      </div>
+                    )
                   )}
                   <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{ width: '140px' }}>
@@ -1334,19 +1475,22 @@ export default function RequisitionDetail() {
                         label="Qty from stock"
                         type="number"
                         min="0"
-                        max={l.qty}
+                        max={String(
+                          (() => {
+                            const qtyNeeded = parseFloat(l.qty) || 0
+                            const selectedLoc = avail?.byLocation.find((loc) => loc.locationId === invLoc[l.id])
+                            return selectedLoc ? Math.min(qtyNeeded, selectedLoc.qtyAvailable) : qtyNeeded
+                          })(),
+                        )}
                         value={invQty[l.id] ?? ''}
-                        onChange={(e) => setInvQty((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        onChange={(e) => {
+                          const qtyNeeded = parseFloat(l.qty) || 0
+                          const selectedLoc = avail?.byLocation.find((loc) => loc.locationId === invLoc[l.id])
+                          const max = selectedLoc ? Math.min(qtyNeeded, selectedLoc.qtyAvailable) : qtyNeeded
+                          const v = Math.max(0, Math.min(max, parseFloat(e.target.value) || 0))
+                          setInvQty((prev) => ({ ...prev, [l.id]: e.target.value === '' ? '' : String(v) }))
+                        }}
                         placeholder="0"
-                      />
-                    </div>
-                    <div style={{ flex: 1, minWidth: '180px' }}>
-                      <Select
-                        label="Source location (if any from stock)"
-                        value={invLoc[l.id] ?? ''}
-                        onChange={(e) => setInvLoc((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        options={locations.map((loc) => ({ value: loc.id, label: loc.name }))}
-                        placeholder="Select location"
                       />
                     </div>
                   </div>
@@ -1610,84 +1754,161 @@ export default function RequisitionDetail() {
             const purchaseLines = req.lines.filter(
               (l) => (parseFloat(l.qty) || 0) - (parseFloat(String(l.qty_from_stock ?? '0')) || 0) > 0.0001,
             )
-            return purchaseLines.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
-                <div style={{ fontSize: '13px', color: theme.textMuted }}>
-                  Nothing on this requisition needs price verification — every line is covered from stock.
-                </div>
-                <Button
-                  variant="primary"
-                  loading={lVerify}
-                  onClick={() => void verifyPrices({ variables: { id: req.id, lineAdjustments: [] } })}
-                >
-                  Continue to approval
-                </Button>
-              </div>
-            ) : (
+            return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {purchaseLines.map((l) => {
-                const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
-                const missing = raw === ''
-                const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
-                return (
-                  <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                    <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
-                      {l.description || l.product_name}
-                      <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                        Market: {l.market_price != null ? `${fmtN(l.market_price)} ${l.market_price_currency}` : 'not set'}
-                      </div>
-                    </div>
-                    <div style={{ width: '140px' }}>
-                      <Input
-                        label="Verified price"
-                        type="number"
-                        min="0"
-                        value={raw}
-                        onChange={(e) => setVerifiedPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        placeholder="0.00"
-                        error={missing ? 'Required' : invalid ? 'Enter a valid price' : undefined}
-                      />
-                    </div>
+              {purchaseLines.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ fontSize: '13px', color: theme.textMuted }}>
+                    Nothing on this requisition needs price verification — every line is covered from stock.
                   </div>
-                )
-              })}
-              {(() => {
-                const allVerified = purchaseLines.every((l) => {
-                  const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
-                  return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
-                })
-                return (
-                  <>
-                    {!allVerified && (
-                      <div style={{ fontSize: '12px', color: theme.danger }}>
-                        Enter a verified price for every line before submitting — a missing market price does
-                        not default to 0.
+                  <Button
+                    variant="primary"
+                    loading={anyVerifyLoading}
+                    onClick={() => void verifyPrices({ variables: { id: req.id, lineAdjustments: [] } })}
+                  >
+                    Continue to approval
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {purchaseLines.map((l) => {
+                    const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                    const missing = raw === ''
+                    const invalid = !missing && (isNaN(parseFloat(raw)) || parseFloat(raw) < 0)
+                    return (
+                      <div key={l.id} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1, fontSize: '13px', color: theme.textPrimary, paddingBottom: '10px' }}>
+                          {l.description || l.product_name}
+                          <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                            Market: {l.market_price != null ? `${fmtN(l.market_price)} ${l.market_price_currency}` : 'not set'}
+                          </div>
+                        </div>
+                        <div style={{ width: '140px' }}>
+                          <Input
+                            label="Verified price"
+                            type="number"
+                            min="0"
+                            value={raw}
+                            onChange={(e) => setVerifiedPrices((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                            placeholder="0.00"
+                            error={missing ? 'Required' : invalid ? 'Enter a valid price' : undefined}
+                          />
+                        </div>
                       </div>
-                    )}
-                    <Button
-                      variant="primary"
-                      loading={lVerify}
-                      disabled={!allVerified}
-                      style={{ alignSelf: 'flex-start' }}
-                      onClick={() =>
-                        void verifyPrices({
-                          variables: {
-                            id: req.id,
-                            lineAdjustments: purchaseLines.map((l) => ({
-                              lineId: l.id,
-                              verifiedPrice: parseFloat(
-                                verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : ''),
-                              ),
-                            })),
-                          },
-                        })
-                      }
-                    >
-                      Submit for approval
-                    </Button>
-                  </>
-                )
-              })()}
+                    )
+                  })}
+                  {(() => {
+                    const allVerified = purchaseLines.every((l) => {
+                      const raw = verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : '')
+                      return raw !== '' && !isNaN(parseFloat(raw)) && parseFloat(raw) >= 0
+                    })
+                    return (
+                      <>
+                        {!allVerified && (
+                          <div style={{ fontSize: '12px', color: theme.danger }}>
+                            Enter a verified price for every line before submitting — a missing market price does
+                            not default to 0.
+                          </div>
+                        )}
+                        <Button
+                          variant="primary"
+                          loading={anyVerifyLoading}
+                          disabled={!allVerified}
+                          style={{ alignSelf: 'flex-start' }}
+                          onClick={() =>
+                            void verifyPrices({
+                              variables: {
+                                id: req.id,
+                                lineAdjustments: purchaseLines.map((l) => ({
+                                  lineId: l.id,
+                                  verifiedPrice: parseFloat(
+                                    verifiedPrices[l.id] ?? (l.market_price != null ? String(l.market_price) : ''),
+                                  ),
+                                })),
+                              },
+                            })
+                          }
+                        >
+                          Submit for approval
+                        </Button>
+                      </>
+                    )
+                  })()}
+                </>
+              )}
+
+              {/* ── Reject box — mirrors PurchaseOrderDetail's price_verification
+                   "Not ready to approve?" panel exactly, plus Reset to Draft and
+                   Inventory Check, which have no PO equivalent ─────────────── */}
+              <div
+                style={{
+                  marginTop: '4px',
+                  padding: '16px',
+                  borderRadius: '10px',
+                  background: theme.bgCanvas,
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
+                  Not ready to approve?
+                </div>
+                <Textarea
+                  label="Reject reason (required to reject)"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Enter reason…"
+                  rows={2}
+                />
+                <div style={{ fontSize: '11px', fontWeight: 500, color: theme.textMuted, margin: '12px 0 6px' }}>
+                  Send back to
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="danger"
+                    disabled={!rejectReason.trim()}
+                    loading={anyVerifyLoading}
+                    onClick={() => void resetToDraft({ variables: { id: req.id, reason: rejectReason } })}
+                  >
+                    Reset to Draft
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!rejectReason.trim()}
+                    loading={anyVerifyLoading}
+                    onClick={() =>
+                      void rejectVerificationToInventory({ variables: { id: req.id, reason: rejectReason } })
+                    }
+                  >
+                    Inventory Check
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!rejectReason.trim()}
+                    loading={anyVerifyLoading}
+                    onClick={() => void rejectVerificationToStore({ variables: { id: req.id, reason: rejectReason } })}
+                  >
+                    Store Pricing
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!rejectReason.trim()}
+                    loading={anyVerifyLoading}
+                    onClick={() => void rejectVerificationToMarket({ variables: { id: req.id, reason: rejectReason } })}
+                  >
+                    Market Pricing
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!rejectReason.trim()}
+                    loading={anyVerifyLoading}
+                    onClick={() =>
+                      void notifyOwnerForEdit({ variables: { requisitionId: req.id, reason: rejectReason } })
+                    }
+                  >
+                    Owner (Request Edit)
+                  </Button>
+                </div>
+              </div>
             </div>
             )
           })()}
@@ -1698,38 +1919,70 @@ export default function RequisitionDetail() {
       {req.status === 'pending_approval' && (
         <Card style={sectionCard}>
           <div style={sectionTitle}>Next step: approve or reject</div>
-          <div style={sectionHint}>Rejecting sends this requisition back to draft for revision.</div>
+          <div style={sectionHint}>Rejecting sends this requisition back to an earlier stage for revision.</div>
           {!canApprove ? (
             <div style={{ fontSize: '13px', color: theme.textMuted }}>
               Only the department head, the assigned approver, or an admin can act here.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <Button
                 variant="primary"
-                loading={lApprove}
+                loading={anyApprovalLoading}
                 style={{ alignSelf: 'flex-start' }}
                 onClick={() => void approve({ variables: { id: req.id } })}
               >
                 Approve
               </Button>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  <Input
-                    label="Reject reason"
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Enter reason"
-                  />
+
+              {/* ── Reject box — mirrors PurchaseOrderDetail's pending_approval
+                   "Not ready to approve?" panel, plus Reject to Inventory
+                   Check, which has no PO equivalent ────────────────────────── */}
+              <div
+                style={{
+                  marginTop: '4px',
+                  padding: '16px',
+                  borderRadius: '10px',
+                  background: theme.bgCanvas,
+                  border: `1px solid ${theme.border}`,
+                }}
+              >
+                <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary, marginBottom: '10px' }}>
+                  Not ready to approve?
                 </div>
-                <Button
-                  variant="danger"
-                  loading={lReject}
-                  disabled={!rejectReason.trim()}
-                  onClick={() => void reject({ variables: { id: req.id, reason: rejectReason } })}
-                >
-                  Reject
-                </Button>
+                <Textarea
+                  label="Rejection reason (required to reject)"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Enter reason…"
+                  rows={2}
+                />
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="danger"
+                    disabled={!rejectReason.trim()}
+                    loading={anyApprovalLoading}
+                    onClick={() => void reject({ variables: { id: req.id, reason: rejectReason } })}
+                  >
+                    Reset to Draft
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!rejectReason.trim()}
+                    loading={anyApprovalLoading}
+                    onClick={() => void rejectToInventoryCheck({ variables: { id: req.id, reason: rejectReason } })}
+                  >
+                    Send Back to Inventory Check
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!rejectReason.trim()}
+                    loading={anyApprovalLoading}
+                    onClick={() => void rejectToMarketPricing({ variables: { id: req.id, reason: rejectReason } })}
+                  >
+                    Send Back to Market Pricing
+                  </Button>
+                </div>
               </div>
             </div>
           )}

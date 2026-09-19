@@ -482,3 +482,68 @@ describe('rejectRequisitionApproval', () => {
     expect(log.rows[0]!.actor_position).toBe('assigned_approver')
   })
 })
+
+// pending_approval-only reject destinations — mirror rejectPOToMarketPricing.
+// rejectRequisitionToInventoryCheck has no PO equivalent and is the one that
+// must release stock reservations, same reasoning as
+// rejectRequisitionVerificationToInventoryCheck (requisition-pricing.test.ts).
+describe('rejectRequisitionToMarketPricing / rejectRequisitionToInventoryCheck', () => {
+  it('rejectRequisitionToMarketPricing sends it back to market_pricing without touching reservations', async () => {
+    const productId = await makeProduct('pendrejmarket')
+    await receive(productId, warehouseId, 10)
+    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 10, qtyFromStock: 4, marketPrice: 15, productId })
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    const result = await resolvers.Mutation.rejectRequisitionToMarketPricing(
+      null,
+      { id: reqId, reason: 'approver wants a better quote' },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('market_pricing')
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+  })
+
+  it('rejectRequisitionToMarketPricing only works from pending_approval', async () => {
+    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 1, qtyFromStock: 0, marketPrice: 1 })
+    await resolvers.Mutation.rejectRequisitionToMarketPricing(null, { id: reqId, reason: 'redo' }, ctx as never)
+    await expect(
+      resolvers.Mutation.rejectRequisitionToMarketPricing(null, { id: reqId, reason: 'again' }, ctx as never),
+    ).rejects.toThrow(/cannot reject to market pricing from status 'market_pricing'/i)
+  })
+
+  it('rejectRequisitionToInventoryCheck releases reservations and returns to inventory_check, ready to redo', async () => {
+    const productId = await makeProduct('pendrejinv')
+    await receive(productId, warehouseId, 10)
+    const { reqId, lineId } = await makeReqAtPendingApproval({ qtyOrdered: 10, qtyFromStock: 7, marketPrice: 8, productId })
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(7)
+
+    const result = await resolvers.Mutation.rejectRequisitionToInventoryCheck(
+      null,
+      { id: reqId, reason: 'stock count needs a recheck' },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('inventory_check')
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+
+    // needsPurchase auto-advances straight through store_pricing to
+    // market_pricing (see makeReqAtPendingApproval's own comment above).
+    const redo = await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 7, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    expect((redo as { status: string }).status).toBe('market_pricing')
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(7)
+  })
+
+  it('requires dept-head/assigned-approver/admin authorization, same as rejectRequisitionApproval', async () => {
+    const { reqId } = await makeReqAtPendingApproval({ qtyOrdered: 2, qtyFromStock: 0, marketPrice: 7 })
+    await expect(
+      resolvers.Mutation.rejectRequisitionToInventoryCheck(
+        null,
+        { id: reqId, reason: 'not authorized yet' },
+        approverCtx as never,
+      ),
+    ).rejects.toThrow(/not authorized to reject this requisition/i)
+  })
+})

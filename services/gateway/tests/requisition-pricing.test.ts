@@ -13,6 +13,8 @@ const SKU_PREFIX = 'G1PTEST-'
 
 let userId: string
 let employeeId: string
+let warehouseId: string
+let virtualInId: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 
 async function makeProduct(suffix: string): Promise<string> {
@@ -22,6 +24,25 @@ async function makeProduct(suffix: string): Promise<string> {
     [TEST_COMPANY_ID, sku, sku],
   )
   return r.rows[0]!.id
+}
+
+async function receive(productId: string, locationId: string, qty: number, unitCost = 10): Promise<void> {
+  await pool.query(
+    `INSERT INTO stock_moves (company_id, product_id, from_location_id, to_location_id, moved_at, qty, unit_cost, total_cost, source_type, moved_by)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_receipt',$8)`,
+    [TEST_COMPANY_ID, productId, virtualInId, locationId, qty, unitCost, qty * unitCost, userId],
+  )
+}
+
+async function getBalance(productId: string, locationId: string): Promise<{ onHand: number; reserved: number }> {
+  const r = await pool.query<{ qty_on_hand: string; qty_reserved: string }>(
+    `SELECT qty_on_hand, qty_reserved FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+    [productId, locationId],
+  )
+  return {
+    onHand: parseFloat(r.rows[0]?.qty_on_hand ?? '0'),
+    reserved: parseFloat(r.rows[0]?.qty_reserved ?? '0'),
+  }
 }
 
 async function cleanup(): Promise<void> {
@@ -37,6 +58,14 @@ async function cleanup(): Promise<void> {
     TEST_COMPANY_ID,
     userId,
   ])
+  await pool.query(
+    `DELETE FROM stock_moves WHERE company_id=$1 AND product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
+    [TEST_COMPANY_ID, `${SKU_PREFIX}%`],
+  )
+  await pool.query(
+    `DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
+    [TEST_COMPANY_ID, `${SKU_PREFIX}%`],
+  )
   await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [TEST_COMPANY_ID, `${SKU_PREFIX}%`])
 }
 
@@ -46,8 +75,12 @@ async function cleanup(): Promise<void> {
 // auto-fills store pricing and advances straight through to
 // market_pricing in one transaction (mirrors confirmPOInventoryCheck) —
 // store_pricing is no longer a stage this lands on in the normal flow.
-async function makeReqAtMarketPricing(qtyOrdered: number, unitPrice = 10) {
-  const productId = await makeProduct('pricing')
+async function makeReqAtMarketPricing(
+  qtyOrdered: number,
+  unitPrice = 10,
+  opts?: { qtyFromStock?: number; productId?: string },
+) {
+  const productId = opts?.productId ?? (await makeProduct('pricing'))
   const created = await resolvers.Mutation.createRequisition(
     null,
     { input: { purpose: 'stock', lines: [{ product_id: productId, description: 'x', qty: qtyOrdered, unit_price: unitPrice }] } },
@@ -56,10 +89,37 @@ async function makeReqAtMarketPricing(qtyOrdered: number, unitPrice = 10) {
   const reqId = (created as { id: string }).id
   const lineRow = await pool.query<{ id: string }>(`SELECT id FROM po_lines WHERE requisition_id=$1`, [reqId])
   const lineId = lineRow.rows[0]!.id
+  const qtyFromStock = opts?.qtyFromStock ?? 0
   await resolvers.Mutation.submitRequisitionToInventoryCheck(null, { id: reqId }, ctx as never)
   await resolvers.Mutation.confirmRequisitionInventoryCheck(
     null,
-    { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0 }] },
+    {
+      id: reqId,
+      lineStockQtys: [{ lineId, qtyFromStock, sourceLocationId: qtyFromStock > 0 ? warehouseId : undefined }],
+    },
+    ctx as never,
+  )
+  return { reqId, lineId, productId }
+}
+
+// Drives a fresh requisition all the way to price_verification — same
+// pattern as requisition-approval.test.ts's makeReqAtPendingApproval, one
+// stage earlier. qtyFromStock lets the reservation-release tests below
+// prove resetRequisitionToDraft/rejectRequisitionVerificationToInventoryCheck
+// actually release what confirmRequisitionInventoryCheck reserved.
+async function makeReqAtPriceVerification(opts: {
+  qtyOrdered: number
+  qtyFromStock?: number
+  marketPrice: number
+  productId?: string
+}) {
+  const { reqId, lineId, productId } = await makeReqAtMarketPricing(opts.qtyOrdered, 1, {
+    qtyFromStock: opts.qtyFromStock,
+    productId: opts.productId,
+  })
+  await resolvers.Mutation.submitRequisitionMarketPricing(
+    null,
+    { id: reqId, linePrices: [{ lineId, marketPrice: opts.marketPrice, currencyCode: 'IQD' }] },
     ctx as never,
   )
   return { reqId, lineId, productId }
@@ -94,6 +154,20 @@ beforeAll(async () => {
     [TEST_COMPANY_ID, userId, TEST_EMPLOYEE_NUMBER],
   )
   employeeId = employeeR.rows[0]!.id
+
+  const whR = await pool.query<{ id: string }>(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+    [TEST_COMPANY_ID],
+  )
+  if (!whR.rows[0]) throw new Error('No warehouse location seeded for test company — run seeds first')
+  warehouseId = whR.rows[0].id
+
+  const viR = await pool.query<{ id: string }>(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+    [TEST_COMPANY_ID],
+  )
+  if (!viR.rows[0]) throw new Error('No virtual_in location seeded for test company — run seeds first')
+  virtualInId = viR.rows[0].id
 
   await cleanup()
 })
@@ -287,5 +361,113 @@ describe('getRequisitionCurrencyTotals (via the requisition query resolver)', ()
     expect(usd.line_count).toBe(1)
     // No entry anywhere sums 200 + 30 into one number.
     expect(totals.some((t) => parseFloat(t.subtotal) === 230)).toBe(false)
+  })
+})
+
+// price_verification-only reject destinations — mirrors PO's own
+// rejectPOVerificationToMarketPricing/rejectPOVerificationToStorePricing
+// tests; resetRequisitionToDraft/rejectRequisitionVerificationToInventoryCheck
+// have no PO equivalent and are the ones that must release stock
+// reservations (see resolvers.ts's own comment on why).
+describe('price_verification reject destinations', () => {
+  it('rejectRequisitionVerificationToMarketPricing sends it back to market_pricing without touching reservations', async () => {
+    const productId = await makeProduct('rejmarket')
+    await receive(productId, warehouseId, 10)
+    const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 10, qtyFromStock: 4, marketPrice: 15, productId })
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+
+    const result = await resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
+      null,
+      { id: reqId, reason: 'quote looks wrong' },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('market_pricing')
+    // Still reserved — the from-stock portion confirmed at inventory_check
+    // is untouched by a pricing-only reject.
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(4)
+  })
+
+  it('rejectRequisitionVerificationToStorePricing sends it back to store_pricing', async () => {
+    const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 3, marketPrice: 9 })
+    const result = await resolvers.Mutation.rejectRequisitionVerificationToStorePricing(
+      null,
+      { id: reqId, reason: 'store price should be checked first' },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('store_pricing')
+  })
+
+  it('resetRequisitionToDraft releases reservations and returns to draft', async () => {
+    const productId = await makeProduct('resetdraft')
+    await receive(productId, warehouseId, 10)
+    const { reqId, lineId } = await makeReqAtPriceVerification({ qtyOrdered: 10, qtyFromStock: 6, marketPrice: 20, productId })
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(6)
+
+    const result = await resolvers.Mutation.resetRequisitionToDraft(
+      null,
+      { id: reqId, reason: 'start over' },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('draft')
+
+    const bal = await getBalance(productId, warehouseId)
+    expect(bal.reserved).toBe(0)
+    expect(bal.onHand).toBe(10)
+
+    // Stale qty_from_stock is left on the line (harmless — see resolvers.ts's
+    // comment: confirmRequisitionInventoryCheck unconditionally overwrites
+    // every line's qty_from_stock/source_location_id the next time it runs,
+    // regardless of what was there before).
+    const line = await pool.query<{ qty_from_stock: string }>(`SELECT qty_from_stock FROM po_lines WHERE id=$1`, [lineId])
+    expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(6)
+  })
+
+  it('resetRequisitionToDraft requires a non-empty reason and only works from price_verification', async () => {
+    const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 2, marketPrice: 5 })
+    await expect(
+      resolvers.Mutation.resetRequisitionToDraft(null, { id: reqId, reason: '  ' }, ctx as never),
+    ).rejects.toThrow(/reason is required/i)
+  })
+
+  it('rejectRequisitionVerificationToInventoryCheck releases reservations and returns to inventory_check, ready to redo', async () => {
+    const productId = await makeProduct('rejinvcheck')
+    await receive(productId, warehouseId, 10)
+    const { reqId, lineId } = await makeReqAtPriceVerification({ qtyOrdered: 10, qtyFromStock: 5, marketPrice: 12, productId })
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(5)
+
+    const result = await resolvers.Mutation.rejectRequisitionVerificationToInventoryCheck(
+      null,
+      { id: reqId, reason: 'stock count was wrong' },
+      ctx as never,
+    )
+    expect((result as { status: string }).status).toBe('inventory_check')
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(0)
+
+    // Redoing inventory check from here must not double-reserve on top of
+    // the (already-released) old reservation. needsPurchase auto-advances
+    // straight through store_pricing to market_pricing (same as every
+    // other confirmRequisitionInventoryCheck call — see this file's own
+    // makeReqAtMarketPricing comment).
+    const redo = await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 5, sourceLocationId: warehouseId }] },
+      ctx as never,
+    )
+    expect((redo as { status: string }).status).toBe('market_pricing')
+    expect((await getBalance(productId, warehouseId)).reserved).toBe(5)
+  })
+
+  it('requires the procurement_2nd position (or admin) to act on any of the four', async () => {
+    const { reqId } = await makeReqAtPriceVerification({ qtyOrdered: 2, marketPrice: 5 })
+    const strangerCtx = {
+      auth: { companyId: TEST_COMPANY_ID, userId: '00000000-0000-0000-0000-000000000099', role: 'user', module: 'all', sessionId: 'g1-test-stranger' },
+    }
+    await expect(
+      resolvers.Mutation.rejectRequisitionVerificationToMarketPricing(
+        null,
+        { id: reqId, reason: 'x' },
+        strangerCtx as never,
+      ),
+    ).rejects.toThrow(/procurement_2nd position required/i)
   })
 })

@@ -30038,6 +30038,189 @@ const phase5MutationResolvers = {
     return getRequisitionForReturn(args.id)
   },
 
+  // The following four actions are only available from 'price_verification'
+  // — same procurement_2nd position gate as verifyRequisitionPrices itself,
+  // since whoever can submit for approval at this stage should also be able
+  // to send it back instead. Mirrors rejectPOVerificationToMarketPricing/
+  // rejectPOVerificationToStorePricing exactly; resetRequisitionToDraft and
+  // rejectRequisitionVerificationToInventoryCheck have no PO equivalent —
+  // both release the requisition's existing stock reservations first since
+  // they send it back past inventory_check, which will be redone from
+  // scratch (same as rejectRequisitionApproval's pending_approval -> draft
+  // edge below).
+  rejectRequisitionVerificationToMarketPricing: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await reqTransition(
+        client,
+        args.id,
+        'price_verification',
+        'market_pricing',
+        'reject_verification_to_market_pricing',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_officer', {
+      type: 'REQ_MARKET_PRICING_REQUIRED',
+      title: 'Requisition sent back to market pricing',
+      body: `Price verification rejected: ${args.reason}`,
+    })
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  rejectRequisitionVerificationToStorePricing: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await reqTransition(
+        client,
+        args.id,
+        'price_verification',
+        'store_pricing',
+        'reject_verification_to_store_pricing',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'store_pricing', {
+      type: 'REQ_STORE_PRICING_REQUIRED',
+      title: 'Requisition sent back to store pricing',
+      body: `Price verification rejected: ${args.reason}`,
+    })
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  resetRequisitionToDraft: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await releaseRequisitionStockReservations(client, args.id)
+      await reqTransition(
+        client,
+        args.id,
+        'price_verification',
+        'draft',
+        'reset_to_draft',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  rejectRequisitionVerificationToInventoryCheck: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const hasPos = await userHasPositionForRequisitionGW(
+      auth.userId,
+      auth.companyId,
+      args.id,
+      'procurement_2nd',
+    )
+    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await releaseRequisitionStockReservations(client, args.id)
+      await reqTransition(
+        client,
+        args.id,
+        'price_verification',
+        'inventory_check',
+        'reject_to_inventory_check',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'store_keeper', {
+      type: 'REQ_INVENTORY_CHECK_REQUIRED',
+      title: 'Requisition sent back to inventory check',
+      body: `Price verification rejected: ${args.reason}`,
+    })
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
   // ── G1 requisition lifecycle mutations (PR 2: single approval gate) ──────
   // Authorization mirrors approvePO/rejectPO minus the assigned-approver
   // path — requisitions has no assigned_approver_id column (no equivalent
@@ -30221,6 +30404,106 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  // The following two actions are only available from 'pending_approval' —
+  // same dept-head/assigned-approver/po_admin authorization as
+  // rejectRequisitionApproval above (whoever can reject outright should
+  // also be able to send it back to an earlier stage instead). Mirrors
+  // rejectPOToMarketPricing; rejectRequisitionToInventoryCheck has no PO
+  // equivalent and releases the requisition's stock reservations first,
+  // same reasoning as rejectRequisitionVerificationToInventoryCheck above.
+  rejectRequisitionToMarketPricing: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
+    const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
+      throw new Error('Not authorized to reject this requisition')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1`, [args.id])
+    if (!reqRow.rows[0]) throw new Error('Requisition not found')
+    if (reqRow.rows[0].status !== 'pending_approval')
+      throw new Error(`Cannot reject to market pricing from status '${reqRow.rows[0].status as string}'`)
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await reqTransition(
+        client,
+        args.id,
+        'pending_approval',
+        'market_pricing',
+        'reject_to_market_pricing',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_officer', {
+      type: 'REQ_MARKET_PRICING_REQUIRED',
+      title: 'Requisition sent back to market pricing',
+      body: `The approver rejected pricing: ${args.reason}`,
+    })
+    void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
+    return getRequisitionForReturn(args.id)
+  },
+
+  rejectRequisitionToInventoryCheck: async (
+    _: unknown,
+    args: { id: string; reason: string },
+    ctx: GQLContext,
+  ) => {
+    if (!ctx.auth) throw new Error('Unauthorized')
+    const auth = ctx.auth as GWAuth
+    const isAdmin = isAdminGW(auth.role)
+    const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
+    const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
+    const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
+    if (!isAdmin && !isDeptHead && !isApprover && !isReqAdmin)
+      throw new Error('Not authorized to reject this requisition')
+    if (!args.reason.trim()) throw new Error('reason is required')
+    const reqRow = await query(`SELECT status FROM requisitions WHERE id=$1`, [args.id])
+    if (!reqRow.rows[0]) throw new Error('Requisition not found')
+    if (reqRow.rows[0].status !== 'pending_approval')
+      throw new Error(`Cannot reject to inventory check from status '${reqRow.rows[0].status as string}'`)
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await releaseRequisitionStockReservations(client, args.id)
+      await reqTransition(
+        client,
+        args.id,
+        'pending_approval',
+        'inventory_check',
+        'reject_to_inventory_check',
+        auth,
+        args.reason,
+      )
+      await client.query('COMMIT')
+    } catch (e) {
+      await client.query('ROLLBACK')
+      throw e
+    } finally {
+      client.release()
+    }
+    void notifyPositionHoldersForRequisitionGW(args.id, 'store_keeper', {
+      type: 'REQ_INVENTORY_CHECK_REQUIRED',
+      title: 'Requisition sent back to inventory check',
+      body: `The approver rejected pricing: ${args.reason}`,
+    })
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },

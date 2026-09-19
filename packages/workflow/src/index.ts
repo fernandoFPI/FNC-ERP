@@ -423,6 +423,8 @@ export type RequisitionAction =
   | 'submit_for_approval'
   | 'reject_verification_to_market_pricing'
   | 'reject_verification_to_store_pricing'
+  | 'reset_to_draft'
+  | 'reject_to_inventory_check'
   | 'reject_to_market_pricing'
   | 'approve'
   | 'reject'
@@ -469,10 +471,20 @@ export const reqStateMachine = new StateMachine<RequisitionStatus, RequisitionAc
       to: 'store_pricing',
       action: 'reject_verification_to_store_pricing',
     },
+    // Both skip straight past store/market pricing back to a stage that
+    // itself redoes inventory_check — see resetRequisitionToDraft/
+    // rejectRequisitionVerificationToInventoryCheck in resolvers.ts for why
+    // that always requires releasing the requisition's existing stock
+    // reservations first (same as the 'reject' edge below already does).
+    { from: 'price_verification', to: 'draft', action: 'reset_to_draft' },
+    { from: 'price_verification', to: 'inventory_check', action: 'reject_to_inventory_check' },
 
     { from: 'pending_approval', to: 'approved', action: 'approve' },
     { from: 'pending_approval', to: 'draft', action: 'reject' },
     { from: 'pending_approval', to: 'market_pricing', action: 'reject_to_market_pricing' },
+    // Same reservation-release requirement as price_verification's own
+    // reject_to_inventory_check above — see rejectRequisitionToInventoryCheck.
+    { from: 'pending_approval', to: 'inventory_check', action: 'reject_to_inventory_check' },
 
     { from: 'approved', to: 'items_bought', action: 'start_buying' },
     { from: 'approved', to: 'sourcing', action: 'skip_buying' },

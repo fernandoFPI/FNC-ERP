@@ -170,6 +170,21 @@
     verifyRequisitionPrices(id: ID!, verificationNotes: String, lineAdjustments: [RequisitionPriceVerificationAdjustment!]): Requisition!
     approveRequisition(id: ID!): Requisition!
     rejectRequisitionApproval(id: ID!, reason: String!): Requisition!
+    # Mirrors rejectPOVerificationToMarketPricing/rejectPOVerificationToStorePricing —
+    # same procurement_2nd authorization as verifyRequisitionPrices itself,
+    # no stock-reservation change (the from-stock portion confirmed at
+    # inventory_check stays valid either way).
+    rejectRequisitionVerificationToMarketPricing(id: ID!, reason: String!): Requisition!
+    rejectRequisitionVerificationToStorePricing(id: ID!, reason: String!): Requisition!
+    # Both release the requisition's existing stock reservations (same as
+    # rejectRequisitionApproval does for pending_approval -> draft) since
+    # they send it back past inventory_check, which will be redone.
+    resetRequisitionToDraft(id: ID!, reason: String!): Requisition!
+    rejectRequisitionVerificationToInventoryCheck(id: ID!, reason: String!): Requisition!
+    # Mirrors rejectPOToMarketPricing — same dept-head/approver/admin
+    # authorization as rejectRequisitionApproval itself.
+    rejectRequisitionToMarketPricing(id: ID!, reason: String!): Requisition!
+    rejectRequisitionToInventoryCheck(id: ID!, reason: String!): Requisition!
 
     # G1 PR 3: Items Bought — record an actual purchase against a
     # requisition line (one call per vendor; call it more than once on the

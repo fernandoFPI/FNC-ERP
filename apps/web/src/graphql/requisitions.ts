@@ -280,6 +280,46 @@ export const VERIFY_REQUISITION_PRICES = gql`
   }
 `
 
+// price_verification-only reject destinations — mirror PurchaseOrderDetail's
+// REJECT_PO_VERIFICATION_TO_MARKET_PRICING/REJECT_PO_VERIFICATION_TO_STORE_PRICING.
+// RESET_REQUISITION_TO_DRAFT and REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK
+// have no PO equivalent.
+export const REJECT_REQUISITION_VERIFICATION_TO_MARKET_PRICING = gql`
+  mutation RejectRequisitionVerificationToMarketPricing($id: ID!, $reason: String!) {
+    rejectRequisitionVerificationToMarketPricing(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_REQUISITION_VERIFICATION_TO_STORE_PRICING = gql`
+  mutation RejectRequisitionVerificationToStorePricing($id: ID!, $reason: String!) {
+    rejectRequisitionVerificationToStorePricing(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const RESET_REQUISITION_TO_DRAFT = gql`
+  mutation ResetRequisitionToDraft($id: ID!, $reason: String!) {
+    resetRequisitionToDraft(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_REQUISITION_VERIFICATION_TO_INVENTORY_CHECK = gql`
+  mutation RejectRequisitionVerificationToInventoryCheck($id: ID!, $reason: String!) {
+    rejectRequisitionVerificationToInventoryCheck(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
 export const APPROVE_REQUISITION = gql`
   mutation ApproveRequisition($id: ID!) {
     approveRequisition(id: $id) {
@@ -292,6 +332,26 @@ export const APPROVE_REQUISITION = gql`
 export const REJECT_REQUISITION_APPROVAL = gql`
   mutation RejectRequisitionApproval($id: ID!, $reason: String!) {
     rejectRequisitionApproval(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+// pending_approval-only reject destinations — mirror REJECT_PO_TO_MARKET.
+// REJECT_REQUISITION_TO_INVENTORY_CHECK has no PO equivalent.
+export const REJECT_REQUISITION_TO_MARKET_PRICING = gql`
+  mutation RejectRequisitionToMarketPricing($id: ID!, $reason: String!) {
+    rejectRequisitionToMarketPricing(id: $id, reason: $reason) {
+      id
+      status
+    }
+  }
+`
+
+export const REJECT_REQUISITION_TO_INVENTORY_CHECK = gql`
+  mutation RejectRequisitionToInventoryCheck($id: ID!, $reason: String!) {
+    rejectRequisitionToInventoryCheck(id: $id, reason: $reason) {
       id
       status
     }

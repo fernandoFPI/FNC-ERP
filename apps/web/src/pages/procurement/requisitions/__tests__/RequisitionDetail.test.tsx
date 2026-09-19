@@ -361,22 +361,27 @@ describe('RequisitionDetail', () => {
     expect(screen.getAllByPlaceholderText('0.00')).toHaveLength(1)
   })
 
-  it('pending_approval: shows Approve and Reject for an authorized approver', async () => {
+  it('pending_approval: shows Approve and the reject-box destinations for an authorized approver', async () => {
     mockReq({ status: 'pending_approval', callerCanApprove: true })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
     expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^reject$/i })).toBeInTheDocument()
+    // "Reset to Draft" is the same reject-to-draft action as before, restyled
+    // into PurchaseOrderDetail's boxed reject layout alongside the two new
+    // destinations (Send Back to Inventory Check / Market Pricing).
+    expect(screen.getByRole('button', { name: /^reset to draft$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^send back to inventory check$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^send back to market pricing$/i })).toBeInTheDocument()
   })
 
-  it('pending_approval: reject stays disabled until a reason is entered', async () => {
+  it('pending_approval: reject-box destinations stay disabled until a reason is entered', async () => {
     mockReq({ status: 'pending_approval', callerCanApprove: true })
     const RequisitionDetail = (await import('../RequisitionDetail')).default
     wrap(<RequisitionDetail />)
-    const rejectBtn = screen.getByRole('button', { name: /^reject$/i })
-    expect(rejectBtn).toBeDisabled()
+    const resetBtn = screen.getByRole('button', { name: /^reset to draft$/i })
+    expect(resetBtn).toBeDisabled()
     fireEvent.change(screen.getByPlaceholderText(/enter reason/i), { target: { value: 'price too high' } })
-    expect(rejectBtn).not.toBeDisabled()
+    expect(resetBtn).not.toBeDisabled()
   })
 
   it('sourcing: shows the sourcing summary panel', async () => {
