@@ -2768,7 +2768,7 @@ async function fetchFullPurchaseOrderGW(
     [auth.companyId, poRowForBuyer.branch_id ?? null],
   )
   const buyerNames = buyerHolders.rows.map((r) => r.name)
-  const isAdminForBuyer = isAdminGW(auth.role)
+  const isAdminForBuyer = await hasProcurementAuthorityGW(auth)
   const isFrozenBuyerForCaller = poRowForBuyer.assigned_buyer_user_id === auth.userId
   const callerIsBuyer =
     isAdminForBuyer ||
@@ -2931,18 +2931,45 @@ async function userIsAssignedApproverGW(userId: string, poId: string): Promise<b
   return r.rows.length > 0
 }
 
-function isAdminGW(role: string): boolean {
-  return ['system_admin', 'company_admin', 'module_admin'].includes(role)
-}
-
 // Only system_admin/company_admin auto-bypass granular permission checks —
 // module_admin needs permissions explicitly granted like anyone else. This
 // is the same rule packages/permissions/src/middleware.ts's requirePermission
-// enforces everywhere else; isAdminGW (which also includes module_admin) is
-// for a different purpose (organizer/PO-authority checks) and must not be
-// used here.
+// enforces everywhere else.
 function isPermissionBypassGW(role: string): boolean {
   return role === 'system_admin' || role === 'company_admin'
+}
+
+// True if the caller is specifically a procurement-module admin — checked
+// via the 'admin' access level on procurement.po.view rather than
+// role === 'module_admin', same reasoning as isProjectsModuleAdminGW below:
+// the role string alone can't tell a procurement module_admin apart from
+// one for an unrelated module (e.g. projects). applyModuleAdminPermissions
+// grants every procurement.* key at exactly this 'admin' level, so this is
+// the precise, unambiguous signal for it.
+async function isProcurementModuleAdminGW(auth: {
+  userId: string
+  companyId: string
+}): Promise<boolean> {
+  const perms = await loadPermissions(auth.userId, auth.companyId)
+  return meetsLevel(perms['procurement.po.view'], 'admin')
+}
+
+// Replaces the old isAdminGW(role) used throughout every PO/Requisition/
+// Store-Out authority check below — isAdminGW treated ANY module_admin as
+// a full bypass regardless of which module they actually administer,
+// which let a module_admin of an unrelated module (found live in
+// production: a Projects module_admin, with zero procurement-specific
+// grants) approve/reject/cancel/delete any PO or requisition company-
+// wide. system_admin/company_admin still bypass unconditionally; a
+// module_admin now only bypasses when their module is procurement.
+async function hasProcurementAuthorityGW(auth: {
+  role: string
+  userId: string
+  companyId: string
+}): Promise<boolean> {
+  if (isPermissionBypassGW(auth.role)) return true
+  if (auth.role !== 'module_admin') return false
+  return isProcurementModuleAdminGW(auth)
 }
 
 // True if the caller is specifically a projects-module admin — checked via
@@ -5437,7 +5464,7 @@ export const resolvers = {
       )
       if (!gatePoRow.rows[0]) return []
       const canViewStock =
-        isAdminGW(auth.role) ||
+        await hasProcurementAuthorityGW(auth) ||
         (await userIsOrganizerGW(auth.userId, args.poId, auth.companyId)) ||
         (await callerHasCurrentStagePositionGW(auth, args.poId, gatePoRow.rows[0].status))
       if (!canViewStock) return []
@@ -5547,7 +5574,7 @@ export const resolvers = {
       )
       if (!gateReqRow.rows[0]) return []
       const canViewStock =
-        isAdminGW(auth.role) ||
+        await hasProcurementAuthorityGW(auth) ||
         (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
         (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
       if (!canViewStock) return []
@@ -5633,7 +5660,7 @@ export const resolvers = {
       )
       if (!gateReqRow.rows[0]) throw new Error('Requisition not found')
       const canViewStock =
-        isAdminGW(auth.role) ||
+        await hasProcurementAuthorityGW(auth) ||
         (await userIsOrganizerForRequisitionGW(auth.userId, args.requisitionId, auth.companyId)) ||
         (await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.requisitionId, 'store_keeper'))
       if (!canViewStock) throw new Error('Not authorized to view stock for this requisition')
@@ -5824,7 +5851,7 @@ export const resolvers = {
       // hidden by the frontend column. viewerCanSeeTotals lets the frontend
       // hide the column outright instead of rendering a misleading '0'.
       const auth = ctx.auth as GWAuth
-      const canSeeTotals = isAdminGW(auth.role) || (await isUserFinanceTeamGW(auth.userId, auth.companyId))
+      const canSeeTotals = await hasProcurementAuthorityGW(auth) || (await isUserFinanceTeamGW(auth.userId, auth.companyId))
       return result.rows.map((r) => ({
         ...(r as Record<string, unknown>),
         total_amount: canSeeTotals ? (r as Record<string, unknown>).total_amount : '0',
@@ -6932,8 +6959,9 @@ export const resolvers = {
       // every current/future projects module_admin, not a single person —
       // e.g. finance needing to open Contract Management on any project
       // without being added as a team member everywhere. module_admin for an
-      // unrelated module (isAdminGW's broader set) must NOT get this — see
-      // isProjectsModuleAdminGW's own comment for how that's told apart.
+      // unrelated module must NOT get this — see isProjectsModuleAdminGW's
+      // own comment for how that's told apart (same pattern
+      // hasProcurementAuthorityGW uses for PO/requisition authority).
       const isAdmin =
         isPermissionBypassGW(ctx.auth.role) || (await isProjectsModuleAdminGW(ctx.auth))
       // includeAll (used by PO/rental-contract picker dropdowns to populate
@@ -9202,7 +9230,7 @@ export const resolvers = {
       // userHasPositionGW instead of userHasPositionForRequisitionGW).
       // isAdmin bypasses every one of these, same as the mutations they
       // mirror the authorization of.
-      const isAdmin = isAdminGW(ctx.auth.role)
+      const isAdmin = await hasProcurementAuthorityGW(ctx.auth)
       const [
         callerHasStoreKeeperPosition,
         callerHasStorePricingPosition,
@@ -9391,7 +9419,7 @@ export const resolvers = {
         ])
         if (!gateRow.rows[0]) return null
         const poStub = gateRow.rows[0]
-        const isAdmin = isAdminGW(auth.role)
+        const isAdmin = await hasProcurementAuthorityGW(auth)
         const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
         const isFinanceTeam = await isUserFinanceTeamGW(auth.userId, auth.companyId)
         const isLateStage = ['finance_audit', 'invoiced', 'completed'].includes(poStub.status)
@@ -21188,7 +21216,7 @@ export const resolvers = {
       // Manual/ad-hoc Store Outs (po_id and requisition_id both null) keep
       // today's projects.execution.edit-only check unchanged.
       if (issue.po_id || issue.requisition_id) {
-        const isAdmin = isAdminGW(ctx.auth.role)
+        const isAdmin = await hasProcurementAuthorityGW(ctx.auth)
         const hasPosition = issue.po_id
           ? await userHasPositionGW(ctx.auth.userId, ctx.auth.companyId, String(issue.po_id), 'store_keeper')
           : await userHasPositionForRequisitionGW(
@@ -21594,7 +21622,7 @@ export const resolvers = {
       // to anyone with plain projects.execution.edit — only the person who
       // could have confirmed it should be able to un-confirm/cancel it too.
       if (issue.po_id) {
-        const isAdmin = isAdminGW(ctx.auth.role)
+        const isAdmin = await hasProcurementAuthorityGW(ctx.auth)
         const hasPosition = await userHasPositionGW(
           ctx.auth.userId,
           ctx.auth.companyId,
@@ -22049,7 +22077,7 @@ export const resolvers = {
 
     adminSetPOStatus: async (_: unknown, args: { id: string; status: string }, ctx: GQLContext) => {
       if (!ctx.auth) throw new Error('Unauthorized')
-      if (!isAdminGW(ctx.auth.role)) throw new Error('Forbidden: admin only')
+      if (!await hasProcurementAuthorityGW(ctx.auth)) throw new Error('Forbidden: admin only')
       const r = await query(
         `UPDATE purchase_orders SET status=$1, updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING *`,
         [args.status, args.id, ctx.auth.companyId],
@@ -22117,7 +22145,7 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const auth = ctx.auth as GWAuth
-      const isAdmin = isAdminGW(auth.role)
+      const isAdmin = await hasProcurementAuthorityGW(auth)
       const hasPos = await userHasPositionGW(
         auth.userId,
         auth.companyId,
@@ -22181,7 +22209,7 @@ export const resolvers = {
       // position redesign), OR the new branch-scoped 'buyer' position.
       const isFrozenBuyer = check.rows[0].assigned_buyer_user_id === auth.userId
       const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
-      if (!isAdminGW(auth.role) && !isFrozenBuyer && !hasBuyerPosition)
+      if (!await hasProcurementAuthorityGW(auth) && !isFrozenBuyer && !hasBuyerPosition)
         throw new Error('Only a buyer position holder for this PO can set the actual price on this PO')
       const r = await query(
         `UPDATE po_lines
@@ -29460,7 +29488,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the requisition organizer or an admin can submit to inventory check')
@@ -29503,7 +29531,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
     const isStoreKeeper = await userHasPositionForRequisitionGW(
       auth.userId,
@@ -29846,7 +29874,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -29911,7 +29939,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -29986,7 +30014,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30055,7 +30083,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30099,7 +30127,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30143,7 +30171,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30183,7 +30211,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30235,7 +30263,7 @@ const phase5MutationResolvers = {
   approveRequisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -30358,7 +30386,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -30422,7 +30450,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -30468,7 +30496,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, args.id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -30555,7 +30583,7 @@ const phase5MutationResolvers = {
     if (line.short_marked_at)
       throw new Error('This line was marked short — no further purchases can be recorded against it')
 
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasBuyerPosition = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30701,7 +30729,7 @@ const phase5MutationResolvers = {
     if (!purchase.over_tolerance) throw new Error('This purchase is not over tolerance — nothing to approve')
     if (purchase.tolerance_approved_by) throw new Error('This purchase has already been approved')
 
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, purchase.requisition_id)
     const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, purchase.requisition_id)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -30754,7 +30782,7 @@ const phase5MutationResolvers = {
       throw new Error('Requisition must be in items_bought status to mark a line short')
     if (line.short_marked_at) throw new Error('This line was already marked short')
 
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasBuyerPosition = await userHasPositionForRequisitionGW(
       auth.userId,
       auth.companyId,
@@ -30799,7 +30827,7 @@ const phase5MutationResolvers = {
   finishBuyingRequisition: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasBuyerPosition = await userHasPositionForRequisitionGW(auth.userId, auth.companyId, args.id, 'buyer')
     if (!isAdmin && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this requisition can finish buying')
@@ -31061,7 +31089,7 @@ const phase5MutationResolvers = {
     if (!po || po.company_id !== auth.companyId) throw new Error('Purchase order not found')
     if (!po.requisition_id)
       throw new Error('cancelChildPurchaseOrder only applies to a G1 child PO — use cancelPO for a standalone one')
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = po.organizer_id === auth.userId
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the requisition organizer or an admin can cancel this child purchase order')
@@ -31114,7 +31142,7 @@ const phase5MutationResolvers = {
       throw new Error('Requisition must be in sourcing status to close a line')
     if (line.closed_at) throw new Error('This line is already closed')
 
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadForRequisitionGW(auth.userId, line.requisition_id!)
     const isApprover = await userIsAssignedApproverForRequisitionGW(auth.userId, line.requisition_id!)
     const isReqAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -31152,7 +31180,7 @@ const phase5MutationResolvers = {
   cancelRequisition: async (_: unknown, args: { id: string; reason?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the requisition organizer or an admin can cancel it')
@@ -31215,7 +31243,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can submit to inventory check')
@@ -31270,7 +31298,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     const isStoreKeeper = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
     if (!isAdmin && !isOrganizer && !isStoreKeeper)
@@ -31578,7 +31606,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_keeper')
     if (!isAdmin && !hasPos)
       throw new Error('store_keeper or admin required to approve stock issuance')
@@ -31643,7 +31671,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'store_pricing')
     // No organizer fallback here — only an actual store_pricing position
     // holder (or admin) may enter store prices. A prior version let the
@@ -31714,7 +31742,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionGW(
       auth.userId,
       auth.companyId,
@@ -31816,7 +31844,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
     if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
@@ -31871,7 +31899,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     const isPOAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -31921,7 +31949,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
     if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
     if (!args.reason.trim()) throw new Error('reason is required')
@@ -31960,7 +31988,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
     if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
     if (!args.reason.trim()) throw new Error('reason is required')
@@ -32010,7 +32038,7 @@ const phase5MutationResolvers = {
   ) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     if (!args.reason.trim()) throw new Error('reason is required')
 
     if (args.requisitionId) {
@@ -32059,7 +32087,7 @@ const phase5MutationResolvers = {
   approvePO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     const isPOAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -32131,7 +32159,7 @@ const phase5MutationResolvers = {
   rejectPO: async (_: unknown, args: { id: string; reason: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isDeptHead = await userIsDeptHeadGW(auth.userId, args.id)
     const isApprover = await userIsAssignedApproverGW(auth.userId, args.id)
     const isPOAdmin = await callerHasPOAdmin(auth.userId, auth.companyId)
@@ -32183,7 +32211,7 @@ const phase5MutationResolvers = {
   reopenPO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can reopen a rejected PO')
@@ -32209,7 +32237,7 @@ const phase5MutationResolvers = {
   cancelPO: async (_: unknown, args: { id: string; reason?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can cancel a PO')
@@ -32268,7 +32296,7 @@ const phase5MutationResolvers = {
   sendPOToAudit: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can send a PO to finance audit')
@@ -32540,7 +32568,7 @@ const phase5MutationResolvers = {
       throw new Error('PO not found')
     if (poRow.rows[0].status !== 'items_bought')
       throw new Error('PO must be in items_bought status to mark lines as bought')
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     // assigned_buyer_user_id is kept as a permanent fallback for POs created
     // before the buyer position redesign — new POs never set this column, so
     // they rely purely on the position check.
@@ -32576,7 +32604,7 @@ const phase5MutationResolvers = {
       throw new Error('PO not found')
     if (poRow.rows[0].status !== 'items_bought')
       throw new Error('PO must be in items_bought status to finish buying')
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isFrozenBuyer = poRow.rows[0].assigned_buyer_user_id === auth.userId
     const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
     if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
@@ -32767,7 +32795,7 @@ const phase5MutationResolvers = {
   deletePO: async (_: unknown, args: { id: string; reason?: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
-    const isAdmin = isAdminGW(auth.role)
+    const isAdmin = await hasProcurementAuthorityGW(auth)
     const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
     if (!isAdmin && !isOrganizer)
       throw new Error('Only the PO organizer or an admin can delete a PO')
