@@ -2725,7 +2725,7 @@ async function fetchFullPurchaseOrderGW(
               por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
               por.warehouse_location_id AS location_id,
               sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
-              COALESCE(json_agg(DISTINCT jsonb_build_object('id',porl.id,'po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'actual_unit_price',porl.actual_unit_price,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+              COALESCE(json_agg(DISTINCT jsonb_build_object('id',porl.id,'po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'actual_unit_price',porl.actual_unit_price,'description',COALESCE(pol.description, ''),'product_name',p.name,'product_name_ar',p.name_ar,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
               COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
        FROM po_receipts por
        LEFT JOIN stock_locations sl ON sl.id=por.warehouse_location_id
@@ -5872,7 +5872,7 @@ export const resolvers = {
                 por.receipt_number, por.received_date AS receipt_date,
                 por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
                 sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
-                COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+                COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'product_name_ar',p.name_ar,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
                 COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
          FROM po_receipts por
          JOIN purchase_orders po ON po.id=por.po_id
@@ -5900,7 +5900,7 @@ export const resolvers = {
                 por.receipt_number, por.received_date AS receipt_date,
                 por.received_by, por.received_by_name, por.received_from_name, por.location_notes, por.notes, por.created_at, por.is_invoiced, por.status, por.confirmed_at,
                 sl.name AS location_name, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS received_by_email,
-                COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
+                COALESCE(json_agg(DISTINCT jsonb_build_object('po_line_id',porl.po_line_id,'qty_received',porl.qty_received,'description',COALESCE(pol.description, ''),'product_name',p.name,'product_name_ar',p.name_ar,'sku',p.sku,'uom',pol.uom,'unit_price',pol.unit_price,'currency_code',pol.currency_code,'fx_rate_to_base',pol.fx_rate_to_base)) FILTER (WHERE porl.id IS NOT NULL), '[]') AS lines,
                 COALESCE(json_agg(DISTINCT jsonb_build_object('id',da.id,'fileId',f.id,'label',da.label,'category',f.category,'originalFilename',f.original_filename,'fileKey',f.file_key,'createdAt',da.created_at)) FILTER (WHERE da.id IS NOT NULL AND f.id IS NOT NULL), '[]') AS photos
          FROM po_receipts por
          JOIN purchase_orders po ON po.id=por.po_id
@@ -7888,6 +7888,7 @@ export const resolvers = {
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
                'id', pmil.id, 'productId', pmil.product_id, 'productName', prod.name,
+               'productNameAr', prod.name_ar,
                'sku', prod.sku, 'uom', prod.uom,
                'poLineId', pmil.po_line_id,
                'fromLocationName', loc_from.name, 'toLocationName', loc_to.name,
@@ -7979,6 +7980,7 @@ export const resolvers = {
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
                'id', pmil.id, 'productId', pmil.product_id, 'productName', prod.name,
+               'productNameAr', prod.name_ar,
                'sku', prod.sku, 'uom', prod.uom,
                'poLineId', pmil.po_line_id,
                'fromLocationName', loc_from.name, 'toLocationName', loc_to.name,
@@ -21101,12 +21103,14 @@ export const resolvers = {
           toLocationId,
         ],
       )
-      const prodR = await query('SELECT name FROM products WHERE id=$1', [args.productId])
+      const prodR = await query('SELECT name, name_ar FROM products WHERE id=$1', [args.productId])
       const row = r.rows[0] as Record<string, unknown>
+      const prodRow = prodR.rows[0] as Record<string, unknown> | undefined
       return {
         id: row.id,
         productId: row.product_id,
-        productName: (prodR.rows[0] as Record<string, unknown> | undefined)?.name ?? null,
+        productName: prodRow?.name ?? null,
+        productNameAr: prodRow?.name_ar ?? null,
         poLineId: row.po_line_id ?? null,
         qtyIssued: parseFloat(String(row.qty_issued)),
         unitCost: parseFloat(String(row.unit_cost)),
@@ -21521,6 +21525,7 @@ export const resolvers = {
            COALESCE(
              JSON_AGG(JSON_BUILD_OBJECT(
                'id', pmil.id, 'productId', pmil.product_id, 'productName', prod.name,
+               'productNameAr', prod.name_ar,
                'poLineId', pmil.po_line_id,
                'qtyIssued', pmil.qty_issued, 'unitCost', pmil.unit_cost,
                'totalCost', pmil.total_cost, 'isInvoiced', pmil.is_invoiced

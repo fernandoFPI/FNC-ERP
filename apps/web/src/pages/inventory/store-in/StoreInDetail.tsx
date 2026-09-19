@@ -34,6 +34,7 @@ interface ReceiptLine {
   po_line_id: string
   description: string | null
   product_name: string | null
+  product_name_ar: string | null
   sku: string | null
   uom: string | null
   unit_price: string | null
@@ -720,6 +721,7 @@ export default function StoreInDetail() {
                   baseCurrencyCode: baseCcy,
                   lines: receipt.lines.map((l) => ({
                     productName: l.product_name ?? l.description,
+                    productNameAr: l.product_name_ar,
                     sku: l.sku,
                     qtyReceived: parseFloat(l.qty_received),
                     uom: l.uom,

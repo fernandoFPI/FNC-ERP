@@ -1369,6 +1369,7 @@
     id: ID!
     productId: ID!
     productName: String
+    productNameAr: String
     sku: String
     uom: String
     poLineId: ID
@@ -2232,6 +2233,7 @@
     po_line_id: ID!
     description: String
     product_name: String
+    product_name_ar: String
     sku: String
     uom: String
     unit_price: String

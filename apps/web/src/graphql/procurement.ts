@@ -295,6 +295,7 @@ const PO_RECEIPT_FIELDS = `
     po_line_id
     description
     product_name
+    product_name_ar
     sku
     uom
     unit_price

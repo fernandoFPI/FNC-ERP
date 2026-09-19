@@ -1,5 +1,6 @@
 export interface StoreOutPrintLine {
   productName?: string | null
+  productNameAr?: string | null
   sku?: string | null
   qtyIssued: number
   uom?: string | null
@@ -42,6 +43,7 @@ export function buildStoreOutHTML(mi: StoreOutPrintData): string {
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">
         <div style="font-weight:600;color:#1a1a1a">${l.productName ?? '—'}</div>
+        ${l.productNameAr ? `<div dir="rtl" style="color:#555;margin-top:2px">${l.productNameAr}</div>` : ''}
         ${l.sku ? `<div style="color:#888;margin-top:2px">${l.sku}</div>` : ''}
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#666">

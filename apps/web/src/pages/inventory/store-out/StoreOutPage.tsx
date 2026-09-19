@@ -34,6 +34,7 @@ interface MILine {
   id: string
   productId: string
   productName: string | null
+  productNameAr: string | null
   sku: string | null
   poLineId: string | null
   qtyIssued: number
@@ -177,6 +178,7 @@ export default function StoreOutPage() {
         return si.lines.some(
           (l) =>
             (l.productName ?? '').toLowerCase().includes(q) ||
+            (l.productNameAr ?? '').toLowerCase().includes(q) ||
             (l.sku ?? '').toLowerCase().includes(q),
         )
       })

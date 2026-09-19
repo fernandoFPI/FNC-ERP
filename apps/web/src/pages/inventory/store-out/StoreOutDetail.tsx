@@ -17,6 +17,7 @@ import { useCompany } from '../../../hooks/useCompany'
 interface MILine {
   id: string
   productName: string | null
+  productNameAr: string | null
   sku: string | null
   uom: string | null
   fromLocationName: string | null
@@ -248,6 +249,7 @@ export default function StoreOutDetail() {
                   companyName: activeCompany?.name,
                   lines: mi.lines.map((l) => ({
                     productName: l.productName,
+                    productNameAr: l.productNameAr,
                     sku: l.sku,
                     qtyIssued: l.qtyIssued,
                     uom: l.uom,
