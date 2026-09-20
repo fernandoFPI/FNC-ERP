@@ -95,9 +95,13 @@ export const INTERCO_STOCK_TRANSFERS_QUERY = gql`
         fromCompanyName
         toCompanyName
         totalValue
+        currencyCode
         pricingMethod
         status
         transferDate
+        intercoTransactionId
+        intercoTransactionReference
+        intercoTransactionStatus
       }
       total
       page
@@ -122,6 +126,10 @@ export const INTERCO_STOCK_TRANSFER_QUERY = gql`
       toStockMoveId
       fromJournalId
       toJournalId
+      intercoTransactionId
+      intercoTransactionReference
+      intercoTransactionStatus
+      currencyCode
       lines {
         id
         productName
@@ -131,6 +139,7 @@ export const INTERCO_STOCK_TRANSFER_QUERY = gql`
         transferPrice
         markupPct
         totalValue
+        currencyCode
       }
     }
   }

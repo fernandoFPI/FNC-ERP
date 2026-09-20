@@ -1,4 +1,4 @@
-﻿import { useParams } from 'react-router-dom'
+﻿import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@apollo/client'
 import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
@@ -18,6 +18,7 @@ interface TransferLine {
   transferPrice: number
   markupPct: number
   totalValue: number
+  currencyCode: string
 }
 
 interface StockTransferDetail {
@@ -34,6 +35,10 @@ interface StockTransferDetail {
   toStockMoveId: string | null
   fromJournalId: string | null
   toJournalId: string | null
+  intercoTransactionId: string | null
+  intercoTransactionReference: string | null
+  intercoTransactionStatus: string | null
+  currencyCode: string
   lines: TransferLine[]
 }
 
@@ -49,6 +54,17 @@ function statusVariant(
     draft: 'neutral',
     cancelled: 'danger',
     in_transit: 'info',
+  }
+  return m[status?.toLowerCase()] ?? 'neutral'
+}
+
+function billingStatusVariant(
+  status: string,
+): 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent' {
+  const m: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent'> = {
+    posted: 'success',
+    pending: 'warning',
+    cancelled: 'danger',
   }
   return m[status?.toLowerCase()] ?? 'neutral'
 }
@@ -115,13 +131,13 @@ export default function IntercoStockTransferDetail() {
       key: 'avcoAtTransfer',
       header: 'AVCO at Transfer',
       mobilePriority: 2,
-      render: (line) => <AmountDisplay amount={line.avcoAtTransfer} currency="USD" size="sm" />,
+      render: (line) => <AmountDisplay amount={line.avcoAtTransfer} currency={line.currencyCode} size="sm" />,
     },
     {
       key: 'transferPrice',
       header: 'Transfer Price',
       mobilePriority: 3,
-      render: (line) => <AmountDisplay amount={line.transferPrice} currency="USD" size="sm" />,
+      render: (line) => <AmountDisplay amount={line.transferPrice} currency={line.currencyCode} size="sm" />,
     },
     {
       key: 'markupPct',
@@ -137,7 +153,7 @@ export default function IntercoStockTransferDetail() {
       mobilePriority: 5,
       render: (line) => (
         <span style={{ fontWeight: 500 }}>
-          <AmountDisplay amount={line.totalValue} currency="USD" size="sm" />
+          <AmountDisplay amount={line.totalValue} currency={line.currencyCode} size="sm" />
         </span>
       ),
     },
@@ -202,9 +218,54 @@ export default function IntercoStockTransferDetail() {
             </dd>
             <dt style={{ color: theme.textMuted }}>Total Value</dt>
             <dd style={{ margin: 0 }}>
-              <AmountDisplay amount={totalValue} currency="USD" size="md" />
+              <AmountDisplay amount={totalValue} currency={tx.currencyCode} size="md" />
             </dd>
           </dl>
+        </Card>
+
+        <Card padding="md">
+          <p
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: theme.textMuted,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              marginBottom: '12px',
+            }}
+          >
+            Billing
+          </p>
+          {tx.intercoTransactionId ? (
+            <dl
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '140px 1fr',
+                gap: '8px 12px',
+                fontSize: '13px',
+              }}
+            >
+              <dt style={{ color: theme.textMuted }}>Transaction</dt>
+              <dd style={{ margin: 0 }}>
+                <Link
+                  to={`/interco/transactions/${tx.intercoTransactionId}`}
+                  style={{ color: theme.accent, fontWeight: 500, textDecoration: 'none' }}
+                >
+                  {tx.intercoTransactionReference}
+                </Link>
+              </dd>
+              <dt style={{ color: theme.textMuted }}>Status</dt>
+              <dd style={{ margin: 0 }}>
+                <Badge variant={billingStatusVariant(tx.intercoTransactionStatus ?? '')} size="sm">
+                  {tx.intercoTransactionStatus}
+                </Badge>
+              </dd>
+            </dl>
+          ) : (
+            <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>
+              No linked interco transaction — this transfer was not auto-billed.
+            </p>
+          )}
         </Card>
 
         <Card padding="md">
@@ -263,7 +324,7 @@ export default function IntercoStockTransferDetail() {
             markupPct: <span style={{ color: theme.textPrimary, fontWeight: 600 }}>Total</span>,
             totalValue: (
               <span style={{ fontWeight: 600 }}>
-                <AmountDisplay amount={totalValue} currency="USD" size="sm" />
+                <AmountDisplay amount={totalValue} currency={tx.currencyCode} size="sm" />
               </span>
             ),
           }}

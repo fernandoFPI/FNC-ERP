@@ -18,9 +18,13 @@ interface StockTransferItem {
   fromCompanyName: string
   toCompanyName: string
   totalValue: number
+  currencyCode: string
   pricingMethod: string
   status: string
   transferDate: string
+  intercoTransactionId?: string | null
+  intercoTransactionReference?: string | null
+  intercoTransactionStatus?: string | null
 }
 
 interface StockTransfersData {
@@ -41,6 +45,17 @@ function statusVariant(
     cancelled: 'danger',
     in_transit: 'info',
     pending: 'warning',
+  }
+  return m[status?.toLowerCase()] ?? 'neutral'
+}
+
+function billingStatusVariant(
+  status: string,
+): 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent' {
+  const m: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent'> = {
+    posted: 'success',
+    pending: 'warning',
+    cancelled: 'danger',
   }
   return m[status?.toLowerCase()] ?? 'neutral'
 }
@@ -107,7 +122,7 @@ export default function IntercoStockTransfersPage() {
       key: 'totalValue',
       header: 'Total Value',
       mobilePriority: 2,
-      render: (row) => <AmountDisplay amount={row.totalValue} currency="USD" size="sm" />,
+      render: (row) => <AmountDisplay amount={row.totalValue} currency={row.currencyCode} size="sm" />,
     },
     {
       key: 'status',
@@ -118,6 +133,19 @@ export default function IntercoStockTransfersPage() {
           {row.status}
         </Badge>
       ),
+    },
+    {
+      key: 'billing',
+      header: 'Billing',
+      mobilePriority: 6,
+      render: (row) =>
+        row.intercoTransactionId ? (
+          <Badge variant={billingStatusVariant(row.intercoTransactionStatus ?? '')} size="sm">
+            {row.intercoTransactionReference ?? row.intercoTransactionStatus}
+          </Badge>
+        ) : (
+          <span style={{ color: theme.textMuted, fontSize: '12px' }}>—</span>
+        ),
     },
     {
       key: 'transferDate',

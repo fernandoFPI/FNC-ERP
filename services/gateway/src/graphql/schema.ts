@@ -3926,9 +3926,23 @@
     fromCompanyName: String!
     toCompanyName: String!
     totalValue: Float!
+    # The currency totalValue (and every line's own values) is actually
+    # denominated in — the from-company's own currency, since transfers are
+    # always priced at ITS AVCO. Read this instead of assuming a fixed
+    # currency: every company happens to be IQD today, but nothing else here
+    # guarantees that stays true.
+    currencyCode: String!
     pricingMethod: String!
     status: String!
     transferDate: String!
+    # The linked bill (interco_transactions row) this transfer's value should
+    # be charged through, if one exists — auto-created alongside the transfer
+    # for Store-Out-triggered cross-company draws (see issueMaterialIssue).
+    # Still pending/unposted until Finance reviews it via the normal Interco
+    # Transactions approval flow; this never posts a journal entry itself.
+    intercoTransactionId: ID
+    intercoTransactionReference: String
+    intercoTransactionStatus: String
   }
 
   type IntercoStockTransferPage { items: [IntercoStockTransferItem!]! total: Int! page: Int! limit: Int! }
@@ -3942,6 +3956,7 @@
     transferPrice: Float!
     markupPct: Float!
     totalValue: Float!
+    currencyCode: String!
   }
 
   type IntercoStockTransferDetail {
@@ -3958,6 +3973,10 @@
     toStockMoveId: ID
     fromJournalId: ID
     toJournalId: ID
+    # See IntercoStockTransferItem's own comment on this same field.
+    intercoTransactionId: ID
+    intercoTransactionReference: String
+    intercoTransactionStatus: String
     lines: [IntercoTransferLine!]!
   }
 

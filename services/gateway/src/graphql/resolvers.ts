@@ -3522,6 +3522,37 @@ async function resolveFxRateToBase(
   return rate
 }
 
+// Interco-transfer counterpart to resolveFxRateToBase above — deliberately
+// uses the auto-synced fx_rates table (fx-sync worker, Patch E) instead of
+// po_fx_rates, since that's the one this codebase already documents as being
+// "for finance journal revaluation", which is exactly what an interco bill
+// eventually feeds (postIntercoTransaction). Returns 1 with no lookup when
+// both companies already share a currency — every company in this
+// deployment is IQD today, so this is the common path. Never throws: unlike
+// a PO total, this only ever backs a freshly-created 'pending'
+// interco_transactions row that a human still has to approve, select
+// accounts for, and post — Finance can correct the rate there before
+// anything is posted, so a missing/stale rate falls back to 1 rather than
+// blocking the Store Out confirmation that triggered it.
+async function resolveInterCompanyFxRate(
+  client: import('@fnc-erp/db').PoolClient,
+  fromCurrency: string,
+  toCurrency: string,
+): Promise<number> {
+  if (fromCurrency === toCurrency) return 1
+  const direct = await client.query<{ rate: string }>(
+    `SELECT rate FROM fx_rates WHERE from_currency=$1 AND to_currency=$2 ORDER BY rate_date DESC LIMIT 1`,
+    [fromCurrency, toCurrency],
+  )
+  if (direct.rows[0]) return parseFloat(direct.rows[0].rate)
+  const inverse = await client.query<{ rate: string }>(
+    `SELECT rate FROM fx_rates WHERE from_currency=$1 AND to_currency=$2 ORDER BY rate_date DESC LIMIT 1`,
+    [toCurrency, fromCurrency],
+  )
+  const inverseRate = inverse.rows[0] ? parseFloat(inverse.rows[0].rate) : 0
+  return inverseRate > 0 ? 1 / inverseRate : 1
+}
+
 async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string): Promise<void> {
   // Each line's total_price is in that line's own currency_code; fx_rate_to_base
   // (set when the line is priced — see submitPOMarketPricing) converts it into
@@ -5563,7 +5594,9 @@ export const resolvers = {
          JOIN purchase_orders po ON po.id = pol.po_id
          LEFT JOIN products p ON p.id = pol.product_id
          LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
-         LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.company_id = po.company_id AND sl.type NOT IN ('virtual_in','virtual_out')
+         LEFT JOIN stock_locations sl ON sl.id = sb.location_id
+           AND (sl.company_id = po.company_id OR sl.company_id IN (SELECT id FROM companies WHERE is_central_warehouse))
+           AND sl.type NOT IN ('virtual_in','virtual_out')
          WHERE pol.po_id = $1 AND po.company_id = $2
          GROUP BY pol.id, pol.product_id, p.name, pol.description, pol.qty_ordered
          ORDER BY pol.line_number`,
@@ -5571,8 +5604,11 @@ export const resolvers = {
       )
 
       // Cross-company breakdown — scoped to companies the caller actually belongs
-      // to (system_admin sees every company), never the whole tenant base, so this
-      // can't be used to snoop on a company the user has no relationship with.
+      // to (system_admin sees every company), or the group's designated central
+      // warehouse (is_central_warehouse — see migration 280), which every company
+      // can always see/source from regardless of the caller's own role grants.
+      // Never the whole tenant base, so this can't be used to snoop on an
+      // unrelated company's stock.
       const isSysAdmin = ctx.auth.role === 'system_admin'
       const byLocationRes = await query(
         `SELECT
@@ -5586,7 +5622,7 @@ export const resolvers = {
          JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
          JOIN companies c ON c.id = sl.company_id
          WHERE pol.po_id = $1
-           AND ($2 OR EXISTS (
+           AND ($2 OR c.is_central_warehouse OR EXISTS (
              SELECT 1 FROM user_company_roles ucr
              WHERE ucr.user_id = $3 AND ucr.company_id = sl.company_id AND ucr.is_active = true
            ))
@@ -5670,13 +5706,21 @@ export const resolvers = {
          JOIN requisitions req ON req.id = pol.requisition_id
          LEFT JOIN products p ON p.id = pol.product_id
          LEFT JOIN stock_balances sb ON sb.product_id = pol.product_id
-         LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.company_id = req.company_id AND sl.type NOT IN ('virtual_in','virtual_out')
+         LEFT JOIN stock_locations sl ON sl.id = sb.location_id
+           AND (sl.company_id = req.company_id OR sl.company_id IN (SELECT id FROM companies WHERE is_central_warehouse))
+           AND sl.type NOT IN ('virtual_in','virtual_out')
          WHERE pol.requisition_id = $1 AND req.company_id = $2
          GROUP BY pol.id, pol.product_id, p.name, pol.description, pol.qty_ordered
          ORDER BY pol.line_number`,
         [args.requisitionId, auth.companyId],
       )
 
+      // Cross-company breakdown — scoped to companies the caller actually belongs
+      // to (system_admin sees every company), or the group's designated central
+      // warehouse (is_central_warehouse — see migration 280), which every company
+      // can always see/source from regardless of the caller's own role grants.
+      // Never the whole tenant base, so this can't be used to snoop on an
+      // unrelated company's stock.
       const isSysAdmin = auth.role === 'system_admin'
       const byLocationRes = await query(
         `SELECT
@@ -5690,7 +5734,7 @@ export const resolvers = {
          JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
          JOIN companies c ON c.id = sl.company_id
          WHERE pol.requisition_id = $1
-           AND ($2 OR EXISTS (
+           AND ($2 OR c.is_central_warehouse OR EXISTS (
              SELECT 1 FROM user_company_roles ucr
              WHERE ucr.user_id = $3 AND ucr.company_id = sl.company_id AND ucr.is_active = true
            ))
@@ -21312,6 +21356,26 @@ export const resolvers = {
       }
       const totalCost = parseFloat(String(issue.total_cost ?? '0'))
       const client = await pool.connect()
+      // Accumulated per source company across the whole issue, then flushed
+      // to one interco_stock_transfer (+ lines) and one linked, pending
+      // interco_transaction per counterpart — not one per line — after the
+      // main loop below. Declared outside the try block so the post-commit
+      // notification loop further down can still read it.
+      const intercoGroups = new Map<
+        string,
+        {
+          lines: {
+            productId: string
+            fromLocationId: string
+            toLocationId: string
+            qty: number
+            avco: number
+            fromMoveId: string
+            toMoveId: string
+          }[]
+        }
+      >()
+      const intercoTransactionsCreated: { id: string; fromCompanyId: string; toCompanyId: string }[] = []
       try {
         await client.query('BEGIN')
 
@@ -21527,38 +21591,108 @@ export const resolvers = {
               ],
             )
 
-            const transferNum = `IST-SO-${Date.now()}-${String(line.id).slice(0, 8)}`
-            const transfer = await client.query(
-              `INSERT INTO interco_stock_transfers
-               (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
-               VALUES ($1,$2,'manual',$3,$4,CURRENT_DATE,'avco','posted',$5,$6,NOW()) RETURNING id`,
-              [
-                fromCompanyId,
-                companyId,
-                args.id,
-                transferNum,
-                ctx.auth.userId,
-                `Auto-created from Store Out ${String(issue.issue_number)}`,
-              ],
-            )
-            const transferId = transfer.rows[0].id as string
+            // Accumulated, not inserted here — see intercoGroups' own
+            // comment. One transfer (+ one linked pending bill) per source
+            // company for the whole issue, not one per line.
+            const group = intercoGroups.get(fromCompanyId) ?? { lines: [] }
+            group.lines.push({
+              productId,
+              fromLocationId,
+              toLocationId,
+              qty,
+              avco,
+              fromMoveId: fromMove.rows[0].id as string,
+              toMoveId: toMove.rows[0].id as string,
+            })
+            intercoGroups.set(fromCompanyId, group)
+          }
+        }
+
+        // Flush the accumulated cross-company groups: one interco_stock_transfer
+        // (+ one line per product) and one linked interco_transaction per
+        // source company. The transaction is created 'pending' — this only
+        // seeds the record Finance reviews/approves/posts via the existing
+        // postIntercoTransaction flow (dual-company approval + posting-account
+        // selection still required there); it never posts a journal entry
+        // itself.
+        for (const [fromCompanyId, group] of intercoGroups) {
+          const totalValue = group.lines.reduce((s, l) => s + l.qty * l.avco, 0)
+          const transferNum = `IST-SO-${Date.now()}-${fromCompanyId.slice(0, 8)}`
+
+          // Priced at the source company's own AVCO, so the transfer/bill is
+          // denominated in ITS currency — not assumed IQD. Every company in
+          // this deployment is IQD today (fromCurrency === toCurrency, fxRate
+          // stays 1 with no lookup), but this stops being a coincidence the
+          // moment a company on a different currency joins the group.
+          const fromCompanyRow = await client.query<{ name: string; currency_code: string }>(
+            `SELECT name, currency_code FROM companies WHERE id=$1`,
+            [fromCompanyId],
+          )
+          const fromCompanyName = fromCompanyRow.rows[0]?.name ?? 'another company'
+          const fromCurrency = fromCompanyRow.rows[0]?.currency_code ?? 'IQD'
+          const toCompanyRow = await client.query<{ currency_code: string }>(
+            `SELECT currency_code FROM companies WHERE id=$1`,
+            [companyId],
+          )
+          const toCurrency = toCompanyRow.rows[0]?.currency_code ?? 'IQD'
+          const fxRate = await resolveInterCompanyFxRate(client, fromCurrency, toCurrency)
+
+          const transfer = await client.query(
+            `INSERT INTO interco_stock_transfers
+             (from_company_id,to_company_id,source_type,source_id,transfer_number,transfer_date,pricing_method,status,initiated_by,notes,posted_at)
+             VALUES ($1,$2,'project_issue',$3,$4,CURRENT_DATE,'avco','posted',$5,$6,NOW()) RETURNING id`,
+            [
+              fromCompanyId,
+              companyId,
+              args.id,
+              transferNum,
+              ctx.auth.userId,
+              `Auto-created from Store Out ${String(issue.issue_number)}`,
+            ],
+          )
+          const transferId = transfer.rows[0].id as string
+          for (const l of group.lines) {
             await client.query(
               `INSERT INTO interco_stock_transfer_lines
                (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$6,$7,'IQD',$8,$9)`,
+               VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)`,
               [
                 transferId,
-                productId,
-                fromLocationId,
-                toLocationId,
-                qty,
-                avco,
-                qty * avco,
-                fromMove.rows[0].id,
-                toMove.rows[0].id,
+                l.productId,
+                l.fromLocationId,
+                l.toLocationId,
+                l.qty,
+                l.avco,
+                l.qty * l.avco,
+                fromCurrency,
+                l.fromMoveId,
+                l.toMoveId,
               ],
             )
           }
+
+          const txRef = `IT-SO-${Date.now()}-${fromCompanyId.slice(0, 8)}`
+          const tx = await client.query(
+            `INSERT INTO interco_transactions
+             (from_company_id, to_company_id, transaction_type, amount, currency_code, fx_rate, description, reference, status, created_by)
+             VALUES ($1,$2,'goods_transfer',$3,$4,$5,$6,$7,'pending',$8) RETURNING id`,
+            [
+              fromCompanyId,
+              companyId,
+              totalValue,
+              fromCurrency,
+              fxRate,
+              `Store Out ${String(issue.issue_number)} — ${group.lines.length} line${group.lines.length === 1 ? '' : 's'} sourced from ${fromCompanyName}`,
+              txRef,
+              ctx.auth.userId,
+            ],
+          )
+          const transactionId = tx.rows[0].id as string
+          await client.query(`UPDATE interco_stock_transfers SET interco_transaction_id=$1 WHERE id=$2`, [
+            transactionId,
+            transferId,
+          ])
+          intercoTransactionsCreated.push({ id: transactionId, fromCompanyId, toCompanyId: companyId })
         }
 
         // If this Store Out is linked to a PO tied to a manufacturing order,
@@ -21628,6 +21762,12 @@ export const resolvers = {
         throw e
       } finally {
         client.release()
+      }
+      // Both companies in each auto-created interco bill need to see it
+      // live — mirrors createIntercoTransaction's own dual-company publish.
+      for (const t of intercoTransactionsCreated) {
+        void publishEntityChanged(t.fromCompanyId, 'interco_transaction', t.id, 'created')
+        void publishEntityChanged(t.toCompanyId, 'interco_transaction', t.id, 'created')
       }
       const updated = await query(
         `SELECT pmi.*, po_linked.po_number,
@@ -26771,7 +26911,15 @@ const phase5QueryResolvers = {
     const lim = args.limit ?? 20
     const offset = (page - 1) * lim
     const r = await query(
-      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name FROM interco_stock_transfers ist JOIN companies fc ON fc.id=ist.from_company_id JOIN companies tc ON tc.id=ist.to_company_id WHERE ist.from_company_id=$1 OR ist.to_company_id=$1 ORDER BY ist.created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name,
+              it.reference AS interco_transaction_reference, it.status AS interco_transaction_status,
+              COALESCE((SELECT SUM(istl.total_transfer_value) FROM interco_stock_transfer_lines istl WHERE istl.transfer_id=ist.id), 0) AS total_value,
+              COALESCE((SELECT istl.currency_code FROM interco_stock_transfer_lines istl WHERE istl.transfer_id=ist.id LIMIT 1), 'IQD') AS currency_code
+       FROM interco_stock_transfers ist
+       JOIN companies fc ON fc.id=ist.from_company_id
+       JOIN companies tc ON tc.id=ist.to_company_id
+       LEFT JOIN interco_transactions it ON it.id=ist.interco_transaction_id
+       WHERE ist.from_company_id=$1 OR ist.to_company_id=$1 ORDER BY ist.created_at DESC LIMIT $2 OFFSET $3`,
       [ctx.auth.companyId, lim, offset],
     )
     const cnt = await query(
@@ -26785,9 +26933,13 @@ const phase5QueryResolvers = {
         fromCompanyName: row.from_company_name,
         toCompanyName: row.to_company_name,
         totalValue: parseFloat(String(row.total_value ?? 0)),
+        currencyCode: row.currency_code ?? 'IQD',
         pricingMethod: row.pricing_method ?? 'avco',
         status: row.status,
         transferDate: String(row.transfer_date),
+        intercoTransactionId: row.interco_transaction_id ?? null,
+        intercoTransactionReference: row.interco_transaction_reference ?? null,
+        intercoTransactionStatus: row.interco_transaction_status ?? null,
       })),
       total: parseInt(String(cnt.rows[0]?.count ?? '0')),
       page,
@@ -26798,7 +26950,13 @@ const phase5QueryResolvers = {
   intercoStockTransfer: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
     if (!ctx.auth) throw new Error('Unauthorized')
     const r = await query(
-      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name FROM interco_stock_transfers ist JOIN companies fc ON fc.id=ist.from_company_id JOIN companies tc ON tc.id=ist.to_company_id WHERE ist.id=$1 AND (ist.from_company_id=$2 OR ist.to_company_id=$2)`,
+      `SELECT ist.*, fc.name as from_company_name, tc.name as to_company_name,
+              it.reference AS interco_transaction_reference, it.status AS interco_transaction_status
+       FROM interco_stock_transfers ist
+       JOIN companies fc ON fc.id=ist.from_company_id
+       JOIN companies tc ON tc.id=ist.to_company_id
+       LEFT JOIN interco_transactions it ON it.id=ist.interco_transaction_id
+       WHERE ist.id=$1 AND (ist.from_company_id=$2 OR ist.to_company_id=$2)`,
       [args.id, ctx.auth.companyId],
     )
     if (!r.rows[0]) return null
@@ -26808,6 +26966,10 @@ const phase5QueryResolvers = {
       [args.id],
     )
     const row = r.rows[0] as Record<string, unknown>
+    // Every line in a transfer shares one currency (see intercoStockTransfers'
+    // own comment) — take it from the first line rather than a second query.
+    const currencyCode =
+      (lines.rows[0] as Record<string, unknown> | undefined)?.currency_code ?? 'IQD'
     return {
       id: row.id,
       transferNumber: row.transfer_number,
@@ -26822,6 +26984,9 @@ const phase5QueryResolvers = {
       toStockMoveId: row.to_stock_move_id ?? null,
       fromJournalId: row.from_journal_id ?? null,
       toJournalId: row.to_journal_id ?? null,
+      intercoTransactionId: row.interco_transaction_id ?? null,
+      intercoTransactionReference: row.interco_transaction_reference ?? null,
+      intercoTransactionStatus: row.interco_transaction_status ?? null,
       lines: lines.rows.map((l: Record<string, unknown>) => ({
         id: l.id,
         productName: l.product_name ?? '',
@@ -26831,7 +26996,9 @@ const phase5QueryResolvers = {
         transferPrice: parseFloat(String(l.transfer_price ?? 0)),
         markupPct: parseFloat(String(l.markup_pct_applied ?? 0)),
         totalValue: parseFloat(String(l.total_transfer_value ?? 0)),
+        currencyCode: l.currency_code ?? 'IQD',
       })),
+      currencyCode,
     }
   },
 
@@ -29629,13 +29796,16 @@ const phase5MutationResolvers = {
 
     // Same cross-company location-ownership check as confirmPOInventoryCheck
     // — a picked source location must belong to either the requisition's own
-    // company or a company the caller actually has a role in.
+    // company, the group's central warehouse (is_central_warehouse — see
+    // migration 280, always sourceable regardless of the caller's own role
+    // grants), or a company the caller actually has a role in.
     for (const lsq of args.lineStockQtys) {
       if (!lsq.sourceLocationId) continue
       const locCheck = await query(
         `SELECT sl.company_id FROM stock_locations sl
+         JOIN companies c ON c.id = sl.company_id
          WHERE sl.id=$1 AND sl.is_active=true
-           AND (sl.company_id=$2 OR $3 OR EXISTS (
+           AND (sl.company_id=$2 OR $3 OR c.is_central_warehouse OR EXISTS (
              SELECT 1 FROM user_company_roles ucr
              WHERE ucr.user_id=$4 AND ucr.company_id=sl.company_id AND ucr.is_active=true
            ))`,
@@ -31401,16 +31571,19 @@ const phase5MutationResolvers = {
     const isSysAdmin = auth.role === 'system_admin'
 
     // A picked source location must be a real, active stock location belonging
-    // to either the PO's own company or a company the caller actually has a role
-    // in — otherwise a crafted request could point a PO at a company's stock the
-    // requesting user has no relationship with, and have it silently deducted
-    // (and interco-transferred) once the PO is approved.
+    // to either the PO's own company, the group's central warehouse
+    // (is_central_warehouse — see migration 280, always sourceable regardless
+    // of the caller's own role grants), or a company the caller actually has a
+    // role in — otherwise a crafted request could point a PO at a company's
+    // stock the requesting user has no relationship with, and have it silently
+    // deducted (and interco-transferred) once the PO is approved.
     for (const lsq of args.lineStockQtys) {
       if (!lsq.sourceLocationId) continue
       const locCheck = await query(
         `SELECT sl.company_id FROM stock_locations sl
+         JOIN companies c ON c.id = sl.company_id
          WHERE sl.id=$1 AND sl.is_active=true
-           AND (sl.company_id=$2 OR $3 OR EXISTS (
+           AND (sl.company_id=$2 OR $3 OR c.is_central_warehouse OR EXISTS (
              SELECT 1 FROM user_company_roles ucr
              WHERE ucr.user_id=$4 AND ucr.company_id=sl.company_id AND ucr.is_active=true
            ))`,
@@ -33090,6 +33263,15 @@ const phase5MutationResolvers = {
         const transferNum = `IST-${Date.now()}`
         const transferDate = String(i.transfer_date ?? new Date().toISOString().slice(0, 10))
 
+        // Priced at the initiating (from) company's own AVCO, so the
+        // transfer is denominated in ITS currency — not assumed IQD. Same
+        // reasoning as issueMaterialIssue's auto-created transfers.
+        const fromCompanyCurrencyRes = await client.query<{ currency_code: string }>(
+          `SELECT currency_code FROM companies WHERE id=$1`,
+          [auth.companyId],
+        )
+        const fromCurrency = fromCompanyCurrencyRes.rows[0]?.currency_code ?? 'IQD'
+
         // Find or create virtual_out for from_company (for deduction)
         const vOutRes = await client.query(
           `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_out' AND is_active=true LIMIT 1`,
@@ -33193,7 +33375,7 @@ const phase5MutationResolvers = {
           await client.query(
             `INSERT INTO interco_stock_transfer_lines
              (transfer_id,product_id,from_location_id,to_location_id,qty,avco_at_transfer,transfer_price,total_transfer_value,currency_code,from_stock_move_id,to_stock_move_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$6,$7,'IQD',$8,$9)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$6,$7,$8,$9,$10)`,
             [
               transferId,
               productId,
@@ -33202,6 +33384,7 @@ const phase5MutationResolvers = {
               qty,
               avco,
               qty * avco,
+              fromCurrency,
               fromMove.rows[0].id,
               toMove.rows[0].id,
             ],
