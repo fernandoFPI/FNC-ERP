@@ -216,7 +216,7 @@ export default function ProductForm() {
             }}
           >
             <Input
-              label="Cost"
+              label="Cost (BOM)"
               type="number"
               step="0.01"
               min="0"

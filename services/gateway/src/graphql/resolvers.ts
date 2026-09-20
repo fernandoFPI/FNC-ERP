@@ -12423,18 +12423,54 @@ export const resolvers = {
           if (i.standard_cost != null) {
             const newCost = Number(i.standard_cost)
             if (newCost > 0) {
+              const costCurrency =
+                (i.cost_currency as string | undefined) ??
+                (r.rows[0].cost_currency as string | null) ??
+                'IQD'
               await recordProductCostChange(client, {
                 productId: args.id,
                 newCost,
-                currencyCode:
-                  (i.cost_currency as string | undefined) ??
-                  (r.rows[0].cost_currency as string | null) ??
-                  'IQD',
+                currencyCode: costCurrency,
                 sourceType: 'manual_edit',
                 sourceId: null,
                 sourceLabel: 'Manual edit',
                 userId: ctx.auth!.userId,
               })
+              // A location that has never had a real cost recorded (still
+              // stuck at 0 from an uncosted receipt/opening balance) has
+              // nothing legitimate to preserve, so a Cost edit here also
+              // catches it up — same self-move mechanism as a manual Stock
+              // Adjustment cost-only correction, just triggered from the
+              // product page instead of asking a store keeper to repeat it
+              // per location. A location with its OWN real recorded cost is
+              // deliberately left alone — this only fills a genuine gap,
+              // never overwrites one.
+              const gapLocations = await client.query<{ location_id: string; qty_on_hand: string }>(
+                `SELECT sb.location_id, sb.qty_on_hand
+                 FROM stock_balances sb
+                 JOIN stock_locations sl ON sl.id = sb.location_id
+                 WHERE sb.product_id=$1 AND sb.qty_on_hand > 0 AND sb.average_cost = 0
+                   AND sl.type NOT IN ('virtual_in','virtual_out')`,
+                [args.id],
+              )
+              for (const loc of gapLocations.rows) {
+                const locQty = parseFloat(loc.qty_on_hand)
+                await client.query(
+                  `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,currency_code,source_type,notes,moved_by)
+                   VALUES ($1,$2,$3,$3,NOW(),$4,$5,$6,$7,'cost_correction',$8,$9)`,
+                  [
+                    ctx.auth!.companyId,
+                    args.id,
+                    loc.location_id,
+                    locQty,
+                    newCost,
+                    locQty * newCost,
+                    costCurrency,
+                    'Synced from product Cost edit',
+                    ctx.auth!.userId,
+                  ],
+                )
+              }
             } else {
               await client.query(
                 `UPDATE products SET standard_cost=$1, cost_currency=COALESCE($2,cost_currency) WHERE id=$3`,

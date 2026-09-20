@@ -224,6 +224,69 @@ describe('updateProduct — manual Cost edits are logged', () => {
   })
 })
 
+describe('updateProduct — Cost edit auto-syncs any location stuck at a $0 Last Cost', () => {
+  it('corrects an uncosted location balance when Cost is set, without a separate Stock Adjustment', async () => {
+    const productId = await makeProduct('auto-sync-zero-location')
+    await pool.query(
+      `INSERT INTO stock_moves (company_id, product_id, from_location_id, to_location_id, moved_at, qty, unit_cost, total_cost, source_type, moved_by)
+       VALUES ($1,$2,$3,$4,NOW(),$5,0,0,'opening_balance',$6)`,
+      [TEST_COMPANY_ID, productId, virtualInId, warehouseId, 6, userId],
+    )
+    const before = await pool.query<{ average_cost: string }>(
+      `SELECT average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2`,
+      [productId, warehouseId],
+    )
+    expect(parseFloat(before.rows[0]!.average_cost)).toBe(0)
+
+    await resolvers.Mutation.updateProduct(
+      null,
+      { id: productId, input: { standard_cost: 12, cost_currency: 'USD' } },
+      ctx as never,
+    )
+
+    const after = await pool.query<{ average_cost: string; last_cost_currency: string }>(
+      `SELECT average_cost, last_cost_currency FROM stock_balances WHERE product_id=$1 AND location_id=$2`,
+      [productId, warehouseId],
+    )
+    expect(parseFloat(after.rows[0]!.average_cost)).toBe(12)
+    expect(after.rows[0]!.last_cost_currency).toBe('USD')
+
+    const move = await pool.query<{ source_type: string; notes: string }>(
+      `SELECT source_type, notes FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
+      [productId],
+    )
+    expect(move.rows).toHaveLength(1)
+    expect(move.rows[0]!.notes).toBe('Synced from product Cost edit')
+  })
+
+  it('never overwrites a location that already has its own real recorded cost', async () => {
+    const productId = await makeProduct('auto-sync-preserves-real-cost')
+    await pool.query(
+      `INSERT INTO stock_moves (company_id, product_id, from_location_id, to_location_id, moved_at, qty, unit_cost, total_cost, currency_code, source_type, moved_by)
+       VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'IQD','po_receipt',$8)`,
+      [TEST_COMPANY_ID, productId, virtualInId, warehouseId, 3, 99, 3 * 99, userId],
+    )
+    await resolvers.Mutation.updateProduct(
+      null,
+      { id: productId, input: { standard_cost: 12, cost_currency: 'USD' } },
+      ctx as never,
+    )
+
+    const after = await pool.query<{ average_cost: string; last_cost_currency: string }>(
+      `SELECT average_cost, last_cost_currency FROM stock_balances WHERE product_id=$1 AND location_id=$2`,
+      [productId, warehouseId],
+    )
+    expect(parseFloat(after.rows[0]!.average_cost)).toBe(99)
+    expect(after.rows[0]!.last_cost_currency).toBe('IQD')
+
+    const moves = await pool.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
+      [productId],
+    )
+    expect(moves.rows[0]!.n).toBe(0)
+  })
+})
+
 describe('product(id) query exposes costHistory', () => {
   it('returns entries newest first, joined with the acting user\'s name', async () => {
     const productId = await makeProduct('query-exposure')
