@@ -18,7 +18,9 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
-const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '' }
+// myPOsOnly stored as 'true'/'false' — FilterPreset.filters is a flat
+// Record<string, string>, same as every other tracked field here.
+const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '', myPOsOnly: 'false' }
 
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', high: 'High', emergency: 'Emergency' }
 const PRIORITY_STYLES: Record<string, { color: string; bg: string; border: string }> = {
@@ -76,7 +78,9 @@ export default function PurchaseOrdersPage() {
   const [toDate, setToDate] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkApproving, setBulkApproving] = useState(false)
-  const [myPOsOnly, setMyPOsOnly] = useState(false)
+  // Defaults to the signed-in user's own POs — most people live in this view
+  // day to day; the toggle below still switches to the full company list.
+  const [myPOsOnly, setMyPOsOnly] = useState(true)
 
   const projectIdFilter = urlParams.get('project_id') ?? ''
   const projectNameFilter = urlParams.get('project_name') ?? ''
@@ -93,7 +97,7 @@ export default function PurchaseOrdersPage() {
 
   const [approvePOMutation] = useMutation(APPROVE_PO)
 
-  const currentFilters = { search, status: statusFilter, fromDate, toDate }
+  const currentFilters = { search, status: statusFilter, fromDate, toDate, myPOsOnly: String(myPOsOnly) }
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'purchase_orders',
     FILTER_DEFAULTS,
@@ -537,6 +541,7 @@ export default function PurchaseOrdersPage() {
               setStatusFilter(r.status)
               setFromDate(r.fromDate)
               setToDate(r.toDate)
+              setMyPOsOnly(r.myPOsOnly === 'true')
             }}
             onSave={(name) => {
               savePreset(name, currentFilters)

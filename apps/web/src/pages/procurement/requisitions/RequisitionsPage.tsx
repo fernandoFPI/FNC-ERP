@@ -21,7 +21,9 @@ import { FilterPresets } from '../../../components/ui/FilterPresets'
 import { useFilterPresets } from '../../../hooks/useFilterPresets'
 import { useEntityChanged } from '../../../hooks/useEntityChanged'
 
-const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '' }
+// myRequisitionsOnly stored as 'true'/'false' — FilterPreset.filters is a
+// flat Record<string, string>, same as every other tracked field here.
+const FILTER_DEFAULTS = { search: '', status: '', fromDate: '', toDate: '', myRequisitionsOnly: 'false' }
 
 const PRIORITY_STYLES: Record<string, { color: string; bg: string; border: string }> = {
   low: { color: '#6b7280', bg: 'transparent', border: 'transparent' },
@@ -74,7 +76,9 @@ export default function RequisitionsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(false)
+  // Defaults to the signed-in user's own requisitions — most people live in
+  // this view day to day; the toggle below still switches to the full list.
+  const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(true)
 
   const { data, loading, refetch } = useQuery(REQUISITIONS_QUERY, {
     variables: {
@@ -85,7 +89,13 @@ export default function RequisitionsPage() {
   })
   useEntityChanged('requisition', () => void refetch())
 
-  const currentFilters = { search, status: statusFilter, fromDate, toDate }
+  const currentFilters = {
+    search,
+    status: statusFilter,
+    fromDate,
+    toDate,
+    myRequisitionsOnly: String(myRequisitionsOnly),
+  }
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'requisitions',
     FILTER_DEFAULTS,
@@ -295,6 +305,7 @@ export default function RequisitionsPage() {
               setStatusFilter(r.status)
               setFromDate(r.fromDate)
               setToDate(r.toDate)
+              setMyRequisitionsOnly(r.myRequisitionsOnly === 'true')
             }}
             onSave={(name) => {
               savePreset(name, currentFilters)
