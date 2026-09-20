@@ -2687,6 +2687,23 @@
     reorder_qty: String
     has_stock_moves: Boolean
     balances: [ProductBalance!]
+    costHistory: [ProductCostHistoryEntry!]
+  }
+
+  # Every recorded change to this product's standard_cost (the one
+  # per-product "Cost" figure — see recordProductCostChange in
+  # resolvers.ts), newest first. old_cost is null only for a row with no
+  # prior recorded cost to compare against.
+  type ProductCostHistoryEntry {
+    id: ID!
+    old_cost: String
+    new_cost: String!
+    currency_code: String!
+    source_type: String!
+    source_id: ID
+    source_label: String
+    changed_by_name: String
+    changed_at: String!
   }
 
   extend type StockBalance {

@@ -206,7 +206,7 @@ describe('submitRequisitionStorePricing', () => {
 })
 
 describe('submitRequisitionMarketPricing', () => {
-  it('sets the real total, the line currency, caches last_market_price — with no vendor and no fx_rate_to_base stamped', async () => {
+  it('sets the real total, the line currency, caches the product\'s Cost — with no vendor and no fx_rate_to_base stamped', async () => {
     const { reqId, lineId, productId } = await makeReqAtMarketPricing(5, 1)
 
     const result = await resolvers.Mutation.submitRequisitionMarketPricing(
@@ -244,12 +244,18 @@ describe('submitRequisitionMarketPricing', () => {
     )
     expect(reqCols.rows).toHaveLength(0)
 
-    const product = await pool.query<{ last_market_price: string; last_market_price_currency: string }>(
-      `SELECT last_market_price, last_market_price_currency FROM products WHERE id=$1`,
+    const product = await pool.query<{ standard_cost: string; cost_currency: string }>(
+      `SELECT standard_cost, cost_currency FROM products WHERE id=$1`,
       [productId],
     )
-    expect(parseFloat(product.rows[0]!.last_market_price)).toBe(12)
-    expect(product.rows[0]!.last_market_price_currency).toBe('USD')
+    expect(parseFloat(product.rows[0]!.standard_cost)).toBe(12)
+    expect(product.rows[0]!.cost_currency).toBe('USD')
+
+    const historyRow = await pool.query<{ source_type: string; source_label: string | null }>(
+      `SELECT source_type, source_label FROM product_cost_history WHERE product_id=$1 ORDER BY changed_at DESC LIMIT 1`,
+      [productId],
+    )
+    expect(historyRow.rows[0]!.source_type).toBe('requisition_market_pricing')
 
     const req = await pool.query<{ procurement_officer_id: string | null }>(
       `SELECT procurement_officer_id FROM requisitions WHERE id=$1`,

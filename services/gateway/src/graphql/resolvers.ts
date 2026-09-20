@@ -3553,6 +3553,50 @@ async function resolveInterCompanyFxRate(
   return inverseRate > 0 ? 1 / inverseRate : 1
 }
 
+// The single write path for products.standard_cost — the one per-product
+// "Cost" figure used everywhere (BOM planning, PO/requisition store-pricing
+// auto-fill), now that last_market_price is retired. Every call site that
+// used to update last_market_price, plus every real stock-cost event
+// (a receipt, an adjustment, a cost correction) and a manual product edit,
+// goes through here instead — so product_cost_history always has a
+// complete, ungapped trail of what changed it, when, and from what (a PO
+// number, a requisition number, "Stock Adjustment", "Manual edit"). A no-op
+// (and no log entry) when there's no real new cost, or it matches what's
+// already there — avoids logging noise for a receipt line with no price
+// yet, or resubmitting the same number.
+async function recordProductCostChange(
+  client: import('@fnc-erp/db').PoolClient,
+  params: {
+    productId: string
+    newCost: number
+    currencyCode: string
+    sourceType: string
+    sourceId?: string | null
+    sourceLabel?: string | null
+    userId: string | null
+  },
+): Promise<void> {
+  const { productId, newCost, currencyCode, sourceType, sourceId, sourceLabel, userId } = params
+  if (!(newCost > 0)) return
+  const current = await client.query<{ standard_cost: string | null }>(
+    `SELECT standard_cost FROM products WHERE id=$1`,
+    [productId],
+  )
+  const oldCost =
+    current.rows[0]?.standard_cost != null ? parseFloat(current.rows[0].standard_cost) : null
+  if (oldCost === newCost) return
+  await client.query(`UPDATE products SET standard_cost=$1, cost_currency=$2 WHERE id=$3`, [
+    newCost,
+    currencyCode,
+    productId,
+  ])
+  await client.query(
+    `INSERT INTO product_cost_history (product_id, old_cost, new_cost, currency_code, source_type, source_id, source_label, changed_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [productId, oldCost, newCost, currencyCode, sourceType, sourceId ?? null, sourceLabel ?? null, userId],
+  )
+}
+
 async function recalcPO(client: import('@fnc-erp/db').PoolClient, poId: string): Promise<void> {
   // Each line's total_price is in that line's own currency_code; fx_rate_to_base
   // (set when the line is priced — see submitPOMarketPricing) converts it into
@@ -9710,7 +9754,7 @@ export const resolvers = {
 
     product: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
       if (!ctx.auth) return null
-      const [prod, balances] = await Promise.all([
+      const [prod, balances, costHistory] = await Promise.all([
         query(
           `SELECT p.*,
                   (SELECT COUNT(*)>0 FROM stock_moves WHERE product_id=p.id) AS has_stock_moves
@@ -9725,9 +9769,17 @@ export const resolvers = {
            WHERE sb.product_id=$1 AND sl.type NOT IN ('virtual_in','virtual_out')`,
           [args.id],
         ),
+        query(
+          `SELECT pch.*, COALESCE(u.first_name || ' ' || u.last_name, u.email) AS changed_by_name
+           FROM product_cost_history pch
+           LEFT JOIN users u ON u.id = pch.changed_by
+           WHERE pch.product_id=$1
+           ORDER BY pch.changed_at DESC`,
+          [args.id],
+        ),
       ])
       if (!prod.rows[0]) return null
-      return { ...prod.rows[0], balances: balances.rows }
+      return { ...prod.rows[0], balances: balances.rows, costHistory: costHistory.rows }
     },
 
     stockLocations: async (
@@ -11839,7 +11891,7 @@ export const resolvers = {
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
           const receiptRes = await client.query(
-            `SELECT por.*, po.company_id, po.status AS po_status
+            `SELECT por.*, po.company_id, po.status AS po_status, po.po_number
              FROM po_receipts por JOIN purchase_orders po ON po.id=por.po_id
              WHERE por.id=$1`,
             [args.id],
@@ -11897,6 +11949,15 @@ export const resolvers = {
             [args.id],
           )
           const lines = linesRes.rows as Record<string, unknown>[]
+
+          // polUnitPrice below is already converted to this — see its own
+          // comment — so this is the correct currency to log a cost change
+          // in, not each line's own (possibly foreign) currency_code.
+          const baseCcyRes = await client.query<{ default_currency: string }>(
+            `SELECT default_currency FROM system_configuration WHERE company_id=$1`,
+            [ctx.auth!.companyId],
+          )
+          const receiptBaseCurrency = baseCcyRes.rows[0]?.default_currency ?? 'IQD'
 
           // "Receiving Location" is optional on the form, but stock_moves.to_location_id
           // is NOT NULL — fall back to the company's default warehouse (same lookup
@@ -12005,6 +12066,15 @@ export const resolvers = {
                   l.id,
                 ],
               )
+              await recordProductCostChange(client, {
+                productId: polProductId,
+                newCost: polUnitPrice,
+                currencyCode: receiptBaseCurrency,
+                sourceType: 'po_receipt',
+                sourceId: receipt.po_id as string,
+                sourceLabel: (receipt.po_number as string | null) ?? null,
+                userId: ctx.auth!.userId,
+              })
             }
           }
 
@@ -12319,32 +12389,68 @@ export const resolvers = {
     ) => {
       if (!ctx.auth) throw new Error('Unauthorized')
       const i = args.input
-      const r = await query(
-        `UPDATE products SET name=COALESCE($3,name), name_ar=COALESCE($4,name_ar), description=COALESCE($5,description), category=COALESCE($6,category),
-           sub_category=COALESCE($7,sub_category), uom=COALESCE($8,uom), standard_cost=COALESCE($9,standard_cost),
-           cost_currency=COALESCE($10,cost_currency),
-           reorder_point=COALESCE($11,reorder_point), reorder_qty=COALESCE($12,reorder_qty),
-           is_active=COALESCE($13,is_active), updated_at=NOW()
-         WHERE id=$1 AND company_id=$2 RETURNING *`,
-        [
-          args.id,
-          ctx.auth.companyId,
-          i.name ?? null,
-          i.name_ar ?? null,
-          i.description ?? null,
-          i.category ?? null,
-          i.sub_category ?? null,
-          i.uom ?? null,
-          i.standard_cost ?? null,
-          i.cost_currency ?? null,
-          i.reorder_point ?? null,
-          i.reorder_qty ?? null,
-          i.is_active ?? null,
-        ],
+      return withTransaction(
+        { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
+        async (client) => {
+          const r = await client.query(
+            `UPDATE products SET name=COALESCE($3,name), name_ar=COALESCE($4,name_ar), description=COALESCE($5,description), category=COALESCE($6,category),
+               sub_category=COALESCE($7,sub_category), uom=COALESCE($8,uom),
+               reorder_point=COALESCE($9,reorder_point), reorder_qty=COALESCE($10,reorder_qty),
+               is_active=COALESCE($11,is_active), updated_at=NOW()
+             WHERE id=$1 AND company_id=$2 RETURNING *`,
+            [
+              args.id,
+              ctx.auth!.companyId,
+              i.name ?? null,
+              i.name_ar ?? null,
+              i.description ?? null,
+              i.category ?? null,
+              i.sub_category ?? null,
+              i.uom ?? null,
+              i.reorder_point ?? null,
+              i.reorder_qty ?? null,
+              i.is_active ?? null,
+            ],
+          )
+          if (!r.rows[0]) throw new Error('Product not found')
+          // Cost edits go through recordProductCostChange (logged) rather
+          // than this UPDATE's own COALESCE, so every real change to it —
+          // manual or automatic — lands in product_cost_history. A
+          // deliberate reset to 0 ("we don't actually know the cost")
+          // bypasses the log — see that function's own newCost>0 guard —
+          // since "unknown" isn't a real cost transition worth recording.
+          if (i.standard_cost != null) {
+            const newCost = Number(i.standard_cost)
+            if (newCost > 0) {
+              await recordProductCostChange(client, {
+                productId: args.id,
+                newCost,
+                currencyCode:
+                  (i.cost_currency as string | undefined) ??
+                  (r.rows[0].cost_currency as string | null) ??
+                  'IQD',
+                sourceType: 'manual_edit',
+                sourceId: null,
+                sourceLabel: 'Manual edit',
+                userId: ctx.auth!.userId,
+              })
+            } else {
+              await client.query(
+                `UPDATE products SET standard_cost=$1, cost_currency=COALESCE($2,cost_currency) WHERE id=$3`,
+                [newCost, i.cost_currency ?? null, args.id],
+              )
+            }
+          } else if (i.cost_currency != null) {
+            await client.query(`UPDATE products SET cost_currency=$1 WHERE id=$2`, [
+              i.cost_currency,
+              args.id,
+            ])
+          }
+          void publishEntityChanged(ctx.auth!.companyId, 'product', args.id, 'updated')
+          const finalRes = await client.query(`SELECT * FROM products WHERE id=$1`, [args.id])
+          return finalRes.rows[0]
+        },
       )
-      if (!r.rows[0]) throw new Error('Product not found')
-      void publishEntityChanged(ctx.auth.companyId, 'product', args.id, 'updated')
-      return r.rows[0]
     },
 
     // Store keeper resolves a pendingProductCatalogItems row by cataloging it
@@ -12399,11 +12505,10 @@ export const resolvers = {
       return withTransaction(
         { companyId: ctx.auth.companyId, userId: ctx.auth.userId, role: ctx.auth.role },
         async (client) => {
-          const hasPrice = pending.unit_price != null
           const productRes = await client.query(
             `INSERT INTO products (company_id,sku,name,name_ar,description,category,sub_category,uom,valuation_method,is_active,
-               last_market_price,last_market_price_currency,last_market_price_at,cost_currency)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'last_cost',true,$9,$10,${hasPrice ? 'NOW()' : 'NULL'},$11) RETURNING *`,
+               standard_cost,cost_currency)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'last_cost',true,$9,$10) RETURNING *`,
             [
               targetCompanyId,
               sku,
@@ -12413,13 +12518,11 @@ export const resolvers = {
               i.category ?? null,
               i.sub_category ?? null,
               (i.uom as string | undefined) ?? pending.uom ?? 'unit',
-              pending.unit_price ?? null,
-              pending.currency_code ?? null,
               // Known from day one, straight from this item's own real
-              // purchase — the same value seeding last_market_price_currency
-              // above, kept here too as the more durable "this product's
-              // cost is in X" fact once the market-price cache eventually
-              // goes stale (see cost_currency's own migration comment).
+              // purchase — no separate history entry needed (see
+              // recordProductCostChange's own comment on why creation isn't
+              // logged as a "change").
+              pending.unit_price ?? null,
               pending.currency_code ?? null,
             ],
           )
@@ -12501,11 +12604,22 @@ export const resolvers = {
             args.productId,
             pending.po_line_id,
           ])
-          if (pending.unit_price != null) {
-            await client.query(
-              `UPDATE products SET last_market_price=$1, last_market_price_currency=$2, last_market_price_at=NOW() WHERE id=$3`,
-              [pending.unit_price, pending.currency_code ?? 'IQD', args.productId],
-            )
+          if (pending.unit_price != null && parseFloat(String(pending.unit_price)) > 0) {
+            const poRow = pending.po_id
+              ? await client.query<{ po_number: string }>(
+                  `SELECT po_number FROM purchase_orders WHERE id=$1`,
+                  [pending.po_id],
+                )
+              : null
+            await recordProductCostChange(client, {
+              productId: args.productId,
+              newCost: parseFloat(String(pending.unit_price)),
+              currencyCode: (pending.currency_code as string | null) ?? 'IQD',
+              sourceType: 'catalog_link',
+              sourceId: (pending.po_id as string | null) ?? null,
+              sourceLabel: poRow?.rows[0]?.po_number ?? null,
+              userId: ctx.auth!.userId,
+            })
           }
           await client.query(
             `UPDATE pending_product_catalog_items SET status='resolved', resolved_product_id=$1, resolved_by=$2, resolved_at=NOW() WHERE id=$3`,
@@ -12687,6 +12801,11 @@ export const resolvers = {
           const currentCost = parseFloat(String(balRes.rows[0]?.average_cost ?? 0))
           const diff = i.new_qty - currentQty
           const unitCost = i.unit_cost && i.unit_cost > 0 ? i.unit_cost : currentCost
+          const productCcyRes = await client.query<{ cost_currency: string | null }>(
+            `SELECT cost_currency FROM products WHERE id=$1`,
+            [i.product_id],
+          )
+          const adjustmentCurrency = productCcyRes.rows[0]?.cost_currency ?? 'IQD'
 
           if (diff === 0) {
             // Quantity is already right — but a real cost correction was
@@ -12722,6 +12841,15 @@ export const resolvers = {
                 auth.userId,
               ],
             )
+            await recordProductCostChange(client, {
+              productId: i.product_id,
+              newCost: i.unit_cost,
+              currencyCode: adjustmentCurrency,
+              sourceType: 'cost_correction',
+              sourceId: null,
+              sourceLabel: 'Stock Adjustment (cost correction)',
+              userId: auth.userId,
+            })
             void publishEntityChanged(auth.companyId, 'stock_balance', i.product_id, 'updated')
             return mv.rows[0]
           }
@@ -12783,6 +12911,15 @@ export const resolvers = {
                WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
               [i.unit_cost, i.product_id, i.location_id],
             )
+            await recordProductCostChange(client, {
+              productId: i.product_id,
+              newCost: i.unit_cost,
+              currencyCode: adjustmentCurrency,
+              sourceType: 'stock_adjustment',
+              sourceId: null,
+              sourceLabel: 'Stock Adjustment',
+              userId: auth.userId,
+            })
           }
 
           // Check reorder point after adjustment and notify if now below threshold
@@ -30036,13 +30173,12 @@ const phase5MutationResolvers = {
         id: string
         product_id: string | null
         sku: string | null
-        last_market_price: string | null
-        last_market_price_currency: string | null
+        standard_cost: string | null
         cost_currency: string | null
         fallback_avg_cost: string | null
       }>(
         `SELECT pol.id, pol.product_id, p.sku,
-                p.last_market_price, p.last_market_price_currency, p.cost_currency,
+                p.standard_cost, p.cost_currency,
                 sb.average_cost AS fallback_avg_cost
          FROM po_lines pol
          LEFT JOIN products p ON p.id = pol.product_id
@@ -30054,17 +30190,14 @@ const phase5MutationResolvers = {
 
       const autoFilledLines: Record<string, unknown>[] = []
       for (const line of stockLinesRes.rows) {
-        const cachedPrice =
-          line.last_market_price != null ? parseFloat(line.last_market_price) : null
+        const cachedPrice = line.standard_cost != null ? parseFloat(line.standard_cost) : null
         const usingCache = cachedPrice != null && cachedPrice > 0
         const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
-        // Same three-tier currency fallback as confirmPOInventoryCheck: a
-        // real historical vendor-quote currency first, then the product's
-        // own declared cost_currency, then the company's default currency
-        // as a last-resort guess.
-        const storeCurrency = usingCache
-          ? (line.last_market_price_currency ?? line.cost_currency ?? baseCurrencyCode)
-          : (line.cost_currency ?? baseCurrencyCode)
+        // The product's own cost_currency covers both cases now that
+        // standard_cost/cost_currency are always written together (see
+        // recordProductCostChange) — falls back to the company's default
+        // currency only when the product has never had a real cost at all.
+        const storeCurrency = line.cost_currency ?? baseCurrencyCode
         await client.query(`UPDATE po_lines SET store_price=$1, store_price_currency=$2 WHERE id=$3`, [
           storePrice,
           storeCurrency,
@@ -30269,16 +30402,27 @@ const phase5MutationResolvers = {
            RETURNING product_id`,
           [lp.marketPrice, lp.currencyCode, lp.vendorQuoteRef ?? null, lp.lineId, args.id],
         )
-        // Same product-level cache as submitPOMarketPricing — read back by
+        // Same product-level cost as submitPOMarketPricing — read back by
         // confirmRequisitionInventoryCheck's own store-pricing auto-fill
         // for the next requisition/PO needing this product.
         const productId = updated.rows[0]?.product_id
         if (productId && lp.marketPrice > 0) {
-          await client.query(
-            `UPDATE products SET last_market_price=$1, last_market_price_currency=$2, last_market_price_at=NOW()
-             WHERE id=$3`,
-            [lp.marketPrice, lp.currencyCode, productId],
+          // This pricing round's product_cost_history source_label — a
+          // cheap PK lookup, fine to repeat per line rather than share a
+          // variable declared far above this loop.
+          const reqNumberRow = await client.query<{ requisition_number: string }>(
+            `SELECT requisition_number FROM requisitions WHERE id=$1`,
+            [args.id],
           )
+          await recordProductCostChange(client, {
+            productId,
+            newCost: lp.marketPrice,
+            currencyCode: lp.currencyCode,
+            sourceType: 'requisition_market_pricing',
+            sourceId: args.id,
+            sourceLabel: reqNumberRow.rows[0]?.requisition_number ?? null,
+            userId: auth.userId,
+          })
         }
       }
       if (empId)
@@ -31763,13 +31907,12 @@ const phase5MutationResolvers = {
         sku: string | null
         qty_ordered: string
         qty_from_stock: string
-        last_market_price: string | null
-        last_market_price_currency: string | null
+        standard_cost: string | null
         cost_currency: string | null
         fallback_avg_cost: string | null
       }>(
         `SELECT pol.id, pol.product_id, p.sku, pol.qty_ordered, pol.qty_from_stock,
-                p.last_market_price, p.last_market_price_currency, p.cost_currency,
+                p.standard_cost, p.cost_currency,
                 sb.average_cost AS fallback_avg_cost
          FROM po_lines pol
          LEFT JOIN products p ON p.id = pol.product_id
@@ -31781,19 +31924,14 @@ const phase5MutationResolvers = {
 
       const autoFilledLines: Record<string, unknown>[] = []
       for (const line of stockLinesRes.rows) {
-        const cachedPrice =
-          line.last_market_price != null ? parseFloat(line.last_market_price) : null
+        const cachedPrice = line.standard_cost != null ? parseFloat(line.standard_cost) : null
         const usingCache = cachedPrice != null && cachedPrice > 0
         const storePrice = usingCache ? cachedPrice : parseFloat(line.fallback_avg_cost ?? '0')
-        // Currency fallback chain: a real historical vendor-quote currency
-        // (cached the last time this product was market-priced) first,
-        // then the product's own declared cost_currency (set explicitly
-        // on the product, or seeded at catalog creation from its first
-        // real purchase), and only then the company/PO's base currency —
-        // a guess of last resort, not a fact about this specific product.
-        const storeCurrency = usingCache
-          ? (line.last_market_price_currency ?? line.cost_currency ?? baseCurrencyCode)
-          : (line.cost_currency ?? baseCurrencyCode)
+        // The product's own cost_currency covers both cases now that
+        // standard_cost/cost_currency are always written together (see
+        // recordProductCostChange) — falls back to the company/PO's base
+        // currency only when the product has never had a real cost at all.
+        const storeCurrency = line.cost_currency ?? baseCurrencyCode
 
         const qtyOrdered = parseFloat(line.qty_ordered)
         const qtyFromStock = parseFloat(line.qty_from_stock)
@@ -32084,8 +32222,9 @@ const phase5MutationResolvers = {
       // quote), so this is where currency_code — dead weight before this point,
       // frozen at its creation-time default — finally becomes live, alongside the
       // rate used to convert it into the PO's base currency for recalcPO.
-      const poRes = await client.query<{ base_currency_code: string }>(
-        `SELECT base_currency_code FROM purchase_orders WHERE id=$1`,
+      // po_number doubles as this pricing round's product_cost_history source_label.
+      const poRes = await client.query<{ base_currency_code: string; po_number: string }>(
+        `SELECT base_currency_code, po_number FROM purchase_orders WHERE id=$1`,
         [args.id],
       )
       const baseCurrencyCode = poRes.rows[0]?.base_currency_code ?? 'IQD'
@@ -32112,11 +32251,15 @@ const phase5MutationResolvers = {
         // the next PO that needs this product, instead of guessing a currency.
         const productId = updated.rows[0]?.product_id
         if (productId && lp.marketPrice > 0) {
-          await client.query(
-            `UPDATE products SET last_market_price=$1, last_market_price_currency=$2, last_market_price_at=NOW()
-             WHERE id=$3`,
-            [lp.marketPrice, lp.currencyCode, productId],
-          )
+          await recordProductCostChange(client, {
+            productId,
+            newCost: lp.marketPrice,
+            currencyCode: lp.currencyCode,
+            sourceType: 'po_market_pricing',
+            sourceId: args.id,
+            sourceLabel: poRes.rows[0]?.po_number ?? null,
+            userId: auth.userId,
+          })
         }
       }
       if (args.vendorId)

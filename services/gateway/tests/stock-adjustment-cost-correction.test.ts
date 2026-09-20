@@ -137,6 +137,9 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
       ctx as never,
     )
 
+    // Filtered by source_type, not just "most recent" — the uncosted
+    // receive above and this correction can land in the same millisecond,
+    // and moved_at alone isn't a reliable tie-breaker between them.
     const moves = await pool.query<{
       from_location_id: string
       to_location_id: string
@@ -147,7 +150,7 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
       notes: string
     }>(
       `SELECT from_location_id, to_location_id, qty, unit_cost, total_cost, source_type, notes
-       FROM stock_moves WHERE product_id=$1 ORDER BY moved_at DESC LIMIT 1`,
+       FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
       [productId],
     )
     expect(moves.rows).toHaveLength(1)

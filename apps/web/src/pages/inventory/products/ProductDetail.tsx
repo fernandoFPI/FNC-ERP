@@ -26,6 +26,27 @@ interface ProductBalance {
   total_value: string
 }
 
+interface ProductCostHistoryEntry {
+  id: string
+  old_cost: string | null
+  new_cost: string
+  currency_code: string
+  source_type: string
+  source_label?: string | null
+  changed_by_name?: string | null
+  changed_at: string
+}
+
+const COST_SOURCE_LABEL: Record<string, string> = {
+  po_receipt: 'PO Receipt',
+  po_market_pricing: 'PO Market Pricing',
+  requisition_market_pricing: 'Requisition Market Pricing',
+  catalog_link: 'Catalog Match',
+  stock_adjustment: 'Stock Adjustment',
+  cost_correction: 'Cost Correction',
+  manual_edit: 'Manual Edit',
+}
+
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -39,6 +60,7 @@ export default function ProductDetail() {
 
   const product = data?.product
   const balances: ProductBalance[] = product?.balances ?? []
+  const costHistory: ProductCostHistoryEntry[] = product?.costHistory ?? []
 
   const totalOnHand = balances.reduce((s, b) => s + parseFloat(b.qty_on_hand), 0)
   const totalValue = balances.reduce((s, b) => s + parseFloat(b.total_value), 0)
@@ -92,6 +114,55 @@ export default function ProductDetail() {
       key: 'total_value',
       header: 'Total Value',
       render: (b) => <AmountDisplay amount={parseFloat(b.total_value)} currency="IQD" />,
+    },
+  ]
+
+  const costHistoryColumns: Column<ProductCostHistoryEntry>[] = [
+    {
+      key: 'changed_at',
+      header: 'Date/Time',
+      render: (h) => (
+        <span style={{ fontSize: '13px', color: theme.textSecondary }}>
+          {new Date(h.changed_at).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'change',
+      header: 'Change',
+      render: (h) => (
+        <span style={{ fontFamily: 'monospace', fontSize: '13px' }}>
+          {h.old_cost != null ? (
+            <>
+              <span style={{ color: theme.textMuted }}>
+                {parseFloat(h.old_cost).toLocaleString()}
+              </span>
+              {' → '}
+            </>
+          ) : null}
+          <span style={{ color: theme.textPrimary, fontWeight: 600 }}>
+            {parseFloat(h.new_cost).toLocaleString()} {h.currency_code}
+          </span>
+        </span>
+      ),
+    },
+    {
+      key: 'source',
+      header: 'Changed By',
+      render: (h) => (
+        <span style={{ fontSize: '13px', color: theme.textPrimary }}>
+          {h.source_label || COST_SOURCE_LABEL[h.source_type] || h.source_type}
+        </span>
+      ),
+    },
+    {
+      key: 'changed_by_name',
+      header: 'User',
+      render: (h) => (
+        <span style={{ fontSize: '13px', color: theme.textMuted }}>
+          {h.changed_by_name ?? '—'}
+        </span>
+      ),
     },
   ]
 
@@ -149,7 +220,10 @@ export default function ProductDetail() {
           ...(product.sub_category ? [['Store', product.sub_category] as [string, string]] : []),
           ['UOM', product.uom],
           ['Valuation', VALUATION_METHOD_LABEL],
-          ['Std Cost', parseFloat(product.standard_cost ?? '0').toLocaleString()],
+          [
+            'Cost',
+            `${parseFloat(product.standard_cost ?? '0').toLocaleString()} ${product.cost_currency ?? ''}`.trim(),
+          ],
           ['Total On Hand', totalOnHand.toLocaleString()],
           ['Total Value', totalValue.toLocaleString()],
           [
@@ -223,6 +297,25 @@ export default function ProductDetail() {
           Stock by Location
         </div>
         <Table columns={balanceColumns} data={balances} rowKey="location_id" />
+      </Card>
+
+      <Card style={{ marginTop: '16px' }}>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderBottom: `1px solid ${theme.border}`,
+            fontWeight: 600,
+            color: theme.textPrimary,
+          }}
+        >
+          Cost History
+        </div>
+        <Table
+          columns={costHistoryColumns}
+          data={costHistory}
+          rowKey="id"
+          emptyMessage="No cost changes recorded yet."
+        />
       </Card>
     </div>
   )

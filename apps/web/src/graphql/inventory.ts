@@ -49,6 +49,16 @@ export const PRODUCT_QUERY = gql`
         average_cost
         total_value
       }
+      costHistory {
+        id
+        old_cost
+        new_cost
+        currency_code
+        source_type
+        source_label
+        changed_by_name
+        changed_at
+      }
     }
   }
 `

@@ -248,9 +248,9 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
     expect(line.rows[0]!.in_stock).toBe(true)
     expect(parseFloat(line.rows[0]!.total_price)).toBe(0)
     expect(parseFloat(line.rows[0]!.qty_from_stock)).toBe(5)
-    // No cached last_market_price yet and no product.cost_currency set —
-    // falls all the way back to average_cost (10) + the company's own
-    // default currency, not a hardcoded 'IQD'.
+    // No standard_cost (Cost) set on the product yet — falls all the way
+    // back to average_cost (10) + the company's own default currency, not
+    // a hardcoded 'IQD'.
     expect(parseFloat(line.rows[0]!.store_price)).toBe(10)
     expect(line.rows[0]!.store_price_currency).toBe(baseCurrency)
   })
@@ -315,13 +315,12 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
     expect(partialRow.rows[0]!.status).toBe('market_pricing')
   })
 
-  it('prefers a cached last-market-price and its real currency over the average-cost/base-currency fallback', async () => {
+  it('prefers the product\'s own Cost (standard_cost) and its real currency over the average-cost/base-currency fallback', async () => {
     const productId = await makeProduct('cached')
     await receive(productId, warehouseId, 20, 10) // average_cost 10, in base currency
-    await pool.query(
-      `UPDATE products SET last_market_price=25, last_market_price_currency='USD', last_market_price_at=NOW() WHERE id=$1`,
-      [productId],
-    )
+    await pool.query(`UPDATE products SET standard_cost=25, cost_currency='USD' WHERE id=$1`, [
+      productId,
+    ])
     const { reqId, lineId } = await makeReqAtInventoryCheck(productId, 5)
 
     await resolvers.Mutation.confirmRequisitionInventoryCheck(
