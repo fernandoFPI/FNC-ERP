@@ -2885,7 +2885,10 @@
     updateProduct(id: ID!, input: ProductInput!): Product!
     createStockLocation(input: LocationInput!): StockLocation!
     createManualTransfer(input: TransferInput!): StockMove!
-    createStockAdjustment(input: StockAdjustmentInput!): StockMove!
+    # Null when the adjustment was a true no-op — nothing was recorded,
+    # since this location genuinely had nothing to correct (see
+    # createStockAdjustment's own diff===0 handling).
+    createStockAdjustment(input: StockAdjustmentInput!): StockMove
     createProductFromPendingCatalogItem(id: ID!, input: ProductInput!, companyId: ID): Product!
     linkPendingCatalogItemToProduct(id: ID!, productId: ID!, companyId: ID): Boolean!
   }

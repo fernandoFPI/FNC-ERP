@@ -290,7 +290,7 @@ export default function StockAdjustmentForm() {
                   {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''}
                 </div>
               </div>
-              {diff !== null && (
+              {diff !== null && diff !== 0 && (
                 <div>
                   <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '2px' }}>
                     Adjustment
@@ -309,8 +309,8 @@ export default function StockAdjustmentForm() {
             </div>
           )}
 
-          {/* New qty + cost + date */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+          {/* New qty + cost + currency + date */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px' }}>
             <Input
               label={`New qty${selectedProduct ? ` (${selectedProduct.uom})` : ''}`}
               type="number"
@@ -324,7 +324,7 @@ export default function StockAdjustmentForm() {
               required
             />
             <Input
-              label={`Unit cost (optional)${selectedProduct?.cost_currency ? ` — ${selectedProduct.cost_currency}` : ''}`}
+              label="Unit cost (optional)"
               type="number"
               min="0"
               step="0.0001"
@@ -333,6 +333,11 @@ export default function StockAdjustmentForm() {
                 setUnitCost(e.target.value)
               }}
               placeholder={currentCost > 0 ? currentCost.toFixed(4) : '0.0000'}
+            />
+            <Input
+              label="Cost Currency"
+              value={selectedProduct?.cost_currency || '—'}
+              disabled
             />
             <Input
               label="Adjustment date"

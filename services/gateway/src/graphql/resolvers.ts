@@ -12863,7 +12863,7 @@ export const resolvers = {
             // transfer, which prices stock_balances but doesn't yet sync
             // standard_cost) and would otherwise silently never catch up.
             if (!i.unit_cost || i.unit_cost <= 0) {
-              return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
+              return null
             }
             await recordProductCostChange(client, {
               productId: i.product_id,
@@ -12877,7 +12877,7 @@ export const resolvers = {
             // This location's own ledger/average_cost, on the other hand,
             // genuinely has nothing to correct once it already matches.
             if (i.unit_cost === currentCost) {
-              return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
+              return null
             }
             if (currentQty <= 0)
               throw new Error(

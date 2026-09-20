@@ -176,12 +176,15 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
     const productId = await makeProduct('true-noop')
     await receiveUncosted(productId, 8)
 
-    const noCost = (await resolvers.Mutation.createStockAdjustment(
+    const noCost = await resolvers.Mutation.createStockAdjustment(
       null,
       { input: { product_id: productId, location_id: warehouseId, new_qty: 8 } },
       ctx as never,
-    )) as { id: string | null }
-    expect(noCost.id).toBeNull()
+    )
+    // Null, not an object with a null id — createStockAdjustment's return
+    // type is nullable precisely so a true no-op doesn't have to fake a
+    // StockMove shape (its id: ID! could never legitimately be null).
+    expect(noCost).toBeNull()
     expect(await getBalance(productId)).toEqual({ qty: 8, cost: 0 })
 
     // Now give it a real cost, then submit the identical cost again.
@@ -190,12 +193,12 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
       { input: { product_id: productId, location_id: warehouseId, new_qty: 8, unit_cost: 20 } },
       ctx as never,
     )
-    const sameCostAgain = (await resolvers.Mutation.createStockAdjustment(
+    const sameCostAgain = await resolvers.Mutation.createStockAdjustment(
       null,
       { input: { product_id: productId, location_id: warehouseId, new_qty: 8, unit_cost: 20 } },
       ctx as never,
-    )) as { id: string | null }
-    expect(sameCostAgain.id).toBeNull()
+    )
+    expect(sameCostAgain).toBeNull()
     expect(await getBalance(productId)).toEqual({ qty: 8, cost: 20 })
   })
 
@@ -235,16 +238,16 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
       [productId],
     )
 
-    const result = (await resolvers.Mutation.createStockAdjustment(
+    const result = await resolvers.Mutation.createStockAdjustment(
       null,
       { input: { product_id: productId, location_id: warehouseId, new_qty: 4, unit_cost: 45 } },
       ctx as never,
-    )) as { id: string | null }
+    )
 
     // This location's own ledger has nothing to correct (45 already there),
     // so no new stock_moves row — but the product-level Cost, which had
     // drifted to 99, must still be brought back in line with 45.
-    expect(result.id).toBeNull()
+    expect(result).toBeNull()
     const afterMoves = await pool.query(
       `SELECT count(*)::int AS n FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
       [productId],
