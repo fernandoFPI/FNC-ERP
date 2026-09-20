@@ -90,6 +90,18 @@ export default function StockAdjustmentForm() {
   const selectedProduct = products.find((p) => p.id === productId)
   const parsedNewQty = parseFloat(newQty)
   const diff = !isNaN(parsedNewQty) ? parsedNewQty - currentQty : null
+  const parsedUnitCost = unitCost !== '' ? parseFloat(unitCost) : null
+  // A same-qty submission is only ever a no-op for the quantity side — but
+  // if a real, different cost was entered too, it's a legitimate one-time
+  // cost correction (see createStockAdjustment's own diff===0 handling),
+  // most useful for stock that arrived at $0 via an uncosted opening
+  // balance/adjustment and is only now being priced for the first time.
+  const isCostOnlyCorrection =
+    diff === 0 &&
+    parsedUnitCost !== null &&
+    !isNaN(parsedUnitCost) &&
+    parsedUnitCost > 0 &&
+    parsedUnitCost !== currentCost
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -341,6 +353,24 @@ export default function StockAdjustmentForm() {
             rows={3}
           />
 
+          {/* Cost-only correction hint */}
+          {isCostOnlyCorrection && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: '7px',
+                background: theme.bgSurface,
+                border: `1px solid ${theme.border}`,
+                fontSize: '13px',
+                color: theme.textSecondary,
+              }}
+            >
+              Quantity is unchanged — this will only correct the recorded cost for this product at
+              this location, from {currentCost.toFixed(4)} to {parsedUnitCost!.toFixed(4)}. Future
+              receipts will keep updating it automatically from there.
+            </div>
+          )}
+
           {/* Warning if reducing to zero */}
           {diff !== null && diff < 0 && parsedNewQty === 0 && (
             <div
@@ -367,11 +397,18 @@ export default function StockAdjustmentForm() {
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" loading={loading} disabled={diff === 0}>
+            <Button
+              type="submit"
+              variant="primary"
+              loading={loading}
+              disabled={diff === 0 && !isCostOnlyCorrection}
+            >
               {diff === null
                 ? 'Apply adjustment'
                 : diff === 0
-                  ? 'No change'
+                  ? isCostOnlyCorrection
+                    ? 'Update cost only'
+                    : 'No change'
                   : `Apply adjustment (${diff > 0 ? '+' : ''}${diff?.toFixed(4)})`}
             </Button>
           </div>

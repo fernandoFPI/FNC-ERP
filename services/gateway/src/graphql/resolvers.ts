@@ -12689,7 +12689,41 @@ export const resolvers = {
           const unitCost = i.unit_cost && i.unit_cost > 0 ? i.unit_cost : currentCost
 
           if (diff === 0) {
-            return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
+            // Quantity is already right — but a real cost correction was
+            // entered (e.g. stock that arrived at $0 via an uncosted
+            // opening balance/adjustment, now being priced for the first
+            // time). Record it as a same-location "self move" for the full
+            // current qty at the new cost — qty>0 is required by the
+            // schema, and from==to nets qty_on_hand back to exactly where
+            // it started — so it lands in the ledger like every other
+            // stock-changing action, and the trigger picks up the new cost
+            // the same way an inbound receipt would. A true no-op (no cost
+            // entered, or it matches what's already there) stays a no-op.
+            if (!i.unit_cost || i.unit_cost <= 0 || i.unit_cost === currentCost) {
+              return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
+            }
+            if (currentQty <= 0)
+              throw new Error(
+                'No on-hand quantity to correct cost for at this location — adjust the quantity first.',
+              )
+            const mv = await client.query(
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
+               VALUES ($1,$2,$3,$3,$4,$5,$6,$7,'cost_correction',$8,$9)
+               RETURNING *, moved_at AS move_date`,
+              [
+                auth.companyId,
+                i.product_id,
+                i.location_id,
+                adjustedAt,
+                currentQty,
+                i.unit_cost,
+                currentQty * i.unit_cost,
+                i.notes ?? 'Cost correction (no quantity change)',
+                auth.userId,
+              ],
+            )
+            void publishEntityChanged(auth.companyId, 'stock_balance', i.product_id, 'updated')
+            return mv.rows[0]
           }
 
           // Record the adjustment as a real stock_moves row instead of writing
