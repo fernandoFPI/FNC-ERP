@@ -35,11 +35,19 @@ interface Claim {
   status: string
   rejection_reason: string | null
   created_at: string
+  project_code: string | null
+  project_name: string | null
   lines: ClaimLine[]
 }
 
 interface Category {
   id: string
+  name: string
+}
+
+interface Project {
+  id: string
+  code: string
   name: string
 }
 
@@ -74,6 +82,7 @@ const emptyLine = (): LineForm => ({
 const EMPTY_FORM = {
   description: '',
   currency_code: 'IQD',
+  project_id: '',
   notes: '',
 }
 
@@ -86,6 +95,7 @@ export default function MyExpenseClaimsPage() {
 
   const [claims, setClaims] = useState<Claim[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -100,12 +110,14 @@ export default function MyExpenseClaimsPage() {
     }
     setLoading(true)
     try {
-      const [clRes, catRes] = await Promise.all([
+      const [clRes, catRes, projRes] = await Promise.all([
         api.get<Claim[]>('/finance/expense-claims/mine'),
         api.get<Category[]>('/finance/expense-claims/categories/mine'),
+        api.get<{ data: Project[] }>('/projects', { params: { limit: 500 } }),
       ])
       setClaims(clRes.data)
       setCategories(catRes.data)
+      setProjects(projRes.data.data)
     } catch {
       /* handled */
     } finally {
@@ -133,6 +145,7 @@ export default function MyExpenseClaimsPage() {
       await api.post('/finance/expense-claims/request-self', {
         description: form.description || undefined,
         currency_code: form.currency_code,
+        project_id: form.project_id || undefined,
         notes: form.notes || undefined,
         lines: lines.map((l) => ({
           expense_date: l.expense_date,
@@ -286,6 +299,11 @@ export default function MyExpenseClaimsPage() {
                     </td>
                     <td style={{ padding: '10px 16px', color: theme.textSecondary }}>
                       {c.description ?? '—'}
+                      {c.project_code && (
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                          {c.project_code} — {c.project_name}
+                        </div>
+                      )}
                     </td>
                     <td
                       style={{
@@ -382,6 +400,21 @@ export default function MyExpenseClaimsPage() {
               <option value="EUR">EUR</option>
             </Select>
           </div>
+
+          <Select
+            label="Project (optional)"
+            value={form.project_id}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, project_id: e.target.value }))
+            }}
+          >
+            <option value="">— Not project-related —</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.code} · {p.name}
+              </option>
+            ))}
+          </Select>
 
           <div>
             <p
@@ -517,6 +550,11 @@ export default function MyExpenseClaimsPage() {
                 currency={detailClaim.currency_code}
                 size="sm"
               />
+              {detailClaim.project_code && (
+                <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                  {detailClaim.project_code} — {detailClaim.project_name}
+                </span>
+              )}
             </div>
             {detailClaim.rejection_reason && (
               <div

@@ -262,7 +262,7 @@ expenseClaimsRouter.get('/mine', async (req, res) => {
       return
     }
     const r = await query(
-      `SELECT ec.*, COALESCE(
+      `SELECT ec.*, p.code AS project_code, p.name AS project_name, COALESCE(
           json_agg(
             json_build_object(
               'id', ecl.id, 'expense_date', ecl.expense_date, 'category_name', ecl.category_name,
@@ -271,9 +271,10 @@ expenseClaimsRouter.get('/mine', async (req, res) => {
           ) FILTER (WHERE ecl.id IS NOT NULL), '[]'
         ) AS lines
        FROM expense_claims ec
+       LEFT JOIN projects p ON p.id = ec.project_id
        LEFT JOIN expense_claim_lines ecl ON ecl.claim_id = ec.id
        WHERE ec.company_id=$1 AND ec.employee_id=$2
-       GROUP BY ec.id
+       GROUP BY ec.id, p.code, p.name
        ORDER BY ec.created_at DESC`,
       [req.auth!.companyId, emp.id],
     )
@@ -327,12 +328,13 @@ expenseClaimsRouter.get(
   async (req, res) => {
     try {
       const ec = await query(
-        `SELECT ec.*,
+        `SELECT ec.*, proj.code AS project_code, proj.name AS project_name,
                 COALESCE(cu.first_name || ' ' || cu.last_name, cu.email) AS created_by_name,
                 COALESCE(au.first_name || ' ' || au.last_name, au.email) AS approved_by_name,
                 COALESCE(ru.first_name || ' ' || ru.last_name, ru.email) AS rejected_by_name,
                 COALESCE(pu.first_name || ' ' || pu.last_name, pu.email) AS paid_by_name
          FROM expense_claims ec
+         LEFT JOIN projects proj ON proj.id = ec.project_id
          LEFT JOIN users cu ON cu.id = ec.created_by
          LEFT JOIN users au ON au.id = ec.approved_by
          LEFT JOIN users ru ON ru.id = ec.rejected_by
@@ -377,6 +379,7 @@ const claimSchema = z.object({
   employee_name: z.string().min(1),
   description: z.string().optional(),
   currency_code: z.string().length(3).default('IQD'),
+  project_id: z.string().uuid().optional(),
   notes: z.string().optional(),
   lines: z.array(lineSchema).min(1),
 })
@@ -400,8 +403,8 @@ expenseClaimsRouter.post(
           )
           const ecRes = await client.query(
             `INSERT INTO expense_claims
-            (company_id, claim_number, employee_id, employee_name, description, currency_code, total_amount, reimbursement_account_id, notes, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+            (company_id, claim_number, employee_id, employee_name, description, currency_code, total_amount, reimbursement_account_id, project_id, notes, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
             [
               req.auth!.companyId,
               claimNumber,
@@ -411,6 +414,7 @@ expenseClaimsRouter.post(
               d.currency_code,
               totalAmount,
               reimbursementAccountId,
+              d.project_id ?? null,
               d.notes ?? null,
               req.auth!.userId,
             ],
@@ -485,6 +489,7 @@ const selfLineSchema = z.object({
 const selfClaimSchema = z.object({
   description: z.string().optional(),
   currency_code: z.string().length(3).default('IQD'),
+  project_id: z.string().uuid().optional(),
   notes: z.string().optional(),
   lines: z.array(selfLineSchema).min(1),
 })
@@ -513,8 +518,8 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
         const ecRes = await client.query(
           `INSERT INTO expense_claims
              (company_id, claim_number, employee_id, employee_name, description, currency_code,
-              total_amount, reimbursement_account_id, notes, status, submitted_at, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'submitted',NOW(),$10) RETURNING *`,
+              total_amount, reimbursement_account_id, project_id, notes, status, submitted_at, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'submitted',NOW(),$11) RETURNING *`,
           [
             req.auth!.companyId,
             claimNumber,
@@ -524,6 +529,7 @@ expenseClaimsRouter.post('/request-self', async (req, res) => {
             d.currency_code,
             totalAmount,
             reimbursementAccountId,
+            d.project_id ?? null,
             d.notes ?? null,
             req.auth!.userId,
           ],
@@ -617,14 +623,15 @@ expenseClaimsRouter.put(
             d.currency_code,
           )
           const ecRes = await client.query(
-            `UPDATE expense_claims SET employee_name=$1, description=$2, currency_code=$3, total_amount=$4, reimbursement_account_id=$5, notes=$6, updated_at=NOW()
-           WHERE id=$7 RETURNING *`,
+            `UPDATE expense_claims SET employee_name=$1, description=$2, currency_code=$3, total_amount=$4, reimbursement_account_id=$5, project_id=$6, notes=$7, updated_at=NOW()
+           WHERE id=$8 RETURNING *`,
             [
               d.employee_name,
               d.description ?? null,
               d.currency_code,
               totalAmount,
               reimbursementAccountId,
+              d.project_id ?? null,
               d.notes ?? null,
               req.params['id'],
             ],
@@ -728,11 +735,23 @@ expenseClaimsRouter.post(
           // Lines can't change once a claim leaves 'draft' (PUT /:id only
           // allows edits in draft), so locking just the header is enough.
           const claimRes = await client.query(
-            `SELECT * FROM expense_claims WHERE id=$1 AND company_id=$2 AND status='submitted' FOR UPDATE`,
+            `SELECT ec.*, aa.id AS project_analytic_account_id
+             FROM expense_claims ec
+             LEFT JOIN projects p ON p.id = ec.project_id
+             LEFT JOIN analytic_accounts aa ON aa.id = p.analytic_account_id
+             WHERE ec.id=$1 AND ec.company_id=$2 AND ec.status='submitted' FOR UPDATE OF ec`,
             [req.params['id'], req.auth!.companyId],
           )
           if (!claimRes.rows[0]) return null
           const claim = claimRes.rows[0] as Record<string, unknown>
+          // project_analytic_account_id comes from the analytic_accounts JOIN
+          // itself, not a straight passthrough of projects.analytic_account_id
+          // — a dangling reference must fail here, not reach the journal_lines
+          // INSERT and crash on its FK constraint instead. Mirrors
+          // employee-advances.ts's identical settlement-time check.
+          if (claim['project_id'] && !claim['project_analytic_account_id']) {
+            return { error: 'PROJECT_MISSING_ANALYTIC_ACCOUNT' as const }
+          }
           const linesRes = await client.query(
             `SELECT * FROM expense_claim_lines WHERE claim_id=$1 ORDER BY expense_date`,
             [req.params['id']],
@@ -757,14 +776,19 @@ expenseClaimsRouter.post(
           )
           const jeId = jeRes.rows[0]!.id as string
 
-          // DR each expense account, CR Accrued Reimbursement
+          // DR each expense account, CR Accrued Reimbursement. Only the debit
+          // (expense-recognizing) lines carry analytic_account_id — the
+          // credit line below books a balance-sheet liability, not a cost,
+          // so it must NOT roll into project_cost_actuals via
+          // trg_sync_project_costs.
           for (const line of lines) {
             await client.query(
-              `INSERT INTO journal_lines (journal_entry_id, account_id, currency_code, debit, credit, description, amount_company_currency)
-             VALUES ($1,$2,$3,$4,0,$5,$4)`,
+              `INSERT INTO journal_lines (journal_entry_id, account_id, analytic_account_id, currency_code, debit, credit, description, amount_company_currency)
+             VALUES ($1,$2,$3,$4,$5,0,$6,$5)`,
               [
                 jeId,
                 line.gl_account_id,
+                claim['project_analytic_account_id'] ?? null,
                 claim['currency_code'],
                 line.amount,
                 line.description ?? (claim['claim_number'] as string),
@@ -793,6 +817,15 @@ expenseClaimsRouter.post(
       )
       if (!result) {
         sendError(res, 409, 'INVALID_STATUS', 'Claim is not in submitted status')
+        return
+      }
+      if ('error' in result) {
+        sendError(
+          res,
+          422,
+          result.error,
+          'This claim’s linked project has no analytic account configured — set one before it can be approved',
+        )
         return
       }
       await logAudit({

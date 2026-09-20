@@ -43,6 +43,8 @@ interface Claim {
   journal_entry_id: string | null
   created_at: string
   reimbursement_account_id: string | null
+  project_code: string | null
+  project_name: string | null
   lines: ClaimLine[]
 }
 
@@ -294,6 +296,10 @@ export default function ExpenseClaimDetail() {
                     claim.created_by_name && claim.created_by_name !== claim.employee_name
                       ? claim.created_by_name
                       : claim.employee_name,
+                  ],
+                  [
+                    'Project',
+                    claim.project_code ? `${claim.project_code} — ${claim.project_name}` : '—',
                   ],
                   ['Currency', claim.currency_code],
                   ['Total Amount', null],
