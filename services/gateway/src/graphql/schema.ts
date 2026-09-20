@@ -2712,6 +2712,7 @@
     location_type: String
     total_value: String
     is_low_stock: Boolean
+    last_cost_currency: String
   }
 
   type ProductBalance {
@@ -2722,6 +2723,7 @@
     qty_reserved: String!
     available: String!
     average_cost: String!
+    last_cost_currency: String!
     total_value: String!
   }
 

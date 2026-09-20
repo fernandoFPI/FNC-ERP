@@ -47,6 +47,7 @@ export const PRODUCT_QUERY = gql`
         qty_reserved
         available
         average_cost
+        last_cost_currency
         total_value
       }
       costHistory {
@@ -162,6 +163,7 @@ export const STOCK_BALANCES_QUERY = gql`
       location_id
       qty_on_hand
       average_cost
+      last_cost_currency
       product_name
       location_name
     }

@@ -78,6 +78,7 @@ export default function StockAdjustmentForm() {
     name_ar?: string | null
     uom: string
     average_cost: string
+    cost_currency?: string | null
   }[] = productsData?.products ?? []
   const locations: { id: string; name: string; code: string; type: string }[] =
     locationsData?.stockLocations ?? []
@@ -286,7 +287,7 @@ export default function StockAdjustmentForm() {
                   Last cost
                 </div>
                 <div style={{ fontWeight: 600, color: theme.textPrimary }}>
-                  {currentCost.toFixed(4)}
+                  {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''}
                 </div>
               </div>
               {diff !== null && (
@@ -323,7 +324,7 @@ export default function StockAdjustmentForm() {
               required
             />
             <Input
-              label="Unit cost (optional)"
+              label={`Unit cost (optional)${selectedProduct?.cost_currency ? ` — ${selectedProduct.cost_currency}` : ''}`}
               type="number"
               min="0"
               step="0.0001"
@@ -367,8 +368,9 @@ export default function StockAdjustmentForm() {
               }}
             >
               Quantity is unchanged — this will only correct the recorded cost for this product at
-              this location, from {currentCost.toFixed(4)} to {parsedUnitCost!.toFixed(4)}. Future
-              receipts will keep updating it automatically from there.
+              this location, from {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''} to{' '}
+              {parsedUnitCost!.toFixed(4)} {selectedProduct?.cost_currency ?? ''}. Future receipts
+              will keep updating it automatically from there.
             </div>
           )}
 

@@ -23,6 +23,7 @@ interface ProductBalance {
   qty_reserved: string
   available: string
   average_cost: string
+  last_cost_currency: string
   total_value: string
 }
 
@@ -64,6 +65,16 @@ export default function ProductDetail() {
 
   const totalOnHand = balances.reduce((s, b) => s + parseFloat(b.qty_on_hand), 0)
   const totalValue = balances.reduce((s, b) => s + parseFloat(b.total_value), 0)
+  // Locations normally share one currency (a product has a single
+  // cost_currency, and corrections now tag moves with it) — but nothing
+  // stops two locations from genuinely differing (e.g. one corrected
+  // before a currency change, one after), so this label is only trustworthy
+  // when they actually agree; otherwise fall back to the product's own
+  // currency as a best-effort label rather than silently mislabeling a sum
+  // of mixed-currency values.
+  const balanceCurrencies = new Set(balances.map((b) => b.last_cost_currency))
+  const totalValueCurrency =
+    balanceCurrencies.size === 1 ? [...balanceCurrencies][0] : (product?.cost_currency ?? 'IQD')
 
   const balanceColumns: Column<ProductBalance>[] = [
     {
@@ -108,12 +119,12 @@ export default function ProductDetail() {
     {
       key: 'average_cost',
       header: 'Last Cost',
-      render: (b) => <AmountDisplay amount={parseFloat(b.average_cost)} currency="IQD" />,
+      render: (b) => <AmountDisplay amount={parseFloat(b.average_cost)} currency={b.last_cost_currency} />,
     },
     {
       key: 'total_value',
       header: 'Total Value',
-      render: (b) => <AmountDisplay amount={parseFloat(b.total_value)} currency="IQD" />,
+      render: (b) => <AmountDisplay amount={parseFloat(b.total_value)} currency={b.last_cost_currency} />,
     },
   ]
 
@@ -225,7 +236,7 @@ export default function ProductDetail() {
             `${parseFloat(product.standard_cost ?? '0').toLocaleString()} ${product.cost_currency ?? ''}`.trim(),
           ],
           ['Total On Hand', totalOnHand.toLocaleString()],
-          ['Total Value', totalValue.toLocaleString()],
+          ['Total Value', `${totalValue.toLocaleString()} ${totalValueCurrency}`.trim()],
           [
             'Reorder Point',
             product.reorder_point ? parseFloat(product.reorder_point).toLocaleString() : '—',

@@ -53,6 +53,14 @@ async function getBalance(productId: string): Promise<{ qty: number; cost: numbe
   }
 }
 
+async function getBalanceCurrency(productId: string): Promise<string | null> {
+  const r = await pool.query<{ last_cost_currency: string | null }>(
+    `SELECT last_cost_currency FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL`,
+    [productId, warehouseId],
+  )
+  return r.rows[0]?.last_cost_currency ?? null
+}
+
 async function cleanup(): Promise<void> {
   await pool.query(
     `DELETE FROM stock_moves WHERE product_id IN (SELECT id FROM products WHERE sku LIKE $1)`,
@@ -263,5 +271,68 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
     expect(result.id).not.toBeNull()
     expect(result.source_type).toBe('adjustment')
     expect(await getBalance(productId)).toEqual({ qty: 10, cost: 6 })
+  })
+})
+
+describe('createStockAdjustment — currency tagging (stock_balances.last_cost_currency)', () => {
+  it('tags a cost-only correction with the product\'s own currency, not a hardcoded one', async () => {
+    const productId = await makeProduct('currency-cost-correction')
+    await pool.query(`UPDATE products SET cost_currency='USD' WHERE id=$1`, [productId])
+    await receiveUncosted(productId, 5)
+    expect(await getBalanceCurrency(productId)).toBe('IQD') // uncosted receive still defaults IQD
+
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: productId, location_id: warehouseId, new_qty: 5, unit_cost: 45 } },
+      ctx as never,
+    )
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+
+    const move = await pool.query<{ currency_code: string }>(
+      `SELECT currency_code FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
+      [productId],
+    )
+    expect(move.rows[0]!.currency_code).toBe('USD')
+  })
+
+  it('tags a quantity-change-with-cost adjustment with the product\'s own currency', async () => {
+    const productId = await makeProduct('currency-qty-change')
+    await pool.query(`UPDATE products SET cost_currency='USD' WHERE id=$1`, [productId])
+
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: productId, location_id: warehouseId, new_qty: 8, unit_cost: 12 } },
+      ctx as never,
+    )
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+
+    const move = await pool.query<{ currency_code: string }>(
+      `SELECT currency_code FROM stock_moves WHERE product_id=$1 AND source_type='adjustment'`,
+      [productId],
+    )
+    expect(move.rows[0]!.currency_code).toBe('USD')
+  })
+
+  it('a quantity change with no cost given keeps the location\'s existing currency, even if the product\'s currency changed since', async () => {
+    const productId = await makeProduct('currency-fallback-preserved')
+    // Cost the location for real while the product is still IQD-costed.
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: productId, location_id: warehouseId, new_qty: 5, unit_cost: 30 } },
+      ctx as never,
+    )
+    expect(await getBalanceCurrency(productId)).toBe('IQD')
+
+    // Product's own currency now drifts to USD (e.g. a later market-pricing
+    // update) — but a pure quantity change with no unit_cost must NOT
+    // silently relabel this location's already-correct IQD amount as USD.
+    await pool.query(`UPDATE products SET cost_currency='USD' WHERE id=$1`, [productId])
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: productId, location_id: warehouseId, new_qty: 9 } },
+      ctx as never,
+    )
+    expect(await getBalance(productId)).toEqual({ qty: 9, cost: 30 })
+    expect(await getBalanceCurrency(productId)).toBe('IQD')
   })
 })

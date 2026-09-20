@@ -12795,11 +12795,12 @@ export const resolvers = {
           // change out from under it (a concurrent Store Out, receipt, or a
           // second adjustment on the same row) before this adjustment posts.
           const balRes = await client.query(
-            `SELECT qty_on_hand, average_cost FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
+            `SELECT qty_on_hand, average_cost, last_cost_currency FROM stock_balances WHERE product_id=$1 AND location_id=$2 AND lot_id IS NULL FOR UPDATE`,
             [i.product_id, i.location_id],
           )
           const currentQty = parseFloat(String(balRes.rows[0]?.qty_on_hand ?? 0))
           const currentCost = parseFloat(String(balRes.rows[0]?.average_cost ?? 0))
+          const currentCurrency = balRes.rows[0]?.last_cost_currency ?? 'IQD'
           const diff = i.new_qty - currentQty
           const unitCost = i.unit_cost && i.unit_cost > 0 ? i.unit_cost : currentCost
           const productCcyRes = await client.query<{ cost_currency: string | null }>(
@@ -12807,6 +12808,12 @@ export const resolvers = {
             [i.product_id],
           )
           const adjustmentCurrency = productCcyRes.rows[0]?.cost_currency ?? 'IQD'
+          // A real new cost is always entered in the product's own currency
+          // (see recordProductCostChange below) — but falling back to the
+          // location's existing cost (no unit_cost given) must keep tagging
+          // it with whatever currency was already recorded there, not
+          // whatever the product's currency happens to be right now.
+          const moveCurrency = i.unit_cost && i.unit_cost > 0 ? adjustmentCurrency : currentCurrency
 
           if (diff === 0) {
             // Quantity is already right — but a real cost correction was
@@ -12841,8 +12848,8 @@ export const resolvers = {
                 'No on-hand quantity to correct cost for at this location — adjust the quantity first.',
               )
             const mv = await client.query(
-              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
-               VALUES ($1,$2,$3,$3,$4,$5,$6,$7,'cost_correction',$8,$9)
+              `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,currency_code,source_type,notes,moved_by)
+               VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,'cost_correction',$9,$10)
                RETURNING *, moved_at AS move_date`,
               [
                 auth.companyId,
@@ -12852,6 +12859,7 @@ export const resolvers = {
                 currentQty,
                 i.unit_cost,
                 currentQty * i.unit_cost,
+                adjustmentCurrency,
                 i.notes ?? 'Cost correction (no quantity change)',
                 auth.userId,
               ],
@@ -12891,8 +12899,8 @@ export const resolvers = {
           const qty = Math.abs(diff)
 
           const mv = await client.query(
-            `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,source_type,notes,moved_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'adjustment',$9,$10)
+            `INSERT INTO stock_moves (company_id,product_id,from_location_id,to_location_id,moved_at,qty,unit_cost,total_cost,currency_code,source_type,notes,moved_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'adjustment',$10,$11)
              RETURNING *, moved_at AS move_date`,
             [
               auth.companyId,
@@ -12903,6 +12911,7 @@ export const resolvers = {
               qty,
               unitCost,
               qty * unitCost,
+              moveCurrency,
               i.notes ?? null,
               auth.userId,
             ],
@@ -12913,9 +12922,9 @@ export const resolvers = {
           // replaces the average cost outright, rather than being blended in.
           if (i.unit_cost && i.unit_cost > 0) {
             await client.query(
-              `UPDATE stock_balances SET average_cost=$1, updated_at=NOW()
+              `UPDATE stock_balances SET average_cost=$1, last_cost_currency=$4, updated_at=NOW()
                WHERE product_id=$2 AND location_id=$3 AND lot_id IS NULL`,
-              [i.unit_cost, i.product_id, i.location_id],
+              [i.unit_cost, i.product_id, i.location_id, adjustmentCurrency],
             )
             await recordProductCostChange(client, {
               productId: i.product_id,
