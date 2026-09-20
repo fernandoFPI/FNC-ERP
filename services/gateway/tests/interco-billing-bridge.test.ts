@@ -174,6 +174,15 @@ beforeAll(async () => {
   if (!ywh.rows[0]) throw new Error('No Yakam warehouse location seeded — run seeds first')
   yakamWarehouseId = ywh.rows[0].id
 
+  // Belt-and-braces alongside seed-companies.ts setting this directly:
+  // migrations always run before seeds, so migration 280's own data-fixing
+  // UPDATE (which assumes this company row already exists, true on every
+  // real deployment) silently matches nothing on a freshly-migrated-then-
+  // seeded DB. Set it explicitly here too so this suite's own precondition
+  // never depends on that ordering — a no-op on a real dev/prod DB where
+  // it's already true.
+  await pool.query(`UPDATE companies SET is_central_warehouse=true WHERE id=$1`, [FACTORY_COMPANY_ID])
+
   await cleanup()
 })
 
