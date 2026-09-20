@@ -187,6 +187,26 @@ describe('updateProduct — manual Cost edits are logged', () => {
     expect(await getHistory(productId)).toHaveLength(1)
   })
 
+  it('logs a currency-only change even when the numeric cost stays the same', async () => {
+    const productId = await makeProduct('manual-edit-currency-change')
+    await resolvers.Mutation.updateProduct(
+      null,
+      { id: productId, input: { standard_cost: 25, cost_currency: 'IQD' } },
+      ctx as never,
+    )
+    // Same number, different currency — a real change (this cost now means
+    // 25 USD, not 25 IQD), not the no-op resubmission covered above.
+    await resolvers.Mutation.updateProduct(
+      null,
+      { id: productId, input: { standard_cost: 25, cost_currency: 'USD' } },
+      ctx as never,
+    )
+    expect(await getProductCost(productId)).toEqual({ cost: 25, currency: 'USD' })
+    const history = await getHistory(productId)
+    expect(history).toHaveLength(2)
+    expect(history[1]).toMatchObject({ old_cost: '25.0000', new_cost: '25.0000', currency_code: 'USD' })
+  })
+
   it('a deliberate reset to 0 updates the cost but is not logged as a cost transition', async () => {
     const productId = await makeProduct('manual-edit-zero')
     await resolvers.Mutation.updateProduct(

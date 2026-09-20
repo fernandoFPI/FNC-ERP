@@ -92,16 +92,17 @@ export default function StockAdjustmentForm() {
   const diff = !isNaN(parsedNewQty) ? parsedNewQty - currentQty : null
   const parsedUnitCost = unitCost !== '' ? parseFloat(unitCost) : null
   // A same-qty submission is only ever a no-op for the quantity side — but
-  // if a real, different cost was entered too, it's a legitimate one-time
-  // cost correction (see createStockAdjustment's own diff===0 handling),
-  // most useful for stock that arrived at $0 via an uncosted opening
+  // if a real cost was entered too, it's a legitimate one-time cost
+  // correction (see createStockAdjustment's own diff===0 handling), most
+  // useful for stock that arrived at $0 via an uncosted opening
   // balance/adjustment and is only now being priced for the first time.
+  // Deliberately NOT gated on differing from currentCost (this location's
+  // own average_cost) — the product's unified Cost can already be stale
+  // relative to it (e.g. after an interco transfer), so a value that
+  // happens to match this location is still a real correction worth
+  // sending; the backend's own no-op guard is what actually decides.
   const isCostOnlyCorrection =
-    diff === 0 &&
-    parsedUnitCost !== null &&
-    !isNaN(parsedUnitCost) &&
-    parsedUnitCost > 0 &&
-    parsedUnitCost !== currentCost
+    diff === 0 && parsedUnitCost !== null && !isNaN(parsedUnitCost) && parsedUnitCost > 0
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

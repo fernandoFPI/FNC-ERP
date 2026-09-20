@@ -2708,8 +2708,8 @@ async function callerHasCurrentStagePositionGW(
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'store_pricing')
     case 'market_pricing':
       return userHasPositionGW(auth.userId, auth.companyId, poId, 'procurement_officer')
-    case 'price_verification':
-      return userHasPositionGW(auth.userId, auth.companyId, poId, 'procurement_2nd')
+    // price_verification has no dedicated position — it's organizer/admin
+    // only (see submitPOPriceVerification), same as draft/approved below.
     case 'pending_approval':
       return (
         (await userIsDeptHeadGW(auth.userId, poId)) ||
@@ -3578,13 +3578,14 @@ async function recordProductCostChange(
 ): Promise<void> {
   const { productId, newCost, currencyCode, sourceType, sourceId, sourceLabel, userId } = params
   if (!(newCost > 0)) return
-  const current = await client.query<{ standard_cost: string | null }>(
-    `SELECT standard_cost FROM products WHERE id=$1`,
+  const current = await client.query<{ standard_cost: string | null; cost_currency: string | null }>(
+    `SELECT standard_cost, cost_currency FROM products WHERE id=$1 FOR UPDATE`,
     [productId],
   )
   const oldCost =
     current.rows[0]?.standard_cost != null ? parseFloat(current.rows[0].standard_cost) : null
-  if (oldCost === newCost) return
+  const oldCurrency = current.rows[0]?.cost_currency ?? null
+  if (oldCost === newCost && oldCurrency === currencyCode) return
   await client.query(`UPDATE products SET standard_cost=$1, cost_currency=$2 WHERE id=$3`, [
     newCost,
     currencyCode,
@@ -6228,7 +6229,9 @@ export const resolvers = {
                -- store_keeper position (see confirmPOInventoryCheck) — kept
                -- alongside the other owner-actioned statuses for the
                -- organizer clause, plus its own position lookup below.
-               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
+               -- price_verification has no dedicated position — organizer/
+               -- admin only (see submitPOPriceVerification).
+               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check','price_verification'))
                -- Whoever is explicitly named as this PO's receiver ("Received
                -- By") sees it once goods_received too, regardless of whether
                -- they hold a buyer/store_keeper position — see
@@ -6241,7 +6244,6 @@ export const resolvers = {
                ))
                OR (po.status = 'store_pricing' AND ${positionScope('store_pricing')})
                OR (po.status = 'market_pricing' AND ${positionScope('procurement_officer')})
-               OR (po.status = 'price_verification' AND ${positionScope('procurement_2nd')})
                OR (po.status = 'ready_to_issue' AND ${positionScope('store_keeper')})
                OR (po.status = 'pending_approval' AND (
                  EXISTS (SELECT 1 FROM departments d WHERE d.manager_id = $3 AND d.id = org_emp.department_id)
@@ -9433,8 +9435,10 @@ export const resolvers = {
         isAdmin || userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'store_pricing'),
         isAdmin ||
           userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_officer'),
-        isAdmin ||
-          userHasPositionForRequisitionGW(ctx.auth.userId, ctx.auth.companyId, args.id, 'procurement_2nd'),
+        // price_verification has no dedicated position — organizer/admin
+        // only (see verifyRequisitionPrices). Field name kept as-is even
+        // though it's no longer position-based, to avoid a wider rename.
+        isAdmin || userIsOrganizerForRequisitionGW(ctx.auth.userId, args.id, ctx.auth.companyId),
         // G1 Phase 3 Milestone A screen 3 — gates the Items Bought screen,
         // mirroring recordLinePurchase/markRequisitionLineShort/
         // finishBuyingRequisition's own shared authorization exactly.
@@ -9520,7 +9524,8 @@ export const resolvers = {
     // G1 Phase 3 Milestone A — requisition-scoped worklist, mirrors
     // myApprovalQueue's per-stage position-holder mapping exactly (same
     // position per stage: store_keeper/store_pricing/procurement_officer/
-    // procurement_2nd/dept_head-or-assigned_approver), scoped to the
+    // dept_head-or-assigned_approver; price_verification is organizer/admin
+    // only, folded into the organizer clause above), scoped to the
     // requisition's own stage vocabulary (draft through items_bought —
     // 'sourcing'/'completed' have no further caller action to queue on).
     // A separate query rather than widening myApprovalQueue's return type,
@@ -9544,7 +9549,9 @@ export const resolvers = {
            WHERE req.company_id=$1
              AND req.status NOT IN ('deleted','completed','cancelled','sourcing')
              AND (
-               (req.organizer_id=$2 AND req.status IN ('draft','rejected'))
+               -- price_verification has no dedicated position — organizer/
+               -- admin only (see verifyRequisitionPrices).
+               (req.organizer_id=$2 AND req.status IN ('draft','rejected','price_verification'))
                OR (req.status='inventory_check' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='store_keeper' AND ppa.is_active=true
@@ -9556,10 +9563,6 @@ export const resolvers = {
                OR (req.status='market_pricing' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (req.status='price_verification' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
                        AND (ppa.project_id=req.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (req.status='pending_approval' AND (
                      EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
@@ -9685,7 +9688,9 @@ export const resolvers = {
            WHERE po.company_id=$1
              AND po.status NOT IN ('deleted','completed','cancelled')
              AND (
-               (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected'))
+               -- price_verification has no dedicated position — organizer/
+               -- admin only (see submitPOPriceVerification).
+               (po.organizer_id=$2 AND po.status IN ('draft','goods_received','rejected','price_verification'))
                OR (po.status='items_bought' AND (
                      po.assigned_buyer_user_id=$2
                      OR EXISTS (
@@ -9704,10 +9709,6 @@ export const resolvers = {
                OR (po.status='market_pricing' AND EXISTS (
                      SELECT 1 FROM po_position_assignments ppa
                      WHERE ppa.employee_id=$3 AND ppa.position='procurement_officer' AND ppa.is_active=true
-                       AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
-               OR (po.status='price_verification' AND EXISTS (
-                     SELECT 1 FROM po_position_assignments ppa
-                     WHERE ppa.employee_id=$3 AND ppa.position='procurement_2nd' AND ppa.is_active=true
                        AND (ppa.project_id=po.project_id OR ppa.department_id=$4 OR (ppa.project_id IS NULL AND ppa.department_id IS NULL))))
                OR (po.status='pending_approval' AND (
                      EXISTS (SELECT 1 FROM departments d WHERE d.manager_id=$3 AND d.id=$4)
@@ -12811,14 +12812,28 @@ export const resolvers = {
             // Quantity is already right — but a real cost correction was
             // entered (e.g. stock that arrived at $0 via an uncosted
             // opening balance/adjustment, now being priced for the first
-            // time). Record it as a same-location "self move" for the full
-            // current qty at the new cost — qty>0 is required by the
-            // schema, and from==to nets qty_on_hand back to exactly where
-            // it started — so it lands in the ledger like every other
-            // stock-changing action, and the trigger picks up the new cost
-            // the same way an inbound receipt would. A true no-op (no cost
-            // entered, or it matches what's already there) stays a no-op.
-            if (!i.unit_cost || i.unit_cost <= 0 || i.unit_cost === currentCost) {
+            // time). A true no-op (no cost entered at all) stays a no-op;
+            // anything else at least tries recordProductCostChange below —
+            // deliberately NOT gated on matching this location's own
+            // average_cost, since the unified product Cost can already
+            // differ from it (e.g. stock that arrived via an interco
+            // transfer, which prices stock_balances but doesn't yet sync
+            // standard_cost) and would otherwise silently never catch up.
+            if (!i.unit_cost || i.unit_cost <= 0) {
+              return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
+            }
+            await recordProductCostChange(client, {
+              productId: i.product_id,
+              newCost: i.unit_cost,
+              currencyCode: adjustmentCurrency,
+              sourceType: 'cost_correction',
+              sourceId: null,
+              sourceLabel: 'Stock Adjustment (cost correction)',
+              userId: auth.userId,
+            })
+            // This location's own ledger/average_cost, on the other hand,
+            // genuinely has nothing to correct once it already matches.
+            if (i.unit_cost === currentCost) {
               return { id: null, move_date: adjustedAt, qty: '0', source_type: 'adjustment' }
             }
             if (currentQty <= 0)
@@ -12841,15 +12856,6 @@ export const resolvers = {
                 auth.userId,
               ],
             )
-            await recordProductCostChange(client, {
-              productId: i.product_id,
-              newCost: i.unit_cost,
-              currencyCode: adjustmentCurrency,
-              sourceType: 'cost_correction',
-              sourceId: null,
-              sourceLabel: 'Stock Adjustment (cost correction)',
-              userId: auth.userId,
-            })
             void publishEntityChanged(auth.companyId, 'stock_balance', i.product_id, 'updated')
             return mv.rows[0]
           }
@@ -30388,6 +30394,13 @@ const phase5MutationResolvers = {
     )
     if (!isAdmin && !hasPos) throw new Error('procurement_officer position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    // Price verification is organizer/admin only now (no dedicated
+    // position) — fetched here so the post-commit notification below can
+    // ping them directly instead of a position-holder list.
+    const organizerRow = await query<{ organizer_id: string | null }>(
+      `SELECT organizer_id FROM requisitions WHERE id=$1`,
+      [args.id],
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -30446,11 +30459,14 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    void notifyPositionHoldersForRequisitionGW(args.id, 'procurement_2nd', {
-      type: 'REQ_PRICE_VERIFICATION_REQUIRED',
-      title: 'Price verification required',
-      body: 'Requisition market prices require cross-checking',
-    })
+    if (organizerRow.rows[0]?.organizer_id) {
+      void notifyUserGW(organizerRow.rows[0].organizer_id, auth.companyId, {
+        type: 'REQ_PRICE_VERIFICATION_REQUIRED',
+        title: 'Price verification required',
+        body: 'Cross-check market prices and submit for approval',
+        poId: args.id,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'requisition', args.id, 'updated')
     return getRequisitionForReturn(args.id)
   },
@@ -30467,13 +30483,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can submit price verification')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
@@ -30519,8 +30531,8 @@ const phase5MutationResolvers = {
   },
 
   // The following four actions are only available from 'price_verification'
-  // — same procurement_2nd position gate as verifyRequisitionPrices itself,
-  // since whoever can submit for approval at this stage should also be able
+  // — same organizer/admin gate as verifyRequisitionPrices itself, since
+  // whoever can submit for approval at this stage should also be able
   // to send it back instead. Mirrors rejectPOVerificationToMarketPricing/
   // rejectPOVerificationToStorePricing exactly; resetRequisitionToDraft and
   // rejectRequisitionVerificationToInventoryCheck have no PO equivalent —
@@ -30536,13 +30548,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -30581,13 +30589,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -30626,13 +30630,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -30667,13 +30667,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionForRequisitionGW(
-      auth.userId,
-      auth.companyId,
-      args.id,
-      'procurement_2nd',
-    )
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerForRequisitionGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this requisition')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32215,6 +32211,13 @@ const phase5MutationResolvers = {
     if (!isAdmin && !hasPos)
       throw new Error('procurement_officer position required')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
+    // Price verification is organizer/admin only now (no dedicated
+    // position) — fetched here so the post-commit notification below can
+    // ping them directly instead of a position-holder list.
+    const organizerRow = await query<{ organizer_id: string | null }>(
+      `SELECT organizer_id FROM purchase_orders WHERE id=$1`,
+      [args.id],
+    )
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -32289,11 +32292,14 @@ const phase5MutationResolvers = {
     } finally {
       client.release()
     }
-    void notifyPositionHoldersGW(args.id, 'procurement_2nd', {
-      type: 'PO_PRICE_VERIFICATION_REQUIRED',
-      title: 'Price verification required',
-      body: 'PO market prices require cross-checking',
-    })
+    if (organizerRow.rows[0]?.organizer_id) {
+      void notifyUserGW(organizerRow.rows[0].organizer_id, auth.companyId, {
+        type: 'PO_PRICE_VERIFICATION_REQUIRED',
+        title: 'Price verification required',
+        body: 'Cross-check market prices and submit for approval',
+        poId: args.id,
+      })
+    }
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
   },
@@ -32310,8 +32316,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can submit price verification')
     const empId = await getEmployeeIdGW(auth.userId, auth.companyId)
     const client = await pool.connect()
     try {
@@ -32416,8 +32423,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32456,8 +32464,9 @@ const phase5MutationResolvers = {
     if (!ctx.auth) throw new Error('Unauthorized')
     const auth = ctx.auth as GWAuth
     const isAdmin = await hasProcurementAuthorityGW(auth)
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
+    const isOrganizer = await userIsOrganizerGW(auth.userId, args.id, auth.companyId)
+    if (!isAdmin && !isOrganizer)
+      throw new Error('Only the organizer or an admin can reject this PO')
     if (!args.reason.trim()) throw new Error('reason is required')
     const client = await pool.connect()
     try {
@@ -32486,70 +32495,6 @@ const phase5MutationResolvers = {
     })
     void publishEntityChanged(auth.companyId, 'purchase_order', args.id, 'updated')
     return getPOForReturn(args.id)
-  },
-
-  // No status change — the PO stays at price_verification. This just pings
-  // the PO's creator to fix something themselves via the existing Edit
-  // Request tool (which auto-applies pre-approval, see submitPOEditRequest),
-  // rather than bouncing the whole PO back through an earlier stage.
-  // G1 Phase 3 Milestone A — widened the same way as submitPOEditRequest.
-  // Notifications are still deferred to Phase 4 throughout G1 (per the
-  // PR 1b/2 scope notes), so the requisitionId branch's notifyUserGW call
-  // is a placeholder — the status check/response shape is real now so the
-  // frontend has something to build against, matching this PR's "spec"
-  // purpose, but nobody actually gets notified yet, same as everywhere
-  // else notifications are deferred in this initiative.
-  notifyPOOwnerForEditRequest: async (
-    _: unknown,
-    args: { id?: string; requisitionId?: string; reason: string },
-    ctx: GQLContext,
-  ) => {
-    if (!ctx.auth) throw new Error('Unauthorized')
-    const auth = ctx.auth as GWAuth
-    const isAdmin = await hasProcurementAuthorityGW(auth)
-    if (!args.reason.trim()) throw new Error('reason is required')
-
-    if (args.requisitionId) {
-      const reqId = args.requisitionId
-      const hasPos = await userHasPositionForRequisitionGW(auth.userId, auth.companyId, reqId, 'procurement_2nd')
-      if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
-      const reqRow = await query(
-        `SELECT status, organizer_id FROM requisitions WHERE id=$1 AND company_id=$2`,
-        [reqId, auth.companyId],
-      )
-      if (!reqRow.rows[0]) throw new Error('Requisition not found')
-      if (reqRow.rows[0].status !== 'price_verification')
-        throw new Error(`Cannot do this from status '${reqRow.rows[0].status as string}'`)
-      if (reqRow.rows[0].organizer_id) {
-        void notifyUserGW(reqRow.rows[0].organizer_id as string, auth.companyId, {
-          type: 'PO_EDIT_REQUESTED',
-          title: 'Edit requested on your requisition',
-          body: `Price verification flagged an issue: ${args.reason}. Please submit an edit request to fix it.`,
-          poId: reqId,
-        })
-      }
-      return true
-    }
-
-    if (!args.id) throw new Error('Either id or requisitionId is required')
-    const hasPos = await userHasPositionGW(auth.userId, auth.companyId, args.id, 'procurement_2nd')
-    if (!isAdmin && !hasPos) throw new Error('procurement_2nd position required')
-    const poRow = await query(
-      `SELECT status, created_by FROM purchase_orders WHERE id=$1 AND company_id=$2`,
-      [args.id, auth.companyId],
-    )
-    if (!poRow.rows[0]) throw new Error('PO not found')
-    if (poRow.rows[0].status !== 'price_verification')
-      throw new Error(`Cannot do this from status '${poRow.rows[0].status as string}'`)
-    if (poRow.rows[0].created_by) {
-      void notifyUserGW(poRow.rows[0].created_by as string, auth.companyId, {
-        type: 'PO_EDIT_REQUESTED',
-        title: 'Edit requested on your PO',
-        body: `Price verification flagged an issue: ${args.reason}. Please submit an edit request to fix it.`,
-        poId: args.id,
-      })
-    }
-    return true
   },
 
   approvePO: async (_: unknown, args: { id: string }, ctx: GQLContext) => {
@@ -32719,8 +32664,8 @@ const phase5MutationResolvers = {
     let authorized = isAdmin
     if (!authorized && line.flagged_from_status === 'price_verification') {
       authorized = line.po_id
-        ? await userHasPositionGW(auth.userId, auth.companyId, line.po_id, 'procurement_2nd')
-        : await userHasPositionForRequisitionGW(auth.userId, auth.companyId, line.requisition_id!, 'procurement_2nd')
+        ? await userIsOrganizerGW(auth.userId, line.po_id, auth.companyId)
+        : await userIsOrganizerForRequisitionGW(auth.userId, line.requisition_id!, auth.companyId)
     } else if (!authorized && line.flagged_from_status === 'pending_approval') {
       authorized = line.po_id
         ? (await userIsDeptHeadGW(auth.userId, line.po_id)) ||

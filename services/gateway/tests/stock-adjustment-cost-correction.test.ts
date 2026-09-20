@@ -204,6 +204,52 @@ describe('createStockAdjustment — cost-only correction (same qty, new cost)', 
     ).rejects.toThrow(/No on-hand quantity to correct cost for/i)
   })
 
+  it('still syncs the product-level Cost even when it already matches this location\'s own average_cost', async () => {
+    // The unified product Cost (products.standard_cost) can diverge from a
+    // single location's stock_balances.average_cost — e.g. a manual edit,
+    // or stock that arrived via an interco transfer, which prices
+    // stock_balances directly without going through recordProductCostChange.
+    // Simulate that divergence directly, then submit a correction whose
+    // value happens to equal THIS location's cost but not the product's.
+    const productId = await makeProduct('product-vs-location-divergence')
+    await receiveUncosted(productId, 4)
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: productId, location_id: warehouseId, new_qty: 4, unit_cost: 45 } },
+      ctx as never,
+    )
+    expect(await getBalance(productId)).toEqual({ qty: 4, cost: 45 })
+
+    await pool.query(`UPDATE products SET standard_cost=99, cost_currency='IQD' WHERE id=$1`, [productId])
+
+    const beforeMoves = await pool.query(
+      `SELECT count(*)::int AS n FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
+      [productId],
+    )
+
+    const result = (await resolvers.Mutation.createStockAdjustment(
+      null,
+      { input: { product_id: productId, location_id: warehouseId, new_qty: 4, unit_cost: 45 } },
+      ctx as never,
+    )) as { id: string | null }
+
+    // This location's own ledger has nothing to correct (45 already there),
+    // so no new stock_moves row — but the product-level Cost, which had
+    // drifted to 99, must still be brought back in line with 45.
+    expect(result.id).toBeNull()
+    const afterMoves = await pool.query(
+      `SELECT count(*)::int AS n FROM stock_moves WHERE product_id=$1 AND source_type='cost_correction'`,
+      [productId],
+    )
+    expect(afterMoves.rows[0]!.n).toBe(beforeMoves.rows[0]!.n)
+
+    const product = await pool.query<{ standard_cost: string }>(
+      `SELECT standard_cost FROM products WHERE id=$1`,
+      [productId],
+    )
+    expect(parseFloat(product.rows[0]!.standard_cost)).toBe(45)
+  })
+
   it('a real quantity change with a cost still works exactly as before (unaffected by this fix)', async () => {
     const productId = await makeProduct('qty-change-unaffected')
     await receiveUncosted(productId, 3)
