@@ -96,7 +96,13 @@ export default function RequisitionForm() {
     }
   }, [searchParams])
 
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: {} })
+  // A requisition line is a request to source/buy something — the point is
+  // finding the item, not managing whose catalog it lives in — so also
+  // surface the central warehouse's own products (they may never have been
+  // interco'd into this company yet).
+  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+    variables: { includeCentralWarehouse: true },
+  })
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: purpose !== 'project',

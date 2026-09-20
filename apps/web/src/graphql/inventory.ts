@@ -1,8 +1,8 @@
 import { gql } from '@apollo/client'
 
 export const PRODUCTS_QUERY = gql`
-  query Products($category: String, $companyId: ID) {
-    products(category: $category, companyId: $companyId) {
+  query Products($category: String, $companyId: ID, $includeCentralWarehouse: Boolean) {
+    products(category: $category, companyId: $companyId, includeCentralWarehouse: $includeCentralWarehouse) {
       id
       sku
       name

@@ -241,7 +241,12 @@ export default function PurchaseOrderForm() {
 
   const { data: vendorsData } = useQuery(VENDORS_QUERY, { variables: {} })
   const { data: analyticsData } = useQuery(ANALYTIC_ACCOUNTS_QUERY)
-  const { data: productsData } = useQuery(PRODUCTS_QUERY, { variables: {} })
+  // Same reasoning as RequisitionForm: a PO line is a request to source/buy
+  // something, so also surface the central warehouse's own products even
+  // before any of them have been interco'd into this company.
+  const { data: productsData } = useQuery(PRODUCTS_QUERY, {
+    variables: { includeCentralWarehouse: true },
+  })
   const { data: projectsData } = useQuery(PROJECTS_QUERY, {
     variables: { includeAll: true },
     skip: purpose !== 'project',

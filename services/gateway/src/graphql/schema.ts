@@ -9,7 +9,16 @@
     trialBalance(as_of_date: String): [TrialBalanceLine]
 
     # Inventory
-    products(category: String, companyId: ID): [Product]
+    # includeCentralWarehouse: also surface the group's central-warehouse
+    # company's (Nishtimani Factory — companies.is_central_warehouse, see
+    # migration 280) own products, not just this caller's company's own
+    # catalog — for a line-item picker where the point is finding something
+    # to source/request, not managing product master data. Ignored together
+    # with the default (own-company) scoping when companyId targets a
+    # specific foreign company outright. Defaults false so every existing
+    # caller (the product catalog management page among them) keeps today's
+    # own-company-only behavior unless it opts in.
+    products(category: String, companyId: ID, includeCentralWarehouse: Boolean): [Product]
     stockBalances(product_id: ID, location_id: ID): [StockBalance]
     poStockAvailability(poId: ID!): [POLineAvailability!]!
     # G1 Phase 3 Milestone A screen 2 — requisition equivalent of

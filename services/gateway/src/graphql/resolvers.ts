@@ -5491,7 +5491,11 @@ export const resolvers = {
     },
 
     // Inventory
-    products: async (_: unknown, args: { category?: string; companyId?: string }, ctx: GQLContext) => {
+    products: async (
+      _: unknown,
+      args: { category?: string; companyId?: string; includeCentralWarehouse?: boolean },
+      ctx: GQLContext,
+    ) => {
       if (!ctx.auth) return []
       // An explicit companyId targets a DIFFERENT company's own catalog outright
       // (e.g. browsing Nishtimani Factory's products while resolving an Al
@@ -5511,14 +5515,28 @@ export const resolvers = {
         sql += ' ORDER BY p.sku'
         return (await query(sql, params)).rows
       }
-      // Include both this company's own products AND foreign products that have
-      // physical stock in this company's locations (e.g. from interco transfers)
+      // Include this company's own products, foreign products that have
+      // physical stock in this company's locations (e.g. from interco
+      // transfers), and — when the caller is picking a product to request
+      // rather than managing catalog data (includeCentralWarehouse) — the
+      // group's central-warehouse company's entire catalog, so it can be
+      // found and requested even before any of it has ever been
+      // interco'd into this company. qty_on_hand mirrors the same
+      // widening: it only rolls up central-warehouse locations when that
+      // flag is set, so callers that didn't ask for those products don't
+      // get a misleading quantity for them either.
+      const centralWarehouseSql = args.includeCentralWarehouse
+        ? `p.company_id IN (SELECT id FROM companies WHERE is_central_warehouse) OR `
+        : ''
+      const centralWarehouseQtySql = args.includeCentralWarehouse
+        ? ` OR sl.company_id IN (SELECT id FROM companies WHERE is_central_warehouse)`
+        : ''
       let sql = `SELECT p.*,
-                   COALESCE(SUM(CASE WHEN sl.company_id = $1 AND sl.type NOT IN ('virtual_in','virtual_out') THEN sb.qty_on_hand ELSE 0 END), 0) AS qty_on_hand
+                   COALESCE(SUM(CASE WHEN (sl.company_id = $1${centralWarehouseQtySql}) AND sl.type NOT IN ('virtual_in','virtual_out') THEN sb.qty_on_hand ELSE 0 END), 0) AS qty_on_hand
                  FROM products p
                  LEFT JOIN stock_balances sb ON sb.product_id = p.id
                  LEFT JOIN stock_locations sl ON sl.id = sb.location_id
-                 WHERE p.company_id = $1
+                 WHERE ${centralWarehouseSql}p.company_id = $1
                     OR (sl.company_id = $1 AND sl.type NOT IN ('virtual_in','virtual_out') AND sb.qty_on_hand > 0)`
       const params: unknown[] = [ctx.auth.companyId]
       if (args.category !== undefined) {
