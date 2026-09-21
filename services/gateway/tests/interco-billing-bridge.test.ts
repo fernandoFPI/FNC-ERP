@@ -108,7 +108,15 @@ async function cleanup(): Promise<void> {
       [userId],
     )
     await pool.query(`DELETE FROM interco_stock_transfers WHERE initiated_by=$1`, [userId])
+    // interco_transactions.from/to_journal_entry_id reference journal_entries,
+    // so it has to go before those — journal_lines before journal_entries
+    // (its own child), matched by reference since interco_transactions is
+    // about to be gone and can no longer be joined back to them by source_id.
+    await pool.query(
+      `DELETE FROM journal_lines WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE reference LIKE 'IT-TEST-%')`,
+    )
     await pool.query(`DELETE FROM interco_transactions WHERE created_by=$1`, [userId])
+    await pool.query(`DELETE FROM journal_entries WHERE reference LIKE 'IT-TEST-%'`)
   }
   if (userId) {
     await pool.query(
@@ -501,5 +509,85 @@ describe('issueMaterialIssue cross-company Store Out records the real currency, 
     )
     expect(tx.rows[0]!.currency_code).toBe('ZZZ')
     expect(parseFloat(tx.rows[0]!.fx_rate)).toBe(1)
+  })
+})
+
+describe('postIntercoTransaction resolves each company\'s own FX conversion independently', () => {
+  it('never applies the to-company\'s conversion rate to the from-company\'s own books', async () => {
+    // From = a throwaway USD company (currency_code matches the
+    // transaction's own currency, same as every auto-created interco
+    // transaction) — its own journal should need NO conversion at all.
+    // To = Yakam (IQD) — this side genuinely needs the USD->IQD rate.
+    // chart_of_accounts.company_id cascades on company delete, so these
+    // throwaway accounts need no cleanup of their own beyond the company's.
+    const foreign = await makeForeignCurrencyCompany('USD')
+    const receivableRes = await pool.query<{ id: string }>(
+      `INSERT INTO chart_of_accounts (company_id, code, name, account_type, is_active)
+       VALUES ($1, '9701', 'Intercompany Receivable', 'asset', true) RETURNING id`,
+      [foreign.companyId],
+    )
+    const revenueRes = await pool.query<{ id: string }>(
+      `INSERT INTO chart_of_accounts (company_id, code, name, account_type, is_active)
+       VALUES ($1, '9702', 'Test Revenue', 'revenue', true) RETURNING id`,
+      [foreign.companyId],
+    )
+    const yakamExpenseRes = await pool.query<{ id: string }>(
+      `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND account_type='expense' AND is_active=true AND is_postable=true ORDER BY code ASC LIMIT 1`,
+      [YAKAM_COMPANY_ID],
+    )
+    expect(yakamExpenseRes.rows[0]).toBeTruthy()
+
+    const txRes = await pool.query<{ id: string }>(
+      `INSERT INTO interco_transactions
+         (from_company_id, to_company_id, transaction_type, amount, currency_code, fx_rate,
+          from_account_id, to_account_id, from_company_approved_by, from_company_approved_at,
+          to_company_approved_by, to_company_approved_at, reference, status, created_by)
+       VALUES ($1,$2,'service_charge',100,'USD',1,$3,$4,$5,NOW(),$5,NOW(),$6,'pending',$5)
+       RETURNING id`,
+      [
+        foreign.companyId,
+        YAKAM_COMPANY_ID,
+        revenueRes.rows[0]!.id,
+        yakamExpenseRes.rows[0]!.id,
+        userId,
+        `IT-TEST-${Date.now()}`,
+      ],
+    )
+    const txId = txRes.rows[0]!.id
+
+    await resolvers.Mutation.postIntercoTransaction(null, { id: txId }, ctx as never)
+
+    const dbRate = await pool.query<{ rate: string }>(
+      `SELECT rate FROM fx_rates WHERE from_currency='USD' AND to_currency='IQD' ORDER BY rate_date DESC LIMIT 1`,
+    )
+    const usdToIqd = parseFloat(dbRate.rows[0]!.rate)
+    expect(usdToIqd).toBeGreaterThan(1)
+
+    const fromLines = await pool.query<{ fx_rate: string; amount_company_currency: string; debit: string; credit: string }>(
+      `SELECT jl.fx_rate, jl.amount_company_currency, jl.debit, jl.credit
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+       WHERE je.company_id=$1 AND je.source_type='interco_transaction' AND je.source_id=$2`,
+      [foreign.companyId, txId],
+    )
+    expect(fromLines.rows).toHaveLength(2)
+    for (const line of fromLines.rows) {
+      // currency_code (USD) already IS this company's own currency, so its
+      // own books need no conversion — not the to-company's USD->IQD rate.
+      expect(parseFloat(line.fx_rate)).toBe(1)
+      expect(parseFloat(line.amount_company_currency)).toBeCloseTo(100, 5)
+      expect(parseFloat(line.debit) + parseFloat(line.credit)).toBeCloseTo(100, 5)
+    }
+
+    const toLines = await pool.query<{ fx_rate: string; amount_company_currency: string }>(
+      `SELECT jl.fx_rate, jl.amount_company_currency
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.journal_entry_id
+       WHERE je.company_id=$1 AND je.source_type='interco_transaction' AND je.source_id=$2`,
+      [YAKAM_COMPANY_ID, txId],
+    )
+    expect(toLines.rows).toHaveLength(2)
+    for (const line of toLines.rows) {
+      expect(parseFloat(line.fx_rate)).toBeCloseTo(usdToIqd, 5)
+      expect(parseFloat(line.amount_company_currency)).toBeCloseTo(100 * usdToIqd, 2)
+    }
   })
 })

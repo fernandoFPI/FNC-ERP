@@ -24230,15 +24230,34 @@ export const resolvers = {
             // Create interco transaction if requesting company differs from manufacturing company
             const reqCompanyId = String(linkedMR.requesting_company_id ?? '')
             if (reqCompanyId && reqCompanyId !== auth.companyId && actualCost > 0) {
+              // actualCost is denominated in the manufacturing company's own
+              // currency, not assumed IQD — same reasoning as the Store Out
+              // cross-company flush. postIntercoTransaction resolves its own
+              // fresh per-side rates at posting time regardless, but this
+              // still matters for what Finance sees on the pending
+              // transaction before it's posted.
+              const mfgCompanyRow = await client.query<{ currency_code: string }>(
+                `SELECT currency_code FROM companies WHERE id=$1`,
+                [auth.companyId],
+              )
+              const mfgCurrency = mfgCompanyRow.rows[0]?.currency_code ?? 'IQD'
+              const reqCompanyRow = await client.query<{ currency_code: string }>(
+                `SELECT currency_code FROM companies WHERE id=$1`,
+                [reqCompanyId],
+              )
+              const reqCurrency = reqCompanyRow.rows[0]?.currency_code ?? 'IQD'
+              const mfgFxRate = await resolveInterCompanyFxRate(client, mfgCurrency, reqCurrency)
               const itRes = await client.query(
                 `INSERT INTO interco_transactions
-                 (from_company_id, to_company_id, transaction_type, amount, currency_code,
+                 (from_company_id, to_company_id, transaction_type, amount, currency_code, fx_rate,
                   description, reference, status, created_by)
-               VALUES ($1,$2,'service_charge',$3,'IQD',$4,$5,'pending',$6) RETURNING id`,
+               VALUES ($1,$2,'service_charge',$3,$4,$5,$6,$7,'pending',$8) RETURNING id`,
                 [
                   auth.companyId,
                   reqCompanyId,
                   actualCost,
+                  mfgCurrency,
+                  mfgFxRate,
                   `Manufacturing service: MO ${String(mo.mo_number ?? args.id)}`,
                   String(mo.mo_number ?? args.id),
                   auth.userId,
@@ -33768,9 +33787,29 @@ const phase5MutationResolvers = {
         const fromCompanyId = tx.from_company_id as string
         const toCompanyId = tx.to_company_id as string
         const amount = parseFloat(String(tx.amount))
-        const fxRate = parseFloat(String(tx.fx_rate ?? 1))
         const currencyCode = String(tx.currency_code ?? 'IQD')
         const reference = String(tx.reference ?? `IT-${args.id}`)
+
+        // The stored fx_rate's meaning isn't reliable across every creation
+        // path — some set currency_code to the from-company's own currency
+        // (so their own side needs no conversion at all), others let a
+        // human pick any currency for either company. Rather than trust
+        // one stored rate for both companies' books, resolve each side's
+        // own conversion fresh at posting time — using the current rate,
+        // not a possibly-stale one captured whenever this was created.
+        const companyCurrencies = await client.query<{ id: string; currency_code: string }>(
+          `SELECT id, currency_code FROM companies WHERE id=ANY($1)`,
+          [[fromCompanyId, toCompanyId]],
+        )
+        const currencyByCompany = new Map(
+          companyCurrencies.rows.map((c) => [c.id, c.currency_code]),
+        )
+        const fromCompanyCurrency = currencyByCompany.get(fromCompanyId) ?? 'IQD'
+        const toCompanyCurrency = currencyByCompany.get(toCompanyId) ?? 'IQD'
+        const fromRate = await resolveInterCompanyFxRate(client, currencyCode, fromCompanyCurrency)
+        const toRate = await resolveInterCompanyFxRate(client, currencyCode, toCompanyCurrency)
+        const fromAmountCompanyCurrency = amount * fromRate
+        const toAmountCompanyCurrency = amount * toRate
 
         const receivableRes = await client.query(
           `SELECT id FROM chart_of_accounts WHERE company_id=$1 AND name ILIKE 'Intercompany Receivable' AND is_active=true ORDER BY code ASC LIMIT 1`,
@@ -33787,8 +33826,6 @@ const phase5MutationResolvers = {
         const payableAccountId = payableRes.rows[0]?.id as string | undefined
         if (!payableAccountId)
           throw new Error('To-company has no Intercompany Payable account configured')
-
-        const amountCompanyCurrency = amount * fxRate
 
         const fromJe = await client.query(
           `INSERT INTO journal_entries (company_id,reference,description,entry_date,status,source_type,source_id,created_by,posted_at,posted_by)
@@ -33811,8 +33848,8 @@ const phase5MutationResolvers = {
             `Receivable from ${reference}`,
             amount,
             currencyCode,
-            fxRate,
-            amountCompanyCurrency,
+            fromRate,
+            fromAmountCompanyCurrency,
           ],
         )
         await client.query(
@@ -33824,8 +33861,8 @@ const phase5MutationResolvers = {
             `Revenue from ${reference}`,
             amount,
             currencyCode,
-            fxRate,
-            amountCompanyCurrency,
+            fromRate,
+            fromAmountCompanyCurrency,
           ],
         )
 
@@ -33859,8 +33896,8 @@ const phase5MutationResolvers = {
             `Expense from ${reference}`,
             amount,
             currencyCode,
-            fxRate,
-            amountCompanyCurrency,
+            toRate,
+            toAmountCompanyCurrency,
           ],
         )
         await client.query(
@@ -33872,8 +33909,8 @@ const phase5MutationResolvers = {
             `Payable from ${reference}`,
             amount,
             currencyCode,
-            fxRate,
-            amountCompanyCurrency,
+            toRate,
+            toAmountCompanyCurrency,
           ],
         )
 
