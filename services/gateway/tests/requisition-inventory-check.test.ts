@@ -538,6 +538,28 @@ describe('confirmRequisitionInventoryCheck reservation', () => {
     )
     expect(log.rows).toHaveLength(0)
   })
+
+  // Regression coverage: same includeCentralWarehouse gap fixed in
+  // requisitionLineProductAvailability (the reselect preview), but here in
+  // the actual confirm mutation's own product-swap lookup — this is the
+  // one that was still scoped to "this requisition's own company only",
+  // so confirming after reselecting a real central-warehouse item threw
+  // "Product <id> not found" instead of accepting the swap.
+  it('accepts a reselected item that belongs to the central warehouse company', async () => {
+    const wrongProductId = await makeProduct('reselect-cw-wrong')
+    const factoryProductId = await makeFactoryProduct('reselect-cw-right')
+    const { reqId, lineId } = await makeReqAtInventoryCheck(wrongProductId, 2)
+
+    const result = await resolvers.Mutation.confirmRequisitionInventoryCheck(
+      null,
+      { id: reqId, lineStockQtys: [{ lineId, qtyFromStock: 0, productId: factoryProductId }] },
+      ctx as never,
+    )
+    expect(result).toBeTruthy()
+
+    const line = await pool.query<{ product_id: string }>(`SELECT product_id FROM po_lines WHERE id=$1`, [lineId])
+    expect(line.rows[0]!.product_id).toBe(factoryProductId)
+  })
 })
 
 describe('requisitionLineProductAvailability (reselect-item preview)', () => {

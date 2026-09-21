@@ -30111,14 +30111,19 @@ const phase5MutationResolvers = {
         if (!lsq.productId) continue
         const current = lineInfoById.get(lsq.lineId)
         if (!current || lsq.productId === current.product_id) continue
+        // Same includeCentralWarehouse reasoning as the reselect picker and
+        // its preview query — the item being swapped to here can
+        // legitimately belong to the group's central warehouse company.
         const newProductRes = await client.query<{
           name: string
           sku: string | null
           uom: string
-        }>(`SELECT name, sku, uom FROM products WHERE id=$1 AND company_id=$2`, [
-          lsq.productId,
-          auth.companyId,
-        ])
+        }>(
+          `SELECT name, sku, uom FROM products
+           WHERE id=$1
+             AND (company_id=$2 OR company_id IN (SELECT id FROM companies WHERE is_central_warehouse))`,
+          [lsq.productId, auth.companyId],
+        )
         const newProduct = newProductRes.rows[0]
         if (!newProduct) throw new Error(`Product ${lsq.productId} not found`)
         await client.query(
