@@ -26,6 +26,9 @@ interface ReceiptLine {
   qty_received: string
   unit_price: string | null
   fx_rate_to_base: string | null
+  product_name?: string | null
+  product_name_ar?: string | null
+  sku?: string | null
 }
 
 interface Receipt {
@@ -100,7 +103,16 @@ export default function StoreInPage() {
         r.receipt_number?.toLowerCase().includes(q) ||
         r.po_number?.toLowerCase().includes(q) ||
         r.received_from_name?.toLowerCase().includes(q) ||
-        r.received_by_name?.toLowerCase().includes(q)
+        r.received_by_name?.toLowerCase().includes(q) ||
+        // Item name/SKU — matches Store Out's own item search (lines are
+        // already fetched in full by PO_RECEIPT_FIELDS for the Items column,
+        // so no separate query is needed).
+        r.lines.some(
+          (l) =>
+            (l.product_name ?? '').toLowerCase().includes(q) ||
+            (l.product_name_ar ?? '').toLowerCase().includes(q) ||
+            (l.sku ?? '').toLowerCase().includes(q),
+        )
       )
     })
 
@@ -301,7 +313,7 @@ export default function StoreInPage() {
         >
           <input
             type="text"
-            placeholder="Search by receipt #, PO #, received from, or received by…"
+            placeholder="Search by receipt #, PO #, item name/SKU, received from, or received by…"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
