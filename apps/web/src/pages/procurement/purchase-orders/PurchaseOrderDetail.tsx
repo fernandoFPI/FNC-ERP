@@ -183,6 +183,7 @@ export interface PO {
   base_currency_code: string
   total_amount: number
   subtotal: number
+  currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
   vendor_id?: string | null
   vendor_name?: string
   analytic_account_id?: string | null
@@ -1954,54 +1955,27 @@ export default function PurchaseOrderDetail() {
           {[
             {
               label: 'Total',
-              // total_amount is always in base_currency_code (lines can be priced in
-              // other currencies and converted — see recalcPO/resolveFxRateToBase in
-              // the gateway resolvers), not the header currency_code field. When lines
-              // span more than one native currency (e.g. imported items in USD,
-              // locally-bought items in IQD), show each currency's own un-converted
-              // subtotal underneath — the blended total above doesn't tell you how
-              // much cash you actually need in each currency.
-              value: (() => {
-                const breakdown = po.lines.reduce<Record<string, number>>((acc, line) => {
-                  const qty = parseFloat(String(line.qty ?? 0))
-                  const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
-                  if (qty > 0 && fromStock >= qty) return acc
-                  // actual_unit_price (once recorded) takes priority over unit_price —
-                  // mirrors the backend's own total_price formula (applyPOEditChanges).
-                  const price = parseFloat(
-                    String(line.actual_unit_price ?? line.unit_price ?? 0),
-                  )
-                  const amt = qty * price
-                  const ccy = line.market_price_currency || po.base_currency_code
-                  acc[ccy] = (acc[ccy] ?? 0) + amt
-                  return acc
-                }, {})
-                const currencies = Object.keys(breakdown)
-                return (
-                  <div>
-                    <span style={{ color: BRAND_GREEN }}>
-                      <AmountDisplay amount={po.total_amount} currency={po.base_currency_code} size="lg" />
-                    </span>
-                    {currencies.length > 1 && (
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '2px',
-                          fontSize: '11px',
-                          color: theme.textMuted,
-                          fontWeight: 400,
-                          marginTop: '4px',
-                        }}
-                      >
-                        {currencies.map((ccy) => (
-                          <AmountDisplay key={ccy} amount={breakdown[ccy]} currency={ccy} size="sm" />
-                        ))}
-                      </div>
-                    )}
+              // No-conversion breakdown — mirrors Requisition's own
+              // currencyTotals (see getRequisitionCurrencyTotals /
+              // fetchFullPurchaseOrderGW): one entry per currency actually
+              // used by this PO's lines, computed on the backend from the
+              // same total/currency_code the Lines table itself renders, so
+              // it can never drift from what's on screen. Deliberately no
+              // single converted figure anymore — total_amount stays on the
+              // type for other consumers, but a PO with lines in more than
+              // one currency has no one true "total" to blend them into.
+              value:
+                po.currencyTotals.length === 0 ? (
+                  '—'
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {po.currencyTotals.map((ct) => (
+                      <span key={ct.currency_code} style={{ color: BRAND_GREEN }}>
+                        <AmountDisplay amount={parseFloat(ct.subtotal)} currency={ct.currency_code} size="lg" />
+                      </span>
+                    ))}
                   </div>
-                )
-              })(),
+                ),
             },
             { label: 'Expected delivery', value: po.expected_delivery_date ?? '—' },
             { label: 'Created by', value: po.created_by_email ?? '—' },

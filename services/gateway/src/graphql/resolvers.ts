@@ -2908,6 +2908,29 @@ async function fetchFullPurchaseOrderGW(
       return { ...row, photos: photosWithUrls }
     }),
   )
+  // Per-currency totals — same no-conversion policy as
+  // getRequisitionCurrencyTotals: every line keeps its own currency_code,
+  // never collapsed into one converted number the way total_amount/subtotal
+  // (recalcPO) are. Computed from lines already fetched above rather than a
+  // separate query — same rows, same total_price/currency_code this PO's
+  // own Lines table renders, so it can never drift from what's on screen.
+  const currencyTotalsMap = new Map<string, { subtotal: number; line_count: number }>()
+  for (const l of lines.rows as Record<string, unknown>[]) {
+    const ccy = String(l.currency_code ?? 'IQD')
+    const amt = parseFloat(String(l.total ?? 0)) || 0
+    const existing = currencyTotalsMap.get(ccy) ?? { subtotal: 0, line_count: 0 }
+    existing.subtotal += amt
+    existing.line_count += 1
+    currencyTotalsMap.set(ccy, existing)
+  }
+  const currencyTotals = [...currencyTotalsMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency_code, v]) => ({
+      currency_code,
+      subtotal: String(v.subtotal),
+      line_count: v.line_count,
+    }))
+
   return {
     ...po.rows[0],
     lines: lines.rows,
@@ -2920,6 +2943,7 @@ async function fetchFullPurchaseOrderGW(
     callerHasMarketPricingPosition,
     callerHasStoreKeeperPosition,
     callerIsFinanceTeam,
+    currencyTotals,
   }
 }
 

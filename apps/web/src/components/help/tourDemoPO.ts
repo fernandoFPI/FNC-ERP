@@ -107,6 +107,9 @@ export function buildTourDemoPO(status: string): PO {
     base_currency_code: 'IQD',
     total_amount: lines.reduce((s, l) => s + l.total, 0),
     subtotal: lines.reduce((s, l) => s + l.total, 0),
+    currencyTotals: [
+      { currency_code: 'IQD', subtotal: String(lines.reduce((s, l) => s + l.total, 0)), line_count: lines.length },
+    ],
     vendor_id: vendorKnown ? 'demo-vendor-1' : null,
     vendor_name: vendorKnown ? 'Al-Rasheed Building Materials Co.' : undefined,
     project_id: 'demo-project-1',

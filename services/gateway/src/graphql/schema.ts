@@ -2348,6 +2348,11 @@
     # meaningful on purchaseOrder(id)/purchaseOrderForAction(id), which have
     # their own, different total-visibility rules.
     viewerCanSeeTotals: Boolean
+    # No-conversion policy, same as Requisition.currencyTotals: one entry per
+    # currency actually used by this PO's lines, computed fresh from lines
+    # (never summed across currencies). total_amount/subtotal remain the
+    # separate, already-converted aggregate this doesn't replace.
+    currencyTotals: [RequisitionCurrencyTotal!]!
     vendor_id: ID
     base_currency_code: String
     analytic_account_id: ID
