@@ -113,6 +113,7 @@ export default function ItemsBoughtPage() {
   const addToast = useToastStore((s) => s.addToast)
   const padding = usePagePadding()
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const globalFileInputRef = useRef<HTMLInputElement | null>(null)
 
   const { data, loading, refetch } = useQuery(REQUISITION_ITEMS_BOUGHT_QUERY, {
     variables: { id },
@@ -173,6 +174,12 @@ export default function ItemsBoughtPage() {
   const [purchasePrice, setPurchasePrice] = useState<Record<string, string>>({})
   const [purchaseCurrency, setPurchaseCurrency] = useState<Record<string, string>>({})
   const [pendingFile, setPendingFile] = useState<Record<string, File | null>>({})
+  const [sameReceiptForAll, setSameReceiptForAll] = useState(false)
+  const [globalReceiptFile, setGlobalReceiptFile] = useState<File | null>(null)
+  // Cached fileId from the first line this receipt was uploaded for — reused
+  // for every subsequent line so the same receipt is uploaded once, not once
+  // per line it's attached to.
+  const [globalReceiptFileId, setGlobalReceiptFileId] = useState<string | null>(null)
   const [uploadingLine, setUploadingLine] = useState<string | null>(null)
   const [shortReasonFor, setShortReasonFor] = useState<string | null>(null)
   const [shortReasonText, setShortReasonText] = useState('')
@@ -232,6 +239,34 @@ export default function ItemsBoughtPage() {
     if (checked && globalVendorId) applyVendorToAllLines(globalVendorId)
   }
 
+  async function uploadReceiptFile(file: File): Promise<string> {
+    const { data: urlData } = await requestUploadUrl({
+      variables: {
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
+        category: 'attachment',
+      },
+    })
+    const fileId = urlData?.requestUploadUrl?.fileId
+    if (!fileId) throw new Error('Could not prepare the upload')
+
+    const apiBase = import.meta.env.VITE_API_URL as string
+    const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
+      method: 'POST',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+    })
+    if (!proxyRes.ok) {
+      const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
+      throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
+    }
+    return fileId
+  }
+
   async function handleUploadAndRecord(lineId: string) {
     const line = req?.lines.find((l) => l.id === lineId)
     const vendorSel = selectedVendor[lineId]
@@ -241,7 +276,7 @@ export default function ItemsBoughtPage() {
     const qty = parseFloat(purchaseQty[lineId] || String(line ? remainingToBuy(line) : 0))
     const defaultPrice = line?.approved_unit_price ?? line?.unit_price ?? '0'
     const price = parseFloat(purchasePrice[lineId] || defaultPrice)
-    const file = pendingFile[lineId]
+    const file = sameReceiptForAll ? globalReceiptFile : pendingFile[lineId]
     if (!vendorSel) {
       addToast({ type: 'error', message: 'Select a vendor' })
       return
@@ -267,30 +302,12 @@ export default function ItemsBoughtPage() {
 
     setUploadingLine(lineId)
     try {
-      const { data: urlData } = await requestUploadUrl({
-        variables: {
-          filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-          category: 'attachment',
-        },
-      })
-      const fileId = urlData?.requestUploadUrl?.fileId
-      if (!fileId) throw new Error('Could not prepare the upload')
-
-      const apiBase = import.meta.env.VITE_API_URL as string
-      const proxyRes = await fetch(`${apiBase}/api/v1/files/${fileId}/content`, {
-        method: 'POST',
-        body: file,
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
-      })
-      if (!proxyRes.ok) {
-        const errJson = (await proxyRes.json().catch(() => ({}))) as { error?: { message?: string } }
-        throw new Error(errJson?.error?.message ?? `Upload failed: ${proxyRes.statusText}`)
-      }
+      // In "same receipt for all" mode, the file is uploaded once (on the
+      // first line it's used for) and every later line reuses that same
+      // fileId instead of re-uploading identical bytes.
+      const fileId =
+        sameReceiptForAll && globalReceiptFileId ? globalReceiptFileId : await uploadReceiptFile(file)
+      if (sameReceiptForAll && !globalReceiptFileId) setGlobalReceiptFileId(fileId)
 
       await recordPurchase({
         variables: {
@@ -304,7 +321,9 @@ export default function ItemsBoughtPage() {
       setSelectedVendor((prev) => ({ ...prev, [lineId]: sameVendorForAll ? globalVendorId : '' }))
       setPurchaseQty((prev) => ({ ...prev, [lineId]: '' }))
       setPurchasePrice((prev) => ({ ...prev, [lineId]: '' }))
-      setPendingFile((prev) => ({ ...prev, [lineId]: null }))
+      // In "same receipt for all" mode, keep the shared file selected so the
+      // next line can reuse it too — only clear the per-line one otherwise.
+      if (!sameReceiptForAll) setPendingFile((prev) => ({ ...prev, [lineId]: null }))
     } catch (err) {
       addToast({ type: 'error', message: (err as Error).message })
     } finally {
@@ -371,48 +390,88 @@ export default function ItemsBoughtPage() {
       )}
 
       {canBuy && req.status === 'items_bought' && req.lines.length > 1 && (
-        <Card style={{ padding: '14px 20px', marginTop: '16px' }}>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '13px',
-              color: theme.textPrimary,
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={sameVendorForAll}
-              onChange={(e) => toggleSameVendorForAll(e.target.checked)}
-            />
-            All items are from the same vendor
-          </label>
-          {sameVendorForAll && (
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginTop: '10px', maxWidth: '420px' }}>
-              <div style={{ flex: 1 }}>
-                <SearchableSelect
-                  label="Vendor for all items"
-                  value={globalVendorId}
-                  onChange={(v) => applyVendorToAllLines(v)}
-                  options={vendorOptions}
-                  placeholder="Search vendor…"
-                  minDropdownWidth={320}
-                />
+        <Card style={{ padding: '14px 20px', marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                color: theme.textPrimary,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sameVendorForAll}
+                onChange={(e) => toggleSameVendorForAll(e.target.checked)}
+              />
+              All items are from the same vendor
+            </label>
+            {sameVendorForAll && (
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginTop: '10px', maxWidth: '420px' }}>
+                <div style={{ flex: 1 }}>
+                  <SearchableSelect
+                    label="Vendor for all items"
+                    value={globalVendorId}
+                    onChange={(v) => applyVendorToAllLines(v)}
+                    options={vendorOptions}
+                    placeholder="Search vendor…"
+                    minDropdownWidth={320}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setQuickCreateLineId(ALL_LINES_SENTINEL)
+                    setQuickCreateOpen(true)
+                  }}
+                >
+                  + New
+                </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setQuickCreateLineId(ALL_LINES_SENTINEL)
-                  setQuickCreateOpen(true)
-                }}
-              >
-                + New
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
+          <div>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                color: theme.textPrimary,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sameReceiptForAll}
+                onChange={(e) => setSameReceiptForAll(e.target.checked)}
+              />
+              Attach one receipt for all items
+            </label>
+            {sameReceiptForAll && (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
+                <input
+                  ref={globalFileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null
+                    setGlobalReceiptFile(file)
+                    setGlobalReceiptFileId(null)
+                    e.target.value = ''
+                  }}
+                />
+                <Button variant="secondary" size="sm" onClick={() => globalFileInputRef.current?.click()}>
+                  {globalReceiptFile ? `📎 ${globalReceiptFile.name}` : 'Attach receipt photo *'}
+                </Button>
+              </div>
+            )}
+          </div>
         </Card>
       )}
 
@@ -583,22 +642,32 @@ export default function ItemsBoughtPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
-                  <input
-                    ref={(el) => {
-                      fileInputRefs.current[line.id] = el
-                    }}
-                    type="file"
-                    accept="image/*,application/pdf"
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] ?? null
-                      setPendingFile((prev) => ({ ...prev, [line.id]: file }))
-                      e.target.value = ''
-                    }}
-                  />
-                  <Button variant="secondary" size="sm" onClick={() => fileInputRefs.current[line.id]?.click()}>
-                    {pendingFile[line.id] ? `📎 ${pendingFile[line.id]!.name}` : 'Attach receipt photo *'}
-                  </Button>
+                  {sameReceiptForAll ? (
+                    <span style={{ fontSize: '12px', color: theme.textMuted }}>
+                      {globalReceiptFile
+                        ? `📎 ${globalReceiptFile.name} (same receipt for all items)`
+                        : 'Attach the shared receipt above'}
+                    </span>
+                  ) : (
+                    <>
+                      <input
+                        ref={(el) => {
+                          fileInputRefs.current[line.id] = el
+                        }}
+                        type="file"
+                        accept="image/*,application/pdf"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] ?? null
+                          setPendingFile((prev) => ({ ...prev, [line.id]: file }))
+                          e.target.value = ''
+                        }}
+                      />
+                      <Button variant="secondary" size="sm" onClick={() => fileInputRefs.current[line.id]?.click()}>
+                        {pendingFile[line.id] ? `📎 ${pendingFile[line.id]!.name}` : 'Attach receipt photo *'}
+                      </Button>
+                    </>
+                  )}
                   <Button
                     variant="primary"
                     size="sm"

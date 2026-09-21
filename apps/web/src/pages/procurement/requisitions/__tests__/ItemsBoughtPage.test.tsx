@@ -289,6 +289,25 @@ describe('ItemsBoughtPage', () => {
     expect(screen.getAllByText('Al-Rasheed Hardware')).toHaveLength(3)
   })
 
+  it('attaches one receipt to every line via the "same receipt for all" toggle', async () => {
+    mockReq([
+      baseLine({ id: 'line-1', description: 'Cement bags' }),
+      baseLine({ id: 'line-2', description: 'Rebar', product_name: 'Rebar' }),
+    ])
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    const { container } = wrap(<ItemsBoughtPage />)
+
+    fireEvent.click(screen.getByLabelText(/attach one receipt for all items/i))
+
+    const file = new File(['x'], 'invoice.jpg', { type: 'image/jpeg' })
+    const globalFileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(globalFileInput, { target: { files: [file] } })
+
+    // Both lines show the shared receipt read-only instead of their own attach button.
+    expect(screen.getAllByText(/invoice\.jpg \(same receipt for all items\)/)).toHaveLength(2)
+    expect(screen.queryByText('Attach receipt photo *')).not.toBeInTheDocument()
+  })
+
   it('disables the Approve override button for the same user who recorded the purchase', async () => {
     mockReq(
       [
