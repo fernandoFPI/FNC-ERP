@@ -383,7 +383,10 @@ export default function RequisitionDetail() {
   const [reselectOpenFor, setReselectOpenFor] = useState<string | null>(null)
   const [productOverride, setProductOverride] = useState<Record<string, string>>({})
   const { data: productsData } = useQuery(PRODUCTS_QUERY, {
-    variables: {},
+    // Same reasoning as RequisitionForm's own line-item picker — the item
+    // being corrected here can legitimately live at the central warehouse
+    // company, not just this one.
+    variables: { includeCentralWarehouse: true },
     skip: !req || req.status !== 'inventory_check',
   })
   const products: { id: string; sku: string; name: string; name_ar?: string | null; uom: string }[] =

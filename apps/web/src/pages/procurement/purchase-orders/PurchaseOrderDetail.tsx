@@ -1181,7 +1181,10 @@ export default function PurchaseOrderDetail() {
   const analyticAccounts: { id: string; name: string; code: string }[] =
     analyticAccountsData?.analyticAccounts ?? []
   const { data: productsData } = useQuery(PRODUCTS_QUERY, {
-    variables: {},
+    // Same reasoning as RequisitionForm/PurchaseOrderForm's own line-item
+    // picker — the item being corrected here can legitimately live at the
+    // central warehouse company, not just this one.
+    variables: { includeCentralWarehouse: true },
     fetchPolicy: 'cache-first',
     skip: !showAdminCorrectionTab,
   })
