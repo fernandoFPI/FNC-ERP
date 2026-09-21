@@ -8,6 +8,7 @@ import { pool } from '@fnc-erp/db'
 import { resolvers } from '../src/graphql/resolvers.js'
 
 const TEST_COMPANY_ID = '00000000-0000-0000-0000-000000000001'
+const FACTORY_COMPANY_ID = '00000000-0000-0000-0000-000000000002'
 const TEST_USER_EMAIL = 'g1-requisition-test@fnc-erp.local'
 const TEST_EMPLOYEE_NUMBER = 'G1TEST-STOREKEEPER'
 const SKU_PREFIX = 'G1TEST-'
@@ -16,6 +17,8 @@ let userId: string
 let employeeId: string
 let warehouseId: string
 let virtualInId: string
+let factoryWarehouseId: string
+let factoryVirtualInId: string
 let baseCurrency: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 
@@ -26,6 +29,23 @@ async function makeProduct(suffix: string): Promise<string> {
     [TEST_COMPANY_ID, sku, sku],
   )
   return r.rows[0]!.id
+}
+
+async function makeFactoryProduct(suffix: string): Promise<string> {
+  const sku = `${SKU_PREFIX}${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO products (company_id, sku, name, uom, category) VALUES ($1,$2,$3,'unit','general') RETURNING id`,
+    [FACTORY_COMPANY_ID, sku, sku],
+  )
+  return r.rows[0]!.id
+}
+
+async function receiveFactory(productId: string, qty: number, unitCost = 10): Promise<void> {
+  await pool.query(
+    `INSERT INTO stock_moves (company_id, product_id, from_location_id, to_location_id, moved_at, qty, unit_cost, total_cost, source_type, moved_by)
+     VALUES ($1,$2,$3,$4,NOW(),$5,$6,$7,'po_receipt',$8)`,
+    [FACTORY_COMPANY_ID, productId, factoryVirtualInId, factoryWarehouseId, qty, unitCost, qty * unitCost, userId],
+  )
 }
 
 async function receive(productId: string, locationId: string, qty: number, unitCost = 10): Promise<void> {
@@ -82,6 +102,15 @@ async function cleanup(): Promise<void> {
     TEST_COMPANY_ID,
     `${SKU_PREFIX}SecondWH`,
   ])
+  await pool.query(
+    `DELETE FROM stock_moves WHERE company_id=$1 AND product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
+    [FACTORY_COMPANY_ID, `${SKU_PREFIX}%`],
+  )
+  await pool.query(
+    `DELETE FROM stock_balances WHERE product_id IN (SELECT id FROM products WHERE company_id=$1 AND sku LIKE $2)`,
+    [FACTORY_COMPANY_ID, `${SKU_PREFIX}%`],
+  )
+  await pool.query(`DELETE FROM products WHERE company_id=$1 AND sku LIKE $2`, [FACTORY_COMPANY_ID, `${SKU_PREFIX}%`])
 }
 
 beforeAll(async () => {
@@ -120,6 +149,25 @@ beforeAll(async () => {
     [TEST_COMPANY_ID],
   )
   baseCurrency = companyR.rows[0]?.default_currency ?? 'IQD'
+
+  const fwhR = await pool.query<{ id: string }>(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='warehouse' AND is_active=true LIMIT 1`,
+    [FACTORY_COMPANY_ID],
+  )
+  if (!fwhR.rows[0]) throw new Error('No Factory warehouse location seeded — run seeds first')
+  factoryWarehouseId = fwhR.rows[0].id
+
+  const fviR = await pool.query<{ id: string }>(
+    `SELECT id FROM stock_locations WHERE company_id=$1 AND type='virtual_in' AND is_active=true LIMIT 1`,
+    [FACTORY_COMPANY_ID],
+  )
+  if (!fviR.rows[0]) throw new Error('No Factory virtual_in location seeded — run seeds first')
+  factoryVirtualInId = fviR.rows[0].id
+
+  // Belt-and-braces, same reasoning as products-central-warehouse-search.test.ts:
+  // migrations run before seeds, so a freshly-migrated-then-seeded DB can have
+  // this still false even though seed-companies.ts now sets it too.
+  await pool.query(`UPDATE companies SET is_central_warehouse=true WHERE id=$1`, [FACTORY_COMPANY_ID])
 
   await cleanup()
 })
@@ -534,6 +582,44 @@ describe('requisitionLineProductAvailability (reselect-item preview)', () => {
       ctx as never,
     )
     expect(rows).toEqual([])
+  })
+
+  // Regression coverage: the includeCentralWarehouse fix for the reselect
+  // picker (products query) let a caller SELECT a central-warehouse
+  // product, but this resolver's own product lookup and stock queries were
+  // never updated to match — still scoped to "this requisition's own
+  // company only", same class of gap requisitionStockAvailability (the
+  // non-override path, just above in resolvers.ts) already handles
+  // correctly. Result: picking a real Factory item here looked like it
+  // "glitched" to 0 on-hand / no locations, even though the item genuinely
+  // has stock at the group's central warehouse.
+  it('finds a central-warehouse product\'s stock, even though the requisition is at a different company', async () => {
+    const wrongProductId = await makeProduct('preview-cw-wrong')
+    const factoryProductId = await makeFactoryProduct('preview-cw-right')
+    await receiveFactory(factoryProductId, 9)
+    const { reqId, lineId } = await makeReqAtInventoryCheck(wrongProductId, 3)
+
+    const rows = (await resolvers.Query.requisitionLineProductAvailability(
+      null,
+      { requisitionId: reqId, overrides: [{ lineId, productId: factoryProductId }] },
+      ctx as never,
+    )) as {
+      lineId: string
+      productId: string
+      qtyOnHand: number
+      qtyAvailable: number
+      isAvailable: boolean
+      byLocation: { companyId: string; locationId: string; qtyAvailable: number }[]
+    }[]
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.qtyOnHand).toBe(9)
+    expect(rows[0]!.qtyAvailable).toBe(9)
+    expect(rows[0]!.isAvailable).toBe(true)
+    expect(rows[0]!.byLocation).toHaveLength(1)
+    expect(rows[0]!.byLocation[0]!.companyId).toBe(FACTORY_COMPANY_ID)
+    expect(rows[0]!.byLocation[0]!.locationId).toBe(factoryWarehouseId)
+    expect(rows[0]!.byLocation[0]!.qtyAvailable).toBe(9)
   })
 })
 

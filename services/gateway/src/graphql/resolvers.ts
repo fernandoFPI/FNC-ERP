@@ -5858,8 +5858,14 @@ export const resolvers = {
           )
           if (!lineRow.rows[0]) throw new Error(`Requisition line ${ov.lineId} not found`)
 
-          const productRow = await query<{ name: string }>(
-            `SELECT name FROM products WHERE id=$1::uuid AND company_id=$2::uuid`,
+          // A product selected through the includeCentralWarehouse-aware
+          // reselect picker can legitimately belong to the group's central
+          // warehouse company, not just this requisition's own — same
+          // reasoning as requisitionStockAvailability just above.
+          const productRow = await query<{ name: string; name_ar: string | null }>(
+            `SELECT name, name_ar FROM products
+             WHERE id=$1::uuid
+               AND (company_id=$2::uuid OR company_id IN (SELECT id FROM companies WHERE is_central_warehouse))`,
             [ov.productId, auth.companyId],
           )
           if (!productRow.rows[0]) throw new Error(`Product ${ov.productId} not found`)
@@ -5870,7 +5876,9 @@ export const resolvers = {
                  COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) AS "qtyOnHand",
                  (COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_on_hand ELSE 0 END), 0) - COALESCE(SUM(CASE WHEN sl.id IS NOT NULL THEN sb.qty_reserved ELSE 0 END), 0)) AS "qtyAvailable"
                FROM stock_balances sb
-               LEFT JOIN stock_locations sl ON sl.id = sb.location_id AND sl.company_id = $2::uuid AND sl.type NOT IN ('virtual_in','virtual_out')
+               LEFT JOIN stock_locations sl ON sl.id = sb.location_id
+                 AND (sl.company_id = $2::uuid OR sl.company_id IN (SELECT id FROM companies WHERE is_central_warehouse))
+                 AND sl.type NOT IN ('virtual_in','virtual_out')
                WHERE sb.product_id = $1::uuid`,
               [ov.productId, auth.companyId],
             ),
@@ -5884,7 +5892,7 @@ export const resolvers = {
                JOIN stock_locations sl ON sl.id = sb.location_id AND sl.type NOT IN ('virtual_in','virtual_out') AND sl.is_active = true
                JOIN companies c ON c.id = sl.company_id
                WHERE sb.product_id = $1::uuid AND sb.qty_on_hand > 0
-                 AND ($2::boolean OR EXISTS (
+                 AND ($2::boolean OR c.is_central_warehouse OR EXISTS (
                    SELECT 1 FROM user_company_roles ucr
                    WHERE ucr.user_id = $3::uuid AND ucr.company_id = sl.company_id AND ucr.is_active = true
                  ))
@@ -5900,6 +5908,7 @@ export const resolvers = {
             lineId: ov.lineId,
             productId: ov.productId,
             productName: productRow.rows[0].name,
+            productNameAr: productRow.rows[0].name_ar,
             description: lineRow.rows[0].description,
             qtyRequired,
             qtyOnHand,

@@ -215,6 +215,7 @@ interface LineAvailability {
   lineId: string
   productId?: string
   productName?: string
+  productNameAr?: string | null
   qtyRequired: number
   qtyOnHand: number
   qtyAvailable: number
@@ -1562,9 +1563,16 @@ export default function RequisitionDetail() {
                       marginBottom: '8px',
                     }}
                   >
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
-                      {(isOverridden ? avail?.productName : null) ?? l.description ?? l.product_name} — needs{' '}
-                      {fmtN(l.qty)} {l.uom}
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: theme.textPrimary }}>
+                        {(isOverridden ? avail?.productName : null) ?? l.description ?? l.product_name} — needs{' '}
+                        {fmtN(l.qty)} {l.uom}
+                      </div>
+                      {(isOverridden ? avail?.productNameAr : l.product_name_ar) && (
+                        <div dir="rtl" style={{ fontSize: '12px', color: theme.textMuted, textAlign: 'left' }}>
+                          {isOverridden ? avail?.productNameAr : l.product_name_ar}
+                        </div>
+                      )}
                     </div>
                     {canConfirmInventory && (
                       <button

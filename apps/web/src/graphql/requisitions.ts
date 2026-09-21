@@ -48,6 +48,7 @@ export const REQUISITION_LINE_PRODUCT_AVAILABILITY_QUERY = gql`
       lineId
       productId
       productName
+      productNameAr
       qtyRequired
       qtyOnHand
       qtyAvailable

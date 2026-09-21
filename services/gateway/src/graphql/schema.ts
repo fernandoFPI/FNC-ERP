@@ -391,6 +391,7 @@
     lineId: ID!
     productId: ID
     productName: String
+    productNameAr: String
     description: String
     qtyRequired: Float!
     qtyOnHand: Float!
