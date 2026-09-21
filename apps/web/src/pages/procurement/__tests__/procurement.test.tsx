@@ -104,6 +104,7 @@ describe('PurchaseOrderDetail', () => {
       subtotal: '1000',
       tax_amount: '100',
       total_amount: '1100',
+      currencyTotals: [{ currency_code: 'USD', subtotal: '1100', line_count: 0 }],
       fx_rate: '1480',
       notes: '',
       created_at: '2026-01-15T10:00:00.000Z',
