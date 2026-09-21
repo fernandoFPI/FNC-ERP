@@ -28,6 +28,10 @@ import { useToastStore } from '../../../store/toastStore'
 
 const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
 const CASH_VENDOR_VALUE = '__cash__'
+// Sentinel quickCreateLineId meaning "apply the newly created vendor to
+// every still-needed line" rather than one specific line — used by the
+// "all items are from the same vendor" toggle's own + New button.
+const ALL_LINES_SENTINEL = '__all__'
 
 const fmtN = (n: string | number | null | undefined) =>
   parseFloat(String(n ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
@@ -163,6 +167,8 @@ export default function ItemsBoughtPage() {
 
   // ── Per-line "record a purchase" form state ─────────────────────────────
   const [selectedVendor, setSelectedVendor] = useState<Record<string, string>>({})
+  const [sameVendorForAll, setSameVendorForAll] = useState(false)
+  const [globalVendorId, setGlobalVendorId] = useState('')
   const [purchaseQty, setPurchaseQty] = useState<Record<string, string>>({})
   const [purchasePrice, setPurchasePrice] = useState<Record<string, string>>({})
   const [purchaseCurrency, setPurchaseCurrency] = useState<Record<string, string>>({})
@@ -207,10 +213,34 @@ export default function ItemsBoughtPage() {
   const canFinishBuying =
     unresolvedLines.length === 0 && missingReceipt.length === 0 && unapprovedTolerance.length === 0
 
+  // Applies one vendor to every line that still needs buying — backs the
+  // "all items are from the same vendor" toggle, so the buyer picks a
+  // vendor once instead of per line.
+  function applyVendorToAllLines(vendorId: string) {
+    setGlobalVendorId(vendorId)
+    setSelectedVendor((prev) => {
+      const next = { ...prev }
+      for (const line of req?.lines ?? []) {
+        if (!line.short_marked_at && remainingToBuy(line) > 0) next[line.id] = vendorId
+      }
+      return next
+    })
+  }
+
+  function toggleSameVendorForAll(checked: boolean) {
+    setSameVendorForAll(checked)
+    if (checked && globalVendorId) applyVendorToAllLines(globalVendorId)
+  }
+
   async function handleUploadAndRecord(lineId: string) {
+    const line = req?.lines.find((l) => l.id === lineId)
     const vendorSel = selectedVendor[lineId]
-    const qty = parseFloat(purchaseQty[lineId] ?? '0')
-    const price = parseFloat(purchasePrice[lineId] ?? '0')
+    // Qty/price default to what the buyer would very likely enter anyway
+    // (the full remaining quantity, at the already-approved price) — typing
+    // is only needed when the actual purchase differs.
+    const qty = parseFloat(purchaseQty[lineId] || String(line ? remainingToBuy(line) : 0))
+    const defaultPrice = line?.approved_unit_price ?? line?.unit_price ?? '0'
+    const price = parseFloat(purchasePrice[lineId] || defaultPrice)
     const file = pendingFile[lineId]
     if (!vendorSel) {
       addToast({ type: 'error', message: 'Select a vendor' })
@@ -233,7 +263,6 @@ export default function ItemsBoughtPage() {
       addToast({ type: 'error', message: 'Cash Purchase vendor is not ready yet — try again in a moment' })
       return
     }
-    const line = req?.lines.find((l) => l.id === lineId)
     const currencyCode = purchaseCurrency[lineId] ?? line?.currency_code ?? 'IQD'
 
     setUploadingLine(lineId)
@@ -269,7 +298,10 @@ export default function ItemsBoughtPage() {
         },
       })
       addToast({ type: 'success', message: 'Purchase recorded' })
-      setSelectedVendor((prev) => ({ ...prev, [lineId]: '' }))
+      // In "same vendor for all" mode, keep every line pinned to the shared
+      // vendor even across this reset — otherwise a second partial purchase
+      // on the same line would fail vendor validation with the field hidden.
+      setSelectedVendor((prev) => ({ ...prev, [lineId]: sameVendorForAll ? globalVendorId : '' }))
       setPurchaseQty((prev) => ({ ...prev, [lineId]: '' }))
       setPurchasePrice((prev) => ({ ...prev, [lineId]: '' }))
       setPendingFile((prev) => ({ ...prev, [lineId]: null }))
@@ -289,7 +321,10 @@ export default function ItemsBoughtPage() {
         refetchQueries: [{ query: VENDORS_QUERY }],
       })
       const newId = result.data?.createVendor?.id
-      if (newId) setSelectedVendor((prev) => ({ ...prev, [quickCreateLineId]: newId }))
+      if (newId) {
+        if (quickCreateLineId === ALL_LINES_SENTINEL) applyVendorToAllLines(newId)
+        else setSelectedVendor((prev) => ({ ...prev, [quickCreateLineId]: newId }))
+      }
       addToast({ type: 'success', message: 'Vendor created' })
       setQuickCreateOpen(false)
       setQuickCreateName('')
@@ -332,6 +367,52 @@ export default function ItemsBoughtPage() {
           <div style={{ fontSize: '13px', color: theme.textMuted }}>
             This requisition is no longer at the items_bought stage — shown read-only.
           </div>
+        </Card>
+      )}
+
+      {canBuy && req.status === 'items_bought' && req.lines.length > 1 && (
+        <Card style={{ padding: '14px 20px', marginTop: '16px' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '13px',
+              color: theme.textPrimary,
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={sameVendorForAll}
+              onChange={(e) => toggleSameVendorForAll(e.target.checked)}
+            />
+            All items are from the same vendor
+          </label>
+          {sameVendorForAll && (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end', marginTop: '10px', maxWidth: '420px' }}>
+              <div style={{ flex: 1 }}>
+                <SearchableSelect
+                  label="Vendor for all items"
+                  value={globalVendorId}
+                  onChange={(v) => applyVendorToAllLines(v)}
+                  options={vendorOptions}
+                  placeholder="Search vendor…"
+                  minDropdownWidth={320}
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuickCreateLineId(ALL_LINES_SENTINEL)
+                  setQuickCreateOpen(true)
+                }}
+              >
+                + New
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -437,28 +518,37 @@ export default function ItemsBoughtPage() {
               <div style={{ marginTop: '14px', padding: '14px', borderRadius: '8px', border: `1px solid ${theme.border}` }}>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <div style={{ flex: 1, minWidth: '200px' }}>
-                    <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
-                      <div style={{ flex: 1 }}>
-                        <SearchableSelect
-                          label="Vendor"
-                          value={selectedVendor[line.id] ?? ''}
-                          onChange={(v) => setSelectedVendor((prev) => ({ ...prev, [line.id]: v }))}
-                          options={vendorOptions}
-                          placeholder="Search vendor…"
-                          minDropdownWidth={320}
-                        />
+                    {sameVendorForAll ? (
+                      <div>
+                        <div style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>Vendor</div>
+                        <div style={{ fontSize: '13px', color: theme.textPrimary, padding: '8px 0' }}>
+                          {vendorOptions.find((v) => v.value === globalVendorId)?.label ?? '— select above —'}
+                        </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setQuickCreateLineId(line.id)
-                          setQuickCreateOpen(true)
-                        }}
-                      >
-                        + New
-                      </Button>
-                    </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1 }}>
+                          <SearchableSelect
+                            label="Vendor"
+                            value={selectedVendor[line.id] ?? ''}
+                            onChange={(v) => setSelectedVendor((prev) => ({ ...prev, [line.id]: v }))}
+                            options={vendorOptions}
+                            placeholder="Search vendor…"
+                            minDropdownWidth={320}
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setQuickCreateLineId(line.id)
+                            setQuickCreateOpen(true)
+                          }}
+                        >
+                          + New
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <div style={{ width: '110px' }}>
                     <Input
@@ -466,7 +556,9 @@ export default function ItemsBoughtPage() {
                       type="number"
                       min="0"
                       max={remaining}
-                      value={purchaseQty[line.id] ?? ''}
+                      // Defaults to the full remaining qty — the buyer only
+                      // needs to type when this purchase is a partial one.
+                      value={purchaseQty[line.id] || (remaining > 0 ? String(remaining) : '')}
                       onChange={(e) => setPurchaseQty((prev) => ({ ...prev, [line.id]: e.target.value }))}
                     />
                   </div>
@@ -475,7 +567,9 @@ export default function ItemsBoughtPage() {
                       label="Actual price"
                       type="number"
                       min="0"
-                      value={purchasePrice[line.id] ?? ''}
+                      // Defaults to the already-approved price — the buyer
+                      // only needs to type when the real price differs.
+                      value={purchasePrice[line.id] || (line.approved_unit_price ?? line.unit_price ?? '')}
                       onChange={(e) => setPurchasePrice((prev) => ({ ...prev, [line.id]: e.target.value }))}
                     />
                   </div>

@@ -250,6 +250,45 @@ describe('ItemsBoughtPage', () => {
     expect(enabledFinishButtons[enabledFinishButtons.length - 1]).not.toBeDisabled()
   })
 
+  it('pre-fills Qty with the remaining quantity and Actual price with the approved price, without typing', async () => {
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    const { container } = wrap(<ItemsBoughtPage />)
+    const numberInputs = container.querySelectorAll('input[type="number"]')
+    const qtyInput = numberInputs[0] as HTMLInputElement
+    const priceInput = numberInputs[1] as HTMLInputElement
+    expect(qtyInput.value).toBe('10')
+    expect(priceInput.value).toBe('100')
+  })
+
+  it('does not offer the "same vendor" toggle for a single-line requisition', async () => {
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+    expect(screen.queryByText(/all items are from the same vendor/i)).not.toBeInTheDocument()
+  })
+
+  it('applies one vendor to every line via the "same vendor for all" toggle', async () => {
+    mockReq([
+      baseLine({ id: 'line-1', description: 'Cement bags' }),
+      baseLine({ id: 'line-2', description: 'Rebar', product_name: 'Rebar' }),
+    ])
+    const ItemsBoughtPage = (await import('../ItemsBoughtPage')).default
+    wrap(<ItemsBoughtPage />)
+
+    // Before toggling, each line has its own vendor picker.
+    expect(screen.getAllByText('Search vendor…')).toHaveLength(2)
+
+    fireEvent.click(screen.getByLabelText(/all items are from the same vendor/i))
+
+    // Toggled on: one shared picker replaces both per-line ones.
+    expect(screen.getAllByText('Search vendor…')).toHaveLength(1)
+    fireEvent.click(screen.getByText('Search vendor…'))
+    fireEvent.mouseDown(screen.getByText('Al-Rasheed Hardware'))
+
+    // The shared vendor now shows read-only against both lines, plus once
+    // more as the shared picker's own selected value.
+    expect(screen.getAllByText('Al-Rasheed Hardware')).toHaveLength(3)
+  })
+
   it('disables the Approve override button for the same user who recorded the purchase', async () => {
     mockReq(
       [
