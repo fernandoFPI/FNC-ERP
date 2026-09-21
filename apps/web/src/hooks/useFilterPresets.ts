@@ -10,13 +10,36 @@ export interface FilterPreset {
 const STORAGE_PREFIX = 'fnc_presets_v1_'
 const MAX_PRESETS = 12
 
-export function useFilterPresets(pageKey: string, defaults: Record<string, string>) {
+export function useFilterPresets(
+  pageKey: string,
+  defaults: Record<string, string>,
+  // One-time seed for a brand-new browser with no saved presets yet — gives
+  // back, as an explicit opt-in preset, the convenience a hardcoded filter
+  // default used to force on everyone. Persisted to storageKey immediately
+  // below, same as any other save, so it's seeded at most once: every
+  // write (including deleting it down to an empty list) leaves storageKey
+  // set from then on, which is what stops it coming back.
+  seedPreset?: { name: string; filters: Record<string, string> },
+) {
   const storageKey = STORAGE_PREFIX + pageKey
 
   const [presets, setPresets] = useState<FilterPreset[]>(() => {
     try {
       const raw = localStorage.getItem(storageKey)
-      return raw ? (JSON.parse(raw) as FilterPreset[]) : []
+      if (raw) return JSON.parse(raw) as FilterPreset[]
+      if (seedPreset) {
+        const seeded: FilterPreset[] = [
+          {
+            id: crypto.randomUUID(),
+            name: seedPreset.name,
+            filters: { ...seedPreset.filters },
+            savedAt: new Date().toISOString(),
+          },
+        ]
+        localStorage.setItem(storageKey, JSON.stringify(seeded))
+        return seeded
+      }
+      return []
     } catch {
       return []
     }

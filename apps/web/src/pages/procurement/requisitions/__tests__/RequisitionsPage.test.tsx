@@ -136,4 +136,36 @@ describe('RequisitionsPage', () => {
     wrap(<RequisitionsPage />)
     expect(screen.getByText('0 requisitions')).toBeInTheDocument()
   })
+
+  it('defaults to the full list, not just the signed-in user\'s own requisitions', async () => {
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    wrap(<RequisitionsPage />)
+    const [, options] = mockUseQuery.mock.calls[0] as [unknown, { variables: { myQueueOnly?: boolean } }]
+    expect(options.variables.myQueueOnly).toBeUndefined()
+    expect(screen.getByRole('button', { name: /my requisitions/i })).toBeInTheDocument()
+  })
+
+  it('seeds a "My Requisitions" preset for a fresh browser, restoring the old default on demand', async () => {
+    localStorage.clear()
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getByTitle('Saved filter presets'))
+    const presetButton = screen.getByRole('button', { name: 'My Requisitions' })
+    fireEvent.click(presetButton)
+    const lastCall = mockUseQuery.mock.calls.at(-1) as [unknown, { variables: { myQueueOnly?: boolean } }]
+    expect(lastCall[1].variables.myQueueOnly).toBe(true)
+  })
+
+  it('does not re-seed the preset after the user deletes it', async () => {
+    localStorage.clear()
+    const RequisitionsPage = (await import('../RequisitionsPage')).default
+    const { unmount } = wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getByTitle('Saved filter presets'))
+    fireEvent.click(screen.getByTitle('Delete preset'))
+    unmount()
+
+    wrap(<RequisitionsPage />)
+    fireEvent.click(screen.getByTitle('Saved filter presets'))
+    expect(screen.getByText('No saved presets')).toBeInTheDocument()
+  })
 })

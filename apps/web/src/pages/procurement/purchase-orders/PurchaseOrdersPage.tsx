@@ -78,9 +78,12 @@ export default function PurchaseOrdersPage() {
   const [toDate, setToDate] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkApproving, setBulkApproving] = useState(false)
-  // Defaults to the signed-in user's own POs — most people live in this view
-  // day to day; the toggle below still switches to the full company list.
-  const [myPOsOnly, setMyPOsOnly] = useState(true)
+  // Defaults to the full company list — a hardcoded "my own POs" default
+  // left anyone who isn't personally the organizer of anything looking at
+  // an empty page with no obvious explanation. A "My Purchase Orders"
+  // preset (seeded below) gives back that convenience as an explicit,
+  // visible choice instead.
+  const [myPOsOnly, setMyPOsOnly] = useState(false)
 
   const projectIdFilter = urlParams.get('project_id') ?? ''
   const projectNameFilter = urlParams.get('project_name') ?? ''
@@ -101,6 +104,7 @@ export default function PurchaseOrdersPage() {
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'purchase_orders',
     FILTER_DEFAULTS,
+    { name: 'My Purchase Orders', filters: { ...FILTER_DEFAULTS, myPOsOnly: 'true' } },
   )
 
   const orders: PurchaseOrder[] = data?.purchaseOrders ?? []

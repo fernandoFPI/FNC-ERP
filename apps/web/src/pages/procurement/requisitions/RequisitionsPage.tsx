@@ -76,9 +76,12 @@ export default function RequisitionsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
-  // Defaults to the signed-in user's own requisitions — most people live in
-  // this view day to day; the toggle below still switches to the full list.
-  const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(true)
+  // Defaults to the full company list — a hardcoded "my own requisitions"
+  // default left anyone who isn't personally the organizer of anything
+  // looking at an empty page with no obvious explanation. A "My
+  // Requisitions" preset (seeded below) gives back that convenience as an
+  // explicit, visible choice instead.
+  const [myRequisitionsOnly, setMyRequisitionsOnly] = useState(false)
 
   const { data, loading, refetch } = useQuery(REQUISITIONS_QUERY, {
     variables: {
@@ -99,6 +102,7 @@ export default function RequisitionsPage() {
   const { presets, savePreset, deletePreset, resolvePreset } = useFilterPresets(
     'requisitions',
     FILTER_DEFAULTS,
+    { name: 'My Requisitions', filters: { ...FILTER_DEFAULTS, myRequisitionsOnly: 'true' } },
   )
 
   const requisitions: Requisition[] = data?.requisitions ?? []
