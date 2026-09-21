@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@apollo/client'
 import {
@@ -383,6 +383,50 @@ export default function RequisitionDetail() {
   // reservation instead.
   const [reselectOpenFor, setReselectOpenFor] = useState<string | null>(null)
   const [productOverride, setProductOverride] = useState<Record<string, string>>({})
+
+  // Inventory Check draft — nothing here is saved to the server until
+  // "Confirm inventory check" is actually clicked, so a store keeper who
+  // works through several lines (reselecting items, picking source
+  // locations, entering qty from stock) and then refreshes — or the tab
+  // reloads for any other reason — used to silently lose all of it back to
+  // whatever the requisition looked like before they started. Mirrors
+  // useFilterPresets' own localStorage pattern; scoped per requisition ID
+  // so it can't bleed into a different one.
+  const invCheckDraftKey = req?.id ? `fnc_inv_check_draft_${req.id}` : null
+  const hydratedDraftRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!invCheckDraftKey || hydratedDraftRef.current === invCheckDraftKey) return
+    hydratedDraftRef.current = invCheckDraftKey
+    try {
+      const raw = localStorage.getItem(invCheckDraftKey)
+      if (!raw) return
+      const draft = JSON.parse(raw) as {
+        invQty?: Record<string, string>
+        invLoc?: Record<string, string>
+        productOverride?: Record<string, string>
+      }
+      if (draft.invQty) setInvQty(draft.invQty)
+      if (draft.invLoc) setInvLoc(draft.invLoc)
+      if (draft.productOverride) setProductOverride(draft.productOverride)
+    } catch {
+      // Corrupt or unavailable localStorage — just start from a blank draft.
+    }
+  }, [invCheckDraftKey])
+  useEffect(() => {
+    if (!invCheckDraftKey) return
+    const hasAny =
+      Object.keys(invQty).length > 0 ||
+      Object.keys(invLoc).length > 0 ||
+      Object.keys(productOverride).length > 0
+    try {
+      if (hasAny) localStorage.setItem(invCheckDraftKey, JSON.stringify({ invQty, invLoc, productOverride }))
+      else localStorage.removeItem(invCheckDraftKey)
+    } catch {
+      // Quota exceeded or unavailable — the draft just won't survive a
+      // refresh this time, same as before this existed.
+    }
+  }, [invCheckDraftKey, invQty, invLoc, productOverride])
+
   const { data: productsData } = useQuery(PRODUCTS_QUERY, {
     // Same reasoning as RequisitionForm's own line-item picker — the item
     // being corrected here can legitimately live at the central warehouse
@@ -1795,6 +1839,17 @@ export default function RequisitionDetail() {
                         productId: productOverride[l.id] || undefined,
                       })),
                     },
+                  }).then(() => {
+                    // Now saved for real — the draft would otherwise linger
+                    // in localStorage forever for a stage this requisition
+                    // has already moved past.
+                    if (invCheckDraftKey) {
+                      try {
+                        localStorage.removeItem(invCheckDraftKey)
+                      } catch {
+                        // Unavailable localStorage — nothing to clean up.
+                      }
+                    }
                   })
                 }
               >

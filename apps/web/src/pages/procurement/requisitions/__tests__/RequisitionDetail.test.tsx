@@ -116,6 +116,7 @@ function mockReq(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   mockAuthUser = { id: 'user-organizer', role: 'system_admin' }
   mockUseMutation.mockReturnValue([vi.fn().mockResolvedValue({}), { loading: false }])
   mockReq()
@@ -687,5 +688,44 @@ describe('RequisitionDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /start editing/i }))
     expect(getEditDeliveryDestinationSelect(container)).toBeDisabled()
     expect(screen.getByText(/already forked this into one or more purchase orders/i)).toBeInTheDocument()
+  })
+
+  it('inventory_check: restores an in-progress qty-from-stock draft after a refresh', async () => {
+    localStorage.setItem(
+      'fnc_inv_check_draft_req-1',
+      JSON.stringify({ invQty: { 'line-1': '3' }, invLoc: {}, productOverride: {} }),
+    )
+    mockReq({ status: 'inventory_check', callerHasStoreKeeperPosition: true })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(screen.getByDisplayValue('3')).toBeInTheDocument()
+  })
+
+  it('inventory_check: saves the qty-from-stock draft to localStorage as it\'s typed', async () => {
+    mockReq({ status: 'inventory_check', callerHasStoreKeeperPosition: true })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    const input = screen.getByPlaceholderText('0')
+    fireEvent.change(input, { target: { value: '2' } })
+    const raw = localStorage.getItem('fnc_inv_check_draft_req-1')
+    expect(raw).toBeTruthy()
+    expect(JSON.parse(raw!)).toMatchObject({ invQty: { 'line-1': '2' } })
+  })
+
+  it('inventory_check: clears the draft once the confirm mutation succeeds', async () => {
+    localStorage.setItem(
+      'fnc_inv_check_draft_req-1',
+      JSON.stringify({ invQty: { 'line-1': '5' }, invLoc: {}, productOverride: {} }),
+    )
+    const confirmMock = vi.fn().mockResolvedValue({})
+    mockUseMutation.mockReturnValue([confirmMock, { loading: false }])
+    mockReq({ status: 'inventory_check', callerHasStoreKeeperPosition: true })
+    const RequisitionDetail = (await import('../RequisitionDetail')).default
+    wrap(<RequisitionDetail />)
+    expect(localStorage.getItem('fnc_inv_check_draft_req-1')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /confirm inventory check/i }))
+    await vi.waitFor(() => {
+      expect(localStorage.getItem('fnc_inv_check_draft_req-1')).toBeNull()
+    })
   })
 })
