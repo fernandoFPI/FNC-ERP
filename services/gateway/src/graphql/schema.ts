@@ -2852,6 +2852,11 @@
     location_id: ID!
     new_qty: Float!
     unit_cost: Float
+    # Only applied alongside a real unit_cost — changes the product's own
+    # Cost Currency to match (see createStockAdjustment), since a location's
+    # cost can never disagree with its product's currency. Ignored if
+    # unit_cost isn't also given.
+    currency_code: String
     notes: String
     adjustment_date: String
   }

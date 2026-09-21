@@ -338,4 +338,58 @@ describe('createStockAdjustment — currency tagging (stock_balances.last_cost_c
     expect(await getBalance(productId)).toEqual({ qty: 9, cost: 30 })
     expect(await getBalanceCurrency(productId)).toBe('IQD')
   })
+
+  it('an explicit currency_code alongside a real cost also updates the product\'s own Cost Currency, keeping them the same', async () => {
+    const productId = await makeProduct('currency-explicit-override')
+    await pool.query(`UPDATE products SET standard_cost=10, cost_currency='IQD' WHERE id=$1`, [productId])
+    await receiveUncosted(productId, 5)
+
+    await resolvers.Mutation.createStockAdjustment(
+      null,
+      {
+        input: {
+          product_id: productId,
+          location_id: warehouseId,
+          new_qty: 5,
+          unit_cost: 12,
+          currency_code: 'USD',
+        },
+      },
+      ctx as never,
+    )
+
+    expect(await getBalanceCurrency(productId)).toBe('USD')
+    const product = await pool.query<{ standard_cost: string; cost_currency: string }>(
+      `SELECT standard_cost, cost_currency FROM products WHERE id=$1`,
+      [productId],
+    )
+    expect(parseFloat(product.rows[0]!.standard_cost)).toBe(12)
+    expect(product.rows[0]!.cost_currency).toBe('USD')
+  })
+
+  it('an explicit currency_code with no unit_cost is ignored — nothing to apply it to', async () => {
+    const productId = await makeProduct('currency-ignored-without-cost')
+    await pool.query(`UPDATE products SET standard_cost=10, cost_currency='IQD' WHERE id=$1`, [productId])
+    await receiveUncosted(productId, 5)
+
+    const result = await resolvers.Mutation.createStockAdjustment(
+      null,
+      {
+        input: {
+          product_id: productId,
+          location_id: warehouseId,
+          new_qty: 5,
+          currency_code: 'USD',
+        },
+      },
+      ctx as never,
+    )
+
+    expect(result).toBeNull()
+    const product = await pool.query<{ cost_currency: string }>(
+      `SELECT cost_currency FROM products WHERE id=$1`,
+      [productId],
+    )
+    expect(product.rows[0]!.cost_currency).toBe('IQD')
+  })
 })

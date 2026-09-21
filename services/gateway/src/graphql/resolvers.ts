@@ -12797,6 +12797,7 @@ export const resolvers = {
           location_id: string
           new_qty: number
           unit_cost?: number
+          currency_code?: string
           notes?: string
           adjustment_date?: string
         }
@@ -12843,13 +12844,20 @@ export const resolvers = {
             `SELECT cost_currency FROM products WHERE id=$1`,
             [i.product_id],
           )
-          const adjustmentCurrency = productCcyRes.rows[0]?.cost_currency ?? 'IQD'
-          // A real new cost is always entered in the product's own currency
-          // (see recordProductCostChange below) — but falling back to the
-          // location's existing cost (no unit_cost given) must keep tagging
-          // it with whatever currency was already recorded there, not
-          // whatever the product's currency happens to be right now.
-          const moveCurrency = i.unit_cost && i.unit_cost > 0 ? adjustmentCurrency : currentCurrency
+          // A currency picked here alongside a real cost becomes the
+          // product's own Cost Currency too (via recordProductCostChange
+          // below) — a location's cost can never disagree with its
+          // product's, so changing it here is just another entry point for
+          // that same single value, not a way to make them diverge.
+          const hasNewCost = !!(i.unit_cost && i.unit_cost > 0)
+          const adjustmentCurrency = hasNewCost
+            ? (i.currency_code ?? productCcyRes.rows[0]?.cost_currency ?? 'IQD')
+            : (productCcyRes.rows[0]?.cost_currency ?? 'IQD')
+          // Falling back to the location's existing cost (no unit_cost
+          // given) must keep tagging it with whatever currency was already
+          // recorded there, not whatever the product's currency happens to
+          // be right now.
+          const moveCurrency = hasNewCost ? adjustmentCurrency : currentCurrency
 
           if (diff === 0) {
             // Quantity is already right — but a real cost correction was

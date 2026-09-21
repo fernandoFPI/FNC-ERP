@@ -28,6 +28,8 @@ interface UserPOPosition {
   departmentId?: string | null
 }
 
+const CURRENCIES = ['IQD', 'USD', 'EUR', 'TRY', 'AED']
+
 export default function StockAdjustmentForm() {
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -56,6 +58,9 @@ export default function StockAdjustmentForm() {
   const [locationId, setLocationId] = useState('')
   const [newQty, setNewQty] = useState('')
   const [unitCost, setUnitCost] = useState('')
+  // '' means "follow the product's own currency" — only becomes its own
+  // value once the user actually picks a different one here.
+  const [costCurrencyOverride, setCostCurrencyOverride] = useState('')
   const [notes, setNotes] = useState('')
   const [adjustmentDate, setAdjustmentDate] = useState(new Date().toISOString().slice(0, 10))
 
@@ -89,6 +94,7 @@ export default function StockAdjustmentForm() {
   const currentCost = parseFloat(String(currentBalance?.average_cost ?? 0))
 
   const selectedProduct = products.find((p) => p.id === productId)
+  const effectiveCostCurrency = costCurrencyOverride || selectedProduct?.cost_currency || ''
   const parsedNewQty = parseFloat(newQty)
   const diff = !isNaN(parsedNewQty) ? parsedNewQty - currentQty : null
   const parsedUnitCost = unitCost !== '' ? parseFloat(unitCost) : null
@@ -128,6 +134,9 @@ export default function StockAdjustmentForm() {
             location_id: locationId,
             new_qty: parsedNewQty,
             unit_cost: unitCost ? parseFloat(unitCost) : undefined,
+            // Only meaningful alongside a real unit_cost — the backend
+            // ignores it otherwise (see StockAdjustmentInput.currency_code).
+            currency_code: unitCost && effectiveCostCurrency ? effectiveCostCurrency : undefined,
             notes: notes || undefined,
             adjustment_date: adjustmentDate,
           },
@@ -334,11 +343,20 @@ export default function StockAdjustmentForm() {
               }}
               placeholder={currentCost > 0 ? currentCost.toFixed(4) : '0.0000'}
             />
-            <Input
+            <Select
               label="Cost Currency"
-              value={selectedProduct?.cost_currency || '—'}
-              disabled
-            />
+              value={effectiveCostCurrency}
+              onChange={(e) => {
+                setCostCurrencyOverride(e.target.value)
+              }}
+            >
+              <option value="">— Not set —</option>
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
             <Input
               label="Adjustment date"
               type="date"
@@ -374,8 +392,8 @@ export default function StockAdjustmentForm() {
             >
               Quantity is unchanged — this will only correct the recorded cost for this product at
               this location, from {currentCost.toFixed(4)} {currentBalance?.last_cost_currency ?? ''} to{' '}
-              {parsedUnitCost!.toFixed(4)} {selectedProduct?.cost_currency ?? ''}. Future receipts
-              will keep updating it automatically from there.
+              {parsedUnitCost!.toFixed(4)} {effectiveCostCurrency}. Future receipts will keep
+              updating it automatically from there.
             </div>
           )}
 
