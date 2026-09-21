@@ -378,8 +378,19 @@ export default function StoreInDetail() {
   }
 
   const baseCcy = receipt.base_currency_code ?? 'IQD'
+  // Converted to base currency — this is what safely sums across lines even
+  // when they're priced in different currencies, so it's the right figure
+  // for the overall Total Cost, but NOT for the per-line Total column (see
+  // lineTotalNative below).
   const lineTotal = (l: ReceiptLine) =>
     parseFloat(l.qty_received) * parseFloat(l.unit_price ?? '0') * (parseFloat(l.fx_rate_to_base ?? '1') || 1)
+  // Same, but without the fx_rate_to_base conversion — for the per-line
+  // Total column, which sits right next to this same line's own Unit Price
+  // and should read in that same native currency (a line genuinely priced
+  // in USD showing its total in IQD with no visible conversion looks like
+  // a bug, even when the number itself is correct).
+  const lineTotalNative = (l: ReceiptLine) =>
+    parseFloat(l.qty_received) * parseFloat(l.unit_price ?? '0')
 
   const totalCost = receipt.lines.reduce((s, l) => s + lineTotal(l), 0)
 
@@ -416,10 +427,10 @@ export default function StoreInDetail() {
     },
     {
       key: 'total',
-      header: `Total (${baseCcy})`,
+      header: 'Total',
       render: (l) => (
         <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-          {fmtAmt(lineTotal(l))}
+          {fmtAmt(lineTotalNative(l))} {l.currency_code ?? baseCcy}
         </span>
       ),
     },

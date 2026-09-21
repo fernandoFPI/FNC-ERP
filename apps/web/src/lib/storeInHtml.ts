@@ -43,12 +43,18 @@ function fmtDate(d: string): string {
 
 export function buildStoreInHTML(si: StoreInPrintData): string {
   const baseCcy = si.baseCurrencyCode ?? 'IQD'
+  // Converted to base currency — needed to safely sum lines priced in
+  // different currencies into the one overall Total at the bottom, but NOT
+  // for the per-line Total column (see below): a line genuinely priced in
+  // USD showing its total in IQD right next to a USD unit price, with no
+  // visible conversion, reads as a bug even though the number is correct.
   const lineTotal = (l: StoreInPrintLine) => l.qtyReceived * l.unitPrice * (l.fxRateToBase ?? 1)
+  const lineTotalNative = (l: StoreInPrintLine) => l.qtyReceived * l.unitPrice
   const totalCost = si.lines.reduce((s, l) => s + lineTotal(l), 0)
 
   const lineRows = si.lines
     .map((l, i) => {
-      const total = lineTotal(l)
+      const total = lineTotalNative(l)
       const ccy = l.currencyCode ?? baseCcy
       return `
     <tr>
@@ -61,7 +67,7 @@ export function buildStoreInHTML(si: StoreInPrintData): string {
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right">${l.qtyReceived}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;color:#666">${l.uom ?? ''}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">${fmt(l.unitPrice)} ${ccy}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">${fmt(total)} ${baseCcy}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">${fmt(total)} ${ccy}</td>
     </tr>
   `
     })

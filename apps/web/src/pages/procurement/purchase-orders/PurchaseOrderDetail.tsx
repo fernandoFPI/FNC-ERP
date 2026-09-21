@@ -138,27 +138,29 @@ export interface POLine {
 // a separate column only market pricing itself is guaranteed to refresh, so
 // it can drift stale after a later price correction even though the real
 // total_price/total_amount are right. Falls back to qty * market_price only
-// when total is genuinely absent (e.g. a line never priced at all). Result
-// is converted to the PO's base currency (po.base_currency_code) via
-// fx_rate_to_base — mirrors recalcPO in the gateway resolver exactly, so
-// this always returns a value safe to sum/compare across lines even when
-// they're priced in different currencies. Never label this with
-// po.currency_code (the header's own currency can differ from base).
-function poLineTotal(line: {
+// when total is genuinely absent (e.g. a line never priced at all).
+//
+// Deliberately NOT converted to the PO's base currency — this backs the
+// per-line Total column, which sits right next to this line's own
+// Market/Unit Price and should read in that same native currency (a line
+// genuinely priced in USD showing "9,276 IQD" with no visible conversion
+// looks like a bug, even when the number itself is correct). The PO
+// Summary's own total_amount is a separate, backend-computed, already-
+// base-currency figure — that's what still safely sums lines priced in
+// different currencies; this function has no part in it.
+function poLineTotalNative(line: {
   qty: number | string | null | undefined
   qty_from_stock?: number | string
   market_price?: number | string | null
   unit_price?: number | string | null
   total?: number | string | null
-  fx_rate_to_base?: number | string | null
 }): number {
   const qty = parseFloat(String(line.qty ?? 0))
   const fromStock = parseFloat(String(line.qty_from_stock ?? 0))
   if (qty > 0 && fromStock >= qty) return 0
-  const fxRate = parseFloat(String(line.fx_rate_to_base ?? 1)) || 1
-  if (line.total != null) return parseFloat(String(line.total)) * fxRate
+  if (line.total != null) return parseFloat(String(line.total))
   const mp = parseFloat(String(line.market_price ?? line.unit_price ?? 0))
-  return qty * mp * fxRate
+  return qty * mp
 }
 
 export interface PO {
@@ -5010,10 +5012,11 @@ export default function PurchaseOrderDetail() {
             },
             {
               key: 'total',
-              header: `Total (${po.base_currency_code})`,
+              header: 'Total',
               mobilePriority: 2,
               render: (line) => {
-                const total = poLineTotal(line)
+                const total = poLineTotalNative(line)
+                const ccy = line.market_price_currency ?? line.requested_currency_code ?? po.currency_code
                 return (
                   <span
                     style={{
@@ -5023,7 +5026,7 @@ export default function PurchaseOrderDetail() {
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
-                    {fmtN(total || line.total)} {po.base_currency_code}
+                    {fmtN(total || line.total)} {ccy}
                   </span>
                 )
               },
