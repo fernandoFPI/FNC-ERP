@@ -7,6 +7,7 @@ export interface POPrintLineNote {
 export interface POPrintLine {
   description: string
   product_name?: string | null
+  product_name_ar?: string | null
   qty: number
   uom: string
   unit_price: number
@@ -111,7 +112,8 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
     <tr>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">
-        ${l.product_name ? `<div style="font-weight:600;color:#1a1a1a">${l.product_name}</div><div style="color:#888;margin-top:2px">${l.description}</div>` : `<div>${l.description}</div>`}
+        <div style="font-weight:600;color:#1a1a1a">${l.description || l.product_name || '—'}</div>
+        ${l.product_name_ar ? `<div dir="rtl" style="color:#888;margin-top:2px;text-align:left">${l.product_name_ar}</div>` : ''}
         ${
           l.notes && l.notes.length > 0
             ? `<div style="margin-top:6px;padding-left:8px;border-left:2px solid #e5e7eb">${l.notes

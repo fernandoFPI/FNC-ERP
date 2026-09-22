@@ -2554,6 +2554,7 @@ export default function RequisitionDetail() {
                       lines: req.lines.map((l) => ({
                         description: l.description ?? l.product_name ?? '',
                         product_name: l.product_name,
+                        product_name_ar: l.product_name_ar,
                         qty: parseFloat(l.qty) || 0,
                         uom: l.uom ?? '',
                         currency_code: l.currency_code,

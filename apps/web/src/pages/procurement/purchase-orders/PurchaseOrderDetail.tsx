@@ -7821,6 +7821,7 @@ export default function PurchaseOrderDetail() {
                   lines: po.lines.map((l) => ({
                     description: l.description,
                     product_name: l.product_name,
+                    product_name_ar: l.product_name_ar,
                     qty: l.qty,
                     uom: l.uom,
                     unit_price: l.unit_price,

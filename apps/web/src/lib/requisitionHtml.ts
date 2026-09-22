@@ -1,6 +1,7 @@
 export interface ReqPrintLine {
   description: string
   product_name?: string | null
+  product_name_ar?: string | null
   qty: number
   uom: string
   currency_code: string
@@ -98,7 +99,8 @@ export function buildRequisitionHTML(req: ReqPrintData): string {
     <tr>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">
-        ${l.product_name ? `<div style="font-weight:600;color:#1a1a1a">${l.product_name}</div><div style="color:#888;margin-top:2px">${l.description}</div>` : `<div>${l.description}</div>`}
+        <div style="font-weight:600;color:#1a1a1a">${l.description || l.product_name || '—'}</div>
+        ${l.product_name_ar ? `<div dir="rtl" style="color:#888;margin-top:2px;text-align:left">${l.product_name_ar}</div>` : ''}
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right">${l.qty}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;color:#666">${l.uom}</td>
