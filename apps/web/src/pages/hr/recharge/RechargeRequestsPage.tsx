@@ -50,6 +50,7 @@ interface RechargeBundle {
 
 interface RechargeRequest extends RechargeRequestSummary {
   companyId: string
+  companyName?: string | null
   // Null when filed for someone not yet in the system — see requestedForName.
   requestedBy: string | null
   requestedForName?: string | null
@@ -878,6 +879,7 @@ function RequestDetailBody({
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <InfoField label="Company" value={r.companyName ?? '—'} theme={theme} />
         <InfoField
           label="Requester"
           value={r.requestedBy ? (r.requestedByEmail ?? '—') : `${r.requestedByEmail ?? '—'} (not in system)`}

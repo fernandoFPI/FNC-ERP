@@ -4,6 +4,7 @@ const RECHARGE_REQUEST_FIELDS = gql`
   fragment RechargeRequestFields on RechargeRequest {
     id
     companyId
+    companyName
     requestedBy
     requestedByEmail
     requestedForName

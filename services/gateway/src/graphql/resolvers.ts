@@ -5345,7 +5345,8 @@ function rechargeBundleRow(r: Record<string, unknown>) {
 const RECHARGE_REQUEST_SELECT = `
   SELECT rr.*, ru.email AS requested_by_email, cc.name AS cost_center_name,
     rb.name AS bundle_name, rb.amount AS bundle_amount, rb.currency_code AS bundle_currency_code,
-    au.email AS approved_by_email, fu.email AS fulfilled_by_email, cbu.email AS created_by_email
+    au.email AS approved_by_email, fu.email AS fulfilled_by_email, cbu.email AS created_by_email,
+    co.name AS company_name
   FROM recharge_requests rr
   LEFT JOIN users ru ON ru.id = rr.requested_by
   JOIN cost_centers cc ON cc.id = rr.cost_center_id
@@ -5353,6 +5354,7 @@ const RECHARGE_REQUEST_SELECT = `
   LEFT JOIN users au ON au.id = rr.approved_by
   LEFT JOIN users fu ON fu.id = rr.fulfilled_by
   LEFT JOIN users cbu ON cbu.id = rr.created_by
+  LEFT JOIN companies co ON co.id = rr.company_id
 `
 
 // The blind-confirm-then-reveal gate applies specifically to the requester —
@@ -5400,6 +5402,7 @@ async function rechargeRequestRow(
   return {
     id: r.id,
     companyId: r.company_id,
+    companyName: r.company_name ?? null,
     requestedBy,
     // Falls back to the typed name for a requestedBy-less request, so every
     // existing display spot (card, drawer, timeline) that already treats

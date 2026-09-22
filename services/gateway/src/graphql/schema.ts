@@ -802,6 +802,7 @@
   type RechargeRequest {
     id: ID!
     companyId: ID!
+    companyName: String
     # Null when this request was filed for someone not yet in the system —
     # see requestedForName instead, and requestedByEmail still carries a
     # display label either way.
