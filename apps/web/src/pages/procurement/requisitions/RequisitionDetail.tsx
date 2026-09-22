@@ -2551,17 +2551,27 @@ export default function RequisitionDetail() {
                       projectName: req.projectName,
                       branchName: req.branch_name,
                       organizerName: req.organizerName,
-                      lines: req.lines.map((l) => ({
-                        description: l.description ?? l.product_name ?? '',
-                        product_name: l.product_name,
-                        product_name_ar: l.product_name_ar,
-                        qty: parseFloat(l.qty) || 0,
-                        uom: l.uom ?? '',
-                        currency_code: l.currency_code,
-                        unit_price: parseFloat(l.unit_price) || 0,
-                        total: parseFloat(l.total) || 0,
-                        fromStock: (parseFloat(String(l.total)) || 0) === 0 ? fromStockDisplayValue(l) : null,
-                      })),
+                      lines: req.lines.map((l) => {
+                        const qtyFromStock = parseFloat(String(l.qty_from_stock ?? '0')) || 0
+                        return {
+                          description: l.description ?? l.product_name ?? '',
+                          product_name: l.product_name,
+                          product_name_ar: l.product_name_ar,
+                          qty: parseFloat(l.qty) || 0,
+                          qty_from_stock: qtyFromStock,
+                          uom: l.uom ?? '',
+                          currency_code: l.currency_code,
+                          unit_price: parseFloat(l.unit_price) || 0,
+                          total: parseFloat(l.total) || 0,
+                          store_price: l.store_price != null ? parseFloat(l.store_price) || 0 : null,
+                          store_price_currency: l.store_price_currency ?? null,
+                          // Gated on qty_from_stock (not total === 0) so a
+                          // partially-covered line — some purchased, some
+                          // from stock — still shows its from-stock portion
+                          // instead of it silently vanishing from print.
+                          fromStock: qtyFromStock > 0 ? fromStockDisplayValue(l) : null,
+                        }
+                      }),
                       currencyTotals: req.currencyTotals.map((ct) => ({
                         currency: ct.currency_code,
                         amount: parseFloat(ct.subtotal) || 0,

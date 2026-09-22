@@ -3,14 +3,26 @@ export interface ReqPrintLine {
   product_name?: string | null
   product_name_ar?: string | null
   qty: number
+  /** Qty of this line covered from existing stock, out of qty above — shown
+   *  as an explicit note so it's clear how much (if any) came from
+   *  inventory rather than being purchased, for both a fully- and a
+   *  partially-covered line. */
+  qty_from_stock?: number
   uom: string
   currency_code: string
   unit_price: number
   total: number
-  /** Set only for a line fully covered from stock — total above is 0 by
-   *  design (nothing purchased), this is store_price × qty instead, shown
-   *  with a "(from stock)" label. See RequisitionDetail.tsx's
-   *  fromStockDisplayValue for why total_price itself stays 0. */
+  /** Reference-only per-unit store price behind fromStock's value — a
+   *  fully-from-stock line's unit_price is 0/unset (nothing was purchased),
+   *  so showing that next to a nonzero total reads as a bug; store_price is
+   *  what actually produced that number. */
+  store_price?: number | null
+  store_price_currency?: string | null
+  /** Set whenever any of this line's qty came from stock (qty_from_stock >
+   *  0) — total above only ever reflects the purchased portion (0 when
+   *  fully covered from stock, see RequisitionDetail.tsx's
+   *  fromStockDisplayValue), so a partially-covered line needs both total
+   *  AND this shown, not just one. */
   fromStock?: { amount: number; currency: string } | null
 }
 
@@ -94,27 +106,50 @@ const PRIORITY_COLOR: Record<string, string> = {
 
 export function buildRequisitionHTML(req: ReqPrintData): string {
   const lineRows = req.lines
-    .map(
-      (l, i) => `
+    .map((l, i) => {
+      const qtyFromStock = l.qty_from_stock ?? 0
+      const toBuy = Math.max(0, l.qty - qtyFromStock)
+      return `
     <tr>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#888">${i + 1}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px">
         <div style="font-weight:600;color:#1a1a1a">${l.description || l.product_name || '—'}</div>
         ${l.product_name_ar ? `<div dir="rtl" style="color:#888;margin-top:2px;text-align:left">${l.product_name_ar}</div>` : ''}
+        ${
+          qtyFromStock > 0
+            ? `<div style="color:#0369a1;font-size:11px;margin-top:2px">${qtyFromStock} ${l.uom} from stock${toBuy > 0 ? ` · ${toBuy} ${l.uom} to buy` : ''}</div>`
+            : ''
+        }
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right">${l.qty}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;color:#666">${l.uom}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">${fmt(l.unit_price, l.currency_code)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">
+        ${
+          // A from-stock line's unit_price is 0/unset since nothing was
+          // purchased — showing that next to a nonzero total (below) reads
+          // as a bug. store_price is the figure that actually produced it.
+          toBuy > 0
+            ? fmt(l.unit_price, l.currency_code)
+            : l.store_price != null
+              ? fmt(l.store_price, l.store_price_currency ?? l.currency_code)
+              : '—'
+        }
+      </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">
         ${
-          l.fromStock
-            ? `<span style="color:#888;font-weight:400">${fmt(l.fromStock.amount, l.fromStock.currency)}<br><span style="font-size:10px">(from stock)</span></span>`
-            : fmt(l.total, l.currency_code)
+          toBuy > 0
+            ? fmt(l.total, l.currency_code) +
+              (l.fromStock
+                ? `<br><span style="font-size:10px;font-weight:400;color:#888">+ ${fmt(l.fromStock.amount, l.fromStock.currency)} (from stock)</span>`
+                : '')
+            : l.fromStock
+              ? `<span style="color:#888;font-weight:400">${fmt(l.fromStock.amount, l.fromStock.currency)}<br><span style="font-size:10px">(from stock)</span></span>`
+              : fmt(l.total, l.currency_code)
         }
       </td>
     </tr>
-  `,
-    )
+  `
+    })
     .join('')
 
   const priorityColor = PRIORITY_COLOR[req.priority] ?? PRIORITY_COLOR.low
