@@ -10,6 +10,11 @@ export interface POPrintLine {
   product_name_ar?: string | null
   qty: number
   uom: string
+  /** This line's own native currency (market_price_currency ??
+   *  requested_currency_code ?? po.currency_code) — NOT necessarily the
+   *  PO's header currency_code. A PO can mix lines priced in different
+   *  currencies, so unit_price/total below must be labeled per line. */
+  currency_code: string
   unit_price: number
   total: number
   notes?: POPrintLineNote[]
@@ -19,6 +24,11 @@ export interface POPrintApprovalStep {
   label: string
   name: string
   date: string
+}
+
+export interface POPrintCurrencyTotal {
+  currency: string
+  amount: number
 }
 
 export interface POPrintData {
@@ -35,6 +45,12 @@ export interface POPrintData {
   created_by_email?: string | null
   companyName?: string | null
   lines: POPrintLine[]
+  /** Per-currency purchased-amount subtotal — mirrors po.currencyTotals
+   *  (no-conversion policy: one entry per currency actually used by the
+   *  PO's lines, never blended into one converted figure — see
+   *  fetchFullPurchaseOrderGW and ReqPrintData.currencyTotals in
+   *  requisitionHtml.ts, which this mirrors). */
+  currencyTotals: POPrintCurrencyTotal[]
   /** Only pass this when "include internal notes" is checked — never on a vendor-facing copy. */
   approvalTrail?: POPrintApprovalStep[]
   /** Buyer position has no logged actor/timestamp (markPOLineBought never records one), so this
@@ -90,22 +106,6 @@ const PRIORITY_COLOR: Record<string, string> = {
 }
 
 export function buildPurchaseOrderHTML(po: POPrintData): string {
-  const cur = po.currency_code ?? 'IQD'
-  // po.subtotal/total_amount are stored in the PO's *base* currency
-  // (total_price summed x fx_rate_to_base — see applyPOEditChanges/recalcPO),
-  // not currency_code, which is what every line above is actually priced
-  // and labeled in. Using them here understated or (usually) wildly
-  // overstated the printed total depending on the fx rate, while still
-  // being labeled with the wrong currency. Summing the same per-line
-  // totals already rendered above guarantees this always matches what the
-  // reader can see and add up themselves.
-  // l.total is typed as number, but GraphQL money fields are String! —
-  // Apollo never casts them, so the runtime value is actually a string. A
-  // single value still formats fine (Intl.NumberFormat coerces it), but `+`
-  // across the array here was silently concatenating strings instead of
-  // adding numbers, turning the summed total into NaN once formatted.
-  const computedTotal = po.lines.reduce((s, l) => s + (parseFloat(String(l.total)) || 0), 0)
-
   const lineRows = po.lines
     .map(
       (l, i) => `
@@ -127,10 +127,24 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
       </td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right">${l.qty}</td>
       <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;color:#666">${l.uom}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">${fmt(l.unit_price, cur)}</td>
-      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">${fmt(l.total, cur)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace">${fmt(l.unit_price, l.currency_code)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;text-align:right;font-family:monospace;font-weight:600">${fmt(l.total, l.currency_code)}</td>
     </tr>
   `,
+    )
+    .join('')
+
+  // No-conversion policy, same as Requisition's own print — one row per
+  // currency actually used by the PO's lines, never blended into one
+  // converted figure (a PO with a USD line and an IQD line has no single
+  // "the total").
+  const totalRows = po.currencyTotals
+    .map(
+      (ct, i) => `
+      <tr style="${i === 0 ? 'border-top:2px solid #1a3c5e;background:#f8f9fa' : ''}">
+        <td style="padding:${i === 0 ? '10px' : '8px'} 16px;font-size:${i === 0 ? '14px' : '13px'};font-weight:${i === 0 ? '700' : '400'};color:${i === 0 ? '#1a3c5e' : '#555'}">Total (${ct.currency})</td>
+        <td style="padding:${i === 0 ? '10px' : '8px'} 16px;font-size:${i === 0 ? '14px' : '13px'};font-weight:${i === 0 ? '700' : '400'};text-align:right;font-family:monospace;color:${i === 0 ? '#1a3c5e' : '#555'}">${fmt(ct.amount, ct.currency)}</td>
+      </tr>`,
     )
     .join('')
 
@@ -203,10 +217,6 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
             : ''
         }
         <tr>
-          <td style="padding:4px 0;font-size:11px;color:#888">Currency</td>
-          <td style="padding:4px 0;font-size:12px;font-weight:600;text-align:right">${cur}</td>
-        </tr>
-        <tr>
           <td style="padding:4px 0;font-size:11px;color:#888">Prepared by</td>
           <td style="padding:4px 0;font-size:12px;text-align:right;color:#555">${po.created_by_email ?? '—'}</td>
         </tr>
@@ -232,14 +242,10 @@ export function buildPurchaseOrderHTML(po: POPrintData): string {
   <!-- Total -->
   <div style="display:flex;justify-content:flex-end;margin-bottom:32px">
     <table style="border-collapse:collapse;min-width:280px">
-      <tr>
-        <td style="padding:8px 16px;font-size:13px;color:#555">Subtotal</td>
-        <td style="padding:8px 16px;font-size:13px;text-align:right;font-family:monospace">${fmt(computedTotal, cur)}</td>
-      </tr>
-      <tr style="border-top:2px solid #1a3c5e;background:#f8f9fa">
-        <td style="padding:10px 16px;font-size:14px;font-weight:700;color:#1a3c5e">Total</td>
-        <td style="padding:10px 16px;font-size:14px;font-weight:700;text-align:right;font-family:monospace;color:#1a3c5e">${fmt(computedTotal, cur)}</td>
-      </tr>
+      ${
+        totalRows ||
+        `<tr><td style="padding:8px 16px;font-size:13px;color:#888">No items</td></tr>`
+      }
     </table>
   </div>
 

@@ -7818,12 +7818,17 @@ export default function PurchaseOrderDetail() {
                   vendor_name: po.vendor_name,
                   created_by_email: po.created_by_email,
                   companyName: po.company_name,
+                  currencyTotals: po.currencyTotals.map((ct) => ({
+                    currency: ct.currency_code,
+                    amount: parseFloat(ct.subtotal) || 0,
+                  })),
                   lines: po.lines.map((l) => ({
                     description: l.description,
                     product_name: l.product_name,
                     product_name_ar: l.product_name_ar,
                     qty: l.qty,
                     uom: l.uom,
+                    currency_code: l.market_price_currency ?? l.requested_currency_code ?? po.currency_code,
                     unit_price: l.unit_price,
                     total: l.total,
                     notes: printWithNotes
