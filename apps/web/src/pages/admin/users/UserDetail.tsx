@@ -5,6 +5,7 @@ import { useTheme } from '../../../theme/ThemeContext'
 import { PageHeader } from '../../../components/ui/PageHeader'
 import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
+import { Checkbox } from '../../../components/ui/Checkbox'
 import { Badge } from '../../../components/ui/Badge'
 import { TabBar } from '../../../components/ui/TabBar'
 import { EmptyState } from '../../../components/ui/EmptyState'
@@ -117,7 +118,7 @@ export default function UserDetail() {
   const [revokeSessionId, setRevokeSessionId] = useState<string | null>(null)
   const [removeRoleId, setRemoveRoleId] = useState<string | null>(null)
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
-  const [roleForm, setRoleForm] = useState({ companyId: '', role: '', module: '' })
+  const [roleForm, setRoleForm] = useState({ companyId: '', role: '', module: '', modules: [] as string[] })
   const [editingRole, setEditingRole] = useState<UserRole | null>(null)
   const [editRoleForm, setEditRoleForm] = useState({ role: '', module: '' })
   const [showSetPasswordModal, setShowSetPasswordModal] = useState(false)
@@ -269,17 +270,53 @@ export default function UserDetail() {
     },
   })
 
-  const [assignRole, { loading: assigningRole }] = useMutation(ASSIGN_ROLE, {
-    onCompleted: () => {
-      addToast({ type: 'success', message: 'Role assigned' })
+  const [assignRole] = useMutation(ASSIGN_ROLE)
+  const [submittingRoles, setSubmittingRoles] = useState(false)
+
+  async function handleAddRole() {
+    const modules = roleForm.role === 'module_admin' ? roleForm.modules : ['']
+    setSubmittingRoles(true)
+    const succeeded: string[] = []
+    const failed: string[] = []
+    for (const m of modules) {
+      try {
+        await assignRole({
+          variables: {
+            input: {
+              user_id: id,
+              company_id: roleForm.companyId,
+              role: roleForm.role,
+              module: m || undefined,
+            },
+          },
+        })
+        succeeded.push(m)
+      } catch {
+        failed.push(m)
+      }
+    }
+    setSubmittingRoles(false)
+    if (failed.length === 0) {
+      addToast({
+        type: 'success',
+        message: succeeded.length > 1 ? `Assigned ${succeeded.length} module admin roles` : 'Role assigned',
+      })
       setShowAddRoleModal(false)
-      setRoleForm({ companyId: '', role: '', module: '' })
-      void refetchUser()
-    },
-    onError: (e) => {
-      addToast({ type: 'error', message: e.message })
-    },
-  })
+      setRoleForm({ companyId: '', role: '', module: '', modules: [] })
+    } else {
+      const failedLabels = failed
+        .map((m) => MODULE_OPTIONS.find((o) => o.value === m)?.label ?? m)
+        .join(', ')
+      addToast({
+        type: 'error',
+        message:
+          succeeded.length > 0
+            ? `Some modules failed to save (${failedLabels}) — the rest were assigned. Try again to retry just the failed ones.`
+            : `Could not assign the role: ${failedLabels}`,
+      })
+    }
+    if (succeeded.length > 0) void refetchUser()
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_addRole] = useMutation(ADD_USER_ROLE)
@@ -974,7 +1011,7 @@ export default function UserDetail() {
               <SearchableSelect
                 value={roleForm.role}
                 onChange={(v) => {
-                  setRoleForm({ ...roleForm, role: v, module: '' })
+                  setRoleForm({ ...roleForm, role: v, module: '', modules: [] })
                 }}
                 options={ROLE_OPTIONS}
                 placeholder="Select role…"
@@ -989,16 +1026,36 @@ export default function UserDetail() {
                   marginBottom: '4px',
                 }}
               >
-                Module{roleForm.role === 'module_admin' ? ' *' : ' (optional)'}
+                Module{roleForm.role === 'module_admin' ? 's *' : ' (optional)'}
               </label>
-              <SearchableSelect
-                value={roleForm.module}
-                onChange={(v) => {
-                  setRoleForm({ ...roleForm, module: v })
-                }}
-                options={MODULE_OPTIONS}
-                placeholder="Select module…"
-              />
+              {roleForm.role === 'module_admin' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {MODULE_OPTIONS.filter((o) => o.value).map((o) => (
+                    <Checkbox
+                      key={o.value}
+                      label={o.label}
+                      checked={roleForm.modules.includes(o.value)}
+                      onChange={(checked) => {
+                        setRoleForm({
+                          ...roleForm,
+                          modules: checked
+                            ? [...roleForm.modules, o.value]
+                            : roleForm.modules.filter((m) => m !== o.value),
+                        })
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <SearchableSelect
+                  value={roleForm.module}
+                  onChange={(v) => {
+                    setRoleForm({ ...roleForm, module: v })
+                  }}
+                  options={MODULE_OPTIONS}
+                  placeholder="Select module…"
+                />
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <Button
@@ -1011,24 +1068,13 @@ export default function UserDetail() {
               </Button>
               <Button
                 variant="primary"
-                loading={assigningRole}
+                loading={submittingRoles}
                 disabled={
                   !roleForm.companyId ||
                   !roleForm.role ||
-                  (roleForm.role === 'module_admin' && !roleForm.module)
+                  (roleForm.role === 'module_admin' && roleForm.modules.length === 0)
                 }
-                onClick={() =>
-                  void assignRole({
-                    variables: {
-                      input: {
-                        user_id: id,
-                        company_id: roleForm.companyId,
-                        role: roleForm.role,
-                        module: roleForm.module || undefined,
-                      },
-                    },
-                  })
-                }
+                onClick={() => void handleAddRole()}
               >
                 Add role
               </Button>
