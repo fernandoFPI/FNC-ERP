@@ -3535,18 +3535,22 @@ export default function PurchaseOrderDetail() {
                           {boughtChecklistExpanded ? 'Hide items' : 'Review items'}
                         </button>
                       )}
-                      {!(po.purpose === 'project' && po.delivery_destination === 'jobsite') && (
-                        <EntityAttachments
-                          entityType="purchase_order"
-                          entityId={po.id}
-                          category="po_receipt_document"
-                          readOnly={!canMarkBought}
-                          title="Buyer Receipts"
-                          description="Upload the vendor's receipt or invoice as proof of what was paid — the store keeper will see this when confirming Goods Received."
-                          uploadButtonLabel="Upload Receipt"
-                          recordLabel="this purchase"
-                        />
-                      )}
+                      {/* Buyer receipts are required for every PO here, jobsite-delivery
+                          projects included — this used to be hidden for
+                          purpose:'project' + delivery_destination:'jobsite', which made
+                          Finish Buying's own hasBuyerReceipt requirement (below)
+                          unsatisfiable for that combination: nowhere to upload one, so
+                          the button stayed disabled forever. */}
+                      <EntityAttachments
+                        entityType="purchase_order"
+                        entityId={po.id}
+                        category="po_receipt_document"
+                        readOnly={!canMarkBought}
+                        title="Buyer Receipts"
+                        description="Upload the vendor's receipt or invoice as proof of what was paid — the store keeper will see this when confirming Goods Received."
+                        uploadButtonLabel="Upload Receipt"
+                        recordLabel="this purchase"
+                      />
                       {allBought && canMarkBought && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                           <Button

@@ -2,17 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '../../../theme/ThemeContext'
+import type * as ApolloClientModule from '@apollo/client'
+import type * as ReactRouterDomModule from 'react-router-dom'
 
 // ── Apollo mock ──────────────────────────────────────────────────────────────
 const mockUseQuery = vi.fn()
 const mockUseMutation = vi.fn()
 
 vi.mock('@apollo/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@apollo/client')>()
+  const actual = await importOriginal<typeof ApolloClientModule>()
   return {
     ...actual,
     useQuery: (...args: unknown[]) => mockUseQuery(...args),
     useMutation: (...args: unknown[]) => mockUseMutation(...args),
+    useLazyQuery: () => [vi.fn(), { data: undefined, loading: false }],
     useSubscription: vi.fn().mockReturnValue({ data: undefined, loading: false }),
     gql: actual.gql,
   }
@@ -202,6 +205,38 @@ describe('PurchaseOrderDetail', () => {
     const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
     expect(screen.getAllByText(/^bought$/i).length).toBeGreaterThan(0)
+  })
+
+  // Regression: the Buyer Receipts upload used to be hidden for
+  // purpose:'project' + delivery_destination:'jobsite' POs, but Finish
+  // Buying still required hasBuyerReceipt — a dead end, since there was
+  // nowhere left to upload one. Found via NF-PO-2026-0047, stuck at
+  // items_bought with its one line already checked off.
+  it('shows Buyer Receipts upload for a project/jobsite PO at items_bought', async () => {
+    mockPO('items_bought', {
+      purpose: 'project',
+      delivery_destination: 'jobsite',
+      callerIsBuyer: true,
+      lines: [
+        {
+          id: 'line-1',
+          description: 'Elbow pipe',
+          product_name: null,
+          qty: '1',
+          qty_from_stock: '0',
+          uom: 'pc',
+          unit_price: '6',
+          actual_unit_price: null,
+          is_bought: true,
+          currency_code: 'USD',
+          market_price_currency: 'USD',
+          requested_currency_code: null,
+        },
+      ],
+    })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    expect(screen.getByText(/Buyer Receipts/i)).toBeInTheDocument()
   })
 })
 
