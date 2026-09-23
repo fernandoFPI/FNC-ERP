@@ -13,7 +13,9 @@ const SKU_PREFIX = 'POCCYTEST-'
 const PO_PREFIX = 'POCCYTEST-PO-'
 
 let userId: string
+let unauthorizedUserId: string
 let ctx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
+let unauthorizedCtx: { auth: { companyId: string; userId: string; role: string; module: string; sessionId: string } }
 
 async function makeProduct(suffix: string): Promise<string> {
   const sku = `${SKU_PREFIX}${suffix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -55,6 +57,8 @@ async function makePOLine(
   return r.rows[0]!.id
 }
 
+const UNAUTHORIZED_USER_EMAIL = 'po-currency-totals-unauth-test@fnc-erp.local'
+
 async function cleanup(): Promise<void> {
   await pool.query(
     `DELETE FROM po_lines WHERE po_id IN (SELECT id FROM purchase_orders WHERE company_id=$1 AND po_number LIKE $2)`,
@@ -75,12 +79,32 @@ beforeAll(async () => {
   )
   userId = userR.rows[0]!.id
   ctx = { auth: { companyId: TEST_COMPANY_ID, userId, role: 'system_admin', module: 'all', sessionId: 'po-ccy-test' } }
+
+  // A plain, unprivileged caller — not the PO's organizer, not an admin,
+  // not holding any position on it — to exercise the viewerRestricted
+  // branch of Query.purchaseOrder (see makePO's created_by, always userId).
+  const unauthR = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, password_hash) VALUES ($1,'test-hash-not-used')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash RETURNING id`,
+    [UNAUTHORIZED_USER_EMAIL],
+  )
+  unauthorizedUserId = unauthR.rows[0]!.id
+  unauthorizedCtx = {
+    auth: {
+      companyId: TEST_COMPANY_ID,
+      userId: unauthorizedUserId,
+      role: 'employee',
+      module: 'procurement',
+      sessionId: 'po-ccy-unauth-test',
+    },
+  }
   await cleanup()
 })
 
 afterAll(async () => {
   await cleanup()
   await pool.query(`DELETE FROM users WHERE email=$1`, [TEST_USER_EMAIL])
+  await pool.query(`DELETE FROM users WHERE email=$1`, [UNAUTHORIZED_USER_EMAIL])
   await pool.end()
 })
 
@@ -122,5 +146,24 @@ describe('purchaseOrder(id).currencyTotals', () => {
     expect(totals[0]!.currency_code).toBe('USD')
     expect(parseFloat(totals[0]!.subtotal)).toBe(14)
     expect(totals[0]!.line_count).toBe(2)
+  })
+
+  // Regression: the viewerRestricted branch (caller isn't the organizer, an
+  // admin, or the current-stage position holder) returns a minimal stub
+  // object instead of fetchFullPurchaseOrderGW's full one — currencyTotals
+  // being schema-non-nullable means that branch must set it too, or the
+  // whole purchaseOrder(id) response nulls out with a GraphQL error instead
+  // of ever reaching the client.
+  it('still returns an (empty) currencyTotals on the viewerRestricted branch, not a GraphQL error', async () => {
+    const productA = await makeProduct('restricted-view')
+    const poId = await makePO()
+    await makePOLine(poId, 1, productA, 2, 100)
+
+    const result = (await resolvers.Query.purchaseOrder(null, { id: poId }, unauthorizedCtx as never)) as {
+      viewerRestricted: boolean
+      currencyTotals: { currency_code: string; subtotal: string; line_count: number }[]
+    }
+    expect(result.viewerRestricted).toBe(true)
+    expect(result.currencyTotals).toEqual([])
   })
 })

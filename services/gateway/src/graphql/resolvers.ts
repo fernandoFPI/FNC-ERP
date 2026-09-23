@@ -9670,6 +9670,11 @@ export const resolvers = {
             updated_at: new Date(0).toISOString(),
             invoice_count: 0,
             viewerRestricted: true,
+            // Non-nullable in the schema — every other financial figure is
+            // already redacted on this branch, so an empty breakdown (not
+            // the real per-currency totals) is the correct restricted value,
+            // not just a stand-in to satisfy the type.
+            currencyTotals: [],
           }
         }
         const full = await fetchFullPurchaseOrderGW(args.id, auth)
