@@ -111,9 +111,20 @@ export default function PendingCatalogItemsPage() {
   // carries inventory for a company that doesn't run its own).
   const [targetCompanyId, setTargetCompanyId] = useState('')
 
-  const { data: productsData } = useQuery<{ products: ProductOption[] }>(PRODUCTS_QUERY, {
+  // cache-and-network — without it, reopening the Link panel after
+  // resolving an earlier pending item (as new or linked) can keep serving
+  // the catalog snapshot from the first time this query ran, missing
+  // whatever was just added. The product you're looking for silently isn't
+  // in the search dropdown, so the only visible path left is "Catalog as
+  // New" — which is how "onion" ends up catalogued three separate times
+  // instead of linked twice.
+  const {
+    data: productsData,
+    refetch: refetchProducts,
+  } = useQuery<{ products: ProductOption[] }>(PRODUCTS_QUERY, {
     variables: { companyId: targetCompanyId || undefined },
     skip: !canResolve || mode !== 'link',
+    fetchPolicy: 'cache-and-network',
   })
   // Reflects whichever company the resolution currently targets — falls back
   // to the caller's own when nothing's been picked yet (panel not open).
@@ -171,6 +182,10 @@ export default function PendingCatalogItemsPage() {
       addToast({ type: 'success', message: 'Product added to catalog' })
       closeExpanded()
       void refetch()
+      // So the very next pending item for the same thing (e.g. another PO's
+      // "onion" line) finds this one in the Link Existing dropdown instead
+      // of the catalog snapshot from before it existed.
+      void refetchProducts()
     } catch (e: unknown) {
       addToast({ type: 'error', message: (e as Error).message })
     }
