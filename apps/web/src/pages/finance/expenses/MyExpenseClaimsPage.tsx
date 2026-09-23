@@ -110,20 +110,32 @@ export default function MyExpenseClaimsPage() {
     }
     setLoading(true)
     try {
-      const [clRes, catRes, projRes] = await Promise.all([
+      // Claims/categories (self-service, no permission gate beyond being
+      // logged in) and projects (requires projects.view — many claimants,
+      // e.g. someone with only a procurement position, don't hold it) are
+      // fetched separately on purpose. They used to be one Promise.all: a
+      // 403 on /projects alone failed the whole batch, so a user without
+      // projects.view saw an empty category list too — the "Project
+      // (optional)" field is optional precisely because not everyone has
+      // project access, so its absence shouldn't break the rest of the form.
+      const [clRes, catRes] = await Promise.all([
         api.get<Claim[]>('/finance/expense-claims/mine'),
         api.get<Category[]>('/finance/expense-claims/categories/mine'),
-        api.get<{ data: Project[] }>('/projects', { params: { limit: 500 } }),
       ])
       setClaims(clRes.data)
       setCategories(catRes.data)
-      setProjects(projRes.data.data)
+      try {
+        const projRes = await api.get<{ data: Project[] }>('/projects', { params: { limit: 500 } })
+        setProjects(projRes.data.data)
+      } catch {
+        setProjects([])
+      }
     } catch {
-      /* handled */
+      addToast({ type: 'error', message: 'Could not load your expense claims — try refreshing.' })
     } finally {
       setLoading(false)
     }
-  }, [employeeId])
+  }, [employeeId, addToast])
 
   useEffect(() => {
     void load()
