@@ -3487,6 +3487,20 @@ async function notifyPositionHoldersForRequisitionGW(
   }
 }
 
+// Pure so it's directly unit-testable without a DB: given who'd normally be
+// notified (dept heads + admins who haven't opted out) and the full admin
+// list as a last resort, decides who actually gets pinged. Exported only for
+// that test.
+export function resolveRequisitionApprovalRecipients<T>(deptHeads: T[], eligibleAdmins: T[], allAdmins: T[]): T[] {
+  const recipients = [...deptHeads, ...eligibleAdmins]
+  // Every admin opted out and there's no department head to fall back on —
+  // rather than let the requisition sit at pending_approval with nobody
+  // notified, ping every active system_admin anyway, ignoring the opt-out.
+  // A pending approval nobody knows about is worse than one unwanted
+  // notification.
+  return recipients.length > 0 ? recipients : allAdmins
+}
+
 async function notifyDeptHeadsAndAdminsForRequisitionGW(
   requisitionId: string,
   notification: POAuthGWNotification,
@@ -3509,10 +3523,24 @@ async function notifyDeptHeadsAndAdminsForRequisitionGW(
     `SELECT DISTINCT u.id AS user_id
      FROM users u
      JOIN user_company_roles ucr ON ucr.user_id = u.id
-     WHERE ucr.role = 'system_admin' AND u.is_active = true`,
+     WHERE ucr.role = 'system_admin' AND u.is_active = true
+       AND COALESCE((u.notification_preferences->>'admin_requisition_approval')::boolean, true) = true`,
     [],
   )
-  for (const r of [...deptHeads.rows, ...admins.rows]) {
+  // allAdmins is only ever needed as a fallback when dept heads + eligible
+  // admins comes up empty, so only fetch it then.
+  const allAdmins =
+    deptHeads.rows.length === 0 && admins.rows.length === 0
+      ? await query(
+          `SELECT DISTINCT u.id AS user_id
+           FROM users u
+           JOIN user_company_roles ucr ON ucr.user_id = u.id
+           WHERE ucr.role = 'system_admin' AND u.is_active = true`,
+          [],
+        )
+      : { rows: [] }
+  const recipients = resolveRequisitionApprovalRecipients(deptHeads.rows, admins.rows, allAdmins.rows)
+  for (const r of recipients) {
     await query(
       `INSERT INTO service_outbox (service, event_type, payload) VALUES ('notifications', $1, $2)`,
       [notification.type, JSON.stringify({ userId: r.user_id, requisitionId, ...notification })],
@@ -34454,9 +34482,17 @@ const phase5MutationResolvers = {
         args.input.themePreference ?? null,
         args.input.dateFormat ?? null,
         args.input.numberFormat ?? null,
-        args.input.notificationPreferences
-          ? JSON.stringify(args.input.notificationPreferences)
-          : null,
+        // The JSON scalar hands this through as whatever the caller sent —
+        // today that's always a JSON string (NotificationPreferencesPage
+        // sends JSON.stringify(prefs)). Stringifying an already-stringified
+        // value here double-encodes it: the jsonb column ends up holding a
+        // JSON *string* instead of an object, so `->>'key'` lookups against
+        // it (e.g. the admin_requisition_approval check) always return NULL.
+        args.input.notificationPreferences == null
+          ? null
+          : typeof args.input.notificationPreferences === 'string'
+            ? args.input.notificationPreferences
+            : JSON.stringify(args.input.notificationPreferences),
       ],
     )
     return {

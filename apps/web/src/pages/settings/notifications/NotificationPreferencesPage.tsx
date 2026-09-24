@@ -13,7 +13,8 @@ interface MyPreferences {
   themePreference: string | null
   dateFormat: string | null
   numberFormat: string | null
-  notificationPreferences: string | null
+  // The JSON scalar can hand back either shape — see the useEffect below.
+  notificationPreferences: string | Record<string, boolean> | null
 }
 
 interface PreferencesData {
@@ -30,6 +31,7 @@ interface NotifPrefs {
   admin_outbox_failures: boolean
   admin_dlq_alerts: boolean
   admin_system_health: boolean
+  admin_requisition_approval: boolean
   // System-admin only
   outbox_dlq_critical_inApp: boolean
   outbox_dlq_critical_email: boolean
@@ -50,6 +52,7 @@ const DEFAULT_PREFS: NotifPrefs = {
   admin_outbox_failures: false,
   admin_dlq_alerts: false,
   admin_system_health: false,
+  admin_requisition_approval: true,
   outbox_dlq_critical_inApp: true,
   outbox_dlq_critical_email: true,
   outbox_dlq_high_inApp: true,
@@ -117,6 +120,12 @@ const NOTIF_ROWS: {
     key: 'admin_system_health',
     label: 'System Health',
     description: 'Alert when a service health check goes critical',
+    channel: 'Admin',
+  },
+  {
+    key: 'admin_requisition_approval',
+    label: 'Requisition Approvals',
+    description: 'Get pinged when a requisition reaches pending approval',
     channel: 'Admin',
   },
 ]
@@ -197,7 +206,11 @@ export default function NotificationPreferencesPage() {
   useEffect(() => {
     if (data?.myPreferences.notificationPreferences) {
       try {
-        const parsed = JSON.parse(data.myPreferences.notificationPreferences) as NotifPrefs
+        // The JSON scalar normally hands this back as a real object — the
+        // string case only remains for rows saved before updatePreferences
+        // stopped double-encoding it (see that resolver's comment).
+        const raw = data.myPreferences.notificationPreferences
+        const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as NotifPrefs
         setLocalPrefs({ ...DEFAULT_PREFS, ...parsed })
       } catch {
         // keep defaults
