@@ -31559,9 +31559,9 @@ const phase5MutationResolvers = {
           const headerCurrency = entriesForVendor[0]!.currency_code
           const poRes = await client.query<{ id: string }>(
             `INSERT INTO purchase_orders
-               (company_id, po_number, vendor_id, currency_code, status, purpose, project_id,
+               (company_id, po_number, vendor_id, currency_code, status, purpose, project_id, linked_project_id,
                 created_by, priority, branch_id, organizer_id, requisition_id, delivery_destination, linked_mo_id, assigned_receiver_id)
-             VALUES ($1,$2,$3,$4,'bought',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+             VALUES ($1,$2,$3,$4,'bought',$5,$6,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
             [
               auth.companyId,
               poNumber,
