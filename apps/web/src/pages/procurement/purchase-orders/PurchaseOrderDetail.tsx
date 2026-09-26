@@ -3589,7 +3589,14 @@ export default function PurchaseOrderDetail() {
                   // lines, and that alone was always enough to send to audit).
                   // So Send to Audit stays available here once any receipt is
                   // confirmed, even mid-way through receiving the rest.
-                  const hasAnyReceipt = po.receipts.some((r) => r.status === 'confirmed')
+                  // A direct-to-jobsite delivery (recordDirectDelivery) never
+                  // creates a po_receipts row at all — it updates po_lines.
+                  // qty_received straight away — so po.receipts alone would
+                  // stay empty forever for that PO type, permanently stuck
+                  // showing "Record Receipt" even after delivery was recorded.
+                  const hasAnyReceipt =
+                    po.receipts.some((r) => r.status === 'confirmed') ||
+                    po.lines.some((line) => parseFloat(String(line.qty_received ?? 0)) > 0)
                   if (!hasAnyReceipt) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

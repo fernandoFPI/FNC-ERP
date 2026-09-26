@@ -238,6 +238,42 @@ describe('PurchaseOrderDetail', () => {
     wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
     expect(screen.getByText(/Buyer Receipts/i)).toBeInTheDocument()
   })
+
+  // Regression: recordDirectDelivery (the jobsite path) updates po_lines.
+  // qty_received directly and never creates a po_receipts row — so
+  // hasAnyReceipt, which only checked po.receipts, stayed false forever for
+  // this PO type and the page kept showing "Record Receipt" even after a
+  // delivery was fully recorded, with no way to reach Send to Finance
+  // Audit. Found via NF-PO-2026-0042: qty_received matched qty_ordered in
+  // the DB, but the UI still prompted to record a receipt.
+  it('shows Send to Finance Audit (not the Record Receipt prompt) once a jobsite delivery is fully received', async () => {
+    mockPO('goods_received', {
+      purpose: 'project',
+      delivery_destination: 'jobsite',
+      receipts: [],
+      lines: [
+        {
+          id: 'line-1',
+          description: 'Solar panel',
+          product_name: null,
+          qty: '2',
+          qty_received: '2',
+          qty_from_stock: '0',
+          uom: 'pc',
+          unit_price: '2.5',
+          actual_unit_price: null,
+          is_bought: true,
+          currency_code: 'USD',
+          market_price_currency: 'USD',
+          requested_currency_code: null,
+        },
+      ],
+    })
+    const PurchaseOrderDetail = (await import('../purchase-orders/PurchaseOrderDetail')).default
+    wrap(<PurchaseOrderDetail />, '/procurement/orders/po-1')
+    expect(screen.getByRole('button', { name: /send to finance audit/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /record receipt/i })).not.toBeInTheDocument()
+  })
 })
 
 // ── ApprovalQueue ────────────────────────────────────────────────────────────
