@@ -33020,8 +33020,15 @@ const phase5MutationResolvers = {
     // required before and could block a partial audit an organizer already
     // relies on (recordReceipt has always allowed confirming a receipt for
     // only some lines, and that alone was enough to unlock this before).
+    // A direct-to-jobsite delivery (recordDirectDelivery) never creates a
+    // po_receipts row — it updates po_lines.qty_received straight away —
+    // so also accept that as "a receipt was recorded" here, same as the
+    // PO detail page's own hasAnyReceipt check (PurchaseOrderDetail.tsx).
     const hasReceipt = await query(
-      `SELECT 1 FROM po_receipts WHERE po_id=$1 AND status='confirmed' LIMIT 1`,
+      `SELECT 1 FROM po_receipts WHERE po_id=$1 AND status='confirmed'
+       UNION ALL
+       SELECT 1 FROM po_lines WHERE po_id=$1 AND COALESCE(qty_received,0) > 0
+       LIMIT 1`,
       [args.id],
     )
     if (!hasReceipt.rows[0])
