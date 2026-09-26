@@ -6293,7 +6293,12 @@ export const resolvers = {
                -- store_keeper position (see confirmPOInventoryCheck) — kept
                -- alongside the other owner-actioned statuses for the
                -- organizer clause, plus its own position lookup below.
-               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check'))
+               -- 'bought' is a G1 child PO (po.requisition_id set) forked
+               -- straight to "already bought, awaiting delivery" — no buyer
+               -- position applies (that happened on the requisition side),
+               -- Record Receipt is organizer-gated same as 'approved' — see
+               -- PurchaseOrderDetail.tsx's po.status === 'bought' block.
+               (po.organizer_id = $2 AND po.status IN ('draft','goods_received','rejected','inventory_check','bought'))
                -- Whoever is explicitly named as this PO's receiver ("Received
                -- By") sees it once goods_received too, regardless of whether
                -- they hold a buyer/store_keeper position — see
@@ -6325,7 +6330,7 @@ export const resolvers = {
                OR ($4 = 'system_admin' AND po.status IN (
                  'inventory_check','store_pricing','market_pricing',
                  'price_verification','pending_approval','items_bought','goods_received',
-                 'ready_to_issue','finance_audit','invoiced'
+                 'ready_to_issue','finance_audit','invoiced','bought'
                ))
              )
            ORDER BY po.created_at DESC`,

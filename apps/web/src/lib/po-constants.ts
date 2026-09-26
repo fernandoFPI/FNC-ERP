@@ -164,11 +164,15 @@ export const PO_STATUS_ACTIONS: Record<
   // G1 Phase 3 Milestone A — child-vocabulary counterparts of the entries
   // above (bought instead of items_bought/approved, finance_review
   // instead of finance_audit, payment_pending instead of invoiced).
+  // 'bought' itself is the child-PO equivalent of 'approved', not
+  // 'items_bought' — the buying already happened on the requisition side
+  // (recordLinePurchase, per vendor), so there's nothing left to tick off
+  // here; the organizer just records the goods receipt.
   bought: {
-    label: 'Mark items bought',
+    label: 'Record receipt',
     description:
-      'The assigned buyer ticks each line as bought and uploads the vendor receipt, then clicks Finish Buying to move the PO on to Goods Received.',
-    requiredPosition: 'buyer',
+      'Items for this purchase order were already bought at the requisition’s Items Bought stage. Record a goods receipt to advance it to Goods Received.',
+    isOrganizer: true,
   },
   finance_review: {
     label: 'Audit lines / Pass or Fail audit',
