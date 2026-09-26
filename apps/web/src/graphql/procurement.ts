@@ -864,6 +864,7 @@ export const MARK_PO_LINE_BOUGHT = gql`
     markPOLineBought(poId: $poId, lineId: $lineId, bought: $bought) {
       id
       is_bought
+      actual_unit_price
     }
   }
 `

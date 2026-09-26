@@ -33277,8 +33277,20 @@ const phase5MutationResolvers = {
     const hasBuyerPosition = await userHasPositionGW(auth.userId, auth.companyId, args.poId, 'buyer')
     if (!isAdmin && !isFrozenBuyer && !hasBuyerPosition)
       throw new Error('Only a buyer position holder for this PO can mark items bought on this PO')
+    // The "Actual price paid" box shows the PO price as its value until the
+    // buyer types something else, but setLineActualPrice's onBlur handler
+    // deliberately skips saving when it's untouched (see that mutation's own
+    // comment) — so ticking bought with an unchanged price used to leave
+    // actual_unit_price NULL forever, even though "unchanged" IS the real,
+    // confirmed price. Finance Audit then read that NULL as "buyer hasn't
+    // recorded a price" for a purchase that was actually completely normal.
+    // Auto-confirm it here instead, but only on tick-to-bought (not
+    // un-tick) and only if nothing was explicitly entered already.
     const result = await query(
-      `UPDATE po_lines SET is_bought=$1 WHERE id=$2 AND po_id=$3 RETURNING id, is_bought`,
+      `UPDATE po_lines
+       SET is_bought=$1,
+           actual_unit_price = CASE WHEN $1 = true AND actual_unit_price IS NULL THEN unit_price ELSE actual_unit_price END
+       WHERE id=$2 AND po_id=$3 RETURNING id, is_bought, actual_unit_price`,
       [args.bought, args.lineId, args.poId],
     )
     if (!result.rows[0]) throw new Error('PO line not found')
